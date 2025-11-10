@@ -173,7 +173,7 @@ See the [Developer Guide](DEVELOPER_GUIDE.md) for detailed technical documentati
 
 ### **For Users**
 - If the chatbot can't help, it will connect you with a human librarian
-- Or contact library directly: [https://www.lib.miamioh.edu/research/research-support/ask/]https://www.lib.miamioh.edu/research/research-support/ask/
+- Or contact library directly: https://www.lib.miamioh.edu/research/research-support/ask/
 
 ### **For Technical Issues**
 - Report bugs via GitHub Issues
