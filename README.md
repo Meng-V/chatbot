@@ -173,12 +173,10 @@ See the [Developer Guide](DEVELOPER_GUIDE.md) for detailed technical documentati
 
 ### **For Users**
 - If the chatbot can't help, it will connect you with a human librarian
-- Or contact library directly: library@miamioh.edu
+- Or contact library directly: [https://www.lib.miamioh.edu/research/research-support/ask/]https://www.lib.miamioh.edu/research/research-support/ask/
 
 ### **For Technical Issues**
-- Contact Web Services: libwebservices@miamioh.edu
 - Report bugs via GitHub Issues
-- Emergency contact: [IT contact information]
 
 ### **For Feature Requests**
 - Submit ideas to library administration
@@ -200,13 +198,11 @@ See the [Developer Guide](DEVELOPER_GUIDE.md) for detailed technical documentati
 
 Miami University Libraries serve the academic community across three campuses (Oxford, Hamilton, and Middletown) with comprehensive collections, services, and technology. This chatbot represents our commitment to innovative, accessible, and student-centered library services.
 
-**Our Mission**: To empower learners, advance scholarship, and strengthen communities through exceptional library services and collections.
-
 ---
 
 ## ⚙️ Version Information
 
-- **Current Version**: 1.0.0
+- **Current Version**: 2.0.0-alpha
 - **Last Updated**: November 2025
 - **Platform**: Python AI-Core with React Frontend
 - **AI Model**: OpenAI o4-mini
