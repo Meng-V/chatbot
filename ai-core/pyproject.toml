@@ -1,0 +1,37 @@
+[project]
+name = "ai-core"
+version = "0.1.0"
+dependencies = [
+  "fastapi",
+  "uvicorn[standard]",
+  "python-socketio[asgi]",
+  "pydantic",
+  "httpx",
+  "langchain",
+  "langgraph",
+  "langchain-openai",
+  "langchain-core",
+  "openai",
+  "weaviate-client",
+  "python-dotenv",
+  "tenacity",
+  "requests",
+  "pytest",
+  "pytest-asyncio",
+  "prisma",
+  "asyncpg",
+  "psutil"
+]
+
+[tool.pyright]
+typeCheckingMode = "basic"
+
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]

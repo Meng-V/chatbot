@@ -1,0 +1,47 @@
+// Prisma schema for Python client
+generator client {
+  provider             = "prisma-client-py"
+  interface            = "asyncio"
+  recursive_type_depth = 5
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Message {
+  id              String       @id @default(uuid())
+  type            String       @db.VarChar(10)
+  content         String
+  timestamp       DateTime     @default(now())
+  conversationId  String
+  isPositiveRated Boolean?
+  conversation    Conversation @relation(fields: [conversationId], references: [id])
+}
+
+model Conversation {
+  id                   String                @id @default(uuid())
+  toolUsed             String[]
+  conversationFeedback ConversationFeedback?
+  messageList          Message[]
+  tokenUsages          ModelTokenUsage[]
+}
+
+model ModelTokenUsage {
+  id               String       @id @default(uuid())
+  llmModelName     String
+  completionTokens Int
+  promptTokens     Int
+  totalTokens      Int
+  conversationId   String
+  conversation     Conversation @relation(fields: [conversationId], references: [id])
+}
+
+model ConversationFeedback {
+  id             String       @id @default(uuid())
+  rating         Int
+  userComment    String
+  conversationId String       @unique
+  conversation   Conversation @relation(fields: [conversationId], references: [id])
+}
