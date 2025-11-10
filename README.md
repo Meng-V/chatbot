@@ -40,7 +40,6 @@ The Smart Chatbot is your virtual library assistant, designed to answer question
 ### **Smart Memory**
 - Remembers context from your conversation
 - Uses AI-powered search through library documentation and FAQs
-- Learns from past interactions to provide better answers
 
 ---
 
@@ -89,6 +88,7 @@ Powered by OpenAI's latest models and LangGraph orchestration, the chatbot provi
 - Tracks common questions to identify service gaps
 - Scales to handle peak periods (start of semester, finals)
 - Maintains consistent, accurate information delivery
+- **Update AI knowledge easily** - Librarians can refine responses and add new information without programming skills (see [Knowledge Management Guide](KNOWLEDGE_MANAGEMENT.md))
 
 ### **For IT & Systems**
 - Modern Python-based architecture (FastAPI + LangGraph)
@@ -187,7 +187,8 @@ See the [Developer Guide](DEVELOPER_GUIDE.md) for detailed technical documentati
 
 ## 📚 Additional Resources
 
-- **Technical Documentation**: See `DEVELOPER_GUIDE.md`
+- **Knowledge Management Guide**: See `KNOWLEDGE_MANAGEMENT.md` - Learn how to update AI responses and add new knowledge
+- **Technical Documentation**: See `DEVELOPER_GUIDE.md` - Complete setup and deployment guide
 - **API Documentation**: Visit `/docs` endpoint when backend is running
 - **Health Check**: Visit `/health` for system status
 - **Project Repository**: [GitHub repository link]

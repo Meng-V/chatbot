@@ -350,6 +350,21 @@ VITE_SOCKET_DOMAIN=
 
 ## 🎨 Customization
 
+### 📖 Correcting AI Responses & Updating Knowledge
+
+**IMPORTANT**: For detailed instructions on correcting AI mistakes, updating chatbot knowledge, and refining responses, see the **[Knowledge Management Guide](KNOWLEDGE_MANAGEMENT.md)**.
+
+That guide covers:
+- How to update AI responses when it makes mistakes
+- Adding new facts to the vector database (Weaviate)
+- Modifying system prompts for behavior changes
+- Adding few-shot examples for specific patterns
+- Maintenance schedules and best practices
+
+The following sections cover code-level customization for developers.
+
+---
+
 ### 1. Add New Agent
 
 ```python
@@ -529,6 +544,11 @@ open http://localhost:8000/docs
 
 ## 📚 Additional Resources
 
+### Project Documentation
+- **Knowledge Management Guide**: `KNOWLEDGE_MANAGEMENT.md` - How to correct AI responses and update chatbot knowledge
+- **User Guide**: `README.md` - Overview for librarians and administrators
+
+### External Documentation
 - **FastAPI**: https://fastapi.tiangolo.com/
 - **LangGraph**: https://langchain-ai.github.io/langgraph/
 - **Prisma Python**: https://prisma-client-py.readthedocs.io/
