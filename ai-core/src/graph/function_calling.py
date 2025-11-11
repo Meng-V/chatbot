@@ -177,7 +177,7 @@ tools = [
     StructuredTool.from_function(
         func=book_room_wrapper,
         name="book_room",
-        description="Book a study room. REQUIRES: firstName, lastName, @miamioh.edu email, date, time. Ask the user for ALL required information before calling this tool.",
+        description="Book a study room. MANDATORY REQUIREMENTS - You MUST have ALL of these before calling: firstName, lastName, @miamioh.edu email, date (YYYY-MM-DD), start_time (HH:MM), end_time (HH:MM), capacity (number of people), building. DO NOT call this tool until you have collected ALL required information from the user. The API will send a confirmation email automatically upon successful booking.",
         args_schema=BookRoomInput,
         coroutine=book_room_wrapper
     ),
@@ -247,6 +247,24 @@ CRITICAL RULES:
 - Allowed domains: lib.miamioh.edu, libcal.miamioh.edu, libguides.lib.miamioh.edu, miamioh.libguides.com, libanswers.lib.miamioh.edu, digital.lib.miamioh.edu
 - NEVER fabricate email addresses, phone numbers, or contact info
 - Use conversation history to provide contextual follow-up responses
+
+STUDY ROOM BOOKING RULES - EXTREMELY IMPORTANT:
+- NEVER say "checking availability", "let me check", "I'll look for", or similar status updates
+- The backend handles all availability checking automatically
+- BEFORE calling book_room tool, you MUST collect ALL required information:
+  * First name
+  * Last name
+  * @miamioh.edu email address
+  * Date (YYYY-MM-DD format)
+  * Start time and end time (HH:MM 24-hour format)
+  * Number of people
+  * Building preference
+- DO NOT call book_room until you have ALL of the above information
+- ONLY present the FINAL result from the tool:
+  1. If missing information: Ask for the specific missing details (especially first name, last name, email)
+  2. If no rooms available: State directly that no rooms are available
+  3. If booking confirmed: Present the confirmation number and mention the confirmation email
+- DO NOT provide intermediate status messages about what you're doing
 
 WARNING - ABSOLUTELY FORBIDDEN:
 - NEVER output JSON, code, or programming syntax

@@ -473,7 +473,7 @@ class LibCalComprehensiveReservationTool(Tool):
                         "tool": self.name,
                         "success": True,
                         "booking_id": booking_id,
-                        "text": f"{selected_room['name']} with capacity {selected_room['capacity']} is booked from {start_time} to {end_time} on {date} at {building.capitalize()} Library. Booking ID: {booking_id}"
+                        "text": f"{selected_room['name']} with capacity {selected_room['capacity']} is booked from {start_time} to {end_time} on {date} at {building.capitalize()} Library. Confirmation number: {booking_id}. A confirmation email has been sent to {email}."
                     }
                 else:
                     error_data = response.text
