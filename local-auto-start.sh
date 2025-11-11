@@ -48,6 +48,30 @@ ensure_frontend_deps() {
 BACK_PID=""
 FRONT_PID=""
 
+kill_existing_processes() {
+  echo "Checking for existing processes on ports 8000 and 5173..."
+  
+  # Kill processes on port 8000 (backend)
+  PIDS_8000=$(lsof -ti:8000 2>/dev/null || true)
+  if [[ -n "$PIDS_8000" ]]; then
+    echo "Killing existing backend process(es) on port 8000: $PIDS_8000"
+    echo "$PIDS_8000" | xargs kill -9 2>/dev/null || true
+    sleep 1
+  fi
+  
+  # Kill processes on port 5173 (frontend)
+  PIDS_5173=$(lsof -ti:5173 2>/dev/null || true)
+  if [[ -n "$PIDS_5173" ]]; then
+    echo "Killing existing frontend process(es) on port 5173: $PIDS_5173"
+    echo "$PIDS_5173" | xargs kill -9 2>/dev/null || true
+    sleep 1
+  fi
+  
+  if [[ -z "$PIDS_8000" && -z "$PIDS_5173" ]]; then
+    echo "No existing processes found on ports 8000 or 5173."
+  fi
+}
+
 start_backend() {
   echo "Starting Python backend (Uvicorn)..."
   (cd ai-core && .venv/bin/uvicorn src.main:app_sio --host 0.0.0.0 --port 8000 --reload) &
@@ -81,6 +105,9 @@ fi
 if [[ $BACKEND_ONLY -eq 0 ]]; then
   ensure_frontend_deps
 fi
+
+# Kill any existing processes before starting
+kill_existing_processes
 
 if [[ $BACKEND_ONLY -eq 1 ]]; then
   start_backend

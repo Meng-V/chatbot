@@ -233,11 +233,11 @@ async def message(sid, data):
 async def messageRating(sid, data):
     """
     Handle message rating (thumbs up/down).
-    Expected data: { "messageId": str, "isPositive": bool }
+    Expected data: { "messageId": str, "isPositiveRated": bool }
     """
     try:
         message_id = data.get("messageId")
-        is_positive = data.get("isPositive", True)
+        is_positive = data.get("isPositiveRated", True)
         
         if message_id:
             await update_message_rating(message_id, is_positive)

@@ -3,7 +3,7 @@ import os
 from typing import Dict, Any, List
 from langchain_openai import ChatOpenAI
 from langchain_core.messages import HumanMessage, SystemMessage, ToolMessage, AIMessage
-from langchain.tools import StructuredTool
+from langchain_core.tools import StructuredTool
 from pydantic import BaseModel, Field
 
 # Import all tools
