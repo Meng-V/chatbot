@@ -12,7 +12,7 @@ from prisma import Prisma
 from src.tools.subject_matcher import match_subject
 from src.utils.logger import AgentLogger
 
-logger = AgentLogger("SubjectLibrarianAgent")
+logger = AgentLogger()
 
 # LibGuides API Configuration
 LIBAPPS_OAUTH_URL = os.getenv("LIBAPPS_OAUTH_URL", "")

@@ -78,9 +78,9 @@ IN-SCOPE LIBRARY QUESTIONS - Classify into ONE of these categories:
 OUT-OF-SCOPE (respond with: out_of_scope):
 - General university questions, admissions, financial aid, tuition
 - Course content, homework, assignments, test prep
-- IT support, Canvas help, email issues (unless library-specific)
-- Housing, dining, parking (unless library-specific)
-- Student organizations, campus events (unless library events)
+- IT support, Canvas help, email issues
+- Housing, dining, parking
+- Student organizations, campus events
 
 Respond with ONLY the category name (e.g., discovery_search or out_of_scope). No explanation."""
 
@@ -192,9 +192,10 @@ async def synthesize_answer_node(state: AgentState) -> AgentState:
     """Synthesize final answer from agent responses using LLM."""
     intent = state["classified_intent"]
     user_msg = state["user_message"]
+    history = state.get("conversation_history", [])
     logger = state.get("_logger") or AgentLogger()
     
-    logger.log("🤖 [Synthesizer] Generating final answer")
+    logger.log("🤖 [Synthesizer] Generating final answer", {"history_messages": len(history)})
     
     # Handle out-of-scope questions
     if state.get("out_of_scope"):
@@ -242,11 +243,20 @@ Is there anything library-related I can help you with?"""
     
     scope_reminder = SCOPE_ENFORCEMENT_PROMPTS["system_reminder"]
     
+    # Format conversation history
+    history_context = ""
+    if history:
+        history_formatted = []
+        for msg in history[-6:]:  # Last 6 messages (3 exchanges)
+            role = "User" if msg["type"] == "user" else "Assistant"
+            history_formatted.append(f"{role}: {msg['content']}")
+        history_context = "\n\nPrevious conversation:\n" + "\n".join(history_formatted) + "\n"
+    
     synthesis_prompt = f"""You are a Miami University LIBRARIES assistant.
 
 {scope_reminder}
-
-User question: {user_msg}
+{history_context}
+Current user question: {user_msg}
 
 Information from library systems:
 {context}
@@ -258,30 +268,56 @@ CRITICAL RULES - MUST FOLLOW:
    - Phone numbers
    - Librarian names (unless from the provided context/API)
    - Building names or locations
-3. ONLY use contact information that appears in the context above
-4. If contact info is not in the context, provide general library contact:
+   - URLs or web addresses
+3. ONLY use URLs that appear EXACTLY in the context above
+4. Allowed URL domains ONLY:
+   - lib.miamioh.edu
+   - libguides.lib.miamioh.edu
+   - digital.lib.miamioh.edu
+5. NEVER create URLs even if they look correct - only use URLs from context
+6. ONLY use contact information that appears in the context above
+7. If contact info is not in the context, provide general library contact:
    - Phone: (513) 529-4141
    - Website: https://www.lib.miamioh.edu/contact
-5. If question seems outside library scope, politely redirect to appropriate service
+8. If question seems outside library scope, politely redirect to appropriate service
+9. Use the conversation history to provide contextual follow-up responses
+
+WARNING - ABSOLUTELY FORBIDDEN - NEVER DO THIS:
+- NEVER output JSON, code, or programming syntax
+- NEVER show API responses or data structures
+- NEVER use curly braces, square brackets, or code formatting
+- NEVER output technical/system information
+- NEVER show raw data - ALWAYS convert to human-readable sentences
 
 FORMATTING GUIDELINES:
+- Write in complete, natural sentences like you're talking to a person
 - Use **bold** for key information (names, times, locations, important terms)
 - Keep responses compact - avoid excessive line breaks
-- Use inline bullet points (•) instead of dashes when listing 2-3 items
-- For longer lists, use compact formatting with minimal spacing
+- Use bullet points (•) for lists, NOT JSON or arrays
 - Highlight actionable information and links
 - Keep paragraphs concise (2-3 sentences max)
-- Use natural, conversational language
+- Use natural, conversational, HUMAN language
+- ALWAYS present information in readable paragraph/list format
 
 Provide a clear, helpful answer based ONLY on the information above. Be concise, friendly, and cite sources. If the information doesn't fully answer the question, suggest contacting a librarian."""
     
     messages = [
-        SystemMessage(content="You are a Miami University LIBRARIES assistant. ONLY answer library questions. NEVER make up contact information. Format responses to be compact, modern, and easy to scan."),
+        SystemMessage(content="You are a Miami University LIBRARIES assistant speaking to a human user. Write in natural, conversational language. NEVER output JSON, code, or technical data structures. ALWAYS format information in human-readable sentences and lists. ONLY answer library questions. NEVER make up contact information."),
         HumanMessage(content=synthesis_prompt)
     ]
     
     response = await llm.ainvoke(messages)
     state["final_answer"] = response.content.strip()
+    
+    # Extract token usage from response metadata
+    if hasattr(response, 'response_metadata') and 'token_usage' in response.response_metadata:
+        usage = response.response_metadata['token_usage']
+        state["token_usage"] = {
+            "model": response.response_metadata.get('model_name', OPENAI_MODEL),
+            "prompt_tokens": usage.get('prompt_tokens', 0),
+            "completion_tokens": usage.get('completion_tokens', 0),
+            "total_tokens": usage.get('total_tokens', 0)
+        }
     
     return state
 

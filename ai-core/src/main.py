@@ -16,7 +16,9 @@ from src.memory.conversation_store import (
     get_conversation_history,
     update_conversation_tools,
     update_message_rating,
-    save_conversation_feedback
+    save_conversation_feedback,
+    log_token_usage,
+    log_tool_execution
 )
 from src.database.prisma_client import connect_database, disconnect_database
 from src.api.health import router as health_router
@@ -106,10 +108,10 @@ async def ask_http(payload: dict):
         await add_message(conversation_id, "user", message)
         
         # Get conversation history for context
-        history = await get_conversation_history(conversation_id, limit=5)
+        history = await get_conversation_history(conversation_id, limit=10)
         
         # Use hybrid router (smart selection between function calling and LangGraph)
-        result = await route_query(message, logger)
+        result = await route_query(message, logger, history)
         
         final_answer = result.get("final_answer", "")
         agents_used = result.get("selected_agents", [])
@@ -121,6 +123,29 @@ async def ask_http(payload: dict):
         
         # Update tools used
         await update_conversation_tools(conversation_id, agents_used)
+        
+        # Log token usage if available
+        if "token_usage" in result:
+            token_data = result["token_usage"]
+            await log_token_usage(
+                conversation_id,
+                token_data.get("model", "unknown"),
+                token_data.get("prompt_tokens", 0),
+                token_data.get("completion_tokens", 0),
+                token_data.get("total_tokens", 0)
+            )
+        
+        # Log tool executions if available
+        if "tool_executions" in result:
+            for execution in result["tool_executions"]:
+                await log_tool_execution(
+                    conversation_id,
+                    execution.get("agent_name", "unknown"),
+                    execution.get("tool_name", "unknown"),
+                    execution.get("parameters", {}),
+                    execution.get("success", True),
+                    execution.get("execution_time", 0)
+                )
         
         logger.log("✅ [API] Request completed successfully")
         
@@ -184,19 +209,20 @@ async def message(sid, data):
         # Save user message
         await add_message(conversation_id, "user", text_input)
         
-        # Get conversation history
-        history = await get_conversation_history(conversation_id, limit=5)
+        # Get conversation history for context
+        history = await get_conversation_history(conversation_id, limit=10)
         
         # Create logger
         logger = AgentLogger()
         logger.log("📥 [Socket.IO] Received message", {
             "sid": sid,
             "conversationId": conversation_id,
-            "message": text_input
+            "message": text_input,
+            "history_count": len(history)
         })
         
         # Use hybrid router (smart selection between function calling and LangGraph)
-        result = await route_query(text_input, logger)
+        result = await route_query(text_input, logger, history)
         
         final_answer = result.get("final_answer", "")
         agents_used = result.get("selected_agents", [])
@@ -208,6 +234,29 @@ async def message(sid, data):
         
         # Update tools used
         await update_conversation_tools(conversation_id, agents_used)
+        
+        # Log token usage if available
+        if "token_usage" in result:
+            token_data = result["token_usage"]
+            await log_token_usage(
+                conversation_id,
+                token_data.get("model", "unknown"),
+                token_data.get("prompt_tokens", 0),
+                token_data.get("completion_tokens", 0),
+                token_data.get("total_tokens", 0)
+            )
+        
+        # Log tool executions if available
+        if "tool_executions" in result:
+            for execution in result["tool_executions"]:
+                await log_tool_execution(
+                    conversation_id,
+                    execution.get("agent_name", "unknown"),
+                    execution.get("tool_name", "unknown"),
+                    execution.get("parameters", {}),
+                    execution.get("success", True),
+                    execution.get("execution_time", 0)
+                )
         
         # Emit response
         await sio.emit("message", {

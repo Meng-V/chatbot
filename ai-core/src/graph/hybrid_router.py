@@ -66,9 +66,14 @@ async def should_use_function_calling(user_message: str, logger=None) -> bool:
         # On error, default to LangGraph (more robust)
         return False
 
-async def route_query(user_message: str, logger=None) -> Dict[str, Any]:
+async def route_query(user_message: str, logger=None, conversation_history=None) -> Dict[str, Any]:
     """
     Route query to appropriate handler (function calling or LangGraph).
+    
+    Args:
+        user_message: Current user query
+        logger: Logger instance
+        conversation_history: List of previous messages for context
     
     Returns result from selected handler.
     """
@@ -77,13 +82,14 @@ async def route_query(user_message: str, logger=None) -> Dict[str, Any]:
     if use_function_calling_mode:
         # Import here to avoid circular dependency
         from src.graph.function_calling import handle_with_function_calling
-        return await handle_with_function_calling(user_message, logger)
+        return await handle_with_function_calling(user_message, logger, conversation_history)
     else:
         # Import here to avoid circular dependency
         from src.graph.orchestrator import library_graph
         result = await library_graph.ainvoke({
             "user_message": user_message,
             "messages": [],
+            "conversation_history": conversation_history or [],
             "_logger": logger
         })
         return {
@@ -93,5 +99,7 @@ async def route_query(user_message: str, logger=None) -> Dict[str, Any]:
             "selected_agents": result.get("selected_agents", []),
             "agent_responses": result.get("agent_responses", {}),
             "needs_human": result.get("needs_human", False),
+            "token_usage": result.get("token_usage"),
+            "tool_executions": result.get("tool_executions", []),
             "mode": "langgraph"
         }

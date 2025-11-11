@@ -42,6 +42,16 @@ class SearchRoomsInput(BaseModel):
     capacity: int = Field(default=1, description="Minimum room capacity (number of people)")
     building: str = Field(default="king", description="Building name")
 
+class BookRoomInput(BaseModel):
+    first_name: str = Field(description="User's first name")
+    last_name: str = Field(description="User's last name")
+    email: str = Field(description="User's @miamioh.edu email address")
+    date: str = Field(description="Date in YYYY-MM-DD format")
+    start_time: str = Field(description="Start time in HH:MM format (24-hour)")
+    end_time: str = Field(description="End time in HH:MM format (24-hour)")
+    capacity: int = Field(default=1, description="Number of people")
+    building: str = Field(default="king", description="Building name: king, art, armstrong, rentschler, gardner-harvey")
+
 class SearchWebsiteInput(BaseModel):
     query: str = Field(description="Search query for library website")
 
@@ -78,6 +88,33 @@ async def search_rooms_wrapper(date: str, start_time: str, end_time: str, capaci
         return result.get("text", "No rooms available")
     except Exception as e:
         return f"Error searching rooms: {str(e)}"
+
+async def book_room_wrapper(first_name: str, last_name: str, email: str, date: str, start_time: str, end_time: str, capacity: int = 1, building: str = "king") -> str:
+    """Book a study room with full user information and email validation."""
+    try:
+        # Validate email
+        if not email.lower().endswith("@miamioh.edu"):
+            return "Error: Email must be a valid @miamioh.edu address. Please provide your Miami University email to complete the booking."
+        
+        # Use LibCal comprehensive reservation tool
+        from src.tools.libcal_comprehensive_tools import LibCalComprehensiveReservationTool
+        booking_tool = LibCalComprehensiveReservationTool()
+        
+        result = await booking_tool.execute(
+            query=f"book room for {first_name} {last_name}",
+            first_name=first_name,
+            last_name=last_name,
+            email=email,
+            date=date,
+            start_time=start_time,
+            end_time=end_time,
+            room_capacity=capacity,
+            building=building
+        )
+        
+        return result.get("text", "Booking failed. Please try again or visit https://lib.miamioh.edu/use/spaces/room-reservations/")
+    except Exception as e:
+        return f"Error booking room: {str(e)}"
 
 async def search_website_wrapper(query: str) -> str:
     """Search library website for policies and information."""
@@ -132,14 +169,21 @@ tools = [
     StructuredTool.from_function(
         func=search_rooms_wrapper,
         name="search_rooms",
-        description="Search for available study rooms. Requires date, time range, and optionally capacity and building.",
+        description="Search for available study rooms at a specific time and date. Use this to CHECK availability first before booking.",
         args_schema=SearchRoomsInput,
         coroutine=search_rooms_wrapper
     ),
     StructuredTool.from_function(
+        func=book_room_wrapper,
+        name="book_room",
+        description="Book a study room. REQUIRES: firstName, lastName, @miamioh.edu email, date, time. Ask the user for ALL required information before calling this tool.",
+        args_schema=BookRoomInput,
+        coroutine=book_room_wrapper
+    ),
+    StructuredTool.from_function(
         func=search_website_wrapper,
         name="search_website",
-        description="Search library website for policies, services, how-to guides. Use for questions about borrowing, renewals, printing, access, etc.",
+        description="Search library website for policies, services, and general information.",
         args_schema=SearchWebsiteInput,
         coroutine=search_website_wrapper
     ),
@@ -170,25 +214,56 @@ tools = [
 llm = ChatOpenAI(**llm_kwargs)
 llm_with_tools = llm.bind_tools(tools)
 
-async def handle_with_function_calling(user_message: str, logger=None) -> Dict[str, Any]:
+async def handle_with_function_calling(user_message: str, logger=None, conversation_history=None) -> Dict[str, Any]:
     """
     Handle user message using OpenAI function calling (alternative to LangGraph).
     This matches the NestJS approach more closely.
+    
+    Args:
+        user_message: Current user query
+        logger: Logger instance
+        conversation_history: List of previous messages for context
     """
     if logger:
-        logger.log("🔧 [Function Calling] Using direct OpenAI function calling mode")
+        history_len = len(conversation_history) if conversation_history else 0
+        logger.log("🔧 [Function Calling] Using direct OpenAI function calling mode", {"history_messages": history_len})
     
-    system_message = """You are a helpful Miami University Libraries assistant.
+    # Format conversation history
+    history_text = ""
+    if conversation_history:
+        history_formatted = []
+        for msg in conversation_history[-6:]:  # Last 6 messages (3 exchanges)
+            role = "User" if msg["type"] == "user" else "Assistant"
+            history_formatted.append(f"{role}: {msg['content']}")
+        history_text = "\n\nPrevious conversation:\n" + "\n".join(history_formatted)
+    
+    system_message = f"""You are a helpful Miami University Libraries assistant speaking to a human user.
 You have access to several tools to help users. Use the appropriate tool based on the user's question.
+{history_text}
+
+CRITICAL RULES:
+- ONLY use URLs from tool results - NEVER make up web addresses
+- Allowed domains: lib.miamioh.edu, libcal.miamioh.edu, libguides.lib.miamioh.edu, miamioh.libguides.com, libanswers.lib.miamioh.edu, digital.lib.miamioh.edu
+- NEVER fabricate email addresses, phone numbers, or contact info
+- Use conversation history to provide contextual follow-up responses
+
+WARNING - ABSOLUTELY FORBIDDEN:
+- NEVER output JSON, code, or programming syntax
+- NEVER show API responses or data structures
+- NEVER use curly braces, square brackets, or code formatting
+- NEVER output raw technical data
+- ALWAYS write in natural, conversational, human language
 
 FORMATTING GUIDELINES:
+- Write in complete, natural sentences like you're talking to a person
 - Use **bold** for key information (names, times, locations, important terms)
 - Keep responses compact - avoid excessive line breaks between sections
-- Use inline bullet points (•) for short lists (2-3 items)
+- Use bullet points (•) for lists - NOT JSON or arrays
 - Highlight actionable links and important details
 - Keep paragraphs concise (2-3 sentences max)
-- Use natural, conversational language
+- Use natural, conversational, HUMAN language
 - Make responses easy to scan quickly
+- ALWAYS present information in readable paragraph/list format, NEVER as code
 
 Always provide clear, helpful responses and cite sources when relevant."""
     
@@ -229,11 +304,33 @@ Always provide clear, helpful responses and cite sources when relevant."""
                 
                 final_response = await llm.ainvoke(messages)
                 
+                # Extract token usage
+                token_usage = None
+                if hasattr(final_response, 'response_metadata') and 'token_usage' in final_response.response_metadata:
+                    usage = final_response.response_metadata['token_usage']
+                    token_usage = {
+                        "model": final_response.response_metadata.get('model_name', OPENAI_MODEL),
+                        "prompt_tokens": usage.get('prompt_tokens', 0),
+                        "completion_tokens": usage.get('completion_tokens', 0),
+                        "total_tokens": usage.get('total_tokens', 0)
+                    }
+                
+                # Log tool execution details
+                tool_executions = [{
+                    "agent_name": "function_calling",
+                    "tool_name": tool_name,
+                    "parameters": tool_args,
+                    "success": True,
+                    "execution_time": 0
+                }]
+                
                 return {
                     "success": True,
                     "final_answer": final_response.content,
                     "tool_used": tool_name,
                     "tool_args": tool_args,
+                    "token_usage": token_usage,
+                    "tool_executions": tool_executions,
                     "mode": "function_calling"
                 }
         else:

@@ -11,6 +11,9 @@ class AgentState(MessagesState):
     final_answer: str = ""
     needs_human: bool = False
     error: Optional[str] = None
+    conversation_history: List[Dict[str, Any]] = []  # Previous messages for context
+    token_usage: Optional[Dict[str, Any]] = None  # Token usage tracking
+    tool_executions: List[Dict[str, Any]] = []  # Detailed tool execution logs
 
 # Intent types based on screenshot
 IntentType = Literal[

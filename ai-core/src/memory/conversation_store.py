@@ -93,6 +93,52 @@ async def log_token_usage(
         }
     )
 
+async def log_tool_execution(
+    conversation_id: str,
+    agent_name: str,
+    tool_name: str,
+    parameters: Dict[str, Any],
+    success: bool,
+    execution_time: int = 0
+):
+    """Log detailed tool execution information."""
+    await ensure_connection()
+    prisma = get_prisma_client()
+    import json
+    await prisma.toolexecution.create(
+        data={
+            "conversationId": conversation_id,
+            "agentName": agent_name,
+            "toolName": tool_name,
+            "parameters": json.dumps(parameters),
+            "success": success,
+            "executionTime": execution_time
+        }
+    )
+
+async def get_conversation_tool_executions(conversation_id: str) -> List[Dict[str, Any]]:
+    """Get all tool executions for a conversation."""
+    await ensure_connection()
+    prisma = get_prisma_client()
+    import json
+    executions = await prisma.toolexecution.find_many(
+        where={"conversationId": conversation_id},
+        order={"timestamp": "asc"}
+    )
+    
+    return [
+        {
+            "id": exec.id,
+            "agentName": exec.agentName,
+            "toolName": exec.toolName,
+            "parameters": json.loads(exec.parameters) if exec.parameters else {},
+            "success": exec.success,
+            "executionTime": exec.executionTime,
+            "timestamp": exec.timestamp.isoformat()
+        }
+        for exec in executions
+    ]
+
 async def update_message_rating(message_id: str, is_positive: bool):
     """Update message rating (thumbs up/down)."""
     await ensure_connection()

@@ -19,10 +19,13 @@ model Message {
 
 model Conversation {
   id                   String                @id @default(uuid())
-  toolUsed             String[]
+  toolUsed             String[]              @default([])
   conversationFeedback ConversationFeedback?
   messageList          Message[]
   tokenUsages          ModelTokenUsage[]
+  toolExecutions       ToolExecution[]
+  createdAt            DateTime              @default(now())
+  updatedAt            DateTime              @updatedAt
 }
 
 model ModelTokenUsage {
@@ -33,6 +36,23 @@ model ModelTokenUsage {
   totalTokens      Int
   conversationId   String
   conversation     Conversation @relation(fields: [conversationId], references: [id])
+  createdAt        DateTime     @default(now())
+}
+
+model ToolExecution {
+  id              String       @id @default(uuid())
+  conversationId  String
+  agentName       String
+  toolName        String
+  parameters      String       @default("{}")
+  success         Boolean
+  executionTime   Int          @default(0)
+  timestamp       DateTime     @default(now())
+  conversation    Conversation @relation(fields: [conversationId], references: [id])
+  
+  @@index([conversationId])
+  @@index([agentName])
+  @@index([toolName])
 }
 
 model ConversationFeedback {
