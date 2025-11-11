@@ -27,8 +27,6 @@ BUILDINGS = {
     "art": os.getenv("OXFORD_ART_ARCHITECTURE_LIBRARY", "4089"),
     "art library": os.getenv("OXFORD_ART_ARCHITECTURE_LIBRARY", "4089"),
     "art and architecture": os.getenv("OXFORD_ART_ARCHITECTURE_LIBRARY", "4089"),
-    "armstrong": os.getenv("OXFORD_ARMSTRONG_STUDENT_CENTER", "4757"),
-    "armstrong student center": os.getenv("OXFORD_ARMSTRONG_STUDENT_CENTER", "4757"),
     
     # Hamilton Campus (Regional)
     "hamilton": os.getenv("HAMILTON_RENTSCHLER_LIBRARY", "4792"),
@@ -50,7 +48,7 @@ CAMPUS_INFO = {
     "oxford": {
         "name": "Oxford Campus",
         "libraries": ["King Library", "Art and Architecture Library"],
-        "centers": ["Armstrong Student Center"]
+        "centers": ["Maker Space", "Special Collections", "Writing Center"]
     },
     "hamilton": {
         "name": "Hamilton Campus",
@@ -101,7 +99,7 @@ class LibCalWeekHoursTool(Tool):
     
     @property
     def description(self) -> str:
-        return "Get building hours for entire week (Monday-Sunday). Supports Oxford (King Library, Art & Architecture Library, Armstrong Student Center), Hamilton (Rentschler Library), and Middletown (Gardner-Harvey Library) campuses."
+        return "Get building hours for entire week (Monday-Sunday). Supports Oxford (King Library, Art & Architecture Library), Hamilton (Rentschler Library), and Middletown (Gardner-Harvey Library) campuses."
     
     async def execute(self, query: str, log_callback=None, date: str = None, **kwargs) -> Dict[str, Any]:
         """Get week-range hours."""
@@ -184,7 +182,7 @@ class LibCalEnhancedAvailabilityTool(Tool):
     
     @property
     def description(self) -> str:
-        return "Check room availability with smart capacity fallback. Supports Oxford (King Library, Art & Architecture Library, Armstrong Student Center), Hamilton (Rentschler Library), and Middletown (Gardner-Harvey Library) campuses. Use 'building' parameter to specify location (e.g., 'king', 'rentschler', 'gardner-harvey')."
+        return "Check room availability with smart capacity fallback. Supports Oxford (King Library, Art & Architecture Library), Hamilton (Rentschler Library), and Middletown (Gardner-Harvey Library) campuses. Use 'building' parameter to specify location (e.g., 'king', 'rentschler', 'gardner-harvey')."
     
     async def execute(
         self, 
@@ -296,7 +294,7 @@ class LibCalComprehensiveReservationTool(Tool):
     
     @property
     def description(self) -> str:
-        return "Book a study room with full validation (requires firstName, lastName, @miamioh.edu email, date, time). Supports Oxford (King Library, Art & Architecture Library, Armstrong Student Center), Hamilton (Rentschler Library), and Middletown (Gardner-Harvey Library) campuses. Use 'building' parameter to specify campus location."
+        return "Book a study room with full validation (requires firstName, lastName, @miamioh.edu email, date, time). Supports Oxford (King Library, Art & Architecture Library), Hamilton (Rentschler Library), and Middletown (Gardner-Harvey Library) campuses. Use 'building' parameter to specify campus location."
     
     async def execute(
         self,
@@ -369,13 +367,16 @@ class LibCalComprehensiveReservationTool(Tool):
             )
             
             if not availability_result.get("success") or not availability_result.get("rooms_data"):
-                # Try fallback buildings
-                for fallback_building in ["armstrong", "data_science"]:
-                    if fallback_building == building:
-                        continue
-                    
+                # Try fallback LIBRARY buildings only (Oxford libraries)
+                fallback_libraries = []
+                if building != "king":
+                    fallback_libraries.append("king")
+                if building != "art":
+                    fallback_libraries.append("art")
+                
+                for fallback_building in fallback_libraries:
                     if log_callback:
-                        log_callback(f"🔄 [LibCal Comprehensive Reservation Tool] Trying {fallback_building}")
+                        log_callback(f"🔄 [LibCal Comprehensive Reservation Tool] Trying {fallback_building} library")
                     
                     availability_result = await availability_tool.execute(
                         query=query,
@@ -389,13 +390,15 @@ class LibCalComprehensiveReservationTool(Tool):
                     
                     if availability_result.get("success") and availability_result.get("rooms_data"):
                         building = fallback_building
+                        if log_callback:
+                            log_callback(f"✅ [LibCal Comprehensive Reservation Tool] Found availability at {fallback_building} library")
                         break
                 
                 if not availability_result.get("rooms_data"):
                     return {
                         "tool": self.name,
                         "success": False,
-                        "text": "No rooms available at any library building for the requested time. Please try a different time."
+                        "text": "No rooms available at any library building for the requested time. Please try a different time or contact the library at (513) 529-4141."
                     }
             
             rooms_data = availability_result.get("rooms_data", [])

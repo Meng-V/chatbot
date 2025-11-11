@@ -62,7 +62,6 @@ All responses are now limited to verified library information from official APIs
 #### 3. Library Spaces
 - King Library
 - Art & Architecture Library
-- Armstrong Student Center library services
 - Hamilton Campus Rentschler Library
 - Middletown Campus Gardner-Harvey Library
 - Study spaces in libraries
@@ -110,7 +109,7 @@ All responses are now limited to verified library information from official APIs
 - General IT support
 
 #### 4. Non-Library Facilities
-- Armstrong Student Center (non-library areas)
+- Armstrong Student Center
 - Rec Center
 - Dining halls
 - Residence halls

@@ -11,8 +11,6 @@ BUILDING_IDS: Dict[str, str] = {
     "art library": os.getenv("OXFORD_ART_ARCHITECTURE_LIBRARY", "4089"),
     "art and architecture": os.getenv("OXFORD_ART_ARCHITECTURE_LIBRARY", "4089"),
     "architecture": os.getenv("OXFORD_ART_ARCHITECTURE_LIBRARY", "4089"),
-    "armstrong": os.getenv("OXFORD_ARMSTRONG_STUDENT_CENTER", "4757"),
-    "armstrong student center": os.getenv("OXFORD_ARMSTRONG_STUDENT_CENTER", "4757"),
     
     # Hamilton Campus (Regional)
     "hamilton": os.getenv("HAMILTON_RENTSCHLER_LIBRARY", "4792"),
@@ -51,8 +49,6 @@ def get_building_display_name(building_name: str) -> str:
         "art library": "Art & Architecture Library (Oxford)",
         "art and architecture": "Art & Architecture Library (Oxford)",
         "architecture": "Art & Architecture Library (Oxford)",
-        "armstrong": "Armstrong Student Center (Oxford)",
-        "armstrong student center": "Armstrong Student Center (Oxford)",
         "hamilton": "Rentschler Library (Hamilton)",
         "rentschler": "Rentschler Library (Hamilton)",
         "rentschler library": "Rentschler Library (Hamilton)",

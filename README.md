@@ -17,7 +17,6 @@ The Smart Chatbot is your virtual library assistant, designed to answer question
 - **Hours**: Get current and upcoming hours for all Miami University library locations:
   - King Library (Oxford)
   - Art & Architecture Library (Oxford)
-  - Armstrong Student Center (Oxford)
   - Rentschler Library (Hamilton)
   - Gardner-Harvey Library (Middletown)
 - **Room Booking**: Reserve study rooms and spaces

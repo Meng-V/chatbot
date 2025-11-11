@@ -13,6 +13,7 @@ from src.agents.libguide_comprehensive_agent import LibGuideComprehensiveAgent
 from src.agents.google_site_comprehensive_agent import GoogleSiteComprehensiveAgent
 from src.agents.libchat_agent import libchat_handoff
 from src.agents.transcript_rag_agent import transcript_rag_query
+from src.tools.url_validator import validate_and_clean_response
 
 OPENAI_MODEL = os.getenv("OPENAI_MODEL", "o4-mini")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
@@ -33,7 +34,7 @@ class SearchCatalogInput(BaseModel):
     query: str = Field(description="Search query for books, articles, journals")
 
 class GetLibraryHoursInput(BaseModel):
-    building: str = Field(default="king", description="Building name: king, art, armstrong, rentschler, gardner-harvey")
+    building: str = Field(default="king", description="Building name: king, art, rentschler, gardner-harvey")
 
 class SearchRoomsInput(BaseModel):
     date: str = Field(description="Date in YYYY-MM-DD format")
@@ -50,7 +51,7 @@ class BookRoomInput(BaseModel):
     start_time: str = Field(description="Start time in HH:MM format (24-hour)")
     end_time: str = Field(description="End time in HH:MM format (24-hour)")
     capacity: int = Field(default=1, description="Number of people")
-    building: str = Field(default="king", description="Building name: king, art, armstrong, rentschler, gardner-harvey")
+    building: str = Field(default="king", description="Building name: king, art, rentschler, gardner-harvey")
 
 class SearchWebsiteInput(BaseModel):
     query: str = Field(description="Search query for library website")
@@ -304,6 +305,18 @@ Always provide clear, helpful responses and cite sources when relevant."""
                 
                 final_response = await llm.ainvoke(messages)
                 
+                # Validate URLs in response
+                if logger:
+                    logger.log("🔍 [URL Validator] Checking URLs in response")
+                
+                validated_answer, had_invalid_urls = await validate_and_clean_response(
+                    final_response.content,
+                    log_callback=logger.log if logger else None
+                )
+                
+                if had_invalid_urls and logger:
+                    logger.log("⚠️ [URL Validator] Removed invalid URLs from response")
+                
                 # Extract token usage
                 token_usage = None
                 if hasattr(final_response, 'response_metadata') and 'token_usage' in final_response.response_metadata:
@@ -326,7 +339,7 @@ Always provide clear, helpful responses and cite sources when relevant."""
                 
                 return {
                     "success": True,
-                    "final_answer": final_response.content,
+                    "final_answer": validated_answer,
                     "tool_used": tool_name,
                     "tool_args": tool_args,
                     "token_usage": token_usage,
@@ -338,9 +351,21 @@ Always provide clear, helpful responses and cite sources when relevant."""
             if logger:
                 logger.log("💬 [Function Calling] No tool needed, direct answer")
             
+            # Validate URLs in direct response
+            if logger:
+                logger.log("🔍 [URL Validator] Checking URLs in direct response")
+            
+            validated_answer, had_invalid_urls = await validate_and_clean_response(
+                response.content,
+                log_callback=logger.log if logger else None
+            )
+            
+            if had_invalid_urls and logger:
+                logger.log("⚠️ [URL Validator] Removed invalid URLs from direct response")
+            
             return {
                 "success": True,
-                "final_answer": response.content,
+                "final_answer": validated_answer,
                 "mode": "function_calling"
             }
     

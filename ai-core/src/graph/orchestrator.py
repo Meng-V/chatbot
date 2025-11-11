@@ -34,6 +34,7 @@ from src.memory.conversation_store import (
     update_conversation_tools,
     log_token_usage
 )
+from src.tools.url_validator import validate_and_clean_response
 
 # Use o4-mini as specified
 OPENAI_MODEL = os.getenv("OPENAI_MODEL", "o4-mini")
@@ -307,7 +308,19 @@ Provide a clear, helpful answer based ONLY on the information above. Be concise,
     ]
     
     response = await llm.ainvoke(messages)
-    state["final_answer"] = response.content.strip()
+    raw_answer = response.content.strip()
+    
+    # Validate and clean URLs in the response
+    logger.log("🔍 [URL Validator] Checking URLs in response")
+    validated_answer, had_invalid_urls = await validate_and_clean_response(
+        raw_answer, 
+        log_callback=logger.log
+    )
+    
+    if had_invalid_urls:
+        logger.log("⚠️ [URL Validator] Removed invalid URLs from response")
+    
+    state["final_answer"] = validated_answer
     
     # Extract token usage from response metadata
     if hasattr(response, 'response_metadata') and 'token_usage' in response.response_metadata:

@@ -30,7 +30,7 @@ IN_SCOPE_TOPICS = {
         "Study room reservations",
         "Library building hours (King, Art & Architecture, etc.)",
         "Printing, scanning, copying services IN THE LIBRARY",
-        "Library card and borrowing policies",
+        "Interlibrary loan and borrowing policies",
         "Renewing materials",
         "Overdue fines and fees FOR LIBRARY MATERIALS",
         "Equipment checkout (laptops, chargers, etc.)",
@@ -40,10 +40,9 @@ IN_SCOPE_TOPICS = {
     "library_spaces": [
         "King Library",
         "Art & Architecture Library",
-        "Armstrong Student Center library services",
         "Hamilton Campus Rentschler Library",
         "Middletown Campus Gardner-Harvey Library",
-        "Study spaces and quiet areas IN LIBRARIES",
+        "Study spaces and graduate study spaces IN LIBRARIES",
         "Library floor maps and locations",
     ],
     
@@ -97,7 +96,7 @@ OUT_OF_SCOPE_TOPICS = {
     ],
     
     "non_library_facilities": [
-        "Armstrong Student Center (non-library areas)",
+        "Armstrong Student Center",
         "Rec Center",
         "Dining halls",
         "Residence halls",
