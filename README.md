@@ -43,6 +43,43 @@ The Smart Chatbot is your virtual library assistant, designed to answer question
 
 ---
 
+## ⚠️ Important: What This Chatbot Can and Cannot Answer
+
+### ✅ IN SCOPE - Library Questions ONLY
+
+This chatbot is **strictly limited** to Miami University **LIBRARIES** questions. It can help with:
+
+- **Library resources**: Books, articles, databases, research materials
+- **Library services**: Study rooms, hours, borrowing, renewals, printing IN THE LIBRARY
+- **Library spaces**: King Library, Art & Architecture Library, regional libraries
+- **Library staff**: Subject librarians, research consultations
+- **Library policies**: Borrowing policies, fines FOR LIBRARY MATERIALS, access rules
+
+### ❌ OUT OF SCOPE - Cannot Answer
+
+The chatbot **CANNOT** answer questions about:
+
+- ❌ General Miami University (admissions, housing, dining, campus life)
+- ❌ Course content, homework, assignments, test preparation
+- ❌ IT support (Canvas, email, Wi-Fi) unless library-specific
+- ❌ Academic advising, career services, health services
+- ❌ Student organizations, campus events unless library-related
+- ❌ Tuition, financial aid, course registration
+
+**For these questions**, you'll be redirected to the appropriate university service.
+
+### 🔒 Information Accuracy Guarantee
+
+**The chatbot will NEVER make up information**:
+- ✅ All contact information (emails, phone numbers) comes from official APIs
+- ✅ Librarian names and contact details are verified from LibGuides API
+- ✅ If specific information isn't available, general library contact is provided
+- ✅ Phone: (513) 529-4141 | Website: https://www.lib.miamioh.edu
+
+See [SCOPE_ENFORCEMENT_REPORT.md](SCOPE_ENFORCEMENT_REPORT.md) for complete details on scope boundaries.
+
+---
+
 ## 💡 Why Is This Chatbot Special?
 
 ### **Always Available**
@@ -52,13 +89,14 @@ Unlike human staff, the chatbot is available 24/7, including nights, weekends, a
 Most questions are answered in seconds. No waiting in queues or for email responses.
 
 ### **Multiple Specializations**
-The chatbot uses **6 specialized AI agents** that work together:
-1. **Discovery Agent** - Searches the library catalog
+The chatbot uses **7 specialized AI agents** that work together:
+1. **Discovery Agent** - Searches the library catalog for books and articles
 2. **Hours & Booking Agent** - Handles library hours and room reservations
-3. **Subject Guide Agent** - Finds librarians and course guides
-4. **Website Search Agent** - Searches library website content
-5. **Chat Handoff Agent** - Connects to human librarians
-6. **Memory Agent** - Recalls library documentation and FAQs
+3. **Subject Guide Agent** - Finds course-specific research guides
+4. **Subject Librarian Agent** - **NEW** Routes to appropriate subject librarian based on 710 mapped academic subjects, majors, and departments
+5. **Website Search Agent** - Searches library website content
+6. **Chat Handoff Agent** - Connects to human librarians when needed
+7. **Memory Agent** - Recalls library documentation and FAQs using AI-powered search
 
 ### **Intelligent Routing**
 The system automatically determines which agent(s) to use based on your question. Simple queries get fast responses, complex questions engage multiple agents for comprehensive answers.
@@ -141,7 +179,9 @@ See the [Developer Guide](DEVELOPER_GUIDE.md) for detailed technical documentati
 ### **Accuracy**
 - Library hours: 99%+ accuracy (direct API integration)
 - Catalog search: Matches Primo search results
-- Subject guides: Accurate librarian matching via LibApps API
+- Subject librarian matching: 85%+ accuracy with fuzzy matching across 710 subjects
+- Contact information: 100% verified (NEVER makes up emails, phone numbers, or names)
+- Scope enforcement: Automatically detects and redirects out-of-scope questions
 - Website search: Powered by Google Custom Search Engine
 
 ### **Availability**
@@ -158,8 +198,9 @@ See the [Developer Guide](DEVELOPER_GUIDE.md) for detailed technical documentati
 - **Backend**: Python 3.12, FastAPI, LangGraph
 - **AI**: OpenAI o4-mini model with function calling
 - **Frontend**: React, Vite, Socket.IO
-- **Database**: PostgreSQL (conversations), Weaviate (vector search)
-- **APIs**: Primo, LibCal, LibGuides, LibAnswers, Google CSE
+- **Database**: PostgreSQL (conversations + 710 subject mappings), Weaviate (vector search)
+- **APIs**: Primo, LibCal, LibGuides, LibAnswers, Google CSE, MuGuide
+- **Features**: Strict scope enforcement, contact validation, fuzzy subject matching
 
 ### **Infrastructure**
 - **Development**: Local development on localhost
@@ -187,8 +228,15 @@ See the [Developer Guide](DEVELOPER_GUIDE.md) for detailed technical documentati
 
 ## 📚 Additional Resources
 
-- **Knowledge Management Guide**: See `KNOWLEDGE_MANAGEMENT.md` - Learn how to update AI responses and add new knowledge
-- **Technical Documentation**: See `DEVELOPER_GUIDE.md` - Complete setup and deployment guide
+### **Documentation**
+- **User Guide**: `README.md` (this document) - Overview with scope boundaries
+- **Developer Guide**: `doc/DEVELOPER_GUIDE.md` - Complete setup and deployment guide
+- **Knowledge Management Guide**: `doc/KNOWLEDGE_MANAGEMENT.md` - How to update AI responses and add new knowledge
+- **Scope Enforcement Report**: `doc/SCOPE_ENFORCEMENT_REPORT.md` - Detailed scope boundaries and validation rules
+- **MuGuide Integration Report**: `doc/MUGUIDE_INTEGRATION_REPORT.md` - Subject mapping technical documentation
+- **Environment Guide**: `doc/ENV_QUICK_REFERENCE.md` - Environment configuration reference
+
+### **API & System**
 - **API Documentation**: Visit `/docs` endpoint when backend is running
 - **Health Check**: Visit `/health` for system status
 - **Project Repository**: [GitHub repository link]
@@ -203,11 +251,41 @@ Miami University Libraries serve the academic community across three campuses (O
 
 ## ⚙️ Version Information
 
-- **Current Version**: 2.0.0-alpha
-- **Last Updated**: November 2025
+- **Current Version**: 2.0.0
+- **Last Updated**: November 11, 2025
 - **Platform**: Python AI-Core with React Frontend
 - **AI Model**: OpenAI o4-mini
+- **Agents**: 7 specialized agents
+- **Subject Mappings**: 710 subjects, 587 LibGuides, 586 majors
 - **Status**: Production-ready
+
+### **What's New in Version 2.0**
+
+#### ✅ Strict Scope Enforcement
+- ONLY answers Miami University **LIBRARIES** questions
+- Automatically detects and redirects out-of-scope questions
+- Prevents answering general university, homework, or IT questions
+
+#### ✅ MuGuide Integration
+- 710 academic subjects mapped to LibGuides
+- 586 major codes indexed
+- 316 department codes linked
+- Intelligent fuzzy matching for subject queries
+
+#### ✅ Contact Information Validation
+- NEVER generates fake emails, phone numbers, or names
+- All contact info verified from LibGuides API
+- Fallback to general library contact: (513) 529-4141
+
+#### ✅ Subject Librarian Agent (NEW)
+- Routes users to appropriate subject librarian
+- Combines MuGuide database with LibGuides API
+- Provides verified contact information
+
+#### ✅ Enhanced Database Schema
+- 5 new Prisma models for subject mappings
+- Optimized indexes for fast lookup
+- Idempotent data ingestion process
 
 ---
 

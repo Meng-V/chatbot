@@ -8,9 +8,12 @@ This is the intelligent backend powering the chatbot with 6 specialized AI agent
 
 ## 🎯 Key Features
 
+- **Strict Scope Enforcement**: ONLY answers Miami University LIBRARIES questions (not general university)
 - **Hybrid Router**: Automatically selects between fast function calling and complex multi-agent orchestration
-- **6 Specialized Agents**: Primo, LibCal, LibGuide, Google Site, LibChat, Transcript RAG
-- **Meta Router**: OpenAI o4-mini classifies user intent and selects appropriate agents
+- **7 Specialized Agents**: Primo, LibCal, LibGuide, Google Site, Subject Librarian, LibChat, Transcript RAG
+- **Meta Router**: OpenAI o4-mini classifies user intent and detects out-of-scope questions
+- **MuGuide Integration**: 710 subjects mapped to LibGuides and subject librarians
+- **Contact Info Validation**: NEVER makes up emails, phone numbers, or names - only uses verified API data
 - **Real-time Communication**: Socket.IO for WebSocket support
 - **OAuth Integration**: Centralized token management for SpringShare APIs
 - **Vector Search**: Weaviate integration for FAQ/documentation RAG

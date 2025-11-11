@@ -23,28 +23,41 @@ Complete technical documentation for deploying, customizing, and extending this 
 
 **Backend**: Python 3.12, FastAPI, LangGraph, OpenAI o4-mini, Prisma, Socket.IO  
 **Frontend**: React 18, Vite, Chakra UI, Socket.IO Client  
-**Databases**: PostgreSQL (conversations), Weaviate (vector RAG)  
-**APIs**: Primo, LibCal, LibGuides, LibAnswers, Google CSE
+**Databases**: PostgreSQL (conversations + MuGuide subjects), Weaviate (vector RAG)  
+**APIs**: Primo, LibCal, LibGuides, LibAnswers, Google CSE, MuGuide  
+**Key Features**: Strict scope enforcement, 710 subjects mapped, contact validation
 
 ### Project Structure
 
 ```
 chatbot/
-├── .env                    # Environment configuration
-├── local-auto-start.sh     # Dev startup script
-├── ai-core/                # Python backend
+├── .env                           # Consolidated environment config
+├── .env.example                   # Template with all variables
+├── .env.local                     # Local overrides (gitignored)
+├── local-auto-start.sh            # Dev startup script
+├── SCOPE_ENFORCEMENT_REPORT.md    # Scope boundaries & rules
+├── MUGUIDE_INTEGRATION_REPORT.md  # Subject mapping integration
+├── ai-core/                       # Python backend
 │   ├── src/
-│   │   ├── main.py         # FastAPI entry
-│   │   ├── agents/         # AI agents
-│   │   ├── graph/          # LangGraph orchestration
-│   │   └── tools/          # Agent tools
-│   └── tests/              # Test suite
-├── client/                 # React frontend
+│   │   ├── main.py                # FastAPI entry
+│   │   ├── agents/                # 7 AI agents
+│   │   │   └── subject_librarian_agent.py  # NEW: MuGuide routing
+│   │   ├── graph/                 # LangGraph orchestration
+│   │   │   └── orchestrator.py    # Meta router + scope enforcement
+│   │   ├── tools/                 # Agent tools
+│   │   │   └── subject_matcher.py # NEW: Subject fuzzy matching
+│   │   └── config/                # NEW: Configuration
+│   │       └── scope_definition.py # Scope boundaries
+│   ├── scripts/                   # Utility scripts
+│   │   └── ingest_muguide.py      # NEW: MuGuide data ingestion
+│   └── tests/                     # Test suite
+├── client/                        # React frontend
 │   ├── src/
 │   │   ├── components/
 │   │   └── context/
 │   └── vite.config.js
-└── prisma/schema.prisma    # Database schema
+├── prisma/schema.prisma           # Database schema (JS)
+└── ai-core/schema.prisma          # Database schema (Python)
 ```
 
 ---
@@ -98,8 +111,31 @@ python3 -m venv .venv
 source .venv/bin/activate  # macOS/Linux
 pip install --upgrade pip
 pip install -e .
+
+# Generate Prisma client and push schema to database
 prisma generate
+prisma db push
+
+# IMPORTANT: Configure MuGuide credentials in .env before running ingestion
+# Edit root .env and add:
+#   MUGUIDE_ID=your_muguide_id_here
+#   MUGUIDE_API_KEY=your_muguide_api_key_here
+# (Contact library web services for credentials)
+
+# Ingest MuGuide subject mapping data (710 subjects)
+python scripts/ingest_muguide.py
 ```
+
+**Expected Output:**
+```
+✅ Fetched 710 subjects
+✅ Ingestion complete!
+   Ingested: 710
+   Total LibGuides: 587
+   Total Major Codes: 586
+```
+
+**Note**: If you see "MuGuide API credentials not found" error, ensure `MUGUIDE_ID` and `MUGUIDE_API_KEY` are set in your root `.env` file. See `.env.example` for template.
 
 ### Step 3: Frontend Setup
 
@@ -329,22 +365,46 @@ VITE_SOCKET_DOMAIN=
 3. **Hybrid Router** analyzes complexity:
    - Simple → Function Calling (fast)
    - Complex → LangGraph orchestration
-4. **Meta Router** selects agents (1-6)
+4. **Meta Router** classifies intent and checks scope:
+   - **Out-of-scope** (general university, homework) → Redirect to appropriate service
+   - **In-scope** (library) → Selects agents (1-7)
 5. **Agents execute** in parallel
-6. **LLM synthesizes** final answer
+6. **LLM synthesizes** final answer (with strict scope enforcement)
 7. Response sent back via Socket.IO
 8. Conversation saved to PostgreSQL
 
-### Six Specialized Agents
+### Seven Specialized Agents
 
-| Agent | Purpose | API |
-|-------|---------|-----|
-| **Primo** | Catalog search | Ex Libris Primo |
-| **LibCal** | Hours & rooms | SpringShare LibCal |
-| **LibGuide** | Subject guides | SpringShare LibApps |
-| **Google Site** | Website search | Google CSE |
-| **LibChat** | Human handoff | LibAnswers |
-| **Transcript RAG** | Memory/FAQs | Weaviate |
+| Agent | Purpose | API | Data Source |
+|-------|---------|-----|-------------|
+| **Primo** | Catalog search | Ex Libris Primo | Library catalog |
+| **LibCal** | Hours & rooms | SpringShare LibCal | Events/spaces |
+| **LibGuide** | Subject guides | SpringShare LibApps | Research guides |
+| **Google Site** | Website search | Google CSE | lib.miamioh.edu |
+| **Subject Librarian** | **NEW** Subject-to-librarian routing | MuGuide + LibGuides | 710 mapped subjects |
+| **LibChat** | Human handoff | LibAnswers | Chat widget |
+| **Transcript RAG** | Memory/FAQs | Weaviate | Vector DB |
+
+### Scope Enforcement (NEW)
+
+The chatbot has **strict boundaries** to prevent misinformation:
+
+**✅ IN SCOPE - Answers Provided:**
+- Library resources, services, spaces, staff, policies
+- ONLY Miami University **LIBRARIES** (not general university)
+
+**❌ OUT OF SCOPE - Redirected:**
+- General university (admissions, housing, courses)
+- Homework/academic content
+- IT support (unless library-specific)
+- Non-library facilities
+
+**🔒 Contact Validation:**
+- NEVER makes up emails, phone numbers, or names
+- All contact info from verified APIs (LibGuides, MuGuide DB)
+- Fallback to general library contact: (513) 529-4141
+
+See [SCOPE_ENFORCEMENT_REPORT.md](../SCOPE_ENFORCEMENT_REPORT.md) for complete details.
 
 ---
 
@@ -420,6 +480,56 @@ Edit `client/src/components/ChatBotComponent.css`:
   color: #your-institution-color;
 }
 ```
+
+### 5. Update MuGuide Subject Mappings
+
+The MuGuide subject-to-librarian mappings should be refreshed when:
+- New academic programs are added
+- Department reorganizations occur
+- New LibGuides are created
+- Subject assignments change
+
+**Refresh MuGuide Data:**
+```bash
+cd ai-core
+source .venv/bin/activate
+python scripts/ingest_muguide.py
+```
+
+**Recommended frequency:** Monthly or when notified of changes
+
+**Monitor Coverage:**
+```sql
+-- Check subjects without LibGuides
+SELECT s.name FROM "Subject" s
+LEFT JOIN "SubjectLibGuide" slg ON s.id = slg."subjectId"
+WHERE slg.id IS NULL;
+
+-- Total subject count
+SELECT COUNT(*) FROM "Subject";
+```
+
+### 6. Modify Scope Boundaries
+
+Edit `ai-core/src/config/scope_definition.py` to adjust what the chatbot can answer:
+
+```python
+IN_SCOPE_TOPICS = {
+    "library_resources": [
+        # Add new in-scope topics
+    ],
+    ...
+}
+
+OUT_OF_SCOPE_TOPICS = {
+    "university_general": [
+        # Add new out-of-scope topics
+    ],
+    ...
+}
+```
+
+After changes, update the router prompt in `ai-core/src/graph/orchestrator.py` if needed.
 
 ---
 
@@ -533,20 +643,32 @@ open http://localhost:8000/docs
 ### File Locations
 
 - **Backend code**: `ai-core/src/`
-- **Agents**: `ai-core/src/agents/`
-- **Tools**: `ai-core/src/tools/`
-- **Orchestration**: `ai-core/src/graph/`
+- **Agents**: `ai-core/src/agents/` (7 agents including Subject Librarian)
+- **Tools**: `ai-core/src/tools/` (includes `subject_matcher.py`)
+- **Orchestration**: `ai-core/src/graph/orchestrator.py` (meta router + scope enforcement)
+- **Configuration**: `ai-core/src/config/scope_definition.py` (scope boundaries)
+- **Scripts**: `ai-core/scripts/ingest_muguide.py` (MuGuide data ingestion)
 - **Frontend**: `client/src/`
-- **Config**: `.env` (root), `client/.env`
-- **Database schema**: `prisma/schema.prisma`
+- **Environment**: `.env` (root consolidated), `.env.local` (local overrides)
+- **Database schemas**: 
+  - `prisma/schema.prisma` (JavaScript/TypeScript client)
+  - `ai-core/schema.prisma` (Python client with Subject tables)
+- **Documentation**:
+  - `SCOPE_ENFORCEMENT_REPORT.md` (scope rules)
+  - `MUGUIDE_INTEGRATION_REPORT.md` (subject mapping)
 
 ---
 
 ## 📚 Additional Resources
 
 ### Project Documentation
+- **User Guide**: `README.md` - Overview for librarians and administrators with scope boundaries
+- **Developer Guide**: `doc/DEVELOPER_GUIDE.md` - This document
 - **Knowledge Management Guide**: `KNOWLEDGE_MANAGEMENT.md` - How to correct AI responses and update chatbot knowledge
-- **User Guide**: `README.md` - Overview for librarians and administrators
+- **Scope Enforcement Report**: `SCOPE_ENFORCEMENT_REPORT.md` - Complete scope boundaries, validation rules, and enforcement mechanisms
+- **MuGuide Integration Report**: `MUGUIDE_INTEGRATION_REPORT.md` - Subject mapping system technical documentation (710 subjects)
+- **Environment Guide**: `ENV_QUICK_REFERENCE.md` - Environment configuration reference
+- **Environment Consolidation**: `ENV_CONSOLIDATION_SUMMARY.md` - How environment files were consolidated
 
 ### External Documentation
 - **FastAPI**: https://fastapi.tiangolo.com/
@@ -566,4 +688,13 @@ open http://localhost:8000/docs
 ---
 
 **Built by Miami University Libraries Web Services Team**  
-**Version 1.0.0 | November 2025**
+**Version 2.0.0 | November 2025**
+
+**What's New in 2.0:**
+- ✅ **Strict Scope Enforcement**: ONLY answers library questions (not general university)
+- ✅ **MuGuide Integration**: 710 subjects mapped to LibGuides and librarians
+- ✅ **Contact Validation**: NEVER makes up emails, phone numbers, or names
+- ✅ **7th Agent**: Subject Librarian agent for subject-to-librarian routing
+- ✅ **Out-of-Scope Detection**: Automatically redirects non-library questions
+- ✅ **Enhanced Database**: 5 new Subject-related tables in Prisma schema
+- ✅ **Comprehensive Documentation**: Detailed scope and MuGuide integration reports

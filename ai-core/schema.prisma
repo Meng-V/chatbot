@@ -45,3 +45,63 @@ model ConversationFeedback {
   conversationId String       @unique
   conversation   Conversation @relation(fields: [conversationId], references: [id])
 }
+
+// MuGuide Subject Mapping Models
+model Subject {
+  id          String             @id @default(uuid())
+  name        String             @unique
+  regional    Boolean            @default(false)
+  createdAt   DateTime           @default(now())
+  updatedAt   DateTime           @updatedAt
+  libGuides   SubjectLibGuide[]
+  regCodes    SubjectRegCode[]
+  majorCodes  SubjectMajorCode[]
+  deptCodes   SubjectDeptCode[]
+
+  @@index([name])
+}
+
+model SubjectLibGuide {
+  id        String  @id @default(uuid())
+  subjectId String
+  libGuide  String
+  subject   Subject @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+
+  @@unique([subjectId, libGuide])
+  @@index([libGuide])
+}
+
+model SubjectRegCode {
+  id        String  @id @default(uuid())
+  subjectId String
+  regCode   String
+  regName   String
+  subject   Subject @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+
+  @@unique([subjectId, regCode])
+  @@index([regCode])
+}
+
+model SubjectMajorCode {
+  id         String  @id @default(uuid())
+  subjectId  String
+  majorCode  String
+  majorName  String
+  subject    Subject @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+
+  @@unique([subjectId, majorCode])
+  @@index([majorCode])
+  @@index([majorName])
+}
+
+model SubjectDeptCode {
+  id        String  @id @default(uuid())
+  subjectId String
+  deptCode  String
+  deptName  String
+  subject   Subject @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+
+  @@unique([subjectId, deptCode])
+  @@index([deptCode])
+  @@index([deptName])
+}
