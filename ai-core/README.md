@@ -10,7 +10,7 @@ This is the intelligent backend powering the chatbot with 6 specialized AI agent
 
 - **Hybrid Router**: Automatically selects between fast function calling and complex multi-agent orchestration
 - **6 Specialized Agents**: Primo, LibCal, LibGuide, Google Site, LibChat, Transcript RAG
-- **Meta Router**: GPT-4o-mini classifies user intent and selects appropriate agents
+- **Meta Router**: OpenAI o4-mini classifies user intent and selects appropriate agents
 - **Real-time Communication**: Socket.IO for WebSocket support
 - **OAuth Integration**: Centralized token management for SpringShare APIs
 - **Vector Search**: Weaviate integration for FAQ/documentation RAG
@@ -36,15 +36,27 @@ prisma generate
 
 ### Configuration
 
-The backend loads configuration from the **root `.env` file** (not from ai-core directory).
+The backend loads configuration from the **root `.env` file** (located at project root, not in ai-core directory).
 
 ```bash
+# Navigate to project root
+cd ..
+
 # Copy template
 cp .env.example .env
 
 # Edit with your API keys
 nano .env
+
+# Optional: Create .env.local for local overrides (already in .gitignore)
+cp .env.local.example .env.local
+nano .env.local
 ```
+
+**Environment File Structure:**
+- `.env` - Main configuration file (contains all production values)
+- `.env.local` - Local development overrides (not committed to git)
+- `.env.example` - Template with placeholder values
 
 See `DEVELOPER_GUIDE.md` for complete configuration instructions.
 

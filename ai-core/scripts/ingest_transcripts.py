@@ -6,9 +6,12 @@ import os
 import json
 import weaviate
 import weaviate.classes as wvc
+from pathlib import Path
 from dotenv import load_dotenv
 
-load_dotenv()
+# Load .env from project root
+root_dir = Path(__file__).resolve().parent.parent.parent
+load_dotenv(dotenv_path=root_dir / ".env")
 
 WEAVIATE_HOST = os.getenv("WEAVIATE_HOST", "")
 WEAVIATE_API_KEY = os.getenv("WEAVIATE_API_KEY", "")
