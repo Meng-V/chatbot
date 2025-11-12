@@ -37,9 +37,9 @@ class GetLibraryHoursInput(BaseModel):
     building: str = Field(default="king", description="Building name: king, art, rentschler, gardner-harvey")
 
 class SearchRoomsInput(BaseModel):
-    date: str = Field(description="Date in YYYY-MM-DD format")
-    start_time: str = Field(description="Start time in HH:MM format (24-hour)")
-    end_time: str = Field(description="End time in HH:MM format (24-hour)")
+    date: str = Field(description="Date in flexible format: 11/12/2025, tomorrow, next Monday, YYYY-MM-DD all work")
+    start_time: str = Field(description="Start time in flexible format: 8pm, 8:00 PM, 20:00, 8:00pm all work")
+    end_time: str = Field(description="End time in flexible format: 10pm, 10:00 PM, 22:00, 10:00pm all work")
     capacity: int = Field(default=1, description="Minimum room capacity (number of people)")
     building: str = Field(default="king", description="Building name")
 
@@ -47,9 +47,9 @@ class BookRoomInput(BaseModel):
     first_name: str = Field(description="User's first name")
     last_name: str = Field(description="User's last name")
     email: str = Field(description="User's @miamioh.edu email address")
-    date: str = Field(description="Date in YYYY-MM-DD format")
-    start_time: str = Field(description="Start time in HH:MM format (24-hour)")
-    end_time: str = Field(description="End time in HH:MM format (24-hour)")
+    date: str = Field(description="Date in flexible format: 11/12/2025, tomorrow, next Monday, YYYY-MM-DD all work")
+    start_time: str = Field(description="Start time in flexible format: 8pm, 8:00 PM, 20:00, 8:00pm all work")
+    end_time: str = Field(description="End time in flexible format: 10pm, 10:00 PM, 22:00, 10:00pm all work")
     capacity: int = Field(default=1, description="Number of people")
     building: str = Field(default="king", description="Building name: king, art, rentschler, gardner-harvey")
 
@@ -255,10 +255,11 @@ STUDY ROOM BOOKING RULES - EXTREMELY IMPORTANT:
   * First name
   * Last name
   * @miamioh.edu email address
-  * Date (YYYY-MM-DD format)
-  * Start time and end time (HH:MM 24-hour format)
+  * Date (accept ANY format: 11/12/2025, tomorrow, next Monday, Dec 15, etc.)
+  * Start time and end time (accept ANY format: 8pm, 8:00 PM, 20:00, 2pm, etc.)
   * Number of people
   * Building preference
+- The system automatically converts all date/time formats, so accept user's natural language
 - DO NOT call book_room until you have ALL of the above information
 - ONLY present the FINAL result from the tool:
   1. If missing information: Ask for the specific missing details (especially first name, last name, email)

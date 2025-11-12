@@ -277,14 +277,26 @@ def _parse_time_intelligent(time_input: str) -> Tuple[bool, Optional[str], Optio
         return False, None, f"Could not parse time '{time_input}': {str(e)}"
 
 def _detect_dst(date_str: str) -> str:
-    """Detect if date is in DST (EDT) or EST."""
+    """Detect if date is in DST (EDT) or EST using accurate timezone calculation."""
+    # Parse date and localize to New York timezone
+    ny_tz = pytz.timezone('America/New_York')
     test_date = datetime.strptime(date_str, "%Y-%m-%d")
-    # March-November is typically EDT, but this is simplified
-    month = test_date.month
-    if 3 <= month <= 11:
-        return "-04:00"  # EDT
-    else:
-        return "-05:00"  # EST
+    
+    # Create a datetime at noon on that date (arbitrary time)
+    test_datetime = test_date.replace(hour=12, minute=0, second=0)
+    
+    # Localize to NY timezone - this will correctly handle DST
+    localized = ny_tz.localize(test_datetime)
+    
+    # Get the UTC offset
+    offset = localized.strftime("%z")
+    
+    # Format as +HH:MM or -HH:MM
+    if len(offset) == 5:  # e.g., "-0500"
+        return f"{offset[:3]}:{offset[3:]}"  # "-05:00"
+    
+    # Fallback to EST if something goes wrong
+    return "-05:00"
 
 def _validate_booking_duration(start_time: str, end_time: str) -> tuple[bool, float]:
     """Validate booking duration is within 2 hour maximum.
