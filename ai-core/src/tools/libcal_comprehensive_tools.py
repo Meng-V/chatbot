@@ -18,6 +18,7 @@ LIBCAL_GRANT_TYPE = os.getenv("LIBCAL_GRANT_TYPE", "client_credentials")
 LIBCAL_HOUR_URL = os.getenv("LIBCAL_HOUR_URL", "")
 LIBCAL_SEARCH_AVAILABLE_URL = os.getenv("LIBCAL_SEARCH_AVAILABLE_URL", "")
 LIBCAL_RESERVATION_URL = os.getenv("LIBCAL_RESERVATION_URL", "")
+LIBCAL_BOOKING_INFO_URL = os.getenv("LIBCAL_BOOKING_INFO_URL", "")  # GET /space/booking/{id}
 LIBCAL_CANCEL_URL = os.getenv("LIBCAL_CANCEL_URL", "")
 NODE_ENV = os.getenv("NODE_ENV", "development")
 
@@ -951,7 +952,7 @@ class LibCalComprehensiveReservationTool(Tool):
             }
 
 class LibCalCancelReservationTool(Tool):
-    """Cancel a room reservation."""
+    """Cancel a room reservation with email verification."""
     
     @property
     def name(self) -> str:
@@ -959,45 +960,147 @@ class LibCalCancelReservationTool(Tool):
     
     @property
     def description(self) -> str:
-        return "Cancel a room reservation using booking ID"
+        return "Cancel a room reservation. Requires confirmation number and email address for verification."
     
     async def execute(
         self,
         query: str,
         log_callback=None,
         booking_id: str = None,
+        email: str = None,
         **kwargs
     ) -> Dict[str, Any]:
-        """Cancel reservation."""
+        """Cancel reservation after verifying email."""
         try:
+            # Validate required parameters
             if not booking_id:
                 return {
                     "tool": self.name,
                     "success": False,
-                    "text": "Missing booking ID. Please provide the booking ID to cancel."
+                    "text": "Missing confirmation number. Please provide the booking confirmation number."
+                }
+            
+            if not email:
+                return {
+                    "tool": self.name,
+                    "success": False,
+                    "text": "Missing email address. Please provide the email address used for the booking."
+                }
+            
+            # Validate email format
+            if not _validate_email(email):
+                return {
+                    "tool": self.name,
+                    "success": False,
+                    "text": "Email must be a valid @miamioh.edu address."
+                }
+            
+            # Check if LIBCAL_BOOKING_INFO_URL is configured
+            if not LIBCAL_BOOKING_INFO_URL:
+                if log_callback:
+                    log_callback(f"❌ [LibCal Cancel] LIBCAL_BOOKING_INFO_URL not configured")
+                return {
+                    "tool": self.name,
+                    "success": False,
+                    "text": "Cancellation service is not configured. Please contact the library at (513) 529-4141 to cancel your reservation."
                 }
             
             if log_callback:
-                log_callback(f"🗑️ [LibCal Cancel Reservation Tool] Cancelling booking {booking_id}")
+                log_callback(f"🔍 [LibCal Cancel] Verifying booking {booking_id}")
             
             token = await _get_oauth_token()
             
+            if log_callback:
+                log_callback(f"✅ [LibCal Cancel] OAuth token obtained")
+            
+            # Step 1: Get booking information to verify email
             async with httpx.AsyncClient(timeout=10) as client:
-                response = await client.post(
-                    f"{LIBCAL_CANCEL_URL}/{booking_id}",
+                # GET booking info
+                booking_info_url = f"{LIBCAL_BOOKING_INFO_URL}/{booking_id}"
+                if log_callback:
+                    log_callback(f"📡 [LibCal Cancel] GET {booking_info_url}")
+                
+                info_response = await client.get(
+                    booking_info_url,
                     headers={"Authorization": f"Bearer {token}"}
                 )
                 
-                if response.status_code == 200:
-                    data = response.json()
+                if log_callback:
+                    log_callback(f"📊 [LibCal Cancel] GET response: status={info_response.status_code}")
+                
+                if info_response.status_code != 200:
+                    return {
+                        "tool": self.name,
+                        "success": False,
+                        "text": f"Reservation with confirmation number {booking_id} not found. Please check the confirmation number and try again."
+                    }
+                
+                # Parse booking data
+                booking_data = info_response.json()
+                
+                if log_callback:
+                    log_callback(f"📦 [LibCal Cancel] Booking data type: {type(booking_data)}, is_list: {isinstance(booking_data, list)}")
+                
+                # Handle array response
+                if isinstance(booking_data, list):
+                    if len(booking_data) == 0:
+                        if log_callback:
+                            log_callback(f"❌ [LibCal Cancel] Empty booking data array")
+                        return {
+                            "tool": self.name,
+                            "success": False,
+                            "text": f"Reservation with confirmation number {booking_id} not found."
+                        }
+                    booking_info = booking_data[0]
+                else:
+                    booking_info = booking_data
+                
+                # Extract email from booking
+                booking_email = booking_info.get("email", "").lower().strip()
+                provided_email = email.lower().strip()
+                
+                if log_callback:
+                    log_callback(f"📝 [LibCal Cancel] Booking found, verifying email (match: {booking_email == provided_email})")
+                
+                # Step 2: Verify email matches
+                if booking_email != provided_email:
+                    return {
+                        "tool": self.name,
+                        "success": False,
+                        "text": f"The email address does not match the booking records. Please provide the email address that was used to make this reservation."
+                    }
+                
+                if log_callback:
+                    log_callback(f"✅ [LibCal Cancel] Email verified, proceeding with cancellation")
+                
+                # Step 3: Cancel the booking
+                cancel_url = f"{LIBCAL_CANCEL_URL}/{booking_id}"
+                if log_callback:
+                    log_callback(f"📡 [LibCal Cancel] POST {cancel_url}")
+                
+                cancel_response = await client.post(
+                    cancel_url,
+                    headers={"Authorization": f"Bearer {token}"}
+                )
+                
+                if log_callback:
+                    log_callback(f"📊 [LibCal Cancel] POST response: status={cancel_response.status_code}")
+                
+                if cancel_response.status_code == 200:
+                    data = cancel_response.json()
                     if isinstance(data, list) and len(data) > 0:
                         if data[0].get("cancelled"):
                             if log_callback:
-                                log_callback(f"✅ [LibCal Cancel Reservation Tool] Booking cancelled")
+                                log_callback(f"✅ [LibCal Cancel] Booking cancelled successfully")
+                            
+                            # Extract room info for confirmation message
+                            room_name = booking_info.get("item_name", "Study room")
+                            from_date = booking_info.get("fromDate", "")
+                            
                             return {
                                 "tool": self.name,
                                 "success": True,
-                                "text": f"Room reservation with ID {booking_id} has been cancelled successfully."
+                                "text": f"Your reservation for {room_name} (confirmation number: {booking_id}) has been cancelled successfully. You will receive a cancellation confirmation email at {email}."
                             }
                         else:
                             error = data[0].get("error", "Unknown error")
@@ -1010,15 +1113,15 @@ class LibCalCancelReservationTool(Tool):
                 return {
                     "tool": self.name,
                     "success": False,
-                    "text": f"Could not cancel booking {booking_id}. Please contact the library."
+                    "text": f"Could not cancel booking. Please visit https://www.lib.miamioh.edu/use/spaces/room-reservations/ or contact the library at (513) 529-4141."
                 }
         
         except Exception as e:
             if log_callback:
-                log_callback(f"❌ [LibCal Cancel Reservation Tool] Error: {str(e)}")
+                log_callback(f"❌ [LibCal Cancel] Error: {str(e)}")
             return {
                 "tool": self.name,
                 "success": False,
                 "error": str(e),
-                "text": "Cancellation failed. Please visit https://libcal.miamioh.edu/ or contact the library."
+                "text": "Cancellation failed. Please visit https://www.lib.miamioh.edu/use/spaces/room-reservations/ or contact the library."
             }

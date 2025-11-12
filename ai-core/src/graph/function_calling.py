@@ -65,6 +65,10 @@ class FindCourseGuideInput(BaseModel):
 class ConnectLibrarianInput(BaseModel):
     message: str = Field(default="User needs help", description="Reason for connecting to librarian")
 
+class CancelReservationInput(BaseModel):
+    booking_id: str = Field(description="Confirmation number / booking ID from the reservation email")
+    email: str = Field(description="User's @miamioh.edu email address used for the booking")
+
 async def search_catalog_wrapper(query: str) -> str:
     """Search library catalog for books and articles."""
     try:
@@ -151,6 +155,37 @@ async def connect_librarian_wrapper(message: str = "User needs help") -> str:
     except Exception as e:
         return f"Error connecting to librarian: {str(e)}"
 
+async def cancel_reservation_wrapper(booking_id: str, email: str) -> str:
+    """Cancel a room reservation with email verification."""
+    import logging
+    logger = logging.getLogger(__name__)
+    
+    try:
+        logger.info(f"🔍 [Cancel Wrapper] Starting cancellation for booking_id={booking_id}, email={email}")
+        
+        # Validate email
+        if not email.lower().endswith("@miamioh.edu"):
+            logger.warning(f"❌ [Cancel Wrapper] Invalid email format: {email}")
+            return "Error: Email must be a valid @miamioh.edu address."
+        
+        # Use LibCal cancel reservation tool
+        from src.tools.libcal_comprehensive_tools import LibCalCancelReservationTool
+        cancel_tool = LibCalCancelReservationTool()
+        
+        result = await cancel_tool.execute(
+            query=f"cancel booking {booking_id}",
+            booking_id=booking_id,
+            email=email,
+            log_callback=logger.info
+        )
+        
+        logger.info(f"📊 [Cancel Wrapper] Tool result: success={result.get('success')}, text={result.get('text')[:100]}")
+        
+        return result.get("text", "Cancellation failed. Please visit https://www.lib.miamioh.edu/use/spaces/room-reservations/ or contact the library.")
+    except Exception as e:
+        logger.error(f"❌ [Cancel Wrapper] Exception: {str(e)}")
+        return f"Error canceling reservation: {str(e)}"
+
 # Create LangChain tools
 tools = [
     StructuredTool.from_function(
@@ -208,6 +243,13 @@ tools = [
         description="Connect user with a human librarian for complex questions or personalized help.",
         args_schema=ConnectLibrarianInput,
         coroutine=connect_librarian_wrapper
+    ),
+    StructuredTool.from_function(
+        func=cancel_reservation_wrapper,
+        name="cancel_reservation",
+        description="Cancel a study room reservation. MUST have confirmation number (booking ID) and email address. Verifies the email matches before canceling.",
+        args_schema=CancelReservationInput,
+        coroutine=cancel_reservation_wrapper
     )
 ]
 
