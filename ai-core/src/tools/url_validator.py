@@ -1,11 +1,13 @@
-"""URL Validator - Verifies ALL URLs before they are provided to users.
+"""URL and Contact Info Validator - Verifies ALL URLs and contact information before they are provided to users.
 
 This module prevents the bot from providing fake or dead URLs by:
 1. Checking if URLs return 4xx or 5xx errors
 2. Validating ALL URLs regardless of domain
 3. Extracting and validating all URLs from agent responses
+4. Detecting and removing fabricated contact information (emails, phone numbers, names)
 
 NO WHITELIST - All URLs must be verified before being shown to users.
+NO FABRICATION - All contact info must come from verified tool results.
 """
 
 import re
@@ -17,6 +19,12 @@ import asyncio
 
 # URL pattern (basic)
 URL_PATTERN = r'https?://[^\s<>"{}|\\^`\[\]]+'
+
+# Email pattern for detecting @miamioh.edu emails
+EMAIL_PATTERN = r'\b[A-Za-z0-9._%+-]+@miamioh\.edu\b'
+
+# Pattern for detecting potential librarian names (capitalized words near contact info)
+LIBRARIAN_NAME_PATTERN = r'\b(?:librarian|contact|specialist|professor|dr\.|mr\.|ms\.|mrs\.)\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*)'
 
 
 async def check_url_exists(url: str, timeout: float = 5.0) -> Tuple[bool, int, str]:
@@ -177,8 +185,126 @@ def remove_invalid_urls_from_text(text: str, invalid_urls: List[Dict]) -> str:
     return modified_text
 
 
+def detect_fabricated_contact_info(text: str, log_callback=None) -> Dict[str, any]:
+    """Detect potentially fabricated contact information in text.
+    
+    Strategy:
+    - Emails WITH LibGuide/tool context → Allow (from tools, semi-safe)
+    - Emails WITHOUT tool context → Flag for removal (fabricated)
+    - Names with LibGuide context → Allow
+    - Standalone names without context → Flag for removal
+    
+    Args:
+        text: Text to check for fabricated contact info
+        log_callback: Optional logging function
+        
+    Returns:
+        Dictionary with detected contact info
+    """
+    detected = {
+        "emails": [],
+        "fabricated_emails": [],
+        "has_suspicious_contact": False,
+        "has_tool_context": False
+    }
+    
+    # Check if there's evidence this came from tools
+    # LibGuide URLs, MyGuide patterns, or verified library domains
+    has_tool_context = bool(re.search(
+        r'libguides\.lib\.miamioh\.edu|miamioh\.libguides\.com|Source:|Guide:|Subject Guide:', 
+        text, 
+        re.IGNORECASE
+    ))
+    detected["has_tool_context"] = has_tool_context
+    
+    # Find all @miamioh.edu emails
+    emails = re.findall(EMAIL_PATTERN, text, re.IGNORECASE)
+    
+    if emails:
+        detected["emails"] = emails
+        
+        if has_tool_context:
+            # Emails with tool context are allowed (from LibGuides/MyGuide)
+            if log_callback:
+                log_callback(f"✅ [Contact Validator] Detected {len(emails)} email(s) with tool context - allowing")
+        else:
+            # Emails without tool context are fabricated
+            detected["fabricated_emails"] = emails
+            detected["has_suspicious_contact"] = True
+            if log_callback:
+                log_callback(f"❌ [Contact Validator] Detected {len(emails)} fabricated email(s) - will be removed")
+    
+    # Check for standalone names without any context
+    if not has_tool_context and not emails:
+        name_matches = re.findall(LIBRARIAN_NAME_PATTERN, text, re.IGNORECASE)
+        if name_matches:
+            detected["has_suspicious_contact"] = True
+            if log_callback:
+                log_callback(f"⚠️ [Contact Validator] Detected standalone name(s) without tool context: {', '.join(name_matches)}")
+    
+    return detected
+
+
+def remove_fabricated_contact_info(text: str, detected_info: Dict, log_callback=None) -> str:
+    """Remove ONLY fabricated contact information from text.
+    
+    Strategy:
+    - Emails WITH tool context → KEEP (from LibGuides/MyGuide, semi-safe)
+    - Emails WITHOUT tool context → REMOVE (fabricated)
+    - Names with tool context → KEEP
+    - Standalone names without context → REMOVE
+    
+    Args:
+        text: Original text
+        detected_info: Dictionary from detect_fabricated_contact_info
+        log_callback: Optional logging function
+        
+    Returns:
+        Text with ONLY fabricated contact info removed, tool-sourced info preserved
+    """
+    if not detected_info["has_suspicious_contact"]:
+        return text
+    
+    modified_text = text
+    removed_count = 0
+    has_tool_context = detected_info.get("has_tool_context", False)
+    fabricated_emails = detected_info.get("fabricated_emails", [])
+    
+    # Only remove emails that are fabricated (no tool context)
+    for email in fabricated_emails:
+        # No tool context = fabricated, remove everything
+        patterns = [
+            # Remove name with email
+            (rf'[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*\s*[,:\(]\s*{re.escape(email)}\s*[\),]?', ''),
+            # Remove email line
+            (rf'\n?\s*•?\s*Email:\s*{re.escape(email)}\s*\n?', '\n'),
+            # Remove just email
+            (rf'{re.escape(email)}', ''),
+        ]
+        
+        for pattern, replacement in patterns:
+            if re.search(pattern, modified_text, re.IGNORECASE):
+                modified_text = re.sub(pattern, replacement, modified_text, flags=re.IGNORECASE)
+                removed_count += 1
+                if log_callback:
+                    log_callback(f"✂️ [Contact Validator] Removed fabricated email: {email}")
+                break
+    
+    # Clean up any double newlines or empty formatting
+    modified_text = re.sub(r'\n\s*\n\s*\n+', '\n\n', modified_text)
+    modified_text = re.sub(r'•\s*\n', '', modified_text)
+    modified_text = re.sub(r'\n\s*\n\s*$', '\n', modified_text)
+    
+    # Add warning only if we removed fabricated content
+    if removed_count > 0:
+        warning = "\n\n⚠️ **Note**: Some contact information could not be verified. For accurate contact details, visit https://www.lib.miamioh.edu/research/research-support/ask/ or call (513) 529-4141."
+        modified_text += warning
+    
+    return modified_text
+
+
 async def validate_and_clean_response(response_text: str, log_callback=None) -> Tuple[str, bool]:
-    """Validate URLs in response and remove invalid ones.
+    """Validate URLs and contact info in response and remove invalid/fabricated ones.
     
     This is the main function to call before returning a response to the user.
     
@@ -187,22 +313,29 @@ async def validate_and_clean_response(response_text: str, log_callback=None) -> 
         log_callback: Optional logging function
         
     Returns:
-        Tuple of (cleaned_text: str, had_invalid_urls: bool)
+        Tuple of (cleaned_text: str, had_issues: bool)
     """
-    # Validate all URLs
-    validation_results = await validate_urls_in_text(response_text, log_callback)
+    had_issues = False
+    cleaned_text = response_text
     
-    # If all URLs are valid, return original text
-    if validation_results["all_urls_valid"]:
-        return response_text, False
+    # Step 1: Validate all URLs
+    validation_results = await validate_urls_in_text(cleaned_text, log_callback)
     
-    # Remove invalid URLs and add disclaimers
-    cleaned_text = remove_invalid_urls_from_text(
-        response_text, 
-        validation_results["invalid_urls"]
-    )
+    if not validation_results["all_urls_valid"]:
+        cleaned_text = remove_invalid_urls_from_text(
+            cleaned_text, 
+            validation_results["invalid_urls"]
+        )
+        had_issues = True
+        
+        if log_callback:
+            log_callback(f"🔧 [URL Validator] Cleaned response - removed {len(validation_results['invalid_urls'])} invalid URL(s)")
     
-    if log_callback:
-        log_callback(f"🔧 [URL Validator] Cleaned response - removed {len(validation_results['invalid_urls'])} invalid URL(s)")
+    # Step 2: Detect and remove fabricated contact info
+    detected_contact = detect_fabricated_contact_info(cleaned_text, log_callback)
     
-    return cleaned_text, True
+    if detected_contact["has_suspicious_contact"]:
+        cleaned_text = remove_fabricated_contact_info(cleaned_text, detected_contact, log_callback)
+        had_issues = True
+    
+    return cleaned_text, had_issues

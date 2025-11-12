@@ -263,28 +263,28 @@ OFFICIAL_LIBRARY_CONTACTS = {
         "phone": "(513) 529-4141",
         "email": None,  # Use contact form instead
         "website": "https://www.lib.miamioh.edu",
-        "contact_page": "https://www.lib.miamioh.edu/contact",
+        "contact_page": "https://www.lib.miamioh.edu/research/research-support/ask/",
     },
     
     "ask_a_librarian": {
         "chat_url": "https://libanswers.lib.miamioh.edu/chat/widget/7fb43538479e4f82cbbe2c74325fdda2",
-        "email_form": "https://www.lib.miamioh.edu/contact",
+        "email_form": "https://www.lib.miamioh.edu/ask-email-form/",
         "phone": "(513) 529-4141",
     },
     
     "art_architecture_library": {
-        "name": "Art & Architecture Library",
-        "website": "https://www.lib.miamioh.edu/art-architecture",
+        "name": "Wertz Art & Architecture Library",
+        "website": "https://www.lib.miamioh.edu/about/locations/art-arch/",
     },
     
     "regional_libraries": {
         "hamilton": {
             "name": "Rentschler Library (Hamilton)",
-            "website": "https://regionals.miamioh.edu/hamilton/academics/library/",
+            "website": "https://www.ham.miamioh.edu/library/",
         },
         "middletown": {
             "name": "Gardner-Harvey Library (Middletown)",
-            "website": "https://regionals.miamioh.edu/middletown/academics/library/",
+            "website": "https://www.mid.miamioh.edu/library/",
         },
     },
 }

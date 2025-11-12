@@ -151,7 +151,7 @@ async def connect_librarian_wrapper(message: str = "User needs help") -> str:
     """Connect user with a human librarian."""
     try:
         result = await libchat_handoff(message)
-        return result.get("text", "Visit libanswers.lib.miamioh.edu/chat/widget")
+        return result.get("text", "Visit https://www.lib.miamioh.edu/research/research-support/ask/ for help")
     except Exception as e:
         return f"Error connecting to librarian: {str(e)}"
 
@@ -284,11 +284,42 @@ async def handle_with_function_calling(user_message: str, logger=None, conversat
 You have access to several tools to help users. Use the appropriate tool based on the user's question.
 {history_text}
 
-CRITICAL RULES:
-- ONLY use URLs from tool results - NEVER make up web addresses
+🚨 CRITICAL RULES - VIOLATION OF THESE RULES IS COMPLETELY UNACCEPTABLE:
+
+CONTACT INFORMATION RULES - ABSOLUTELY NO EXCEPTIONS:
+- NEVER create, invent, or fabricate contact information
+- ONLY use contact information from tool results (LibGuides, MyGuide, Google Site Search)
+- If tools don't provide contact info, don't mention it - just provide general library contact
+
+WHAT YOU CAN PROVIDE (from tool results only):
+✅ Librarian names - if from tools
+✅ Email addresses - ONLY if they appear in tool results (LibGuides/MyGuide)
+✅ Subject areas and specialties
+✅ LibGuide profile URLs
+✅ Subject guide URLs
+✅ General library phone: (513) 529-4141
+
+WHAT YOU MUST NEVER DO:
+❌ Fabricate or guess email addresses (e.g., "lastname@miamioh.edu")
+❌ Make up librarian names or titles
+❌ Invent phone extensions or office numbers
+❌ Create office locations or building/room numbers
+❌ Provide contact info not found in tool results
+
+HOW TO HANDLE SUBJECT/RESEARCH QUESTIONS:
+1. Search LibGuides and MyGuide for the subject area
+2. If found with contact info, provide: Librarian name + Email (if in result) + Subject guide URL
+3. Format: "For [subject] questions, contact [Name] ([email if provided]). View their subject guide: [URL]"
+4. If no specific info found, direct to: https://www.lib.miamioh.edu/research/research-support/ask/ or (513) 529-4141
+
+URL RULES:
+- ONLY use URLs from tool results - NEVER create or modify web addresses
 - Allowed domains: lib.miamioh.edu, libcal.miamioh.edu, libguides.lib.miamioh.edu, miamioh.libguides.com, libanswers.lib.miamioh.edu, digital.lib.miamioh.edu
-- NEVER fabricate email addresses, phone numbers, or contact info
+- If unsure about a URL, provide the general library website: https://www.lib.miamioh.edu
+
+OTHER RULES:
 - Use conversation history to provide contextual follow-up responses
+- Always cite the source of your information
 
 STUDY ROOM BOOKING RULES - EXTREMELY IMPORTANT:
 - NEVER say "checking availability", "let me check", "I'll look for", or similar status updates
