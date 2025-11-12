@@ -2,8 +2,10 @@
 import os
 import re
 import httpx
-from typing import Dict, Any, Optional, List
+from typing import Dict, Any, Optional, List, Tuple
 from datetime import datetime, timedelta
+from dateutil import parser as date_parser
+import pytz
 from src.tools.base import Tool
 from src.services.libcal_oauth import get_libcal_oauth_service
 from src.config.building_ids import get_building_id, get_building_display_name
@@ -43,6 +45,14 @@ BUILDINGS = {
 # Default building
 DEFAULT_BUILDING = os.getenv("OXFORD_KING_LIBRARY", "2047")
 
+# Building ID to Location ID mapping for hours API
+BUILDING_TO_LOCATION_ID = {
+    "2047": "8113",  # King Library
+    "4089": "10997",  # Art & Architecture Library
+    "4792": "12082",  # Rentschler Library
+    "4845": "12083",  # Gardner-Harvey Library
+}
+
 # Campus mapping for building information
 CAMPUS_INFO = {
     "oxford": {
@@ -80,6 +90,192 @@ def _get_capacity_range(capacity: Optional[int]) -> int:
     else:
         return 3
 
+def _parse_date_intelligent(date_input: str) -> Tuple[bool, Optional[str], Optional[str]]:
+    """Intelligently parse various date formats to YYYY-MM-DD.
+    
+    Handles:
+    - American format: 11/12/2025, 11-12-2025
+    - ISO format: 2025-11-12
+    - Word format: November 12, 2025, Nov 12 2025
+    - Chinese format: 2025年11月12日
+    - Relative dates: today, tomorrow, next Monday, next week
+    
+    Args:
+        date_input: Date string in various formats
+    
+    Returns:
+        Tuple of (success, formatted_date, error_message)
+    """
+    if not date_input:
+        return False, None, "No date provided"
+    
+    # Get current time in New York timezone
+    ny_tz = pytz.timezone('America/New_York')
+    now = datetime.now(ny_tz)
+    
+    date_lower = date_input.lower().strip()
+    
+    try:
+        # Handle relative dates
+        if date_lower in ['today', 'now']:
+            result_date = now.date()
+        elif date_lower in ['tomorrow', 'tmr', 'tmrw']:
+            result_date = (now + timedelta(days=1)).date()
+        elif date_lower in ['yesterday']:
+            result_date = (now - timedelta(days=1)).date()
+        elif date_lower.startswith('next '):
+            # Handle "next Monday", "next week", etc.
+            remainder = date_lower.replace('next ', '')
+            
+            if remainder == 'week':
+                result_date = (now + timedelta(days=7)).date()
+            elif remainder == 'month':
+                # Add approximately 30 days
+                result_date = (now + timedelta(days=30)).date()
+            else:
+                # Try parsing as day of week
+                weekdays = {
+                    'monday': 0, 'mon': 0,
+                    'tuesday': 1, 'tue': 1, 'tues': 1,
+                    'wednesday': 2, 'wed': 2,
+                    'thursday': 3, 'thu': 3, 'thur': 3, 'thurs': 3,
+                    'friday': 4, 'fri': 4,
+                    'saturday': 5, 'sat': 5,
+                    'sunday': 6, 'sun': 6
+                }
+                
+                if remainder in weekdays:
+                    target_weekday = weekdays[remainder]
+                    current_weekday = now.weekday()
+                    days_ahead = target_weekday - current_weekday
+                    if days_ahead <= 0:  # Target day already happened this week
+                        days_ahead += 7
+                    result_date = (now + timedelta(days=days_ahead)).date()
+                else:
+                    return False, None, f"Could not understand 'next {remainder}'"
+        
+        elif date_lower.startswith('this '):
+            # Handle "this Monday", "this week", etc.
+            remainder = date_lower.replace('this ', '')
+            
+            weekdays = {
+                'monday': 0, 'mon': 0,
+                'tuesday': 1, 'tue': 1, 'tues': 1,
+                'wednesday': 2, 'wed': 2,
+                'thursday': 3, 'thu': 3, 'thur': 3, 'thurs': 3,
+                'friday': 4, 'fri': 4,
+                'saturday': 5, 'sat': 5,
+                'sunday': 6, 'sun': 6
+            }
+            
+            if remainder in weekdays:
+                target_weekday = weekdays[remainder]
+                current_weekday = now.weekday()
+                days_ahead = target_weekday - current_weekday
+                if days_ahead < 0:  # Already passed this week, go to next week
+                    days_ahead += 7
+                result_date = (now + timedelta(days=days_ahead)).date()
+            else:
+                return False, None, f"Could not understand 'this {remainder}'"
+        
+        else:
+            # Try parsing with dateutil for flexibility
+            # Set dayfirst=False for American format (MM/DD/YYYY)
+            parsed = date_parser.parse(date_input, dayfirst=False, fuzzy=True)
+            
+            # Convert to New York timezone if not already aware
+            if parsed.tzinfo is None:
+                parsed = ny_tz.localize(parsed)
+            else:
+                parsed = parsed.astimezone(ny_tz)
+            
+            result_date = parsed.date()
+        
+        # Format as YYYY-MM-DD
+        formatted_date = result_date.strftime("%Y-%m-%d")
+        return True, formatted_date, None
+    
+    except Exception as e:
+        return False, None, f"Could not parse date '{date_input}': {str(e)}"
+
+def _parse_time_intelligent(time_input: str) -> Tuple[bool, Optional[str], Optional[str]]:
+    """Intelligently parse various time formats to HH:MM (24-hour).
+    
+    Handles:
+    - 12-hour format: 8:00pm, 8pm, 8.00pm, 8:00 PM, 8 PM
+    - 24-hour format: 20:00, 20-00, 2000
+    - Words: noon, midnight
+    
+    Args:
+        time_input: Time string in various formats
+    
+    Returns:
+        Tuple of (success, formatted_time, error_message)
+    """
+    if not time_input:
+        return False, None, "No time provided"
+    
+    time_lower = time_input.lower().strip()
+    
+    try:
+        # Handle special words
+        if time_lower in ['noon', '12pm', '12:00pm']:
+            return True, "12:00", None
+        elif time_lower in ['midnight', '12am', '12:00am']:
+            return True, "00:00", None
+        
+        # Check for AM/PM
+        is_pm = 'pm' in time_lower or 'p.m.' in time_lower
+        is_am = 'am' in time_lower or 'a.m.' in time_lower
+        
+        # Remove AM/PM markers and clean up
+        time_clean = re.sub(r'[ap]\.?m\.?', '', time_lower, flags=re.IGNORECASE)
+        time_clean = time_clean.strip()
+        
+        # Replace various separators with colon
+        time_clean = time_clean.replace('.', ':').replace('-', ':').replace(' ', '')
+        
+        # Try to parse the time
+        if ':' in time_clean:
+            parts = time_clean.split(':')
+            hour = int(parts[0])
+            minute = int(parts[1]) if len(parts) > 1 else 0
+        else:
+            # No separator, try to parse as pure number
+            if len(time_clean) <= 2:
+                # Single or double digit: just hour
+                hour = int(time_clean)
+                minute = 0
+            elif len(time_clean) == 3:
+                # Three digits: H:MM or HH:M
+                hour = int(time_clean[0])
+                minute = int(time_clean[1:3])
+            elif len(time_clean) == 4:
+                # Four digits: HH:MM
+                hour = int(time_clean[0:2])
+                minute = int(time_clean[2:4])
+            else:
+                return False, None, f"Could not parse time format '{time_input}'"
+        
+        # Convert 12-hour to 24-hour
+        if is_pm and hour != 12:
+            hour += 12
+        elif is_am and hour == 12:
+            hour = 0
+        
+        # Validate ranges
+        if hour < 0 or hour > 23:
+            return False, None, f"Hour must be between 0-23 (got {hour})"
+        if minute < 0 or minute > 59:
+            return False, None, f"Minute must be between 0-59 (got {minute})"
+        
+        # Format as HH:MM
+        formatted_time = f"{hour:02d}:{minute:02d}"
+        return True, formatted_time, None
+    
+    except Exception as e:
+        return False, None, f"Could not parse time '{time_input}': {str(e)}"
+
 def _detect_dst(date_str: str) -> str:
     """Detect if date is in DST (EDT) or EST."""
     test_date = datetime.strptime(date_str, "%Y-%m-%d")
@@ -89,6 +285,121 @@ def _detect_dst(date_str: str) -> str:
         return "-04:00"  # EDT
     else:
         return "-05:00"  # EST
+
+def _validate_booking_duration(start_time: str, end_time: str) -> tuple[bool, float]:
+    """Validate booking duration is within 2 hour maximum.
+    
+    Args:
+        start_time: Time in HH:MM or HH-MM format
+        end_time: Time in HH:MM or HH-MM format
+    
+    Returns:
+        Tuple of (is_valid, duration_hours)
+    """
+    try:
+        # Normalize time format
+        start_normalized = start_time.replace("-", ":")
+        end_normalized = end_time.replace("-", ":")
+        
+        # Parse times
+        start_parts = start_normalized.split(":")
+        end_parts = end_normalized.split(":")
+        
+        start_minutes = int(start_parts[0]) * 60 + int(start_parts[1])
+        end_minutes = int(end_parts[0]) * 60 + int(end_parts[1])
+        
+        # Calculate duration in hours
+        duration_minutes = end_minutes - start_minutes
+        if duration_minutes < 0:
+            duration_minutes += 24 * 60  # Handle overnight
+        
+        duration_hours = duration_minutes / 60.0
+        
+        # Maximum 2 hours (120 minutes)
+        is_valid = duration_minutes <= 120
+        
+        return is_valid, duration_hours
+    except Exception:
+        return False, 0.0
+
+async def _check_building_hours(building_id: str, date: str, start_time: str, end_time: str) -> tuple[bool, Optional[str]]:
+    """Check if booking time is within building operating hours.
+    
+    Args:
+        building_id: Building ID (e.g., "2047" for King Library)
+        date: Date in YYYY-MM-DD format
+        start_time: Start time in HH:MM or HH-MM format
+        end_time: End time in HH:MM or HH-MM format
+    
+    Returns:
+        Tuple of (is_valid, building_hours_message)
+    """
+    try:
+        # Get location ID for hours API
+        location_id = BUILDING_TO_LOCATION_ID.get(building_id)
+        if not location_id:
+            # If not in our mapping, assume valid (skip check)
+            return True, None
+        
+        token = await _get_oauth_token()
+        async with httpx.AsyncClient(timeout=10) as client:
+            response = await client.get(
+                f"{LIBCAL_HOUR_URL}/{location_id}",
+                headers={"Authorization": f"Bearer {token}"},
+                params={"from": date, "to": date}
+            )
+            response.raise_for_status()
+            data = response.json()
+            
+            if not data or len(data) == 0:
+                # No hours data, assume valid
+                return True, None
+            
+            location = data[0]
+            dates = location.get("dates", {})
+            day_data = dates.get(date)
+            
+            if not day_data or not day_data.get("hours"):
+                # Building closed on this date
+                return False, f"The building is closed on {date}"
+            
+            # Parse booking times
+            start_normalized = start_time.replace("-", ":")
+            end_normalized = end_time.replace("-", ":")
+            
+            def time_to_minutes(time_str: str) -> int:
+                """Convert time string to minutes since midnight."""
+                parts = time_str.split(":")
+                return int(parts[0]) * 60 + int(parts[1])
+            
+            booking_start = time_to_minutes(start_normalized)
+            booking_end = time_to_minutes(end_normalized)
+            
+            # Check against all operating hour blocks
+            hours_list = day_data["hours"]
+            building_name = location.get("name", "Building")
+            
+            for hours_block in hours_list:
+                from_time = hours_block.get("from")
+                to_time = hours_block.get("to")
+                
+                if from_time and to_time:
+                    # Convert to 24-hour format if needed and parse
+                    building_open = time_to_minutes(from_time)
+                    building_close = time_to_minutes(to_time)
+                    
+                    # Check if booking fits within this hours block
+                    if booking_start >= building_open and booking_end <= building_close:
+                        return True, None
+            
+            # If we get here, booking time is outside all operating hours
+            hours_str = ", ".join([f"{h['from']} to {h['to']}" for h in hours_list])
+            return False, f"{building_name} is open {hours_str} on {date}. Your requested time is outside these hours."
+    
+    except Exception as e:
+        # On error, assume valid to not block legitimate bookings
+        print(f"Warning: Building hours check failed: {e}")
+        return True, None
 
 class LibCalWeekHoursTool(Tool):
     """Tool for checking building hours for entire week."""
@@ -109,7 +420,18 @@ class LibCalWeekHoursTool(Tool):
             
             # If no date provided, use today
             if not date:
-                date = datetime.now().strftime("%Y-%m-%d")
+                ny_tz = pytz.timezone('America/New_York')
+                date = datetime.now(ny_tz).strftime("%Y-%m-%d")
+            else:
+                # Parse date intelligently
+                date_success, parsed_date, date_error = _parse_date_intelligent(date)
+                if not date_success:
+                    return {
+                        "tool": self.name,
+                        "success": False,
+                        "text": f"Date parsing error: {date_error}"
+                    }
+                date = parsed_date
             
             # Calculate Monday-Sunday range
             date_obj = datetime.strptime(date, "%Y-%m-%d")
@@ -182,7 +504,7 @@ class LibCalEnhancedAvailabilityTool(Tool):
     
     @property
     def description(self) -> str:
-        return "Check room availability with smart capacity fallback. Supports Oxford (King Library, Art & Architecture Library), Hamilton (Rentschler Library), and Middletown (Gardner-Harvey Library) campuses. Use 'building' parameter to specify location (e.g., 'king', 'rentschler', 'gardner-harvey')."
+        return "Check room availability with smart capacity fallback. Supports flexible date formats (11/12/2025, tomorrow, next Monday) and time formats (8pm, 20:00, 8:00 PM). Works with Oxford (King Library, Art & Architecture Library), Hamilton (Rentschler Library), and Middletown (Gardner-Harvey Library) campuses. Use 'building' parameter to specify location (e.g., 'king', 'rentschler', 'gardner-harvey')."
     
     async def execute(
         self, 
@@ -208,7 +530,37 @@ class LibCalEnhancedAvailabilityTool(Tool):
                     "text": "Missing required parameters: date, start_time, end_time. Please provide these."
                 }
             
-            # Convert time format HH-MM to HH:MM
+            # Parse date intelligently
+            date_success, parsed_date, date_error = _parse_date_intelligent(date)
+            if not date_success:
+                return {
+                    "tool": self.name,
+                    "success": False,
+                    "text": f"Date parsing error: {date_error}"
+                }
+            date = parsed_date
+            
+            # Parse start time intelligently
+            time_success, parsed_start_time, time_error = _parse_time_intelligent(start_time)
+            if not time_success:
+                return {
+                    "tool": self.name,
+                    "success": False,
+                    "text": f"Start time parsing error: {time_error}"
+                }
+            start_time = parsed_start_time
+            
+            # Parse end time intelligently
+            time_success, parsed_end_time, time_error = _parse_time_intelligent(end_time)
+            if not time_success:
+                return {
+                    "tool": self.name,
+                    "success": False,
+                    "text": f"End time parsing error: {time_error}"
+                }
+            end_time = parsed_end_time
+            
+            # Convert time format HH-MM to HH:MM (already in HH:MM from parser)
             start_formatted = start_time.replace("-", ":")
             end_formatted = end_time.replace("-", ":")
             
@@ -294,7 +646,7 @@ class LibCalComprehensiveReservationTool(Tool):
     
     @property
     def description(self) -> str:
-        return "Book a study room with full validation (requires firstName, lastName, @miamioh.edu email, date, time). Supports Oxford (King Library, Art & Architecture Library), Hamilton (Rentschler Library), and Middletown (Gardner-Harvey Library) campuses. Use 'building' parameter to specify campus location."
+        return "Book a study room with full validation (requires firstName, lastName, @miamioh.edu email, date, time). Accepts flexible date formats (11/12/2025, tomorrow, next Monday) and time formats (8pm, 20:00, 8:00 PM). Automatically converts to 24-hour format and validates against building hours. Supports Oxford (King Library, Art & Architecture Library), Hamilton (Rentschler Library), and Middletown (Gardner-Harvey Library) campuses. Use 'building' parameter to specify campus location."
     
     async def execute(
         self,
@@ -342,6 +694,65 @@ class LibCalComprehensiveReservationTool(Tool):
                     "success": False,
                     "text": "Email must be a valid @miamioh.edu address. Please provide your Miami University email."
                 }
+            
+            # Parse date intelligently
+            date_success, parsed_date, date_error = _parse_date_intelligent(date)
+            if not date_success:
+                return {
+                    "tool": self.name,
+                    "success": False,
+                    "text": f"Date parsing error: {date_error}. Please provide a valid date (e.g., '11/12/2025', 'tomorrow', 'next Monday')."
+                }
+            date = parsed_date
+            
+            if log_callback:
+                log_callback(f"📅 [Date Parsed] {parsed_date}")
+            
+            # Parse start time intelligently
+            time_success, parsed_start_time, time_error = _parse_time_intelligent(start_time)
+            if not time_success:
+                return {
+                    "tool": self.name,
+                    "success": False,
+                    "text": f"Start time parsing error: {time_error}. Please provide a valid time (e.g., '8pm', '20:00', '8:00 PM')."
+                }
+            start_time = parsed_start_time
+            
+            # Parse end time intelligently
+            time_success, parsed_end_time, time_error = _parse_time_intelligent(end_time)
+            if not time_success:
+                return {
+                    "tool": self.name,
+                    "success": False,
+                    "text": f"End time parsing error: {time_error}. Please provide a valid time (e.g., '10pm', '22:00', '10:00 PM')."
+                }
+            end_time = parsed_end_time
+            
+            if log_callback:
+                log_callback(f"🕐 [Time Parsed] {parsed_start_time} to {parsed_end_time}")
+            
+            # Validate booking duration (2 hour maximum)
+            is_valid_duration, duration_hours = _validate_booking_duration(start_time, end_time)
+            if not is_valid_duration:
+                return {
+                    "tool": self.name,
+                    "success": False,
+                    "text": f"Booking duration ({duration_hours:.1f} hours) exceeds the 2-hour maximum. Please reduce your booking time to 2 hours or less."
+                }
+            
+            # Resolve building ID first for hours check
+            building_key = building.lower().strip()
+            building_id = BUILDINGS.get(building_key, DEFAULT_BUILDING)
+            
+            # Validate building hours (only for King and Art libraries)
+            if building_id in ["2047", "4089"]:
+                hours_valid, hours_message = await _check_building_hours(building_id, date, start_time, end_time)
+                if not hours_valid:
+                    return {
+                        "tool": self.name,
+                        "success": False,
+                        "text": hours_message
+                    }
             
             # Validate room selection
             if not room_capacity and not room_code_name:
@@ -427,33 +838,40 @@ class LibCalComprehensiveReservationTool(Tool):
                 if not selected_room:
                     selected_room = rooms_data[0]  # Take smallest available
             
-            # Create timestamps with timezone
+            # Create ISO 8601 timestamps with timezone
             offset = _detect_dst(date)
             start_formatted = start_time.replace("-", ":")
             end_formatted = end_time.replace("-", ":")
             
+            # Build proper ISO 8601 timestamps (e.g., "2024-11-12T14:00:00-05:00")
             start_timestamp = f"{date}T{start_formatted}:00{offset}"
             end_timestamp = f"{date}T{end_formatted}:00{offset}"
             
             # Make booking
             is_production = NODE_ENV == "production"
             payload = {
-                "start": datetime.fromisoformat(start_timestamp).isoformat(),
+                "start": start_timestamp,  # ISO 8601 format with timezone
                 "fname": first_name,
                 "lname": last_name,
                 "email": email,
                 "bookings": [
                     {
-                        "id": selected_room["id"],
-                        "to": datetime.fromisoformat(end_timestamp).isoformat()
+                        "id": selected_room["id"],  # Space ID from availability check
+                        "to": end_timestamp  # ISO 8601 format with timezone
                     }
                 ]
             }
             
-            if not is_production:
-                payload["test"] = 1
-            
             token = await _get_oauth_token()
+            
+            # Log POST request for debugging
+            print(f"\n[LibCal POST Request]")
+            print(f"URL: {LIBCAL_RESERVATION_URL}")
+            print(f"Payload: {payload}")
+            print(f"Headers: Authorization: Bearer {token[:20]}...\n")
+            
+            if log_callback:
+                log_callback(f"🔄 [LibCal POST] {LIBCAL_RESERVATION_URL}")
             
             async with httpx.AsyncClient(timeout=10) as client:
                 response = await client.post(
@@ -462,18 +880,36 @@ class LibCalComprehensiveReservationTool(Tool):
                     json=payload
                 )
                 
+                # Log response for debugging
+                print(f"[LibCal POST Response]")
+                print(f"Status Code: {response.status_code}")
+                print(f"Response Body: {response.text}\n")
+                
                 if response.status_code == 200 or response.status_code == 201:
                     result = response.json()
                     booking_id = result.get("booking_id")
                     
+                    # Log booking ID
+                    print(f"[Booking Success] ID: {booking_id}")
+                    
+                    if not booking_id:
+                        print(f"[WARNING] No booking_id in response: {result}")
+                    
                     if log_callback:
-                        log_callback(f"✅ [LibCal Comprehensive Reservation Tool] Booked room {selected_room['name']}")
+                        log_callback(f"✅ [LibCal Comprehensive Reservation Tool] Booked room {selected_room['name']} - ID: {booking_id}")
+                    
+                    # Build confirmation message
+                    if booking_id:
+                        confirmation_text = f"{selected_room['name']} with capacity {selected_room['capacity']} is booked from {start_time} to {end_time} on {date} at {building.capitalize()} Library. Confirmation number: {booking_id}. A confirmation email has been sent to {email}."
+                    else:
+                        # Fallback if no booking_id
+                        confirmation_text = f"{selected_room['name']} with capacity {selected_room['capacity']} is booked from {start_time} to {end_time} on {date} at {building.capitalize()} Library. A confirmation email has been sent to {email}."
                     
                     return {
                         "tool": self.name,
                         "success": True,
                         "booking_id": booking_id,
-                        "text": f"{selected_room['name']} with capacity {selected_room['capacity']} is booked from {start_time} to {end_time} on {date} at {building.capitalize()} Library. Confirmation number: {booking_id}. A confirmation email has been sent to {email}."
+                        "text": confirmation_text
                     }
                 else:
                     error_data = response.text

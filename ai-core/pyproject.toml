@@ -20,7 +20,9 @@ dependencies = [
   "pytest-asyncio",
   "prisma",
   "asyncpg",
-  "psutil"
+  "psutil",
+  "python-dateutil",
+  "pytz"
 ]
 
 [tool.pyright]
