@@ -1,7 +1,8 @@
-import { Box, Button, FormControl, FormLabel, Input, Textarea, HStack, Icon, Tooltip } from '@chakra-ui/react';
+import { Box, Button, FormControl, FormLabel, Input, Textarea, HStack, VStack, Icon, Tooltip, Spinner, Text } from '@chakra-ui/react';
 import { useEffect, useState, useContext } from 'react';
 import { MessageContext } from '../context/MessageContextProvider';
 import { FiCopy } from 'react-icons/fi';
+import { BsStars } from 'react-icons/bs';
 
 /**
  * Functional component that renders a form to collect user info
@@ -11,8 +12,10 @@ const UserInfoForm = ({ onFormSubmit, chatHistory }) => {
   const [email, setEmail] = useState('');
   const [question, setQuestion] = useState('');
   const [copied, setCopied] = useState(false);
+  const [summaryCopied, setSummaryCopied] = useState(false);
+  const [generatingSummary, setGeneratingSummary] = useState(false);
 
-  // Handle copy chat history
+  // Handle copy full chat history
   const handleCopyHistory = () => {
     // Format chat history as readable text
     const historyText = chatHistory
@@ -27,6 +30,50 @@ const UserInfoForm = ({ onFormSubmit, chatHistory }) => {
     setQuestion(fullQuestion);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
+  };
+
+  // Handle copy AI-generated summary
+  const handleCopySummary = async () => {
+    setGeneratingSummary(true);
+    try {
+      // Format chat history for API
+      const historyText = chatHistory
+        .map((msg) => {
+          const sender = msg.sender === 'user' ? 'User' : 'Chatbot';
+          const text = typeof msg.text === 'object' ? msg.text.response?.join('') || '' : msg.text;
+          return `${sender}: ${text}`;
+        })
+        .join('\n\n');
+
+      // Call backend API to generate summary
+      const response = await fetch('/api/summarize-chat', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ chatHistory: historyText }),
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to generate summary');
+      }
+
+      const data = await response.json();
+      const summary = data.summary;
+
+      // Add summary to question field
+      const questionWithSummary = question 
+        ? `${question}\n\n--- AI-Generated Chat Summary ---\n${summary}` 
+        : summary;
+      setQuestion(questionWithSummary);
+      setSummaryCopied(true);
+      setTimeout(() => setSummaryCopied(false), 2000);
+    } catch (error) {
+      console.error('Error generating summary:', error);
+      alert('Failed to generate summary. Please try copying the full history instead.');
+    } finally {
+      setGeneratingSummary(false);
+    }
   };
 
   // Handle form submission
@@ -58,17 +105,31 @@ const UserInfoForm = ({ onFormSubmit, chatHistory }) => {
         <HStack justify='space-between' mb={1}>
           <FormLabel mb={0}>Initial Question (optional)</FormLabel>
           {chatHistory && chatHistory.length > 0 && (
-            <Tooltip label={copied ? 'Copied!' : 'Copy chat history to question'} closeOnClick={false}>
-              <Button
-                size='xs'
-                variant='outline'
-                colorScheme='blue'
-                leftIcon={<Icon as={FiCopy} />}
-                onClick={handleCopyHistory}
-              >
-                {copied ? 'Copied!' : 'Copy Chat History'}
-              </Button>
-            </Tooltip>
+            <HStack spacing={2}>
+              {/* <Tooltip label='Copy AI-generated summary of conversation'>
+                <Button
+                  size='xs'
+                  variant='outline'
+                  colorScheme='purple'
+                  leftIcon={generatingSummary ? <Spinner size='xs' /> : <Icon as={BsStars} />}
+                  onClick={handleCopySummary}
+                  isDisabled={generatingSummary}
+                >
+                  {generatingSummary ? 'Generating...' : summaryCopied ? 'Copied!' : 'Copy AI Summary'}
+                </Button>
+              </Tooltip> */}
+              <Tooltip label='Copy full chat history'>
+                <Button
+                  size='xs'
+                  variant='outline'
+                  colorScheme='blue'
+                  leftIcon={<Icon as={FiCopy} />}
+                  onClick={handleCopyHistory}
+                >
+                  {copied ? 'Copied!' : 'Copy Full History'}
+                </Button>
+              </Tooltip>
+            </HStack>
           )}
         </HStack>
         <Textarea

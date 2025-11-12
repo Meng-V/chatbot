@@ -92,6 +92,21 @@ async def route_query(user_message: str, logger=None, conversation_history=None)
             "conversation_history": conversation_history or [],
             "_logger": logger
         })
+        
+        # Handle None result
+        if result is None:
+            if logger:
+                logger.log("⚠️ [Hybrid Router] LangGraph returned None, using default response")
+            return {
+                "success": False,
+                "final_answer": "I encountered an issue processing your request. Please try again or contact a librarian.",
+                "classified_intent": "error",
+                "selected_agents": [],
+                "agent_responses": {},
+                "needs_human": False,
+                "mode": "langgraph"
+            }
+        
         return {
             "success": True,
             "final_answer": result.get("final_answer", ""),

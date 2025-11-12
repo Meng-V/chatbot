@@ -22,6 +22,7 @@ from src.memory.conversation_store import (
 )
 from src.database.prisma_client import connect_database, disconnect_database
 from src.api.health import router as health_router
+from src.api.summarize import router as summarize_router
 
 # Load .env from project root (parent of ai-core)
 # Path calculation: main.py -> src -> ai-core -> root
@@ -71,6 +72,7 @@ app.add_middleware(
 
 # Include health/monitoring routers
 app.include_router(health_router)
+app.include_router(summarize_router)
 
 # Socket.IO server for real-time communication
 # Allow all origins in development for easier debugging
@@ -112,6 +114,15 @@ async def ask_http(payload: dict):
         
         # Use hybrid router (smart selection between function calling and LangGraph)
         result = await route_query(message, logger, history)
+        
+        # Safety check for None result
+        if result is None:
+            logger.log("⚠️ [API] Router returned None, using fallback response")
+            result = {
+                "final_answer": "I encountered an issue processing your request. Please try again or contact a librarian.",
+                "selected_agents": [],
+                "classified_intent": "error"
+            }
         
         final_answer = result.get("final_answer", "")
         agents_used = result.get("selected_agents", [])
@@ -223,6 +234,15 @@ async def message(sid, data):
         
         # Use hybrid router (smart selection between function calling and LangGraph)
         result = await route_query(text_input, logger, history)
+        
+        # Safety check for None result
+        if result is None:
+            logger.log("⚠️ [Socket.IO] Router returned None, using fallback response")
+            result = {
+                "final_answer": "I encountered an issue processing your request. Please try again or contact a librarian.",
+                "selected_agents": [],
+                "classified_intent": "error"
+            }
         
         final_answer = result.get("final_answer", "")
         agents_used = result.get("selected_agents", [])
