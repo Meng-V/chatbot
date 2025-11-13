@@ -88,20 +88,25 @@ Unlike human staff, the chatbot is available 24/7, including nights, weekends, a
 Most questions are answered in seconds. No waiting in queues or for email responses.
 
 ### **Multiple Specializations**
-The chatbot uses **7 specialized AI agents** that work together:
-1. **Discovery Agent** - Searches the library catalog for books and articles
-2. **Hours & Booking Agent** - Handles library hours and room reservations
-3. **Subject Guide Agent** - Finds course-specific research guides
-4. **Subject Librarian Agent** - **NEW** Routes to appropriate subject librarian based on 710 mapped academic subjects, majors, and departments
-5. **Website Search Agent** - Searches library website content
-6. **Chat Handoff Agent** - Connects to human librarians when needed
-7. **Memory Agent** - Recalls library documentation and FAQs using AI-powered search
+The chatbot uses **8 specialized AI agents** orchestrated by an intelligent hybrid routing system:
+1. **Discovery Agent (Primo)** - Searches the library catalog for books, articles, and e-resources
+2. **Hours & Booking Agent (LibCal)** - Handles library hours and room reservations  
+3. **Subject Guide Agent (LibGuides)** - Finds course-specific research guides
+4. **Subject Librarian Agent** - Routes to appropriate subject librarian based on 710 mapped academic subjects, majors, and departments via MuGuide integration
+5. **Website Search Agent (Google CSE)** - Searches library website content and policies
+6. **Chat Handoff Agent (LibChat)** - Connects to human librarians when needed
+7. **Memory Agent (Weaviate RAG)** - Recalls library documentation and FAQs using AI-powered vector search
+8. **Hybrid Router** - Intelligently selects between fast function calling (simple queries) and multi-agent orchestration (complex queries)
 
 ### **Intelligent Routing**
-The system automatically determines which agent(s) to use based on your question. Simple queries get fast responses, complex questions engage multiple agents for comprehensive answers.
+The **Hybrid Router** analyzes query complexity:
+- **Simple queries** ("What time does King Library close?") → Fast function calling mode (< 2 seconds)
+- **Complex queries** ("I need research help and want to book a room") → Full LangGraph orchestration with multiple agents
+
+The **Meta Router** classifies user intent and enforces strict library scope, automatically redirecting non-library questions.
 
 ### **Modern AI Technology**
-Powered by OpenAI's latest models and LangGraph orchestration, the chatbot provides accurate, context-aware responses while maintaining conversation memory.
+Powered by **OpenAI o4-mini** with LangGraph orchestration, the chatbot provides accurate, context-aware responses while maintaining conversation memory and strict scope boundaries.
 
 ---
 
@@ -147,14 +152,16 @@ Simply type your question and the chatbot will help you immediately!
 The chatbot runs on Miami University's server infrastructure. The backend is Python-based and the frontend is a React application.
 
 **System Requirements:**
-- Backend runs on port 8000 (Python/FastAPI)
-- Frontend runs on port 5173 (React/Vite)
-- PostgreSQL database for conversation storage
-- Weaviate vector database for AI memory
-- OpenAI API access for language model
+- Backend runs on port 8000 (Python 3.12, FastAPI, LangGraph)
+- Frontend runs on port 5173 (React 19, Vite 7)
+- PostgreSQL database for conversations and MuGuide subject mappings
+- Weaviate vector database for RAG memory
+- OpenAI API access (o4-mini model)
+- SpringShare OAuth (LibCal, LibGuides, LibAnswers)
+- Google Custom Search Engine API
 
 ### **For Developers**
-See the [Developer Guide](DEVELOPER_GUIDE.md) for detailed technical documentation and setup instructions.
+See the [Developer Guide](doc/DEVELOPER_GUIDE.md) for detailed technical documentation and setup instructions.
 
 ---
 
@@ -194,18 +201,19 @@ See the [Developer Guide](DEVELOPER_GUIDE.md) for detailed technical documentati
 ## 🛠️ System Architecture
 
 ### **Technology Stack**
-- **Backend**: Python 3.12, FastAPI, LangGraph
-- **AI**: OpenAI o4-mini model with function calling
-- **Frontend**: React, Vite, Socket.IO
-- **Database**: PostgreSQL (conversations + 710 subject mappings), Weaviate (vector search)
+- **Backend**: Python 3.12, FastAPI, LangGraph, Python-SocketIO, Uvicorn
+- **AI**: OpenAI o4-mini with hybrid routing (function calling + LangGraph orchestration)
+- **Frontend**: React 19, Vite 7, Chakra UI, Socket.IO Client
+- **Database**: PostgreSQL (conversations + 710 subject mappings), Weaviate (vector RAG)
 - **APIs**: Primo, LibCal, LibGuides, LibAnswers, Google CSE, MuGuide
-- **Features**: Strict scope enforcement, contact validation, fuzzy subject matching
+- **Features**: Hybrid routing, strict scope enforcement, contact validation, fuzzy subject matching, URL validation
 
 ### **Infrastructure**
-- **Development**: Local development on localhost
-- **Production**: Deployed at new.lib.miamioh.edu
+- **Development**: Local development on localhost (auto-start script provided)
+- **Production**: Deployed at https://new.lib.miamioh.edu
 - **Environment**: Ubuntu server with Python virtual environment
-- **Process Manager**: Uvicorn with auto-reload
+- **Process Manager**: Uvicorn with auto-reload and health monitoring
+- **Communication**: WebSocket via Socket.IO at `/smartchatbot/socket.io`
 
 ---
 
@@ -230,10 +238,10 @@ See the [Developer Guide](DEVELOPER_GUIDE.md) for detailed technical documentati
 ### **Documentation**
 - **User Guide**: `README.md` (this document) - Overview with scope boundaries
 - **Developer Guide**: `doc/DEVELOPER_GUIDE.md` - Complete setup and deployment guide
-- **Knowledge Management Guide**: `doc/KNOWLEDGE_MANAGEMENT.md` - How to update AI responses and add new knowledge
+- **Knowledge Management Guide**: `doc/KNOWLEDGE_MANAGEMENT.md` and `doc/KNOWLEDGE_MANAGEMENT_GUIDE.md` - How to update AI responses
 - **Scope Enforcement Report**: `doc/SCOPE_ENFORCEMENT_REPORT.md` - Detailed scope boundaries and validation rules
 - **MuGuide Integration Report**: `doc/MUGUIDE_INTEGRATION_REPORT.md` - Subject mapping technical documentation
-- **Environment Guide**: `doc/ENV_QUICK_REFERENCE.md` - Environment configuration reference
+- **LibGuide Routing**: `doc/LIBGUIDE_VS_MYGUIDE_ROUTING.md` - Guide routing strategy
 
 ### **API & System**
 - **API Documentation**: Visit `/docs` endpoint when backend is running
@@ -250,41 +258,48 @@ Miami University Libraries serve the academic community across three campuses (O
 
 ## ⚙️ Version Information
 
-- **Current Version**: 2.0.0
-- **Last Updated**: November 11, 2025
-- **Platform**: Python AI-Core with React Frontend
+- **Current Version**: 2.1.0
+- **Last Updated**: November 13, 2025
+- **Platform**: Python 3.12 AI-Core with React 19 Frontend
 - **AI Model**: OpenAI o4-mini
-- **Agents**: 7 specialized agents
+- **Routing**: Hybrid Router (function calling + LangGraph)
+- **Agents**: 8 specialized agents (7 domain agents + hybrid router)
 - **Subject Mappings**: 710 subjects, 587 LibGuides, 586 majors
 - **Status**: Production-ready
 
-### **What's New in Version 2.0**
+### **What's New in Version 2.1**
+
+#### ✅ Hybrid Routing System (NEW)
+- Intelligent complexity analysis for each query
+- **Function Calling Mode**: Fast responses for simple queries (< 2 seconds)
+- **LangGraph Mode**: Multi-agent orchestration for complex queries
+- Automatic mode selection based on query complexity
+
+#### ✅ Enhanced Performance
+- Simple queries: < 2 seconds (function calling)
+- Complex queries: 3-5 seconds (orchestration)
+- Optimized database queries with indexed lookups
 
 #### ✅ Strict Scope Enforcement
 - ONLY answers Miami University **LIBRARIES** questions
-- Automatically detects and redirects out-of-scope questions
-- Prevents answering general university, homework, or IT questions
+- Meta Router classifies intent and detects out-of-scope questions
+- Automatically redirects to appropriate university services
 
 #### ✅ MuGuide Integration
 - 710 academic subjects mapped to LibGuides
 - 586 major codes indexed
 - 316 department codes linked
-- Intelligent fuzzy matching for subject queries
+- Fuzzy matching with similarity scoring
+
+#### ✅ URL Validation
+- Validates all URLs in responses against allowed domains
+- Removes hallucinated or incorrect URLs
+- Only allows: lib.miamioh.edu, libguides.lib.miamioh.edu, digital.lib.miamioh.edu
 
 #### ✅ Contact Information Validation
 - NEVER generates fake emails, phone numbers, or names
 - All contact info verified from LibGuides API
 - Fallback to general library contact: (513) 529-4141
-
-#### ✅ Subject Librarian Agent (NEW)
-- Routes users to appropriate subject librarian
-- Combines MuGuide database with LibGuides API
-- Provides verified contact information
-
-#### ✅ Enhanced Database Schema
-- 5 new Prisma models for subject mappings
-- Optimized indexes for fast lookup
-- Idempotent data ingestion process
 
 ---
 

@@ -21,11 +21,11 @@ Complete technical documentation for deploying, customizing, and extending this 
 
 ### Technology Stack
 
-**Backend**: Python 3.12, FastAPI, LangGraph, OpenAI o4-mini, Prisma, Socket.IO  
-**Frontend**: React 18, Vite, Chakra UI, Socket.IO Client  
+**Backend**: Python 3.12, FastAPI, LangGraph, OpenAI o4-mini, Prisma, Python-SocketIO, Uvicorn  
+**Frontend**: React 19, Vite 7, Chakra UI, Socket.IO Client  
 **Databases**: PostgreSQL (conversations + MuGuide subjects), Weaviate (vector RAG)  
 **APIs**: Primo, LibCal, LibGuides, LibAnswers, Google CSE, MuGuide  
-**Key Features**: Strict scope enforcement, 710 subjects mapped, contact validation
+**Key Features**: Hybrid routing, strict scope enforcement, 710 subjects mapped, contact validation, URL validation
 
 ### Project Structure
 
@@ -35,29 +35,68 @@ chatbot/
 ├── .env.example                   # Template with all variables
 ├── .env.local                     # Local overrides (gitignored)
 ├── local-auto-start.sh            # Dev startup script
-├── SCOPE_ENFORCEMENT_REPORT.md    # Scope boundaries & rules
-├── MUGUIDE_INTEGRATION_REPORT.md  # Subject mapping integration
+├── README.md                      # User guide
+├── doc/                           # Documentation
+│   ├── DEVELOPER_GUIDE.md         # This file
+│   ├── SCOPE_ENFORCEMENT_REPORT.md    # Scope boundaries & rules
+│   ├── MUGUIDE_INTEGRATION_REPORT.md  # Subject mapping integration
+│   ├── KNOWLEDGE_MANAGEMENT.md        # Knowledge base management
+│   ├── KNOWLEDGE_MANAGEMENT_GUIDE.md  # Detailed KB guide
+│   └── LIBGUIDE_VS_MYGUIDE_ROUTING.md # Routing strategy
 ├── ai-core/                       # Python backend
 │   ├── src/
-│   │   ├── main.py                # FastAPI entry
-│   │   ├── agents/                # 7 AI agents
-│   │   │   └── subject_librarian_agent.py  # NEW: MuGuide routing
-│   │   ├── graph/                 # LangGraph orchestration
-│   │   │   └── orchestrator.py    # Meta router + scope enforcement
+│   │   ├── main.py                # FastAPI app, Socket.IO, lifecycle
+│   │   ├── state.py               # LangGraph state definition
+│   │   ├── agents/                # 8 AI agents
+│   │   │   ├── base_agent.py      # Base class for multi-tool agents
+│   │   │   ├── primo_multi_tool_agent.py
+│   │   │   ├── libcal_comprehensive_agent.py
+│   │   │   ├── libguide_comprehensive_agent.py
+│   │   │   ├── google_site_comprehensive_agent.py
+│   │   │   ├── subject_librarian_agent.py  # MuGuide routing
+│   │   │   ├── libchat_agent.py
+│   │   │   └── transcript_rag_agent.py
+│   │   ├── graph/                 # Routing & orchestration
+│   │   │   ├── hybrid_router.py   # Complexity analyzer
+│   │   │   ├── function_calling.py # Fast mode
+│   │   │   └── orchestrator.py    # Meta router + LangGraph
 │   │   ├── tools/                 # Agent tools
-│   │   │   └── subject_matcher.py # NEW: Subject fuzzy matching
-│   │   └── config/                # NEW: Configuration
-│   │       └── scope_definition.py # Scope boundaries
+│   │   │   ├── *_tools.py         # Tool implementations
+│   │   │   ├── subject_matcher.py # Fuzzy subject matching
+│   │   │   └── url_validator.py   # URL validation
+│   │   ├── config/                # Configuration
+│   │   │   └── scope_definition.py # Scope boundaries
+│   │   ├── services/              # External services
+│   │   │   └── oauth_service.py   # OAuth token management
+│   │   ├── database/              # Database
+│   │   │   └── prisma_client.py
+│   │   ├── memory/                # Conversation management
+│   │   │   └── conversation_store.py
+│   │   ├── api/                   # API endpoints
+│   │   │   ├── health.py
+│   │   │   └── summarize.py
+│   │   └── utils/                 # Utilities
+│   │       └── logger.py
 │   ├── scripts/                   # Utility scripts
-│   │   └── ingest_muguide.py      # NEW: MuGuide data ingestion
-│   └── tests/                     # Test suite
-├── client/                        # React frontend
+│   │   └── ingest_muguide.py      # MuGuide data ingestion
+│   ├── tests/                     # Test suite
+│   └── pyproject.toml             # Python dependencies
+├── client/                        # React 19 frontend
 │   ├── src/
 │   │   ├── components/
-│   │   └── context/
-│   └── vite.config.js
-├── prisma/schema.prisma           # Database schema (JS)
-└── ai-core/schema.prisma          # Database schema (Python)
+│   │   │   ├── ChatBotComponent.jsx
+│   │   │   ├── HumanLibrarianWidget.jsx
+│   │   │   ├── FeedbackFormComponent.jsx
+│   │   │   └── ...
+│   │   ├── context/
+│   │   │   ├── SocketContextProvider.jsx
+│   │   │   └── MessageContextProvider.jsx
+│   │   ├── App.jsx
+│   │   └── main.jsx
+│   ├── vite.config.js
+│   └── package.json
+└── prisma/
+    └── schema.prisma              # Database schema
 ```
 
 ---
@@ -98,6 +137,7 @@ NODE_ENV=development
 FRONTEND_URL=http://localhost:5173
 OPENAI_API_KEY=sk-your-key
 OPENAI_MODEL=o4-mini
+OPENAI_ORGANIZATION_ID=your-org-id
 DATABASE_URL=postgresql://user:pass@host:5432/db?sslmode=require
 BACKEND_PORT=8000
 FRONTEND_PORT=5173
@@ -360,43 +400,70 @@ VITE_SOCKET_DOMAIN=
 
 ### Request Flow
 
-1. User sends message via frontend
-2. Socket.IO transmits to backend
-3. **Hybrid Router** analyzes complexity:
-   - Simple → Function Calling (fast)
-   - Complex → LangGraph orchestration
-4. **Meta Router** classifies intent and checks scope:
-   - **Out-of-scope** (general university, homework) → Redirect to appropriate service
-   - **In-scope** (library) → Selects agents (1-7)
-5. **Agents execute** in parallel
-6. **LLM synthesizes** final answer (with strict scope enforcement)
-7. Response sent back via Socket.IO
-8. Conversation saved to PostgreSQL
+1. **User sends message** via frontend (React 19)
+2. **Socket.IO transmits** to backend via WebSocket (`/smartchatbot/socket.io`)
+3. **Hybrid Router** (o4-mini) analyzes query complexity:
+   - **Simple query** → Function Calling Mode (< 2 seconds)
+     - LLM selects single tool
+     - Direct execution
+     - Immediate response
+   - **Complex query** → LangGraph Orchestration (3-5 seconds)
+     - Meta Router classifies intent
+     - Scope enforcement check
+     - Multi-agent coordination
+4. **Meta Router** (LangGraph mode only) classifies intent:
+   - **Out-of-scope** (general university, homework) → Polite redirect with appropriate links
+   - **In-scope** (library) → Selects 1-7 domain agents based on intent
+5. **Agents execute** in parallel (asyncio.gather)
+6. **URL Validation** checks all URLs in responses
+7. **LLM synthesizes** final answer with strict formatting rules
+8. **Response sent** back via Socket.IO
+9. **Conversation saved** to PostgreSQL with metadata (tokens, agents used, ratings)
 
-### Seven Specialized Agents
+### Eight Specialized Agents
 
-| Agent | Purpose | API | Data Source |
-|-------|---------|-----|-------------|
-| **Primo** | Catalog search | Ex Libris Primo | Library catalog |
-| **LibCal** | Hours & rooms | SpringShare LibCal | Events/spaces |
-| **LibGuide** | Subject guides | SpringShare LibApps | Research guides |
-| **Google Site** | Website search | Google CSE | lib.miamioh.edu |
-| **Subject Librarian** | **NEW** Subject-to-librarian routing | MuGuide + LibGuides | 710 mapped subjects |
-| **LibChat** | Human handoff | LibAnswers | Chat widget |
-| **Transcript RAG** | Memory/FAQs | Weaviate | Vector DB |
+| Agent | Type | Purpose | API/Service | Data Source |
+|-------|------|---------|-------------|-------------|
+| **Hybrid Router** | Router | Complexity analysis & mode selection | OpenAI o4-mini | N/A |
+| **Primo** | Multi-tool | Catalog search & availability | Ex Libris Primo | Library catalog |
+| **LibCal** | Multi-tool | Hours & room reservations | SpringShare LibCal | Events/spaces |
+| **LibGuide** | Multi-tool | Course & subject guides | SpringShare LibApps | Research guides |
+| **Google Site** | Multi-tool | Website content search | Google CSE | lib.miamioh.edu |
+| **Subject Librarian** | Function | Subject-to-librarian routing | MuGuide + LibGuides API | 710 mapped subjects |
+| **LibChat** | Function | Human handoff | LibAnswers | Chat widget |
+| **Transcript RAG** | Function | Memory/FAQ search | Weaviate | Vector database |
 
-### Scope Enforcement (NEW)
+**Multi-tool agents** extend `BaseAgent` and can route to multiple tools internally.  
+**Function agents** are simpler, single-purpose async functions.
 
-The chatbot has **strict boundaries** to prevent misinformation:
+### Scope Enforcement
+
+The chatbot has **strict boundaries** enforced at multiple levels:
+
+**1. Meta Router Classification**
+- Analyzes every query for scope before processing
+- Classifies as `out_of_scope` if not library-related
+- Provides polite redirect with appropriate contact information
+
+**2. Synthesis Prompt Enforcement**
+- System prompts emphasize LIBRARIES-only responses
+- NEVER answers general university questions
+- Automatically suggests appropriate services
+
+**3. URL Validation** (NEW in v2.1)
+- Post-synthesis URL checking
+- Only allows: `lib.miamioh.edu`, `libguides.lib.miamioh.edu`, `digital.lib.miamioh.edu`
+- Removes hallucinated or incorrect URLs
 
 **✅ IN SCOPE - Answers Provided:**
 - Library resources, services, spaces, staff, policies
 - ONLY Miami University **LIBRARIES** (not general university)
 
 **❌ OUT OF SCOPE - Redirected:**
-- General university (admissions, housing, courses)
-- Homework/academic content
-- IT support (unless library-specific)
+- General university (admissions, housing, courses, campus life)
+- Course content, homework, assignments, test prep
+- IT support (Canvas, email) unless library-specific
+- Student services (advising, health, counseling)
 - Non-library facilities
 
 **🔒 Contact Validation:**

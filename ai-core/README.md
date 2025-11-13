@@ -2,22 +2,30 @@
 
 **Python FastAPI + LangGraph backend for Miami University Libraries Smart Chatbot**
 
-This is the intelligent backend powering the chatbot with 6 specialized AI agents orchestrated by LangGraph.
+This is the intelligent backend powering the chatbot with **8 specialized AI agents** orchestrated by a hybrid routing system that combines fast function calling with complex multi-agent orchestration.
 
 ---
 
 ## 🎯 Key Features
 
-- **Strict Scope Enforcement**: ONLY answers Miami University LIBRARIES questions (not general university)
-- **Hybrid Router**: Automatically selects between fast function calling and complex multi-agent orchestration
-- **7 Specialized Agents**: Primo, LibCal, LibGuide, Google Site, Subject Librarian, LibChat, Transcript RAG
-- **Meta Router**: OpenAI o4-mini classifies user intent and detects out-of-scope questions
-- **MuGuide Integration**: 710 subjects mapped to LibGuides and subject librarians
-- **Contact Info Validation**: NEVER makes up emails, phone numbers, or names - only uses verified API data
-- **Real-time Communication**: Socket.IO for WebSocket support
-- **OAuth Integration**: Centralized token management for SpringShare APIs
-- **Vector Search**: Weaviate integration for FAQ/documentation RAG
-- **Production Ready**: Health monitoring, auto-restart, comprehensive logging
+- **Hybrid Routing System**: Intelligently selects between fast function calling (simple queries) and LangGraph orchestration (complex queries)
+- **8 Specialized Agents**: 
+  - **Primo** (Discovery) - Multi-tool agent for catalog search
+  - **LibCal** (Hours/Booking) - Multi-tool agent for hours and room reservations
+  - **LibGuide** (Course Guides) - Multi-tool agent for research guides
+  - **Google Site** (Website Search) - Multi-tool agent for library website content
+  - **Subject Librarian** - MuGuide integration for subject-to-librarian routing
+  - **LibChat** - Human handoff agent
+  - **Transcript RAG** - Weaviate vector search for FAQ/documentation
+  - **Hybrid Router** - Complexity analyzer and mode selector
+- **Meta Router**: OpenAI o4-mini classifies user intent and enforces strict scope (libraries only)
+- **Strict Scope Enforcement**: Automatically detects and redirects out-of-scope questions
+- **MuGuide Integration**: 710 subjects, 587 LibGuides, 586 majors mapped with fuzzy matching
+- **URL Validation**: Validates and filters URLs to prevent hallucination
+- **Contact Info Validation**: NEVER generates fake contact information - only uses verified API data
+- **Real-time Communication**: Socket.IO WebSocket at `/smartchatbot/socket.io`
+- **OAuth Integration**: Centralized token management for SpringShare APIs (LibCal, LibGuides, LibAnswers)
+- **Production Ready**: Health monitoring, auto-restart, comprehensive logging, token usage tracking
 
 ## 🚀 Quick Start
 
@@ -91,86 +99,134 @@ open http://localhost:8000/docs
 ## 🧪 Testing
 
 ```bash
+# Activate virtual environment first
+source .venv/bin/activate
+
 # Run all tests
 pytest tests/ -v
 
 # Run with coverage
 pytest --cov=src --cov-report=html
 
-# Run specific test
+# Run specific test file
 pytest tests/test_all_agents.py -v
+
+# Run specific test function
+pytest tests/test_all_agents.py::test_primo_agent -v
 ```
 
 ## 📡 API Endpoints
 
-- **GET /health** - System health and status
-- **GET /readiness** - Readiness probe for orchestration
-- **GET /metrics** - Performance metrics
-- **POST /ask** - Main chat endpoint (HTTP JSON)
-- **WebSocket** - `/smartchatbot/socket.io` - Real-time communication
+### HTTP Endpoints
+- **GET /health** - System health check (database, external APIs)
+- **GET /readiness** - Kubernetes readiness probe
+- **GET /metrics** - Performance metrics (future)
+- **POST /ask** - HTTP chat endpoint (JSON request/response)
+- **POST /summarize** - Generate conversation summaries
 - **GET /docs** - Interactive API documentation (Swagger UI)
-- **GET /redoc** - Alternative API documentation
+- **GET /redoc** - Alternative API documentation (ReDoc)
 
-## 🏛️ Architecture
+### WebSocket
+- **Socket.IO** - `/smartchatbot/socket.io`
+  - Event `connect` - Client connection
+  - Event `message` - Send/receive chat messages
+  - Event `messageRating` - Rate assistant responses (thumbs up/down)
+  - Event `userFeedback` - Submit conversation feedback
+  - Event `disconnect` - Client disconnection
+
+## 🌌 Architecture
 
 ```
 Request Flow:
 User Message
     ↓
-Hybrid Router (complexity analysis)
+Hybrid Router (complexity analysis via o4-mini)
     ↓
-    ├─→ Simple: Function Calling (fast)
-    └─→ Complex: LangGraph Orchestration
+    ├─→ SIMPLE: Function Calling Mode (< 2s)
+    │       ↓
+    │   LLM with function calling
+    │       ↓
+    │   Single tool execution
+    │       ↓
+    │   Direct response
+    │
+    └─→ COMPLEX: LangGraph Orchestration (3-5s)
             ↓
-        Meta Router (intent classification)
+        Meta Router (intent classification + scope check)
             ↓
-        Agent Selection (1-6 agents)
+        Agent Selection (1-7 domain agents)
             ↓
-        Parallel Execution
+        Parallel Execution (asyncio.gather)
             ↓
-        LLM Synthesis
+        URL Validation
+            ↓
+        LLM Synthesis (o4-mini)
             ↓
         Response to User
+
+Key Components:
+- Hybrid Router: src/graph/hybrid_router.py
+- Function Calling: src/graph/function_calling.py  
+- LangGraph Orchestrator: src/graph/orchestrator.py
+- Scope Enforcement: src/config/scope_definition.py
+- URL Validation: src/tools/url_validator.py
 ```
 
 ### Directory Structure
 
 ```
 src/
-├── main.py              # FastAPI app, Socket.IO, CORS
+├── main.py              # FastAPI app, Socket.IO, CORS, lifecycle
 ├── state.py             # LangGraph state definition
-├── agents/              # Specialized agents
-│   ├── base_agent.py
-│   ├── primo_multi_tool_agent.py
-│   ├── libcal_comprehensive_agent.py
-│   ├── libguide_comprehensive_agent.py
-│   ├── google_site_comprehensive_agent.py
-│   ├── libchat_agent.py
-│   └── transcript_rag_agent.py
-├── graph/               # LangGraph orchestration
-│   ├── orchestrator.py      # Main workflow
-│   ├── function_calling.py  # Fast mode
-│   └── hybrid_router.py     # Smart routing
+├── agents/              # 8 specialized agents
+│   ├── base_agent.py                       # Base class for multi-tool agents
+│   ├── primo_multi_tool_agent.py           # Discovery search
+│   ├── libcal_comprehensive_agent.py       # Hours & booking
+│   ├── libguide_comprehensive_agent.py     # Course guides
+│   ├── google_site_comprehensive_agent.py  # Website search
+│   ├── subject_librarian_agent.py          # Subject-to-librarian routing
+│   ├── libchat_agent.py                    # Human handoff
+│   └── transcript_rag_agent.py             # RAG memory
+├── graph/               # Routing & orchestration
+│   ├── hybrid_router.py     # Complexity analyzer & mode selector
+│   ├── function_calling.py  # Fast mode for simple queries
+│   └── orchestrator.py      # LangGraph workflow for complex queries
+├── config/              # Configuration
+│   └── scope_definition.py  # Scope boundaries & prompts
 ├── tools/               # Agent tools
-├── services/            # OAuth services
-├── database/            # Prisma client
-├── memory/              # Conversation storage
-├── api/                 # Health/monitoring
-└── utils/               # Logging, helpers
+│   ├── *_tools.py           # Tool implementations
+│   ├── subject_matcher.py   # Fuzzy subject matching
+│   └── url_validator.py     # URL validation
+├── services/            # External services
+│   └── oauth_service.py     # OAuth token management
+├── database/            # Database clients
+│   └── prisma_client.py     # Prisma connection
+├── memory/              # Conversation management
+│   └── conversation_store.py # DB operations
+├── api/                 # API endpoints
+│   ├── health.py            # Health checks
+│   └── summarize.py         # Conversation summaries
+└── utils/               # Utilities
+    └── logger.py            # Logging utilities
 ```
 
 ## 🎨 Customization
 
-See `DEVELOPER_GUIDE.md` for detailed instructions on:
-- Adding new agents
-- Changing the LLM model
-- Customizing response formatting
-- Integrating new APIs
+See `../doc/DEVELOPER_GUIDE.md` for detailed instructions on:
+- **Adding new agents** - Extend the multi-tool agent base class
+- **Changing the LLM model** - Update OPENAI_MODEL in .env
+- **Modifying scope boundaries** - Edit `src/config/scope_definition.py`
+- **Customizing response formatting** - Adjust synthesis prompts in orchestrator
+- **Integrating new APIs** - Add to tools/ and create corresponding agents
+- **Adjusting routing logic** - Modify hybrid_router.py complexity analysis
 
 ## 📚 Documentation
 
-- **User Guide**: See root `README.md`
-- **Developer Guide**: See root `DEVELOPER_GUIDE.md`
+- **User Guide**: `../README.md` - Features and capabilities
+- **Developer Guide**: `../doc/DEVELOPER_GUIDE.md` - Setup and deployment
+- **Scope Enforcement**: `../doc/SCOPE_ENFORCEMENT_REPORT.md` - Scope boundaries
+- **MuGuide Integration**: `../doc/MUGUIDE_INTEGRATION_REPORT.md` - Subject mapping
+- **Knowledge Management**: `../doc/KNOWLEDGE_MANAGEMENT_GUIDE.md` - Update AI knowledge
 - **API Docs**: http://localhost:8000/docs (when running)
 
 ## 🔧 Troubleshooting
@@ -198,4 +254,15 @@ psql "postgresql://..."
 
 ---
 
-**For complete documentation, see [DEVELOPER_GUIDE.md](../DEVELOPER_GUIDE.md)**
+## ⚙️ Version
+
+- **AI-Core Version**: 2.1.0
+- **Python**: 3.12+
+- **LangGraph**: Latest
+- **OpenAI Model**: o4-mini
+- **FastAPI**: Latest
+- **Prisma**: Latest
+
+---
+
+**For complete documentation, see [DEVELOPER_GUIDE.md](../doc/DEVELOPER_GUIDE.md)**
