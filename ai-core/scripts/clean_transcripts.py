@@ -46,11 +46,33 @@ OUT_OF_SCOPE_KEYWORDS = [
 ]
 
 
-def parse_transcript(transcript_text: str) -> List[Dict[str, str]]:
+def anonymize_librarian_name(name: str) -> str:
+    """
+    隐私保护：将图书馆员姓名替换为"Librarian"
+    保留"Patron"不变
+    """
+    if not name or name.strip() == '':
+        return ''
+    
+    name_stripped = name.strip()
+    
+    # 保留Patron不变
+    if name_stripped.lower() == 'patron':
+        return 'Patron'
+    
+    # 其他所有名字都替换为Librarian
+    return 'Librarian'
+
+
+def parse_transcript(transcript_text: str, anonymize: bool = True) -> List[Dict[str, str]]:
     """
     解析Transcript字段，提取结构化消息列表
     
     格式: "HH:MM:SS - Speaker Name : Message content"
+    
+    Args:
+        transcript_text: 对话文本
+        anonymize: 是否匿名化图书馆员姓名（默认True）
     """
     messages = []
     if not transcript_text or transcript_text.strip() == '':
@@ -67,6 +89,11 @@ def parse_transcript(transcript_text: str) -> List[Dict[str, str]]:
         match = re.match(r'(\d{2}:\d{2}(?::\d{2})?) - ([^:]+) : (.+)', line)
         if match:
             time, speaker, content = match.groups()
+            
+            # 隐私保护：替换图书馆员姓名
+            if anonymize:
+                speaker = anonymize_librarian_name(speaker)
+            
             messages.append({
                 'time': time.strip(),
                 'speaker': speaker.strip(),
@@ -335,20 +362,24 @@ def process_csv_file(csv_file: str, extraction_strategy: str = 'all') -> tuple[L
                     stats['filtered_out'][reason] += 1
                     continue
                 
-                # 解析对话
-                messages = parse_transcript(row.get('Transcript', ''))
+                # 解析对话（带隐私保护）
+                messages = parse_transcript(row.get('Transcript', ''), anonymize=True)
                 if not messages:
                     stats['filtered_out']['empty_messages'] += 1
                     continue
                 
-                # 提取元数据
+                # 提取元数据（隐私保护：替换Answerer姓名）
+                answerer = row.get('Answerer', '')
+                if answerer and answerer.strip():
+                    answerer = 'Librarian'  # 隐私保护
+                
                 metadata = {
                     'chat_id': row.get('Chat ID', ''),
                     'timestamp': row.get('Timestamp', ''),
                     'rating': int(float(row.get('Rating (0-4)', 0))) if row.get('Rating (0-4)', '').strip() else 0,
                     'duration': int(float(row.get('Duration (seconds)', 0))) if row.get('Duration (seconds)', '').strip() else 0,
                     'message_count': int(row.get('Message Count', 0)),
-                    'answerer': row.get('Answerer', ''),
+                    'answerer': answerer,  # 已匿名化
                     'department': row.get('Department', ''),
                     'tags': [tag.strip() for tag in row.get('Tags', '').split(',') if tag.strip()]
                 }
@@ -447,7 +478,7 @@ def print_statistics(stats: Dict):
 
 
 def main():
-    parser = argparse.ArgumentParser(description='清理历史对话CSV文件准备RAG摄入')
+    parser = argparse.ArgumentParser(description='清理历史对话CSV文件准备RAG摄入（带隐私保护）')
     parser.add_argument('csv_files', nargs='+', help='CSV文件路径（可以多个）')
     parser.add_argument('--output', '-o', default='cleaned_transcripts.json', help='输出JSON文件名')
     parser.add_argument('--strategy', '-s', choices=['first', 'all'], default='all',
@@ -458,6 +489,7 @@ def main():
     args = parser.parse_args()
     
     print("🚀 开始处理历史对话数据...")
+    print(f"🔒 隐私保护: 已启用（所有图书馆员姓名将替换为'Librarian'）")
     print(f"提取策略: {args.strategy}")
     print(f"最低置信度: {args.min_confidence}")
     

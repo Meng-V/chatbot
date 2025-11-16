@@ -222,12 +222,22 @@ See `../doc/DEVELOPER_GUIDE.md` for detailed instructions on:
 
 ## 📚 Documentation
 
+### General Documentation
 - **User Guide**: `../README.md` - Features and capabilities
 - **Developer Guide**: `../doc/DEVELOPER_GUIDE.md` - Setup and deployment
 - **Scope Enforcement**: `../doc/SCOPE_ENFORCEMENT_REPORT.md` - Scope boundaries
 - **MuGuide Integration**: `../doc/MUGUIDE_INTEGRATION_REPORT.md` - Subject mapping
 - **Knowledge Management**: `../doc/KNOWLEDGE_MANAGEMENT_GUIDE.md` - Update AI knowledge
 - **API Docs**: http://localhost:8000/docs (when running)
+
+### RAG & Vector Search Documentation
+- **Vector Optimization Overview**: `README_VECTOR_OPTIMIZATION.md` - Complete project overview
+- **Quick Start Guide**: `docs/VECTOR_OPTIMIZATION_QUICKSTART.md` - 3-step optimization guide
+- **Technical Guide**: `docs/VECTOR_SEARCH_OPTIMIZATION.md` - Full technical details
+- **Completion Report**: `VECTOR_OPTIMIZATION_COMPLETE.md` - Final results and status
+- **Data Pipeline**: `docs/RAG_DATA_PIPELINE_README.md` - Original data processing
+- **Annual Processing**: `docs/PROCESS_NEW_YEAR_DATA.md` - New data automation
+- **Project Summary**: `2025_RAG_PROJECT_SUMMARY.md` - Historical project summary
 
 ## 🔧 Troubleshooting
 

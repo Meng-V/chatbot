@@ -1,6 +1,12 @@
 #!/usr/bin/env python3
 """
-Ingest chat transcripts into Weaviate for RAG.
+⚠️  DEPRECATED - Use ingest_transcripts_optimized.py instead
+
+This script uses the OLD schema with 12 fields including metadata.
+For the new optimized vector search approach with simplified schema (4 fields),
+use: scripts/ingest_transcripts_optimized.py
+
+This file is kept for reference only.
 """
 import os
 import json
