@@ -276,11 +276,37 @@ Is there anything library-related I can help you with?"""
                 state["final_answer"] = resp.get("text", "Let me connect you with a librarian.")
                 return state
     
-    # Combine agent outputs
+    # Combine agent outputs with PRIORITY ORDER
+    # Priority: API functions > RAG > Google Site Search
+    priority_order = {
+        "primo": 1,           # API: Catalog search
+        "libcal": 1,          # API: Hours & reservations
+        "libguide": 1,        # API: Research guides
+        "subject_librarian": 1, # API: Subject librarian routing
+        "libchat": 1,         # API: Chat handoff
+        "transcript_rag": 2,  # RAG: Curated knowledge base (HIGHER PRIORITY)
+        "google_site": 3      # Website search (LOWER PRIORITY - fallback only)
+    }
+    
+    # Sort responses by priority
+    sorted_responses = sorted(
+        responses.items(),
+        key=lambda x: priority_order.get(x[0], 99)  # Unknown agents get lowest priority
+    )
+    
     context_parts = []
-    for agent_name, resp in responses.items():
+    for agent_name, resp in sorted_responses:
         if resp.get("success"):
-            context_parts.append(f"[{resp.get('source', agent_name)}]: {resp.get('text', '')}")
+            # Add priority label for RAG to emphasize it in synthesis
+            priority_label = ""
+            if agent_name == "transcript_rag":
+                priority_label = " [CURATED KNOWLEDGE BASE - HIGH PRIORITY]"
+            elif priority_order.get(agent_name, 99) == 1:
+                priority_label = " [VERIFIED API DATA]"
+            elif agent_name == "google_site":
+                priority_label = " [WEBSITE SEARCH - USE ONLY IF NO BETTER SOURCE]"
+            
+            context_parts.append(f"[{resp.get('source', agent_name)}{priority_label}]: {resp.get('text', '')}")
     
     if not context_parts:
         state["final_answer"] = "I'm having trouble accessing our systems right now. Please visit https://www.lib.miamioh.edu/ or chat with a librarian at (513) 529-4141."
@@ -367,6 +393,12 @@ CRITICAL RULES - MUST FOLLOW:
    - Website: https://www.lib.miamioh.edu/contact
 8. If question seems outside library scope, politely redirect to appropriate service
 9. Use the conversation history to provide contextual follow-up responses
+10. **SOURCE PRIORITY - EXTREMELY IMPORTANT**:
+    - ALWAYS prefer information from [VERIFIED API DATA] sources (most reliable)
+    - THEN use [CURATED KNOWLEDGE BASE - HIGH PRIORITY] (TranscriptRAG - library-verified facts)
+    - ONLY use [WEBSITE SEARCH] if no better source is available
+    - If RAG and website search conflict, TRUST THE RAG KNOWLEDGE BASE
+    - Cite your source when providing factual information
 
 STUDY ROOM BOOKING RULES - EXTREMELY IMPORTANT:
 - NEVER say "checking availability", "let me check", "I'll look for", or similar status updates

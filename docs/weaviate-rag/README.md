@@ -22,12 +22,42 @@ This folder contains all documentation for managing the Weaviate-powered Retriev
 - **[05-FACT-GROUNDING.md](./05-FACT-GROUNDING.md)** - Detailed guide on ensuring factual accuracy
 - **[06-FACT-GROUNDING-QUICKSTART.md](./06-FACT-GROUNDING-QUICKSTART.md)** - Quick start for fact correction
 - **[07-FACT-CORRECTION.md](./07-FACT-CORRECTION.md)** - Summary of fact correction features
+- **[08-UPDATING-WORKFLOW.md](./08-UPDATING-WORKFLOW.md)** - ⭐ **Complete workflow for updating knowledge** (START HERE for updates!)
+- **[09-AGENT-PRIORITY-SYSTEM.md](./09-AGENT-PRIORITY-SYSTEM.md)** - ⭐ **Agent priority: RAG > Google Site Search** (NEW!)
 
 ---
 
 ## 🎯 Common Tasks
 
-### Update a Wrong Answer
+### ⭐ Update Knowledge (Add/Fix Q&A)
+**⚠️ IMPORTANT**: Editing local JSON does NOT update Weaviate Cloud!
+
+**Quick Method** (1-20 changes):
+```bash
+# 1. Edit the update script
+nano ai-core/scripts/update_rag_facts.py
+# Add facts to CORRECT_FACTS array (line 57)
+
+# 2. Run update
+cd ai-core
+python scripts/update_rag_facts.py
+```
+
+**Bulk Method** (50+ changes):
+```bash
+# 1. Edit JSON
+nano ai-core/data/optimized_for_weaviate.json
+
+# 2. Re-ingest all data
+cd ai-core
+python scripts/ingest_transcripts_optimized.py
+```
+
+📖 **Complete Workflow**: [08-UPDATING-WORKFLOW.md](./08-UPDATING-WORKFLOW.md) ← **Read this!**
+
+---
+
+### Fix a Wrong Answer
 ```bash
 # 1. Find the problematic record
 cd /Users/qum/Documents/GitHub/chatbot/ai-core
