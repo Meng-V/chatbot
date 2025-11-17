@@ -65,8 +65,8 @@ IN-SCOPE LIBRARY QUESTIONS - Classify into ONE of these categories:
 1. **discovery_search** - Searching for books, articles, journals, e-resources, call numbers, catalog items
    Examples: "Do you have The Great Gatsby?", "Find articles on climate change", "What's the call number for..."
 
-2. **subject_librarian** - Finding subject librarian, LibGuides for a specific major, department, or academic subject
-   Examples: "Who's the biology librarian?", "LibGuide for accounting", "I need help with psychology research"
+2. **subject_librarian** - Finding subject librarian, LibGuides for a specific major, department, or academic subject. ALSO use for general questions about all subject librarians.
+   Examples: "Who's the biology librarian?", "LibGuide for accounting", "I need help with psychology research", "list of subject librarians", "show me all subject librarians", "subject librarian map"
 
 3. **course_subject_help** - Course guides, recommended databases for a specific class
    Examples: "What databases for ENG 111?", "Guide for PSY 201", "Resources for CHM 201"
@@ -130,6 +130,15 @@ async def classify_intent_node(state: AgentState) -> AgentState:
     }
     
     agents = agent_mapping.get(intent, ["transcript_rag"])
+    
+    # 🎯 CRITICAL: Pre-filter agents for factual queries to prevent hallucinations
+    from src.utils.fact_grounding import detect_factual_query_type
+    fact_types = detect_factual_query_type(user_msg)
+    
+    if fact_types and "google_site" in agents:
+        logger.log(f"🔒 [Meta Router] Detected factual query ({', '.join(fact_types)}) - REMOVING google_site to prevent conflicting data")
+        agents = [a for a in agents if a != "google_site"]
+        logger.log(f"📋 [Meta Router] Filtered agents: {', '.join(agents)}")
     
     state["classified_intent"] = intent
     state["selected_agents"] = agents
@@ -259,12 +268,21 @@ For questions about general university matters, admissions, courses, or campus s
 • **University Information**: (513) 529-1809
 
 For immediate library assistance, you can:
-• **Chat with a librarian**: https://www.lib.miamioh.edu/contact
+• **Chat with a librarian**: https://www.lib.miamioh.edu/research/research-support/ask/
 • **Call us**: (513) 529-4141
 • **Visit our website**: https://www.lib.miamioh.edu
 
 Is there anything library-related I can help you with?"""
-        state["final_answer"] = out_of_scope_msg
+        # Validate URLs before returning
+        logger.log("🔍 [URL Validator] Checking URLs in out-of-scope message")
+        validated_msg, had_invalid_urls = await validate_and_clean_response(
+            out_of_scope_msg, 
+            log_callback=logger.log
+        )
+        if had_invalid_urls:
+            logger.log("⚠️ [URL Validator] Removed invalid URLs from out-of-scope message")
+        
+        state["final_answer"] = validated_msg
         return state
     
     responses = state.get("agent_responses", {})
@@ -309,7 +327,17 @@ Is there anything library-related I can help you with?"""
             context_parts.append(f"[{resp.get('source', agent_name)}{priority_label}]: {resp.get('text', '')}")
     
     if not context_parts:
-        state["final_answer"] = "I'm having trouble accessing our systems right now. Please visit https://www.lib.miamioh.edu/ or chat with a librarian at (513) 529-4141."
+        error_msg = "I'm having trouble accessing our systems right now. Please visit https://www.lib.miamioh.edu/ or chat with a librarian at (513) 529-4141."
+        # Validate URLs before returning
+        logger.log("🔍 [URL Validator] Checking URLs in error message")
+        validated_msg, had_invalid_urls = await validate_and_clean_response(
+            error_msg, 
+            log_callback=logger.log
+        )
+        if had_invalid_urls:
+            logger.log("⚠️ [URL Validator] Removed invalid URLs from error message")
+        
+        state["final_answer"] = validated_msg
         return state
     
     context = "\n\n".join(context_parts)
@@ -324,6 +352,23 @@ Is there anything library-related I can help you with?"""
     if use_strict_grounding:
         logger.log(f"🔒 [Fact Grounding] Detected factual query types: {', '.join(fact_types)}")
         
+        # 🚨 CRITICAL: Remove google_site from responses to prevent conflicting information
+        if "google_site" in responses:
+            logger.log("⚠️ [Fact Grounding] Removing Google Site Search - using RAG only for factual accuracy")
+            del responses["google_site"]
+            # Update context to exclude google_site
+            sorted_responses = [(k, v) for k, v in sorted_responses if k != "google_site"]
+            context_parts = []
+            for agent_name, resp in sorted_responses:
+                if resp.get("success"):
+                    priority_label = ""
+                    if agent_name == "transcript_rag":
+                        priority_label = " [CURATED KNOWLEDGE BASE - HIGH PRIORITY]"
+                    elif priority_order.get(agent_name, 99) == 1:
+                        priority_label = " [VERIFIED API DATA]"
+                    context_parts.append(f"[{resp.get('source', agent_name)}{priority_label}]: {resp.get('text', '')}")
+            context = "\n\n".join(context_parts)
+        
         # Check RAG confidence
         is_confident, confidence_reason = await is_high_confidence_rag_match(rag_response)
         logger.log(f"📊 [Fact Grounding] RAG confidence: {confidence_reason}")
@@ -331,14 +376,24 @@ Is there anything library-related I can help you with?"""
         # If RAG has low confidence for factual query, escalate to human
         if not is_confident and rag_response.get("similarity_score", 0) < 0.70:
             logger.log("⚠️ [Fact Grounding] Low confidence for factual query - suggesting human assistance")
-            state["final_answer"] = (
+            fallback_message = (
                 "I found some information, but I'm not confident it fully answers your question about specific factual details. "
                 "To ensure you get accurate information, I'd recommend:\n\n"
-                "• **Chat with a librarian**: https://www.lib.miamioh.edu/contact\n"
+                "• **Chat with a librarian**: https://www.lib.miamioh.edu/research/research-support/ask/\n"
                 "• **Call us**: (513) 529-4141\n"
                 "• **Visit our website**: https://www.lib.miamioh.edu\n\n"
                 "Would you like me to connect you with a librarian?"
             )
+            # Validate URLs before returning
+            logger.log("🔍 [URL Validator] Checking URLs in fallback message")
+            validated_message, had_invalid_urls = await validate_and_clean_response(
+                fallback_message, 
+                log_callback=logger.log
+            )
+            if had_invalid_urls:
+                logger.log("⚠️ [URL Validator] Removed invalid URLs from fallback message")
+            
+            state["final_answer"] = validated_message
             state["needs_human"] = True
             return state
         
@@ -375,30 +430,56 @@ Information from library systems:
 
 CRITICAL RULES - MUST FOLLOW:
 1. ONLY provide information about Miami University LIBRARIES
-2. NEVER make up or generate:
-   - Email addresses
-   - Phone numbers
-   - Librarian names (unless from the provided context/API)
-   - Building names or locations
-   - URLs or web addresses
-3. ONLY use URLs that appear EXACTLY in the context above
-4. Allowed URL domains ONLY:
+
+2. **WHEN TO TRUST DATA:**
+   ✅ ALWAYS TRUST data marked as [VERIFIED API DATA] or from "Subject Librarian Agent (MyGuide + LibGuides API)"
+   ✅ Use librarian names, emails, and links from these verified sources CONFIDENTLY
+   ✅ These sources have already been validated - use them without hesitation
+
+3. **WHAT YOU MUST NEVER MAKE UP (only if NOT in context):**
+   🚫 DO NOT invent email addresses if none are provided
+   🚫 DO NOT create fake librarian names like "Dr. John Smith" if not in context
+   🚫 DO NOT generate phone numbers (except library main: 513-529-4141)
+   🚫 DO NOT make up URLs if none are provided
+
+4. **How to Use Context:**
+   - If context contains librarian names/emails → USE THEM (they're verified!)
+   - If context is empty or doesn't answer the question → Provide general library contact
+   - NEVER supplement context with made-up information from your training data
+
+5. ONLY use URLs that appear EXACTLY in the context above
+6. Allowed URL domains ONLY:
    - lib.miamioh.edu
    - libguides.lib.miamioh.edu
    - digital.lib.miamioh.edu
-5. NEVER create URLs even if they look correct - only use URLs from context
-6. ONLY use contact information that appears in the context above
-7. If contact info is not in the context, provide general library contact:
+7. NEVER create URLs even if they look correct - only use URLs from context
+8. If the context says "verified from LibGuides API" - use that data EXACTLY as provided
+9. If contact info is not in the context, provide ONLY this general library contact:
    - Phone: (513) 529-4141
-   - Website: https://www.lib.miamioh.edu/contact
-8. If question seems outside library scope, politely redirect to appropriate service
-9. Use the conversation history to provide contextual follow-up responses
-10. **SOURCE PRIORITY - EXTREMELY IMPORTANT**:
-    - ALWAYS prefer information from [VERIFIED API DATA] sources (most reliable)
-    - THEN use [CURATED KNOWLEDGE BASE - HIGH PRIORITY] (TranscriptRAG - library-verified facts)
-    - ONLY use [WEBSITE SEARCH] if no better source is available
-    - If RAG and website search conflict, TRUST THE RAG KNOWLEDGE BASE
-    - Cite your source when providing factual information
+   - Website: https://www.lib.miamioh.edu/research/research-support/ask/
+10. **SOURCE PRIORITY:**
+    - TRUST and USE: [VERIFIED API DATA] and "Subject Librarian Agent" responses
+    - TRUST and USE: [CURATED KNOWLEDGE BASE - HIGH PRIORITY] (TranscriptRAG)
+    - Use cautiously: [WEBSITE SEARCH] (verify URLs match allowed domains)
+    - If sources conflict, prefer API data over other sources
+
+11. **Response Guidelines:**
+    - Answer questions directly and helpfully when you have verified data
+    - Only redirect to general contact if context truly doesn't have the answer
+    - Don't be overly cautious - if data is marked as verified, USE IT!
+    
+    **Example of GOOD response:**
+    Context: "Source: Subject Librarian Agent (MyGuide + LibGuides API)
+             For computer science research help, contact Andy Revelle (revellaa@miamioh.edu)"
+    → Answer: "For computer science research help, contact Andy Revelle at revellaa@miamioh.edu"
+    
+    **Example of BAD response (being overly cautious):**
+    Context: [same as above]
+    → DON'T say: "I'm having trouble accessing our systems. Please visit..."
+    → This is WRONG because you DO have verified data!
+
+12. If question seems outside library scope, politely redirect to appropriate service
+13. Use the conversation history to provide contextual follow-up responses
 
 STUDY ROOM BOOKING RULES - EXTREMELY IMPORTANT:
 - NEVER say "checking availability", "let me check", "I'll look for", or similar status updates
@@ -436,8 +517,11 @@ FORMATTING GUIDELINES:
 
 Provide a clear, helpful answer based ONLY on the information above. Be concise, friendly, and cite sources. If the information doesn't fully answer the question, suggest contacting a librarian."""
     
+    # 🎯 Generate final response
+    logger.log("💬 [Synthesizer] Generating final response")
+    
     messages = [
-        SystemMessage(content="You are a Miami University LIBRARIES assistant speaking to a human user. Write in natural, conversational language. NEVER output JSON, code, or technical data structures. ALWAYS format information in human-readable sentences and lists. ONLY answer library questions. NEVER make up contact information."),
+        SystemMessage(content="You are a Miami University LIBRARIES assistant. KEY RULES: 1) TRUST and USE data marked as [VERIFIED API DATA] or from 'Subject Librarian Agent' - it's already validated, so answer confidently! 2) NEVER invent information if context is empty - provide library general contact instead. 3) For factual queries, ONLY use the provided context - NEVER supplement with your training data. Write in natural, conversational language. NEVER output JSON or code. Balance: Be helpful when you have verified data, be cautious only when context is missing."),
         HumanMessage(content=synthesis_prompt)
     ]
     
@@ -456,12 +540,27 @@ Provide a clear, helpful answer based ONLY on the information above. Be concise,
         )
         
         if not all_verified:
-            logger.log(f"⚠️ [Fact Verifier] Found {len(issues)} unverified claim(s)")
-            # Add disclaimer if facts couldn't be verified
-            raw_answer += (
-                "\n\n*Note: For the most accurate information, please contact our library staff at "
-                "(513) 529-4141 or visit https://www.lib.miamioh.edu/contact*"
-            )
+            logger.log(f"🚨 [Fact Verifier] HALLUCINATION DETECTED - Found {len(issues)} unverified claim(s)")
+            for issue in issues:
+                logger.log(f"   ❌ {issue}")
+            
+            # 🚨 CRITICAL: For date queries, extract correct years from RAG and use directly
+            if "date" in fact_types:
+                import re
+                # Extract all 4-digit years from RAG context
+                rag_years = re.findall(r'\b(19\d{2}|20\d{2})\b', rag_context)
+                if rag_years:
+                    logger.log(f"✅ [Fact Verifier] Correct years from RAG: {', '.join(rag_years)}")
+                    # Replace the answer with RAG text directly to avoid hallucination
+                    logger.log("🔄 [Fact Verifier] Using RAG answer directly (bypassing LLM synthesis)")
+                    raw_answer = rag_context.strip()
+                else:
+                    logger.log("⚠️ [Fact Verifier] No years found in RAG, suggesting human assistance")
+                    raw_answer = (
+                        "I found some information but want to ensure you get accurate dates. "
+                        "For the most accurate information about construction dates, please contact our library staff at "
+                        "(513) 529-4141 or visit https://www.lib.miamioh.edu/research/research-support/ask/"
+                    )
         else:
             logger.log("✅ [Fact Verifier] All factual claims verified against RAG")
     

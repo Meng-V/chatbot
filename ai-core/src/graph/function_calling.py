@@ -13,6 +13,7 @@ from src.agents.libguide_comprehensive_agent import LibGuideComprehensiveAgent
 from src.agents.google_site_comprehensive_agent import GoogleSiteComprehensiveAgent
 from src.agents.libchat_agent import libchat_handoff
 from src.agents.transcript_rag_agent import transcript_rag_query
+from src.agents.subject_librarian_agent import find_subject_librarian_query
 from src.tools.url_validator import validate_and_clean_response
 
 OPENAI_MODEL = os.getenv("OPENAI_MODEL", "o4-mini")
@@ -61,6 +62,9 @@ class FindSubjectGuideInput(BaseModel):
 
 class FindCourseGuideInput(BaseModel):
     course_code: str = Field(description="Course code (e.g., ENG 111, BIO 201)")
+
+class FindSubjectLibrarianInput(BaseModel):
+    subject: str = Field(description="Academic subject, major, or department (e.g., business, chemistry, computer science, biology)")
 
 class ConnectLibrarianInput(BaseModel):
     message: str = Field(default="User needs help", description="Reason for connecting to librarian")
@@ -146,6 +150,14 @@ async def find_course_guide_wrapper(course_code: str) -> str:
         return result.get("text", "No guide found")
     except Exception as e:
         return f"Error finding course guide: {str(e)}"
+
+async def find_subject_librarian_wrapper(subject: str) -> str:
+    """Find subject librarian and LibGuide for an academic subject or major."""
+    try:
+        result = await find_subject_librarian_query(subject)
+        return result.get("text", "No subject librarian found") if result else "No subject librarian found"
+    except Exception as e:
+        return f"Error finding subject librarian: {str(e)}"
 
 async def connect_librarian_wrapper(message: str = "User needs help") -> str:
     """Connect user with a human librarian."""
@@ -236,6 +248,13 @@ tools = [
         description="Find research guide for a specific course code.",
         args_schema=FindCourseGuideInput,
         coroutine=find_course_guide_wrapper
+    ),
+    StructuredTool.from_function(
+        func=find_subject_librarian_wrapper,
+        name="find_subject_librarian",
+        description="Find subject librarian contact information and research guides for an academic subject, major, or department. Use this when users ask 'who is my [subject] librarian' or need help with a specific academic area.",
+        args_schema=FindSubjectLibrarianInput,
+        coroutine=find_subject_librarian_wrapper
     ),
     StructuredTool.from_function(
         func=connect_librarian_wrapper,

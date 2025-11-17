@@ -219,7 +219,7 @@ CRITICAL RULES - MUST FOLLOW:
 3. ONLY use contact information that appears in the context above
 4. If contact info is not in the context, provide general library contact:
    - Phone: (513) 529-4141
-   - Website: https://www.lib.miamioh.edu/contact
+   - Website: https://www.lib.miamioh.edu/research/research-support/ask/
 5. If question seems outside library scope, politely redirect
 ```
 
@@ -238,7 +238,7 @@ For questions about general university matters, admissions, courses, or campus s
 • **University Information**: (513) 529-1809
 
 For immediate library assistance, you can:
-• **Chat with a librarian**: https://www.lib.miamioh.edu/contact
+• **Chat with a librarian**: https://www.lib.miamioh.edu/research/research-support/ask/
 • **Call us**: (513) 529-4141
 • **Visit our website**: https://www.lib.miamioh.edu
 
@@ -262,7 +262,7 @@ if result["librarians"]:
             output.append(f"🔗 Profile: {librarian['profile_url']}")
 elif result["lib_guides"]:
     # If no librarian info, provide general contact
-    output.append("• **Visit**: https://www.lib.miamioh.edu/librarians")
+    output.append("• **Visit**: https://www.lib.miamioh.edu/about/organization/liaisons/")
     output.append("• **Call the library**: (513) 529-4141")
 ```
 
@@ -302,11 +302,11 @@ OFFICIAL_LIBRARY_CONTACTS = {
         "name": "King Library",
         "phone": "(513) 529-4141",
         "website": "https://www.lib.miamioh.edu",
-        "contact_page": "https://www.lib.miamioh.edu/contact",
+        "contact_page": "https://www.lib.miamioh.edu/research/research-support/ask/",
     },
     "ask_a_librarian": {
         "chat_url": "https://libanswers.lib.miamioh.edu/chat/widget/...",
-        "email_form": "https://www.lib.miamioh.edu/contact",
+        "email_form": "https://www.lib.miamioh.edu/research/research-support/ask/",
         "phone": "(513) 529-4141",
     },
     ...
@@ -339,7 +339,7 @@ services, please visit:
 • **University Information**: (513) 529-1809
 
 For immediate library assistance, you can:
-• **Chat with a librarian**: https://www.lib.miamioh.edu/contact
+• **Chat with a librarian**: https://www.lib.miamioh.edu/research/research-support/ask/
 • **Call us**: (513) 529-4141
 
 Is there anything library-related I can help you with?
@@ -380,7 +380,7 @@ I found information about Chemistry:
 
 📞 **Contact Information:**
 For assistance from a subject librarian:
-• **Visit**: https://www.lib.miamioh.edu/librarians
+• **Visit**: https://www.lib.miamioh.edu/about/organization/liaisons/
 • **Call the library**: (513) 529-4141
 ```
 
@@ -475,7 +475,7 @@ I found information about Biology:
 **Main Library**:
 - Phone: (513) 529-4141
 - Website: https://www.lib.miamioh.edu
-- Contact: https://www.lib.miamioh.edu/contact
+- Contact: https://www.lib.miamioh.edu/research/research-support/ask/
 
 **Ask-a-Librarian**:
 - Chat: https://libanswers.lib.miamioh.edu/chat/widget/...

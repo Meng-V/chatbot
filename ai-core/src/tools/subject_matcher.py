@@ -21,13 +21,25 @@ async def calculate_similarity(str1: str, str2: str) -> float:
     return SequenceMatcher(None, str1.lower(), str2.lower()).ratio()
 
 
-async def find_subjects_by_name(db: Prisma, query: str, threshold: float = 0.7) -> List[Subject]:
-    """Find subjects by name with fuzzy matching."""
+async def find_subjects_by_name(db: Prisma, query: str, threshold: float = 0.7, include_regional: bool = False) -> List[Subject]:
+    """Find subjects by name with fuzzy matching.
+    
+    Args:
+        db: Prisma database instance
+        query: Search query
+        threshold: Similarity threshold for fuzzy matching (0-1)
+        include_regional: If False, exclude regional campus subjects (default: False for Oxford only)
+    """
     query_normalized = await normalize_query(query)
+    
+    # Build where clause - by default only show Oxford campus (regional=False)
+    where_clause = {"name": {"equals": query, "mode": "insensitive"}}
+    if not include_regional:
+        where_clause["regional"] = False
     
     # First try exact match
     exact_match = await db.subject.find_first(
-        where={"name": {"equals": query, "mode": "insensitive"}},
+        where=where_clause,
         include={
             "libGuides": True,
             "regCodes": True,
@@ -39,8 +51,13 @@ async def find_subjects_by_name(db: Prisma, query: str, threshold: float = 0.7) 
     if exact_match:
         return [exact_match]
     
-    # Try fuzzy matching
+    # Try fuzzy matching - apply same regional filter
+    fuzzy_where = {}
+    if not include_regional:
+        fuzzy_where["regional"] = False
+    
     all_subjects = await db.subject.find_many(
+        where=fuzzy_where,
         include={
             "libGuides": True,
             "regCodes": True,
@@ -61,18 +78,30 @@ async def find_subjects_by_name(db: Prisma, query: str, threshold: float = 0.7) 
     return [match[0] for match in matches[:5]]  # Return top 5 matches
 
 
-async def find_subjects_by_major(db: Prisma, major: str) -> List[Subject]:
-    """Find subjects by major code or major name."""
+async def find_subjects_by_major(db: Prisma, major: str, include_regional: bool = False) -> List[Subject]:
+    """Find subjects by major code or major name.
+    
+    Args:
+        db: Prisma database instance
+        major: Major code or name to search for
+        include_regional: If False, exclude regional campus subjects (default: False for Oxford only)
+    """
     major_normalized = await normalize_query(major)
     
-    # Search by major code (exact)
+    # Build where clause with regional filter
+    where_clause = {
+        "OR": [
+            {"majorCode": {"contains": major, "mode": "insensitive"}},
+            {"majorName": {"contains": major, "mode": "insensitive"}}
+        ]
+    }
+    
+    if not include_regional:
+        where_clause["subject"] = {"is": {"regional": False}}
+    
+    # Search by major code/name
     major_code_matches = await db.subjectmajorcode.find_many(
-        where={
-            "OR": [
-                {"majorCode": {"contains": major, "mode": "insensitive"}},
-                {"majorName": {"contains": major, "mode": "insensitive"}}
-            ]
-        },
+        where=where_clause,
         include={"subject": {"include": {"libGuides": True, "majorCodes": True, "deptCodes": True}}}
     )
     
@@ -87,18 +116,30 @@ async def find_subjects_by_major(db: Prisma, major: str) -> List[Subject]:
     return subjects
 
 
-async def find_subjects_by_department(db: Prisma, department: str) -> List[Subject]:
-    """Find subjects by department code or department name."""
+async def find_subjects_by_department(db: Prisma, department: str, include_regional: bool = False) -> List[Subject]:
+    """Find subjects by department code or department name.
+    
+    Args:
+        db: Prisma database instance
+        department: Department code or name to search for
+        include_regional: If False, exclude regional campus subjects (default: False for Oxford only)
+    """
     dept_normalized = await normalize_query(department)
+    
+    # Build where clause with regional filter
+    where_clause = {
+        "OR": [
+            {"deptCode": {"contains": department, "mode": "insensitive"}},
+            {"deptName": {"contains": department, "mode": "insensitive"}}
+        ]
+    }
+    
+    if not include_regional:
+        where_clause["subject"] = {"is": {"regional": False}}
     
     # Search by department code or name
     dept_matches = await db.subjectdeptcode.find_many(
-        where={
-            "OR": [
-                {"deptCode": {"contains": department, "mode": "insensitive"}},
-                {"deptName": {"contains": department, "mode": "insensitive"}}
-            ]
-        },
+        where=where_clause,
         include={"subject": {"include": {"libGuides": True, "majorCodes": True, "deptCodes": True}}}
     )
     
@@ -113,13 +154,14 @@ async def find_subjects_by_department(db: Prisma, department: str) -> List[Subje
     return subjects
 
 
-async def match_subject(query: str, db: Prisma) -> Dict[str, Any]:
+async def match_subject(query: str, db: Prisma, include_regional: bool = False) -> Dict[str, Any]:
     """
     Match a query to subjects and return LibGuides information.
     
     Args:
         query: User query about a subject, major, or topic
         db: Prisma database instance
+        include_regional: If False, only return Oxford campus subjects (default: False)
     
     Returns:
         Dict containing matched subjects and their LibGuides
@@ -128,25 +170,26 @@ async def match_subject(query: str, db: Prisma) -> Dict[str, Any]:
         "query": query,
         "matched_subjects": [],
         "lib_guides": [],
-        "success": False
+        "success": False,
+        "campus_filter": "Oxford (main campus)" if not include_regional else "All campuses"
     }
     
     try:
-        # Try different matching strategies
+        # Try different matching strategies - all will filter by campus
         subjects = []
         
         # Strategy 1: Match by subject name
-        name_matches = await find_subjects_by_name(db, query)
+        name_matches = await find_subjects_by_name(db, query, include_regional=include_regional)
         subjects.extend(name_matches)
         
         # Strategy 2: Match by major
         if not subjects:
-            major_matches = await find_subjects_by_major(db, query)
+            major_matches = await find_subjects_by_major(db, query, include_regional=include_regional)
             subjects.extend(major_matches)
         
         # Strategy 3: Match by department
         if not subjects:
-            dept_matches = await find_subjects_by_department(db, query)
+            dept_matches = await find_subjects_by_department(db, query, include_regional=include_regional)
             subjects.extend(dept_matches)
         
         # Remove duplicates

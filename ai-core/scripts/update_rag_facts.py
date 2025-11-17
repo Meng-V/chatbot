@@ -56,10 +56,10 @@ def connect_to_weaviate():
 
 CORRECT_FACTS = [
     {
-        "question": "When was King Library built?",
-        "answer": "King Library was built in 1966 and underwent major renovations in 1973 and 2007.",
+        "question": "When did King Library build?",
+        "answer": "The library is named for longtime library director and benefactor, Edgar Weld King (1893 - 1969). The original structure, known today as the Leland S. Dutton Wing, opened in 1966 as Miami’s undergraduate library. King Library’s footprint expanded to 175,159 square feet in 1973 with completion of the north wing and main entrance portico. In 1997, the university began a three-phase, multi-million dollar renovation, overhauling design and function to meet the demands of an increasingly digital research environment. The rehabilitation was completed in 2007.",
         "topic": "building_information",
-        "keywords": ["King Library", "built", "1966", "construction", "history", "renovations", "1973", "2007"]
+        "keywords": ["King Library", "built", "1966", "construction", "history", "renovations", "1973", "2007", "Edgar Weld King"]
     },
     {
         "question": "Where is the makerspace located?",

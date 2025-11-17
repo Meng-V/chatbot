@@ -37,6 +37,14 @@ async def should_use_function_calling(user_message: str, logger=None) -> bool:
         True: Use function calling (simple, single-tool query)
         False: Use LangGraph orchestration (complex, multi-step query)
     """
+    # 🎯 CRITICAL: Factual queries MUST use LangGraph for fact grounding
+    from src.utils.fact_grounding import detect_factual_query_type
+    fact_types = detect_factual_query_type(user_message)
+    if fact_types:
+        if logger:
+            logger.log(f"🔒 [Hybrid Router] Factual query detected ({', '.join(fact_types)}) → FORCING LangGraph for fact grounding")
+        return False  # Force LangGraph
+    
     # For very short queries, use function calling
     if len(user_message.split()) <= 5:
         if logger:
@@ -66,17 +74,9 @@ async def should_use_function_calling(user_message: str, logger=None) -> bool:
         # On error, default to LangGraph (more robust)
         return False
 
-async def route_query(user_message: str, logger=None, conversation_history=None, conversation_id=None) -> Dict[str, Any]:
+async def route_query(user_message: str, logger=None, conversation_history=None, conversation_id=None):
     """
-    Route query to appropriate handler (function calling or LangGraph).
-    
-    Args:
-        user_message: Current user query
-        logger: Logger instance
-        conversation_history: List of previous messages for context
-        conversation_id: Conversation ID for tracking (optional)
-    
-    Returns result from selected handler.
+    Route query to either function calling or LangGraph orchestrator.
     """
     use_function_calling_mode = await should_use_function_calling(user_message, logger)
     
@@ -99,6 +99,26 @@ async def route_query(user_message: str, logger=None, conversation_history=None,
         if result is None:
             if logger:
                 logger.log("⚠️ [Hybrid Router] LangGraph returned None, using default response")
+            return {
+                "success": False,
+                "final_answer": "I encountered an issue processing your request. Please try again or contact a librarian.",
+                "classified_intent": "error",
+                "selected_agents": [],
+                "agent_responses": {},
+                "needs_human": False,
+                "mode": "langgraph"
+            }
+        
+        # Debug: Log result type and structure
+        if logger:
+            logger.log(f"🔍 [Hybrid Router] Result type: {type(result)}, has get: {hasattr(result, 'get')}")
+            if result is not None and hasattr(result, '__dict__'):
+                logger.log(f"🔍 [Hybrid Router] Result keys: {list(result.keys()) if hasattr(result, 'keys') else 'N/A'}")
+        
+        # Handle non-dict result
+        if not isinstance(result, dict):
+            if logger:
+                logger.log(f"⚠️ [Hybrid Router] LangGraph returned non-dict type: {type(result)}")
             return {
                 "success": False,
                 "final_answer": "I encountered an issue processing your request. Please try again or contact a librarian.",

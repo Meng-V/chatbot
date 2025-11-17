@@ -117,7 +117,7 @@ CONTACT_INFO_RULES = {
         ],
         "never_generate": True,
         "verification_required": True,
-        "fallback": "Visit lib.miamioh.edu/contact for librarian contact information",
+        "fallback": "Visit https://www.lib.miamioh.edu/research/research-support/ask/ for librarian contact information",
     },
     
     "phone": {
@@ -168,12 +168,12 @@ CRITICAL SCOPE RULES - MUST FOLLOW STRICTLY:
    - NEVER generate phone numbers
    - NEVER generate librarian names unless from API
    - ONLY provide contact info retrieved from official sources
-   - If unsure, say "I don't have that specific information" and direct to lib.miamioh.edu/contact
+   - If unsure, say "I don't have that specific information" and direct to https://www.lib.miamioh.edu/research/research-support/ask/
 
 4. WHEN IN DOUBT:
    - Guide to human librarian: "I'd be happy to connect you with a librarian who can help"
    - Provide Ask-a-Librarian chat link
-   - Give general library contact: (513) 529-4141 or lib.miamioh.edu/contact
+   - Give general library contact: (513) 529-4141 or https://www.lib.miamioh.edu/research/research-support/ask/
 """,
     
     "out_of_scope_response": """I appreciate your question, but that's outside the scope of library services. I can only help with library-related questions such as:
@@ -192,7 +192,7 @@ Is there anything library-related I can help you with?""",
 
 • **Chat with a librarian**: {lib_chat_url}
 • **Call the library**: (513) 529-4141
-• **Visit our website**: https://www.lib.miamioh.edu/contact
+• **Visit our website**: https://www.lib.miamioh.edu/research/research-support/ask/
 
 Is there something else about library resources or services I can help with?""",
 }

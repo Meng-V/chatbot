@@ -113,13 +113,19 @@ async def ask_http(payload: dict):
         history = await get_conversation_history(conversation_id, limit=10)
         
         # Use hybrid router (smart selection between function calling and LangGraph)
-        result = await route_query(message, logger, history, conversation_id)
+        try:
+            result = await route_query(message, logger, history, conversation_id)
+        except Exception as router_error:
+            logger.log(f"❌ [API] Router error: {str(router_error)}")
+            import traceback
+            logger.log(f"❌ [API] Traceback: {traceback.format_exc()}")
+            result = None
         
         # Safety check for None result
         if result is None:
             logger.log("⚠️ [API] Router returned None, using fallback response")
             result = {
-                "final_answer": "I encountered an issue processing your request. Please try again or contact a librarian.",
+                "final_answer": "I encountered an error. Please try again or contact a librarian.",
                 "selected_agents": [],
                 "classified_intent": "error"
             }
@@ -136,7 +142,7 @@ async def ask_http(payload: dict):
         await update_conversation_tools(conversation_id, agents_used)
         
         # Log token usage if available
-        if "token_usage" in result:
+        if "token_usage" in result and result["token_usage"] is not None:
             token_data = result["token_usage"]
             await log_token_usage(
                 conversation_id,
@@ -256,7 +262,7 @@ async def message(sid, data):
         await update_conversation_tools(conversation_id, agents_used)
         
         # Log token usage if available
-        if "token_usage" in result:
+        if "token_usage" in result and result["token_usage"] is not None:
             token_data = result["token_usage"]
             await log_token_usage(
                 conversation_id,
