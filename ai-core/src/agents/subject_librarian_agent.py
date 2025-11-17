@@ -14,9 +14,15 @@ Flow:
 import os
 import httpx
 from typing import Dict, Any, List
+from pathlib import Path
+from dotenv import load_dotenv
 from prisma import Prisma
 from src.tools.subject_matcher import match_subject
 from src.utils.logger import AgentLogger
+
+# Load .env from project root
+root_dir = Path(__file__).resolve().parent.parent.parent.parent
+load_dotenv(dotenv_path=root_dir / ".env")
 
 logger = AgentLogger()
 
@@ -694,11 +700,37 @@ async def find_subject_librarian_query(query: str, log_callback=None, db: Prisma
     # Extract subject from natural language queries
     # "Who is the biology librarian" → "biology"
     # "business librarian" → "business"
+    # "who to contact when I have question about Art" → "art"
     cleaned_query = query.lower()
-    # Remove common question words
-    remove_words = ["who is the", "who's the", "what is the", "find me", "find the", "show me", "librarian", "subject", "who is"]
-    for word in remove_words:
-        cleaned_query = cleaned_query.replace(word, "")
+    
+    # More comprehensive removal of question patterns
+    remove_patterns = [
+        "who to contact when i have question about",
+        "who to contact when i have questions about",
+        "who should i contact for",
+        "who can i contact for",
+        "who is the",
+        "who's the",
+        "what is the",
+        "find me the",
+        "find the",
+        "show me the",
+        "show me",
+        "find me",
+        "i have a question about",
+        "i have questions about",
+        "question about",
+        "questions about",
+        "librarian for",
+        "librarian",
+        "subject",
+        "who is",
+        "contact for"
+    ]
+    
+    for pattern in remove_patterns:
+        cleaned_query = cleaned_query.replace(pattern, "")
+    
     cleaned_query = cleaned_query.strip()
     
     # If query became empty or too short, use original

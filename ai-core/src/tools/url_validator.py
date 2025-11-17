@@ -209,9 +209,9 @@ def detect_fabricated_contact_info(text: str, log_callback=None) -> Dict[str, an
     }
     
     # Check if there's evidence this came from tools
-    # LibGuide URLs, MyGuide patterns, or verified library domains
+    # LibGuide URLs, MyGuide patterns, verified library domains, or verified agent sources
     has_tool_context = bool(re.search(
-        r'libguides\.lib\.miamioh\.edu|miamioh\.libguides\.com|Source:|Guide:|Subject Guide:', 
+        r'libguides\.lib\.miamioh\.edu|miamioh\.libguides\.com|Source:|Guide:|Subject Guide:|Subject Librarian Agent|LibGuides API|VERIFIED API DATA', 
         text, 
         re.IGNORECASE
     ))
@@ -303,7 +303,7 @@ def remove_fabricated_contact_info(text: str, detected_info: Dict, log_callback=
     return modified_text
 
 
-async def validate_and_clean_response(response_text: str, log_callback=None) -> Tuple[str, bool]:
+async def validate_and_clean_response(response_text: str, log_callback=None, agents_used=None) -> Tuple[str, bool]:
     """Validate URLs and contact info in response and remove invalid/fabricated ones.
     
     This is the main function to call before returning a response to the user.
@@ -311,6 +311,7 @@ async def validate_and_clean_response(response_text: str, log_callback=None) -> 
     Args:
         response_text: The response text to validate
         log_callback: Optional logging function
+        agents_used: Optional list of agent names that were used (to skip validation for verified agents)
         
     Returns:
         Tuple of (cleaned_text: str, had_issues: bool)
@@ -332,10 +333,18 @@ async def validate_and_clean_response(response_text: str, log_callback=None) -> 
             log_callback(f"🔧 [URL Validator] Cleaned response - removed {len(validation_results['invalid_urls'])} invalid URL(s)")
     
     # Step 2: Detect and remove fabricated contact info
-    detected_contact = detect_fabricated_contact_info(cleaned_text, log_callback)
+    # SKIP contact validation if using verified API agents (subject_librarian, libguide, etc.)
+    verified_agents = ["subject_librarian", "libguide", "libcal", "primo"]
+    skip_contact_validation = agents_used and any(agent in verified_agents for agent in agents_used)
     
-    if detected_contact["has_suspicious_contact"]:
-        cleaned_text = remove_fabricated_contact_info(cleaned_text, detected_contact, log_callback)
-        had_issues = True
+    if skip_contact_validation and log_callback:
+        log_callback(f"✅ [Contact Validator] Skipping validation - response from verified agent(s): {agents_used}")
+    
+    if not skip_contact_validation:
+        detected_contact = detect_fabricated_contact_info(cleaned_text, log_callback)
+        
+        if detected_contact["has_suspicious_contact"]:
+            cleaned_text = remove_fabricated_contact_info(cleaned_text, detected_contact, log_callback)
+            had_issues = True
     
     return cleaned_text, had_issues

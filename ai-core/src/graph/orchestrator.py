@@ -568,7 +568,8 @@ Provide a clear, helpful answer based ONLY on the information above. Be concise,
     logger.log("🔍 [URL Validator] Checking URLs in response")
     validated_answer, had_invalid_urls = await validate_and_clean_response(
         raw_answer, 
-        log_callback=logger.log
+        log_callback=logger.log,
+        agents_used=state.get("selected_agents", [])
     )
     
     if had_invalid_urls:
