@@ -107,7 +107,8 @@ async def transcript_rag_query(query: str, log_callback=None, topic_filter: str 
                     'topic': props.get('topic', ''),
                     'keywords': props.get('keywords', []),
                     'similarity': similarity,
-                    'distance': distance
+                    'distance': distance,
+                    'weaviate_id': str(obj.uuid)  # Capture Weaviate object UUID
                 })
             
             # Sort by similarity (descending)
@@ -142,7 +143,8 @@ async def transcript_rag_query(query: str, log_callback=None, topic_filter: str 
                 "matched_topic": results[0]['topic'],
                 "num_results": len(results),
                 "top_keywords": results[0]['keywords'][:5],
-                "similarity_score": top_similarity
+                "similarity_score": top_similarity,
+                "weaviate_ids": [r['weaviate_id'] for r in results]  # All matched Weaviate IDs
             }
         
         except Exception as e:

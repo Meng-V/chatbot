@@ -155,13 +155,19 @@ The chatbot runs on Miami University's server infrastructure. The backend is Pyt
 - Backend runs on port 8000 (Python 3.12, FastAPI, LangGraph)
 - Frontend runs on port 5173 (React 19, Vite 7)
 - PostgreSQL database for conversations and MuGuide subject mappings
-- Weaviate vector database for RAG memory
+- Weaviate Cloud vector database for RAG memory (1,568 Q&A pairs)
 - OpenAI API access (o4-mini model)
 - SpringShare OAuth (LibCal, LibGuides, LibAnswers)
 - Google Custom Search Engine API
 
 ### **For Developers**
-See the [Developer Guide](doc/DEVELOPER_GUIDE.md) for detailed technical documentation and setup instructions.
+See the [Developer Guide](docs/architecture/02-DEVELOPER-GUIDE.md) for detailed technical documentation and setup instructions.
+
+### **For Library Managers**
+- **Update Wrong Answers**: See [Weaviate Record Management](docs/weaviate-rag/03-RECORD-MANAGEMENT.md)
+- **Add New Q&A**: Use `/ai-core/scripts/update_rag_facts.py`
+- **View Usage Analytics**: Run `/ai-core/scripts/analyze_rag_usage.py`
+- **Process New Year Data**: Follow [Process New Year Data Guide](docs/data-management/02-PROCESS-NEW-YEAR-DATA.md)
 
 ---
 
@@ -236,12 +242,13 @@ See the [Developer Guide](doc/DEVELOPER_GUIDE.md) for detailed technical documen
 ## 📚 Additional Resources
 
 ### **Documentation**
-- **User Guide**: `README.md` (this document) - Overview with scope boundaries
-- **Developer Guide**: `doc/DEVELOPER_GUIDE.md` - Complete setup and deployment guide
-- **Knowledge Management Guide**: `doc/KNOWLEDGE_MANAGEMENT.md` and `doc/KNOWLEDGE_MANAGEMENT_GUIDE.md` - How to update AI responses
-- **Scope Enforcement Report**: `doc/SCOPE_ENFORCEMENT_REPORT.md` - Detailed scope boundaries and validation rules
-- **MuGuide Integration Report**: `doc/MUGUIDE_INTEGRATION_REPORT.md` - Subject mapping technical documentation
-- **LibGuide Routing**: `doc/LIBGUIDE_VS_MYGUIDE_ROUTING.md` - Guide routing strategy
+All comprehensive documentation has been organized in the `/docs/` folder:
+
+- **[Documentation Index](docs/README.md)** - Complete documentation navigation
+- **[Weaviate RAG System](docs/weaviate-rag/)** - Knowledge base management, record cleanup, fact correction
+- **[Data Management](docs/data-management/)** - Processing transcripts, adding new year data, optimization
+- **[Architecture](docs/architecture/)** - System design, developer guide, project summary
+- **[Knowledge Management](docs/knowledge-management/)** - Guide routing, scope enforcement, integration details
 
 ### **API & System**
 - **API Documentation**: Visit `/docs` endpoint when backend is running
@@ -258,48 +265,48 @@ Miami University Libraries serve the academic community across three campuses (O
 
 ## ⚙️ Version Information
 
-- **Current Version**: 2.1.0
-- **Last Updated**: November 13, 2025
+- **Current Version**: 2.2.0
+- **Last Updated**: November 17, 2025
 - **Platform**: Python 3.12 AI-Core with React 19 Frontend
 - **AI Model**: OpenAI o4-mini
 - **Routing**: Hybrid Router (function calling + LangGraph)
 - **Agents**: 8 specialized agents (7 domain agents + hybrid router)
 - **Subject Mappings**: 710 subjects, 587 LibGuides, 586 majors
+- **RAG Database**: Weaviate Cloud with 1,568 Q&A pairs
 - **Status**: Production-ready
 
-### **What's New in Version 2.1**
+### **What's New in Version 2.2**
 
-#### ✅ Hybrid Routing System (NEW)
-- Intelligent complexity analysis for each query
-- **Function Calling Mode**: Fast responses for simple queries (< 2 seconds)
-- **LangGraph Mode**: Multi-agent orchestration for complex queries
-- Automatic mode selection based on query complexity
+#### ✅ Weaviate RAG System with Record Management (NEW)
+- **1,568 Q&A pairs** loaded into Weaviate Cloud vector database
+- **Automatic ID tracking** - Every RAG query stores Weaviate record IDs
+- **Find problematic records** - Search by low confidence or specific queries
+- **Safe deletion tools** - Preview and delete bad records with confirmation
+- **Fact grounding** - Ensures factual accuracy with confidence thresholds
+- **Usage analytics** - Track RAG frequency and performance metrics
 
-#### ✅ Enhanced Performance
-- Simple queries: < 2 seconds (function calling)
-- Complex queries: 3-5 seconds (orchestration)
-- Optimized database queries with indexed lookups
+#### ✅ Organized Documentation Structure (NEW)
+- All documentation reorganized in `/docs/` with feature-based folders:
+  - `weaviate-rag/` - Knowledge base management
+  - `data-management/` - Transcript processing and optimization
+  - `architecture/` - System design and developer guides
+  - `knowledge-management/` - Guide routing and scope enforcement
+- Numbered files for easy navigation (01-, 02-, etc.)
+- Quick reference READMEs in each folder
+- Removed all test files and outdated documentation
 
-#### ✅ Strict Scope Enforcement
-- ONLY answers Miami University **LIBRARIES** questions
-- Meta Router classifies intent and detects out-of-scope questions
-- Automatically redirects to appropriate university services
+#### ✅ Enhanced Data Management
+- **Process new year data** - Automated script for adding 2026+ transcripts
+- **Vector optimization** - Improved semantic search performance
+- **PII removal** - Automated privacy protection in transcripts
+- **Deduplication** - Removes duplicate Q&A pairs
 
-#### ✅ MuGuide Integration
-- 710 academic subjects mapped to LibGuides
-- 586 major codes indexed
-- 316 department codes linked
-- Fuzzy matching with similarity scoring
-
-#### ✅ URL Validation
-- Validates all URLs in responses against allowed domains
-- Removes hallucinated or incorrect URLs
-- Only allows: lib.miamioh.edu, libguides.lib.miamioh.edu, digital.lib.miamioh.edu
-
-#### ✅ Contact Information Validation
-- NEVER generates fake emails, phone numbers, or names
-- All contact info verified from LibGuides API
-- Fallback to general library contact: (513) 529-4141
+#### ✅ Previous Features (Version 2.1)
+- Hybrid routing system (function calling + LangGraph)
+- Strict scope enforcement (libraries only)
+- MuGuide integration (710 subjects)
+- URL and contact information validation
+- Enhanced performance (< 2s for simple queries)
 
 ---
 

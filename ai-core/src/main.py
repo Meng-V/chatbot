@@ -113,7 +113,7 @@ async def ask_http(payload: dict):
         history = await get_conversation_history(conversation_id, limit=10)
         
         # Use hybrid router (smart selection between function calling and LangGraph)
-        result = await route_query(message, logger, history)
+        result = await route_query(message, logger, history, conversation_id)
         
         # Safety check for None result
         if result is None:
@@ -233,7 +233,7 @@ async def message(sid, data):
         })
         
         # Use hybrid router (smart selection between function calling and LangGraph)
-        result = await route_query(text_input, logger, history)
+        result = await route_query(text_input, logger, history, conversation_id)
         
         # Safety check for None result
         if result is None:

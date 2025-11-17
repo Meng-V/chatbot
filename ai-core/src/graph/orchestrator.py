@@ -35,6 +35,13 @@ from src.memory.conversation_store import (
     log_token_usage
 )
 from src.tools.url_validator import validate_and_clean_response
+from src.utils.fact_grounding import (
+    detect_factual_query_type,
+    is_high_confidence_rag_match,
+    verify_factual_claims_against_rag,
+    create_grounded_synthesis_prompt,
+    should_enforce_strict_grounding
+)
 
 # Use o4-mini as specified
 OPENAI_MODEL = os.getenv("OPENAI_MODEL", "o4-mini")
@@ -160,10 +167,16 @@ async def execute_agents_node(state: AgentState) -> AgentState:
     }
     
     import asyncio
+    import time
     tasks = []
+    agent_start_times = {}
+    
     for agent_name in agents:
         agent_or_func = agent_map.get(agent_name)
         if agent_or_func:
+            # Record start time for tracking
+            agent_start_times[agent_name] = time.time()
+            
             # Check if it's a multi-tool agent (has execute method) or legacy function
             if hasattr(agent_or_func, 'execute'):
                 # Multi-tool agent - call execute
@@ -174,15 +187,48 @@ async def execute_agents_node(state: AgentState) -> AgentState:
     
     responses = await asyncio.gather(*tasks, return_exceptions=True)
     
+    # Track tool executions
+    tool_executions = state.get("tool_executions", [])
+    
     for agent_name, response in zip(agents, responses):
+        # Calculate execution time
+        execution_time = int((time.time() - agent_start_times.get(agent_name, time.time())) * 1000)  # ms
+        
         if isinstance(response, Exception):
             results[agent_name] = {"source": agent_name, "success": False, "error": str(response)}
+            # Log failed execution
+            tool_executions.append({
+                "agent_name": agent_name,
+                "tool_name": "query" if agent_name != "transcript_rag" else "rag_search",
+                "parameters": {"query": state["user_message"]},
+                "success": False,
+                "execution_time": execution_time
+            })
         else:
             results[agent_name] = response
             if response.get("needs_human"):
                 state["needs_human"] = True
+            
+            # 🎯 Track RAG usage specifically
+            if agent_name == "transcript_rag" and response.get("success"):
+                logger.log("📊 [RAG Tracking] Logging RAG query to database")
+                tool_executions.append({
+                    "agent_name": "transcript_rag",
+                    "tool_name": "rag_search",
+                    "parameters": {
+                        "query": state["user_message"],
+                        "confidence": response.get("confidence", "unknown"),
+                        "similarity_score": response.get("similarity_score", 0),
+                        "matched_topic": response.get("matched_topic", "unknown"),
+                        "num_results": response.get("num_results", 0),
+                        "weaviate_ids": response.get("weaviate_ids", [])  # Store Weaviate record IDs
+                    },
+                    "success": True,
+                    "execution_time": execution_time
+                })
     
     state["agent_responses"] = results
+    state["tool_executions"] = tool_executions
     state["_logger"] = logger
     
     logger.log(f"✅ [Orchestrator] All agents completed")
@@ -190,7 +236,7 @@ async def execute_agents_node(state: AgentState) -> AgentState:
     return state
 
 async def synthesize_answer_node(state: AgentState) -> AgentState:
-    """Synthesize final answer from agent responses using LLM."""
+    """Synthesize final answer from agent responses using LLM with fact grounding."""
     intent = state["classified_intent"]
     user_msg = state["user_message"]
     history = state.get("conversation_history", [])
@@ -242,18 +288,57 @@ Is there anything library-related I can help you with?"""
     
     context = "\n\n".join(context_parts)
     
-    scope_reminder = SCOPE_ENFORCEMENT_PROMPTS["system_reminder"]
+    # 🎯 NEW: Detect if this is a factual query requiring strict grounding
+    fact_types = detect_factual_query_type(user_msg)
+    rag_response = responses.get("transcript_rag", {})
     
-    # Format conversation history
-    history_context = ""
-    if history:
-        history_formatted = []
-        for msg in history[-6:]:  # Last 6 messages (3 exchanges)
-            role = "User" if msg["type"] == "user" else "Assistant"
-            history_formatted.append(f"{role}: {msg['content']}")
-        history_context = "\n\nPrevious conversation:\n" + "\n".join(history_formatted) + "\n"
+    # Check if we should enforce strict grounding
+    use_strict_grounding = should_enforce_strict_grounding(user_msg, rag_response)
     
-    synthesis_prompt = f"""You are a Miami University LIBRARIES assistant.
+    if use_strict_grounding:
+        logger.log(f"🔒 [Fact Grounding] Detected factual query types: {', '.join(fact_types)}")
+        
+        # Check RAG confidence
+        is_confident, confidence_reason = await is_high_confidence_rag_match(rag_response)
+        logger.log(f"📊 [Fact Grounding] RAG confidence: {confidence_reason}")
+        
+        # If RAG has low confidence for factual query, escalate to human
+        if not is_confident and rag_response.get("similarity_score", 0) < 0.70:
+            logger.log("⚠️ [Fact Grounding] Low confidence for factual query - suggesting human assistance")
+            state["final_answer"] = (
+                "I found some information, but I'm not confident it fully answers your question about specific factual details. "
+                "To ensure you get accurate information, I'd recommend:\n\n"
+                "• **Chat with a librarian**: https://www.lib.miamioh.edu/contact\n"
+                "• **Call us**: (513) 529-4141\n"
+                "• **Visit our website**: https://www.lib.miamioh.edu\n\n"
+                "Would you like me to connect you with a librarian?"
+            )
+            state["needs_human"] = True
+            return state
+        
+        # Use grounded synthesis prompt
+        synthesis_prompt = await create_grounded_synthesis_prompt(
+            user_message=user_msg,
+            rag_response=rag_response,
+            fact_types=fact_types,
+            conversation_history=history
+        )
+        
+        logger.log("🔒 [Fact Grounding] Using strict grounding mode")
+    else:
+        # Use standard synthesis prompt
+        scope_reminder = SCOPE_ENFORCEMENT_PROMPTS["system_reminder"]
+        
+        # Format conversation history
+        history_context = ""
+        if history:
+            history_formatted = []
+            for msg in history[-6:]:  # Last 6 messages (3 exchanges)
+                role = "User" if msg["type"] == "user" else "Assistant"
+                history_formatted.append(f"{role}: {msg['content']}")
+            history_context = "\n\nPrevious conversation:\n" + "\n".join(history_formatted) + "\n"
+        
+        synthesis_prompt = f"""You are a Miami University LIBRARIES assistant.
 
 {scope_reminder}
 {history_context}
@@ -326,6 +411,27 @@ Provide a clear, helpful answer based ONLY on the information above. Be concise,
     
     response = await llm.ainvoke(messages)
     raw_answer = response.content.strip()
+    
+    # 🎯 NEW: Verify factual claims if strict grounding was used
+    if use_strict_grounding and fact_types:
+        logger.log("🔍 [Fact Verifier] Checking factual claims against RAG context")
+        rag_context = rag_response.get("text", "")
+        all_verified, issues = await verify_factual_claims_against_rag(
+            generated_text=raw_answer,
+            rag_context=rag_context,
+            query=user_msg,
+            log_callback=logger.log
+        )
+        
+        if not all_verified:
+            logger.log(f"⚠️ [Fact Verifier] Found {len(issues)} unverified claim(s)")
+            # Add disclaimer if facts couldn't be verified
+            raw_answer += (
+                "\n\n*Note: For the most accurate information, please contact our library staff at "
+                "(513) 529-4141 or visit https://www.lib.miamioh.edu/contact*"
+            )
+        else:
+            logger.log("✅ [Fact Verifier] All factual claims verified against RAG")
     
     # Validate and clean URLs in the response
     logger.log("🔍 [URL Validator] Checking URLs in response")

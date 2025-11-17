@@ -66,7 +66,7 @@ async def should_use_function_calling(user_message: str, logger=None) -> bool:
         # On error, default to LangGraph (more robust)
         return False
 
-async def route_query(user_message: str, logger=None, conversation_history=None) -> Dict[str, Any]:
+async def route_query(user_message: str, logger=None, conversation_history=None, conversation_id=None) -> Dict[str, Any]:
     """
     Route query to appropriate handler (function calling or LangGraph).
     
@@ -74,6 +74,7 @@ async def route_query(user_message: str, logger=None, conversation_history=None)
         user_message: Current user query
         logger: Logger instance
         conversation_history: List of previous messages for context
+        conversation_id: Conversation ID for tracking (optional)
     
     Returns result from selected handler.
     """
@@ -90,6 +91,7 @@ async def route_query(user_message: str, logger=None, conversation_history=None)
             "user_message": user_message,
             "messages": [],
             "conversation_history": conversation_history or [],
+            "conversation_id": conversation_id,
             "_logger": logger
         })
         

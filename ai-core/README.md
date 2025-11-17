@@ -212,7 +212,7 @@ src/
 
 ## 🎨 Customization
 
-See `../doc/DEVELOPER_GUIDE.md` for detailed instructions on:
+See [Developer Guide](../docs/architecture/02-DEVELOPER-GUIDE.md) for detailed instructions on:
 - **Adding new agents** - Extend the multi-tool agent base class
 - **Changing the LLM model** - Update OPENAI_MODEL in .env
 - **Modifying scope boundaries** - Edit `src/config/scope_definition.py`
@@ -222,22 +222,19 @@ See `../doc/DEVELOPER_GUIDE.md` for detailed instructions on:
 
 ## 📚 Documentation
 
-### General Documentation
-- **User Guide**: `../README.md` - Features and capabilities
-- **Developer Guide**: `../doc/DEVELOPER_GUIDE.md` - Setup and deployment
-- **Scope Enforcement**: `../doc/SCOPE_ENFORCEMENT_REPORT.md` - Scope boundaries
-- **MuGuide Integration**: `../doc/MUGUIDE_INTEGRATION_REPORT.md` - Subject mapping
-- **Knowledge Management**: `../doc/KNOWLEDGE_MANAGEMENT_GUIDE.md` - Update AI knowledge
+All comprehensive documentation is organized in the `/docs/` folder at project root:
+
+### Quick Links
+- **[Documentation Index](../docs/README.md)** - Complete navigation guide
+- **[System Architecture](../docs/architecture/01-SYSTEM-ARCHITECTURE.md)** - Full system design
+- **[Developer Guide](../docs/architecture/02-DEVELOPER-GUIDE.md)** - Setup and deployment
 - **API Docs**: http://localhost:8000/docs (when running)
 
-### RAG & Vector Search Documentation
-- **Vector Optimization Overview**: `README_VECTOR_OPTIMIZATION.md` - Complete project overview
-- **Quick Start Guide**: `docs/VECTOR_OPTIMIZATION_QUICKSTART.md` - 3-step optimization guide
-- **Technical Guide**: `docs/VECTOR_SEARCH_OPTIMIZATION.md` - Full technical details
-- **Completion Report**: `VECTOR_OPTIMIZATION_COMPLETE.md` - Final results and status
-- **Data Pipeline**: `docs/RAG_DATA_PIPELINE_README.md` - Original data processing
-- **Annual Processing**: `docs/PROCESS_NEW_YEAR_DATA.md` - New data automation
-- **Project Summary**: `2025_RAG_PROJECT_SUMMARY.md` - Historical project summary
+### By Feature Area
+- **[Weaviate RAG](../docs/weaviate-rag/)** - Knowledge base management, record cleanup, fact correction
+- **[Data Management](../docs/data-management/)** - Transcript processing, new year data, optimization
+- **[Architecture](../docs/architecture/)** - System design, developer resources, project summary
+- **[Knowledge Management](../docs/knowledge-management/)** - Guide routing, scope enforcement, integrations
 
 ## 🔧 Troubleshooting
 
@@ -266,13 +263,14 @@ psql "postgresql://..."
 
 ## ⚙️ Version
 
-- **AI-Core Version**: 2.1.0
+- **AI-Core Version**: 2.2.0
 - **Python**: 3.12+
 - **LangGraph**: Latest
 - **OpenAI Model**: o4-mini
 - **FastAPI**: Latest
 - **Prisma**: Latest
+- **Weaviate**: Cloud (1,568 Q&A pairs)
 
 ---
 
-**For complete documentation, see [DEVELOPER_GUIDE.md](../doc/DEVELOPER_GUIDE.md)**
+**For complete documentation, see [Documentation Index](../docs/README.md)**

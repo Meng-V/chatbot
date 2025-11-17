@@ -5,6 +5,7 @@ from langgraph.graph import MessagesState
 class AgentState(MessagesState):
     """State for the library chatbot graph."""
     user_message: str
+    conversation_id: Optional[str] = None  # Conversation ID for tracking
     classified_intent: Optional[str] = None
     selected_agents: List[str] = []
     agent_responses: Dict[str, Any] = {}

@@ -94,8 +94,15 @@ def create_optimized_collection(client):
     print("   Schema: question, answer, keywords, topic")
 
 
+def truncate_text(text: str, max_chars: int = 8000) -> str:
+    """Truncate text to avoid token limit issues."""
+    if len(text) <= max_chars:
+        return text
+    return text[:max_chars] + "... [truncated]"
+
+
 def ingest(client, transcripts_path: str):
-    """Ingest optimized Q&A pairs into Weaviate."""
+    """Ingest optimized Q&A pairs into Weaviate with proper batching."""
     # Load data
     with open(transcripts_path, 'r', encoding='utf-8') as f:
         qa_pairs = json.load(f)
@@ -105,33 +112,43 @@ def ingest(client, transcripts_path: str):
     # Get collection
     collection = client.collections.get("TranscriptQA")
     
-    # Batch insert
+    # Batch insert with smaller batches to avoid token limits
     success_count = 0
     error_count = 0
+    batch_size = 50  # Smaller batches to avoid OpenAI token limits
     
-    with collection.batch.dynamic() as batch:
-        for i, qa in enumerate(qa_pairs):
-            try:
-                # Prepare data object (only required fields)
-                data_object = {
-                    "question": qa.get("question", ""),
-                    "answer": qa.get("answer", ""),
-                    "keywords": qa.get("keywords", []),
-                    "topic": qa.get("topic", "general_question")
-                }
-                
-                batch.add_object(properties=data_object)
-                success_count += 1
-                
-                # Progress indicator
-                if (i + 1) % 100 == 0:
-                    print(f"   Progress: {i + 1}/{len(qa_pairs)}...")
-                
-            except Exception as e:
-                error_count += 1
-                print(f"   ⚠️  Error inserting item {i}: {e}")
+    for batch_start in range(0, len(qa_pairs), batch_size):
+        batch_end = min(batch_start + batch_size, len(qa_pairs))
+        batch_items = qa_pairs[batch_start:batch_end]
+        
+        with collection.batch.fixed_size(batch_size=batch_size) as batch:
+            for i, qa in enumerate(batch_items):
+                try:
+                    # Prepare data object with truncation to avoid token limits
+                    data_object = {
+                        "question": truncate_text(qa.get("question", ""), max_chars=2000),
+                        "answer": truncate_text(qa.get("answer", ""), max_chars=6000),
+                        "keywords": qa.get("keywords", [])[:20],  # Limit keywords
+                        "topic": qa.get("topic", "general_question")
+                    }
+                    
+                    batch.add_object(properties=data_object)
+                    success_count += 1
+                    
+                except Exception as e:
+                    error_count += 1
+                    print(f"   ⚠️  Error inserting item {batch_start + i}: {e}")
+        
+        # Progress indicator
+        print(f"   Progress: {batch_end}/{len(qa_pairs)}... (Batch {batch_start//batch_size + 1}/{(len(qa_pairs) + batch_size - 1)//batch_size})")
+        
+        # Check for failed objects in this batch
+        failed_objects = collection.batch.failed_objects
+        if failed_objects:
+            error_count += len(failed_objects)
+            print(f"   ⚠️  Batch had {len(failed_objects)} failed objects")
     
-    print(f"✅ Ingestion complete!")
+    print(f"\n✅ Ingestion complete!")
     print(f"   Success: {success_count}")
     print(f"   Errors: {error_count}")
     print(f"   Total: {len(qa_pairs)}")
