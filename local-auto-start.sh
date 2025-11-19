@@ -56,7 +56,7 @@ ensure_backend_deps() {
   # Create virtual environment if it doesn't exist
   if [[ $SKIP_INSTALL -eq 0 && ! -d ai-core/.venv ]]; then
     echo "📦 Creating Python virtual environment (Python 3.13) and installing backend dependencies..."
-    (cd ai-core && python3.13 -m venv .venv && .venv/bin/pip install --upgrade pip && .venv/bin/pip install -e .)
+    (cd ai-core && python3 -m venv .venv && .venv/bin/pip install --upgrade pip && .venv/bin/pip install -e .)
   fi
   
   # Generate Prisma client for Python
