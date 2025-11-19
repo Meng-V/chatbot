@@ -46,22 +46,23 @@ if [[ $BACKEND_ONLY -eq 1 && $FRONTEND_ONLY -eq 1 ]]; then
 fi
 
 ensure_backend_deps() {
-  # Check if Python 3 is available
-  if ! command -v python3 &> /dev/null; then
-    echo "❌ Error: python3 not found. Please install Python 3.8 or higher."
+  # Check if Python 3.13 is available (Prisma requires <3.14)
+  if ! command -v python3.13 &> /dev/null; then
+    echo "❌ Error: python3.13 not found. Prisma requires Python 3.12 or 3.13 (not 3.14+)."
+    echo "   Install with: brew install python@3.13"
     exit 1
   fi
   
   # Create virtual environment if it doesn't exist
   if [[ $SKIP_INSTALL -eq 0 && ! -d ai-core/.venv ]]; then
-    echo "📦 Creating Python virtual environment and installing backend dependencies..."
-    (cd ai-core && python3 -m venv .venv && .venv/bin/pip install --upgrade pip && .venv/bin/pip install -e .)
+    echo "📦 Creating Python virtual environment (Python 3.13) and installing backend dependencies..."
+    (cd ai-core && python3.13 -m venv .venv && .venv/bin/pip install --upgrade pip && .venv/bin/pip install -e .)
   fi
   
   # Generate Prisma client for Python
-  if [[ $SKIP_PRISMA -eq 0 && -d prisma ]]; then
+  if [[ $SKIP_PRISMA -eq 0 ]]; then
     echo "🔧 Generating Prisma client for Python..."
-    (cd ai-core && .venv/bin/prisma generate)
+    (cd ai-core && .venv/bin/prisma py fetch && PATH="$(pwd)/.venv/bin:$PATH" .venv/bin/prisma generate)
   fi
 }
 

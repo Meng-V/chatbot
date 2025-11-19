@@ -74,30 +74,32 @@ def detect_factual_query_type(query: str) -> List[str]:
 async def is_high_confidence_rag_match(
     rag_response: Dict[str, Any],
     confidence_threshold: float = 0.80
-) -> Tuple[bool, str]:
+) -> Tuple[str, str]:
     """
-    Check if RAG response has high confidence and should be trusted.
+    Check RAG response confidence level.
     
     Args:
         rag_response: Response from transcript_rag_query
-        confidence_threshold: Minimum similarity score (default 0.80)
+        confidence_threshold: Minimum similarity score for high confidence (default 0.80)
     
     Returns:
-        (is_confident, reason)
+        (confidence_level, reason) where confidence_level is "high", "medium", or "low"
     """
     if not rag_response.get("success"):
-        return False, "RAG query failed"
+        return "low", "RAG query failed"
     
     confidence = rag_response.get("confidence", "none")
     similarity = rag_response.get("similarity_score", 0)
     
-    # Check confidence levels
+    # Check confidence levels - now more lenient
     if confidence == "high" and similarity >= confidence_threshold:
-        return True, f"High confidence match (similarity: {similarity:.2f})"
-    elif confidence == "medium" and similarity >= 0.75:
-        return True, f"Medium confidence match (similarity: {similarity:.2f})"
+        return "high", f"High confidence match (similarity: {similarity:.2f})"
+    elif confidence == "medium" and similarity >= 0.65:  # Lowered from 0.75
+        return "medium", f"Medium confidence match (similarity: {similarity:.2f})"
+    elif similarity >= 0.50:  # New: moderate confidence range
+        return "moderate", f"Moderate confidence (similarity: {similarity:.2f})"
     else:
-        return False, f"Low confidence (similarity: {similarity:.2f})"
+        return "low", f"Low confidence (similarity: {similarity:.2f})"
 
 
 def extract_factual_claims(text: str) -> Dict[str, List[str]]:
@@ -242,7 +244,8 @@ async def create_grounded_synthesis_prompt(
     user_message: str,
     rag_response: Dict[str, Any],
     fact_types: List[str],
-    conversation_history: List[Dict] = None
+    conversation_history: List[Dict] = None,
+    confidence_level: str = "high"
 ) -> str:
     """
     Create a synthesis prompt with strong grounding instructions.
@@ -252,6 +255,7 @@ async def create_grounded_synthesis_prompt(
         rag_response: Response from RAG system
         fact_types: Detected factual query types
         conversation_history: Previous messages
+        confidence_level: Confidence level ("high", "medium", "moderate", or "low")
     
     Returns:
         Grounding-enhanced synthesis prompt
@@ -273,9 +277,22 @@ async def create_grounded_synthesis_prompt(
             history_formatted.append(f"{role}: {msg['content']}")
         history_context = "\n\nPrevious conversation:\n" + "\n".join(history_formatted) + "\n"
     
+    # Add uncertainty instructions based on confidence level
+    uncertainty_instruction = ""
+    if confidence_level in ["medium", "moderate"]:
+        uncertainty_instruction = """
+
+⚠️ CONFIDENCE LEVEL GUIDANCE:
+Your knowledge base search returned medium confidence results. You should:
+1. Start your answer with a visual uncertainty marker: "⚠️ **Based on available information** (this may not be completely accurate):"
+2. Provide the best answer you can from the context
+3. At the end, add: "\\n\\nIf you need more specific information, I recommend contacting a librarian at (513) 529-4141 or via https://www.lib.miamioh.edu/research/research-support/ask/"
+4. Be helpful and try to answer - don't refuse to respond just because confidence isn't perfect
+"""
+    
     prompt = f"""
 {GROUNDED_SYNTHESIS_INSTRUCTIONS.format(fact_types=fact_types_str)}
-
+{uncertainty_instruction}
 {history_context}
 
 USER QUERY: {user_message}
@@ -288,7 +305,7 @@ RAG KNOWLEDGE BASE INFORMATION:
 
 REMINDER: Use ONLY the information above. If specific factual details are missing, acknowledge it and offer to connect with a librarian.
 
-Generate a helpful, accurate response using ONLY the knowledge base information above.
+Generate a helpful, accurate response using ONLY the knowledge base information above. If confidence is medium/moderate, use uncertainty markers as instructed.
 """
     
     return prompt

@@ -265,7 +265,7 @@ async def synthesize_answer_node(state: AgentState) -> AgentState:
 
 For questions about general university matters, admissions, courses, or campus services, please visit:
 • **Miami University Main Website**: https://miamioh.edu
-• **University Information**: (513) 529-1809
+• **University Information**: (513) 529-0001
 
 For immediate library assistance, you can:
 • **Chat with a librarian**: https://www.lib.miamioh.edu/research/research-support/ask/
@@ -370,12 +370,12 @@ Is there anything library-related I can help you with?"""
             context = "\n\n".join(context_parts)
         
         # Check RAG confidence
-        is_confident, confidence_reason = await is_high_confidence_rag_match(rag_response)
+        confidence_level, confidence_reason = await is_high_confidence_rag_match(rag_response)
         logger.log(f"📊 [Fact Grounding] RAG confidence: {confidence_reason}")
         
-        # If RAG has low confidence for factual query, escalate to human
-        if not is_confident and rag_response.get("similarity_score", 0) < 0.70:
-            logger.log("⚠️ [Fact Grounding] Low confidence for factual query - suggesting human assistance")
+        # Only escalate if confidence is explicitly low AND similarity is very low
+        if confidence_level == "low" and rag_response.get("similarity_score", 0) < 0.45:
+            logger.log("⚠️ [Fact Grounding] Very low confidence for factual query - suggesting human assistance")
             fallback_message = (
                 "I found some information, but I'm not confident it fully answers your question about specific factual details. "
                 "To ensure you get accurate information, I'd recommend:\n\n"
@@ -397,12 +397,13 @@ Is there anything library-related I can help you with?"""
             state["needs_human"] = True
             return state
         
-        # Use grounded synthesis prompt
+        # Use grounded synthesis prompt with confidence indicator
         synthesis_prompt = await create_grounded_synthesis_prompt(
             user_message=user_msg,
             rag_response=rag_response,
             fact_types=fact_types,
-            conversation_history=history
+            conversation_history=history,
+            confidence_level=confidence_level
         )
         
         logger.log("🔒 [Fact Grounding] Using strict grounding mode")
