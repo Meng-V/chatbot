@@ -1,6 +1,8 @@
-import { FormControl, FormLabel, Input, Button } from '@chakra-ui/react';
 import { useState, useContext } from 'react';
 import { SocketContext } from '../context/SocketContextProvider';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 
 const OfflineTicketWidget = () => {
   const [question, setQuestion] = useState('');
@@ -22,40 +24,44 @@ const OfflineTicketWidget = () => {
   };
 
   return (
-    <form onSubmit={handleTicketSubmit}>
-      <FormControl>
-        <FormLabel>Name</FormLabel>
+    <form onSubmit={handleTicketSubmit} className="space-y-4">
+      <div>
+        <Label>Name</Label>
         <Input
-          placeholder='Enter your name...'
+          placeholder="Enter your name..."
           value={name}
           onChange={(e) => setName(e.target.value)}
+          className="mt-1"
         />
-      </FormControl>
-      <FormControl>
-        <FormLabel>Question</FormLabel>
+      </div>
+      <div>
+        <Label>Question</Label>
         <Input
-          placeholder='Enter your question...'
+          placeholder="Enter your question..."
           value={question}
           onChange={(e) => setQuestion(e.target.value)}
+          className="mt-1"
         />
-      </FormControl>
-      <FormControl>
-        <FormLabel>Details</FormLabel>
+      </div>
+      <div>
+        <Label>Details</Label>
         <Input
-          placeholder='Enter details about your question...'
+          placeholder="Enter details about your question..."
           value={details}
           onChange={(e) => setDetails(e.target.value)}
+          className="mt-1"
         />
-      </FormControl>
-      <FormControl>
-        <FormLabel>Email</FormLabel>
+      </div>
+      <div>
+        <Label>Email</Label>
         <Input
-          placeholder='Enter your email...'
+          placeholder="Enter your email..."
           value={email}
           onChange={(e) => setEmail(e.target.value)}
+          className="mt-1"
         />
-      </FormControl>
-      <Button type='submit' mt={2}>
+      </div>
+      <Button type="submit" variant="miami" className="mt-2">
         Submit
       </Button>
     </form>

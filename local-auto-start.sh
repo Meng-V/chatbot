@@ -16,6 +16,7 @@
 #   ./local-auto-start.sh --frontend-only  # Start only frontend
 #   ./local-auto-start.sh --no-open        # Don't open browser automatically
 #   ./local-auto-start.sh --skip-install   # Skip dependency installation
+#   ./local-auto-start.sh --sync-prisma    # Only sync Prisma schemas (no servers)
 # ==============================================================================
 
 set -e
@@ -28,6 +29,7 @@ SKIP_INSTALL=0
 SKIP_PRISMA=0
 BACKEND_ONLY=0
 FRONTEND_ONLY=0
+SYNC_PRISMA_ONLY=0
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -36,6 +38,7 @@ while [[ $# -gt 0 ]]; do
     --skip-prisma) SKIP_PRISMA=1; shift ;;
     --backend-only) BACKEND_ONLY=1; shift ;;
     --frontend-only) FRONTEND_ONLY=1; shift ;;
+    --sync-prisma) SYNC_PRISMA_ONLY=1; shift ;;
     *) echo "Unknown option: $1" ; exit 1 ;;
   esac
 done
@@ -43,6 +46,76 @@ done
 if [[ $BACKEND_ONLY -eq 1 && $FRONTEND_ONLY -eq 1 ]]; then
   echo "Cannot use --backend-only and --frontend-only together"
   exit 1
+fi
+
+# ==============================================================================
+# Prisma Schema Sync Function
+# ==============================================================================
+# Syncs models from root prisma/schema.prisma to ai-core/schema.prisma
+# The root schema is the source of truth for models (uses prisma-client-js)
+# The ai-core schema uses the same models but with prisma-client-py generator
+# ==============================================================================
+sync_prisma_schemas() {
+  echo "🔄 Syncing Prisma schemas..."
+  
+  ROOT_SCHEMA="$SCRIPT_DIR/prisma/schema.prisma"
+  AICORE_SCHEMA="$SCRIPT_DIR/ai-core/schema.prisma"
+  
+  if [[ ! -f "$ROOT_SCHEMA" ]]; then
+    echo "❌ Root schema not found: $ROOT_SCHEMA"
+    return 1
+  fi
+  
+  # Extract models from root schema (everything after the datasource block)
+  # We want to keep everything from "model " onwards
+  MODELS=$(awk '/^model /,0' "$ROOT_SCHEMA")
+  
+  if [[ -z "$MODELS" ]]; then
+    echo "❌ No models found in root schema"
+    return 1
+  fi
+  
+  # Create the ai-core schema with Python generator + synced models
+  cat > "$AICORE_SCHEMA" << 'AICORE_HEADER'
+// Prisma schema for Python client
+// ⚠️  AUTO-GENERATED: Models are synced from /prisma/schema.prisma
+// ⚠️  Do NOT edit models here. Edit /prisma/schema.prisma and run:
+//     ./local-auto-start.sh --sync-prisma
+generator client {
+  provider             = "prisma-client-py"
+  interface            = "asyncio"
+  recursive_type_depth = 5
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+AICORE_HEADER
+
+  # Append the models
+  echo "$MODELS" >> "$AICORE_SCHEMA"
+  
+  echo "✅ Prisma schemas synced successfully!"
+  echo "   Source: $ROOT_SCHEMA"
+  echo "   Target: $AICORE_SCHEMA"
+  
+  # Show model count
+  MODEL_COUNT=$(echo "$MODELS" | grep -c "^model " || echo "0")
+  echo "   Models synced: $MODEL_COUNT"
+}
+
+# Handle --sync-prisma standalone mode
+if [[ $SYNC_PRISMA_ONLY -eq 1 ]]; then
+  sync_prisma_schemas
+  echo ""
+  echo "📝 Next steps:"
+  echo "   1. Run migrations if you added new models:"
+  echo "      cd $SCRIPT_DIR && npm run prisma:migrate"
+  echo "   2. Generate Python client:"
+  echo "      cd $SCRIPT_DIR/ai-core && .venv/bin/prisma generate"
+  exit 0
 fi
 
 ensure_backend_deps() {
@@ -59,8 +132,11 @@ ensure_backend_deps() {
     (cd ai-core && python3 -m venv .venv && .venv/bin/pip install --upgrade pip && .venv/bin/pip install -e .)
   fi
   
-  # Generate Prisma client for Python
+  # Sync and generate Prisma client for Python
   if [[ $SKIP_PRISMA -eq 0 ]]; then
+    # First sync schemas to ensure ai-core has latest models
+    sync_prisma_schemas
+    
     echo "🔧 Generating Prisma client for Python..."
     (cd ai-core && .venv/bin/prisma py fetch && PATH="$(pwd)/.venv/bin:$PATH" .venv/bin/prisma generate)
   fi

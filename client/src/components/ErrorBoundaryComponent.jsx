@@ -1,25 +1,16 @@
 import React, { useState, useEffect } from 'react';
-import {
-  Box,
-  Alert,
-  AlertIcon,
-  AlertTitle,
-  AlertDescription,
-  Button,
-  HStack,
-  Text,
-  useToast,
-  Spinner,
-  Badge,
-} from '@chakra-ui/react';
-import { WarningIcon, RepeatIcon, ChatIcon } from '@chakra-ui/icons';
+import { AlertTriangle, RefreshCw, MessageCircle } from 'lucide-react';
+import { toast } from 'sonner';
+import { Button } from '@/components/ui/button';
+import { Alert, AlertTitle, AlertDescription } from '@/components/ui/alert';
+import { Badge } from '@/components/ui/badge';
+import { Spinner } from '@/components/ui/spinner';
 
 const ErrorBoundaryComponent = ({ children, onLibrarianHelp }) => {
   const [serverStatus, setServerStatus] = useState('checking');
   const [lastHealthCheck, setLastHealthCheck] = useState(null);
   const [errorDetails, setErrorDetails] = useState(null);
   const [retryCount, setRetryCount] = useState(0);
-  const toast = useToast();
 
   // Health check function
   const checkServerHealth = async () => {
@@ -139,8 +130,8 @@ const ErrorBoundaryComponent = ({ children, onLibrarianHelp }) => {
   };
 
   const getErrorIcon = () => {
-    if (errorDetails?.type === 'timeout') return <Spinner size='sm' />;
-    return <WarningIcon />;
+    if (errorDetails?.type === 'timeout') return <Spinner size="sm" />;
+    return <AlertTriangle className="h-4 w-4" />;
   };
 
   const renderErrorAlert = () => {
@@ -148,36 +139,35 @@ const ErrorBoundaryComponent = ({ children, onLibrarianHelp }) => {
     if (serverStatus === 'healthy' || serverStatus === 'checking') return null;
 
     return (
-      <Alert status='warning' mb={4} borderRadius='md' size='sm'>
-        <AlertIcon as={WarningIcon} />
-        <Box flex='1'>
-          <AlertTitle fontSize='sm'>Service Notice</AlertTitle>
-          <AlertDescription fontSize='sm'>
+      <Alert variant="warning" className="mb-4 rounded-md">
+        <AlertTriangle className="h-4 w-4" />
+        <div className="flex-1">
+          <AlertTitle className="text-sm">Service Notice</AlertTitle>
+          <AlertDescription className="text-sm">
             {errorDetails?.message ||
               'Health check failed - but you can still use the chatbot.'}
           </AlertDescription>
 
-          <HStack mt={2} spacing={2}>
+          <div className="flex gap-2 mt-2">
             <Button
-              size='xs'
-              leftIcon={<RepeatIcon />}
+              size="xs"
+              variant="outline"
               onClick={handleRetryConnection}
-              colorScheme='blue'
-              variant='outline'
             >
+              <RefreshCw className="h-3 w-3 mr-1" />
               {retryCount >= 2 ? 'Refresh Page' : 'Try Again'}
             </Button>
             <Button
-              size='xs'
-              leftIcon={<ChatIcon />}
+              size="xs"
+              variant="outline"
+              className="text-green-600 border-green-600 hover:bg-green-600 hover:text-white"
               onClick={onLibrarianHelp}
-              colorScheme='green'
-              variant='outline'
             >
+              <MessageCircle className="h-3 w-3 mr-1" />
               Talk to Librarian
             </Button>
-          </HStack>
-        </Box>
+          </div>
+        </div>
       </Alert>
     );
   };
@@ -185,20 +175,19 @@ const ErrorBoundaryComponent = ({ children, onLibrarianHelp }) => {
   const renderStatusBadge = () => {
     if (serverStatus === 'healthy') return null;
 
+    const badgeVariant = {
+      checking: 'blue',
+      degraded: 'yellow',
+      unhealthy: 'red',
+    }[serverStatus] || 'default';
+
     return (
-      <Box position='fixed' top={4} right={4} zIndex={1000}>
-        <Badge
-          colorScheme={getStatusColor()}
-          variant='solid'
-          px={3}
-          py={1}
-          borderRadius='full'
-          fontSize='xs'
-        >
-          {serverStatus === 'checking' && <Spinner size='xs' mr={2} />}
+      <div className="fixed top-4 right-4 z-[1000]">
+        <Badge variant={badgeVariant} className="px-3 py-1 text-xs flex items-center gap-2">
+          {serverStatus === 'checking' && <Spinner size="xs" />}
           {serverStatus.toUpperCase()}
         </Badge>
-      </Box>
+      </div>
     );
   };
 
@@ -206,12 +195,12 @@ const ErrorBoundaryComponent = ({ children, onLibrarianHelp }) => {
     <>
       {renderStatusBadge()}
 
-      <Box>
+      <div>
         {renderErrorAlert()}
 
         {/* Render children normally - never block UI */}
-        <Box>{children}</Box>
-      </Box>
+        <div>{children}</div>
+      </div>
     </>
   );
 };

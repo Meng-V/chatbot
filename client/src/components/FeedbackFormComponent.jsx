@@ -1,27 +1,20 @@
-import {
-  Button,
-  Modal,
-  ModalOverlay,
-  ModalContent,
-  ModalHeader,
-  ModalBody,
-  ModalFooter,
-  useDisclosure,
-  Radio,
-  HStack,
-  Box,
-  FormControl,
-  FormLabel,
-  Textarea,
-  Text,
-} from '@chakra-ui/react';
-import { FaStar } from 'react-icons/fa';
 import { useContext, useState } from 'react';
+import { Star } from 'lucide-react';
 import { SocketContext } from '../context/SocketContextProvider';
 import { MessageContext } from '../context/MessageContextProvider';
+import { Button } from '@/components/ui/button';
+import { Textarea } from '@/components/ui/textarea';
+import { Label } from '@/components/ui/label';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from '@/components/ui/dialog';
 
 const FeedbackFormComponent = () => {
-  const { isOpen, onOpen, onClose } = useDisclosure();
+  const [isOpen, setIsOpen] = useState(false);
   const [hover, setHover] = useState(null);
   const [rating, setRating] = useState(0);
   const [details, setDetails] = useState(undefined);
@@ -29,7 +22,7 @@ const FeedbackFormComponent = () => {
   const { messageContextValues } = useContext(MessageContext);
 
   const handleFormOpen = () => {
-    onOpen();
+    setIsOpen(true);
     setHover(null);
   };
 
@@ -45,89 +38,88 @@ const FeedbackFormComponent = () => {
     setRating(0);
     setDetails(undefined);
     setHover(null);
-    onClose();
+    setIsOpen(false);
   };
 
   return (
     <>
       <Button
-        isDisabled={messageContextValues.message.length < 3}
+        disabled={messageContextValues.message.length < 3}
         onClick={handleFormOpen}
-        size='xs'
-        mr={'7%'}
+        size="xs"
+        variant="secondary"
+        className="mr-[7%]"
       >
         Rate this conversation
       </Button>
-      <Modal isOpen={isOpen} onClose={onClose}>
-        <ModalOverlay />
-        <ModalContent>
-          <ModalHeader display='flex' alignItems='center' ps={2}>
+      <Dialog open={isOpen} onOpenChange={setIsOpen}>
+        <DialogContent>
+          <DialogHeader className="flex flex-row items-center ps-2">
             <img
-              src='https://libapps.s3.amazonaws.com/accounts/190074/images/0721_STier1_Libraries_HS_186KW_K_Digital.png'
+              src="https://libapps.s3.amazonaws.com/accounts/190074/images/0721_STier1_Libraries_HS_186KW_K_Digital.png"
               height={50}
               width={120}
-              alt='library logo'
+              alt="library logo"
             />
-            <Box ml={3}>Smart Chatbot</Box>
-          </ModalHeader>
-          <ModalBody>
-            <form>
-              <FormControl>
-                <FormLabel>Rate this conversation</FormLabel>
-                <HStack spacing={'2px'}>
-                  {[...Array(5)].map((star, index) => {
+            <DialogTitle className="ml-3">Smart Chatbot</DialogTitle>
+          </DialogHeader>
+          <form>
+            <div className="space-y-4">
+              <div>
+                <Label>Rate this conversation</Label>
+                <div className="flex gap-0.5 mt-2">
+                  {[...Array(5)].map((_, index) => {
                     const ratingValue = index + 1;
                     return (
-                      <Box
-                        as='label'
+                      <label
                         key={index}
-                        color={
-                          ratingValue <= (hover || rating)
-                            ? '#ffc107'
-                            : '#e4e5e9'
-                        }
+                        className="cursor-pointer"
                         onMouseEnter={() => setHover(ratingValue)}
                         onMouseLeave={() => setHover(null)}
                       >
-                        <Radio
-                          name='rating'
+                        <input
+                          type="radio"
+                          name="rating"
                           onChange={() => handleRating(ratingValue)}
                           value={ratingValue}
-                          display='none'
+                          className="sr-only"
                         />
-                        <FaStar
-                          cursor={'pointer'}
-                          size={20}
-                          transition='color 200ms'
+                        <Star
+                          className={`h-5 w-5 transition-colors duration-200 ${
+                            ratingValue <= (hover || rating)
+                              ? 'fill-yellow-400 text-yellow-400'
+                              : 'fill-gray-200 text-gray-200'
+                          }`}
                         />
-                      </Box>
+                      </label>
                     );
                   })}
-                </HStack>
-              </FormControl>
-              <FormControl mt={4} mb={3}>
-                <FormLabel>Details</FormLabel>
+                </div>
+              </div>
+              <div>
+                <Label>Details</Label>
                 <Textarea
-                  placeholder='Enter details about your rating...'
-                  value={details}
+                  placeholder="Enter details about your rating..."
+                  value={details || ''}
                   onChange={(e) => setDetails(e.target.value)}
+                  className="mt-2"
                 />
-              </FormControl>
-              <Text color='red' fontSize={14} as='i'>
+              </div>
+              <p className="text-red-500 text-sm italic">
                 * Submitting this form will restart your session!
-              </Text>
-            </form>
-          </ModalBody>
-          <ModalFooter>
-            <Button mr={3} onClick={onClose}>
+              </p>
+            </div>
+          </form>
+          <DialogFooter>
+            <Button variant="secondary" onClick={() => setIsOpen(false)}>
               Close
             </Button>
-            <Button colorScheme='red' onClick={handleFormSubmit}>
+            <Button variant="miami" onClick={handleFormSubmit}>
               Submit
             </Button>
-          </ModalFooter>
-        </ModalContent>
-      </Modal>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </>
   );
 };

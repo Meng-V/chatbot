@@ -32,6 +32,17 @@ LIBAPPS_CLIENT_ID = os.getenv("LIBAPPS_CLIENT_ID", "")
 LIBAPPS_CLIENT_SECRET = os.getenv("LIBAPPS_CLIENT_SECRET", "")
 LIBGUIDES_BASE_URL = "https://lgapi-us.libapps.com/1.2"
 
+# Fallback librarian contact info when API is unavailable
+FALLBACK_CONTACT = """**Need Research Help?**
+
+Please contact Miami University Libraries:
+• **General Reference:** Ask-A-Librarian at https://www.lib.miamioh.edu/ask/
+• **Subject Librarians:** https://www.lib.miamioh.edu/about/organization/liaisons/
+• **Phone:** (513) 529-4141
+• **Chat:** Available on library website during business hours
+
+We apologize for the inconvenience. Our librarians are happy to help!"""
+
 
 class SubjectLibrarianAgent:
     """Agent for finding subject librarians and LibGuides."""
@@ -364,8 +375,22 @@ async def search_subject_librarian_by_api(query: str, log_callback=None) -> Dict
             response = await client.get(
                 f"{LIBGUIDES_BASE_URL}/accounts",
                 headers={"Authorization": f"Bearer {token}"},
-                params={"expand[]": "subjects"}
+                params={"expand": "subjects"}
             )
+            
+            # Handle 401 specifically - likely permissions issue
+            if response.status_code == 401:
+                logger.log("⚠️ [Subject Librarian API] 401 Unauthorized - check API permissions")
+                if log_callback:
+                    log_callback("⚠️ [Subject Librarian API Search] API access denied - using fallback")
+                return {
+                    "source": "Subject Librarian Agent (Fallback)",
+                    "success": True,
+                    "text": f"I'd be happy to help you find a librarian for **{query}**!\n\n{FALLBACK_CONTACT}",
+                    "needs_human": False,
+                    "metadata": {"fallback_reason": "api_401_unauthorized"}
+                }
+            
             response.raise_for_status()
             librarian_data = response.json()
         
@@ -559,8 +584,22 @@ async def list_all_subject_librarians(log_callback=None) -> Dict[str, Any]:
             response = await client.get(
                 f"{LIBGUIDES_BASE_URL}/accounts",
                 headers={"Authorization": f"Bearer {token}"},
-                params={"expand[]": "subjects"}
+                params={"expand": "subjects"}
             )
+            
+            # Handle 401 specifically
+            if response.status_code == 401:
+                logger.log("⚠️ [Subject Librarian List] 401 Unauthorized - check API permissions")
+                if log_callback:
+                    log_callback("⚠️ [Subject Librarian List] API access denied - using fallback")
+                return {
+                    "source": "Subject Librarian List (Fallback)",
+                    "success": True,
+                    "text": f"I can help you find our subject librarians!\n\n{FALLBACK_CONTACT}",
+                    "needs_human": False,
+                    "metadata": {"fallback_reason": "api_401_unauthorized"}
+                }
+            
             response.raise_for_status()
             librarian_data = response.json()
         

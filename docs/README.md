@@ -102,7 +102,7 @@ Process of preparing transcript data for efficient semantic search in the knowle
 ## 📝 Document Version
 
 **Last Updated**: November 2025  
-**System Version**: 2.0  
+**System Version**: 0.2  
 **Documentation Structure**: Organized by feature area
 
 ---

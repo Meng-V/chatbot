@@ -1,4 +1,5 @@
 import os
+import re
 import socketio
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -30,6 +31,41 @@ root_dir = Path(__file__).resolve().parent.parent.parent
 env_path = root_dir / ".env"
 print(f"Loading .env from: {env_path}")
 load_dotenv(dotenv_path=env_path)
+
+
+def clean_response_for_frontend(text: str) -> str:
+    """
+    Remove internal metadata and source annotations from response before sending to frontend.
+    These are useful for internal processing but awkward for end users to see.
+    """
+    if not text:
+        return text
+    
+    # Patterns to remove (internal metadata that shouldn't be shown to users)
+    patterns_to_remove = [
+        # Source attribution lines
+        r'\n*Source:\s*[^\n]+\[VERIFIED API DATA\][^\n]*\n*',
+        r'\n*Source:\s*[^\n]+\[CURATED KNOWLEDGE BASE[^\]]*\][^\n]*\n*',
+        r'\n*Source:\s*[^\n]+\[WEBSITE SEARCH[^\]]*\][^\n]*\n*',
+        r'\n*Source:\s*Subject Librarian Agent[^\n]*\n*',
+        r'\n*Source:\s*LibGuide[^\n]*\n*',
+        # Standalone brackets with internal labels
+        r'\s*\[VERIFIED API DATA\]',
+        r'\s*\[CURATED KNOWLEDGE BASE[^\]]*\]',
+        r'\s*\[WEBSITE SEARCH[^\]]*\]',
+        r'\s*\[HIGH PRIORITY\]',
+    ]
+    
+    cleaned = text
+    for pattern in patterns_to_remove:
+        cleaned = re.sub(pattern, '', cleaned, flags=re.IGNORECASE)
+    
+    # Clean up extra whitespace/newlines that might result from removal
+    cleaned = re.sub(r'\n{3,}', '\n\n', cleaned)
+    cleaned = cleaned.strip()
+    
+    return cleaned
+
 
 # Lifecycle management for database connection
 @asynccontextmanager
@@ -254,6 +290,9 @@ async def message(sid, data):
         agents_used = result.get("selected_agents", [])
         if "tool_used" in result:
             agents_used = [result["tool_used"]]
+        
+        # Clean internal metadata before sending to frontend
+        final_answer = clean_response_for_frontend(final_answer)
         
         # Save assistant message
         message_id = await add_message(conversation_id, "assistant", final_answer)

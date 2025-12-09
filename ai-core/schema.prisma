@@ -1,4 +1,7 @@
 // Prisma schema for Python client
+// ⚠️  AUTO-GENERATED: Models are synced from /prisma/schema.prisma
+// ⚠️  Do NOT edit models here. Edit /prisma/schema.prisma and run:
+//     ./local-auto-start.sh --sync-prisma
 generator client {
   provider             = "prisma-client-py"
   interface            = "asyncio"

@@ -18,7 +18,7 @@ dependencies = [
   "requests",
   "pytest",
   "pytest-asyncio",
-  "prisma",
+  "prisma>=0.15.0",
   "asyncpg",
   "psutil",
   "python-dateutil",

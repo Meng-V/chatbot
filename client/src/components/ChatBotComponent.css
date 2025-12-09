@@ -1,8 +1,3 @@
-input.chakra-input:focus-visible {
-  border-color: #c41230 !important;
-  box-shadow: 0 0 0 1px #c3142d;
-}
-
 .chat {
   height: 60vh;
   border: 1px solid #ccc;
