@@ -27,9 +27,9 @@ load_dotenv(dotenv_path=root_dir / ".env")
 logger = AgentLogger()
 
 # LibGuides API Configuration
-LIBAPPS_OAUTH_URL = os.getenv("LIBAPPS_OAUTH_URL", "")
-LIBAPPS_CLIENT_ID = os.getenv("LIBAPPS_CLIENT_ID", "")
-LIBAPPS_CLIENT_SECRET = os.getenv("LIBAPPS_CLIENT_SECRET", "")
+LIBGUIDE_OAUTH_URL = os.getenv("LIBGUIDE_OAUTH_URL", "")
+LIBGUIDE_CLIENT_ID = os.getenv("LIBGUIDE_CLIENT_ID", "")
+LIBGUIDE_CLIENT_SECRET = os.getenv("LIBGUIDE_CLIENT_SECRET", "")
 LIBGUIDES_BASE_URL = "https://lgapi-us.libapps.com/1.2"
 
 # Fallback librarian contact info when API is unavailable
@@ -60,10 +60,10 @@ class SubjectLibrarianAgent:
         
         async with httpx.AsyncClient() as client:
             response = await client.post(
-                LIBAPPS_OAUTH_URL,
+                LIBGUIDE_OAUTH_URL,
                 data={
-                    "client_id": LIBAPPS_CLIENT_ID,
-                    "client_secret": LIBAPPS_CLIENT_SECRET,
+                    "client_id": LIBGUIDE_CLIENT_ID,
+                    "client_secret": LIBGUIDE_CLIENT_SECRET,
                     "grant_type": "client_credentials"
                 }
             )

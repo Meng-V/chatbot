@@ -119,7 +119,7 @@ const App = () => {
     if (askUsStatus.isOpen) {
       setStep('humanLibrarian');
       toast.info('Connecting to Librarian', {
-        description: 'Redirecting you to chat with a human librarian.',
+        description: 'Redirecting you to a human librarian.',
         duration: 3000,
       });
     } else {
@@ -299,10 +299,10 @@ const App = () => {
             <Button
               size="sm"
               variant="miami"
-              className="fixed bottom-10 right-20 mr-4"
+              className="fixed bottom-10 right-20 mr-4 absolute right-0 bottom-0 mb-2"
               onClick={() => askUsStatus.isOpen ? setStep('humanLibrarian') : setStep('ticket')}
             >
-              {askUsStatus.isOpen ? 'Chat with a human librarian' : 'Submit a ticket'}
+              {askUsStatus.isOpen ? 'Talk to a Human Librarian' : 'Submit a ticket'}
             </Button>
           )}
         </DialogContent>

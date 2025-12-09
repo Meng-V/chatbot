@@ -57,10 +57,17 @@ const SocketContextProvider = ({ children }) => {
       messageContextValues.setIsTyping(false);
     });
 
+    // Handle timeout - stop thinking if response takes too long
+    socket.current.on('error', (error) => {
+      console.error('Socket error:', error);
+      messageContextValues.stopThinking();
+    });
+
     socket.current.on('message', ({ messageId, message }) => {
       console.log('Message received:', message);
-      messageContextValues.setIsTyping(false);
-      messageContextValues.addMessage(message, 'chatbot', messageId);
+      // Stop thinking timer and get elapsed time
+      const responseTime = messageContextValues.stopThinking();
+      messageContextValues.addMessage(message, 'chatbot', messageId, responseTime);
     });
 
     socket.current.on('messageIdUpdate', ({ tempMessageId, realMessageId }) => {

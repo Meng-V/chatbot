@@ -180,17 +180,71 @@ def _parse_date_intelligent(date_input: str) -> Tuple[bool, Optional[str], Optio
                 return False, None, f"Could not understand 'this {remainder}'"
         
         else:
-            # Try parsing with dateutil for flexibility
-            # Set dayfirst=False for American format (MM/DD/YYYY)
-            parsed = date_parser.parse(date_input, dayfirst=False, fuzzy=True)
+            # Handle "new year" references - interpret as next year
+            if 'new year' in date_lower:
+                # Extract any day/date from the string
+                # e.g., "tenth day of the new year" -> January 10, next year
+                next_year = now.year + 1 if now.month >= 11 else now.year + 1
+                
+                # Try to extract a day number
+                day_match = re.search(r'(\d+)(?:st|nd|rd|th)?', date_lower)
+                ordinal_map = {
+                    'first': 1, 'second': 2, 'third': 3, 'fourth': 4, 'fifth': 5,
+                    'sixth': 6, 'seventh': 7, 'eighth': 8, 'ninth': 9, 'tenth': 10,
+                    'eleventh': 11, 'twelfth': 12, 'thirteenth': 13, 'fourteenth': 14,
+                    'fifteenth': 15, 'sixteenth': 16, 'seventeenth': 17, 'eighteenth': 18,
+                    'nineteenth': 19, 'twentieth': 20, 'twenty-first': 21, 'twenty-second': 22,
+                    'twenty-third': 23, 'twenty-fourth': 24, 'twenty-fifth': 25,
+                    'twenty-sixth': 26, 'twenty-seventh': 27, 'twenty-eighth': 28,
+                    'twenty-ninth': 29, 'thirtieth': 30, 'thirty-first': 31
+                }
+                
+                day = 1  # Default to January 1st
+                if day_match:
+                    day = int(day_match.group(1))
+                else:
+                    for word, num in ordinal_map.items():
+                        if word in date_lower:
+                            day = num
+                            break
+                
+                # Default to January for "new year"
+                result_date = datetime(next_year, 1, min(day, 31)).date()
             
-            # Convert to New York timezone if not already aware
-            if parsed.tzinfo is None:
-                parsed = ny_tz.localize(parsed)
+            # Handle month names without year (use next occurrence)
+            elif any(month in date_lower for month in ['january', 'february', 'march', 'april', 'may', 'june', 
+                                                        'july', 'august', 'september', 'october', 'november', 'december']):
+                # Try parsing with dateutil for flexibility
+                # Set dayfirst=False for American format (MM/DD/YYYY)
+                parsed = date_parser.parse(date_input, dayfirst=False, fuzzy=True)
+                
+                # Convert to New York timezone if not already aware
+                if parsed.tzinfo is None:
+                    parsed = ny_tz.localize(parsed)
+                else:
+                    parsed = parsed.astimezone(ny_tz)
+                
+                result_date = parsed.date()
+                
+                # If the parsed date is in the past and no year was explicitly provided,
+                # assume they mean the next occurrence (next year)
+                if result_date < now.date():
+                    # Check if a 4-digit year was in the original input
+                    if not re.search(r'\b20\d{2}\b', date_input):
+                        result_date = result_date.replace(year=result_date.year + 1)
+            
             else:
-                parsed = parsed.astimezone(ny_tz)
-            
-            result_date = parsed.date()
+                # Try parsing with dateutil for flexibility
+                # Set dayfirst=False for American format (MM/DD/YYYY)
+                parsed = date_parser.parse(date_input, dayfirst=False, fuzzy=True)
+                
+                # Convert to New York timezone if not already aware
+                if parsed.tzinfo is None:
+                    parsed = ny_tz.localize(parsed)
+                else:
+                    parsed = parsed.astimezone(ny_tz)
+                
+                result_date = parsed.date()
         
         # Format as YYYY-MM-DD
         formatted_date = result_date.strftime("%Y-%m-%d")
@@ -381,9 +435,29 @@ async def _check_building_hours(building_id: str, date: str, start_time: str, en
             end_normalized = end_time.replace("-", ":")
             
             def time_to_minutes(time_str: str) -> int:
-                """Convert time string to minutes since midnight."""
+                """Convert time string to minutes since midnight.
+                Handles both 12-hour (10:00am, 10:00pm) and 24-hour (10:00) formats.
+                """
+                time_str = time_str.lower().strip()
+                
+                # Check for AM/PM
+                is_pm = 'pm' in time_str
+                is_am = 'am' in time_str
+                
+                # Remove AM/PM markers
+                time_str = time_str.replace('am', '').replace('pm', '').strip()
+                
                 parts = time_str.split(":")
-                return int(parts[0]) * 60 + int(parts[1])
+                hours = int(parts[0])
+                minutes = int(parts[1]) if len(parts) > 1 else 0
+                
+                # Convert to 24-hour format
+                if is_pm and hours != 12:
+                    hours += 12
+                elif is_am and hours == 12:
+                    hours = 0
+                
+                return hours * 60 + minutes
             
             booking_start = time_to_minutes(start_normalized)
             booking_end = time_to_minutes(end_normalized)
@@ -609,10 +683,23 @@ class LibCalEnhancedAvailabilityTool(Tool):
                         break
             
             if not available_rooms:
+                # Check if date might be too far in advance
+                try:
+                    booking_date = datetime.strptime(date, "%Y-%m-%d")
+                    days_ahead = (booking_date.date() - now.date()).days
+                    if days_ahead > 14:
+                        return {
+                            "tool": self.name,
+                            "success": True,
+                            "text": f"No rooms available at {building.capitalize() if building else 'any'} Library for {booking_date.strftime('%B %d, %Y')} from {start_time} to {end_time}. Note: Room reservations typically open 2 weeks in advance."
+                        }
+                except:
+                    pass
+                
                 return {
                     "tool": self.name,
                     "success": True,
-                    "text": f"No rooms available at {building.capitalize()} Library for {date} from {start_time} to {end_time}."
+                    "text": f"No rooms available at {building.capitalize() if building else 'any'} Library for {date} from {start_time} to {end_time}."
                 }
             
             # Sort by capacity and censor IDs
@@ -819,10 +906,24 @@ class LibCalComprehensiveReservationTool(Tool):
                         break
                 
                 if not availability_result.get("rooms_data"):
+                    # Check if date might be too far in advance
+                    from datetime import datetime
+                    try:
+                        booking_date = datetime.strptime(date, "%Y-%m-%d")
+                        days_ahead = (booking_date - datetime.now()).days
+                        if days_ahead > 14:
+                            return {
+                                "tool": self.name,
+                                "success": False,
+                                "text": f"No rooms are available for {booking_date.strftime('%B %d, %Y')}. Note: Room reservations typically open 2 weeks in advance. Please try a closer date, or contact the library at (513) 529-4141 for further assistance."
+                            }
+                    except:
+                        pass
+                    
                     return {
                         "tool": self.name,
                         "success": False,
-                        "text": "No rooms available at any library building for the requested time. Please try a different time or contact the library at (513) 529-4141."
+                        "text": "No rooms available at any library building for the requested time. You might try a different time slot or date, or feel free to contact us at (513) 529-4141 for further assistance."
                     }
             
             rooms_data = availability_result.get("rooms_data", [])
@@ -851,26 +952,26 @@ class LibCalComprehensiveReservationTool(Tool):
                 if not selected_room:
                     selected_room = rooms_data[0]  # Take smallest available
             
-            # Create ISO 8601 timestamps with timezone
-            offset = _detect_dst(date)
+            # Create timestamps in local time (LibCal expects local time without timezone offset)
             start_formatted = start_time.replace("-", ":")
             end_formatted = end_time.replace("-", ":")
             
-            # Build proper ISO 8601 timestamps (e.g., "2024-11-12T14:00:00-05:00")
-            start_timestamp = f"{date}T{start_formatted}:00{offset}"
-            end_timestamp = f"{date}T{end_formatted}:00{offset}"
+            # Build timestamps in local time format (e.g., "2024-11-12T14:00:00")
+            # LibCal operates in building's local timezone and doesn't need/want timezone offsets
+            start_timestamp = f"{date}T{start_formatted}:00"
+            end_timestamp = f"{date}T{end_formatted}:00"
             
             # Make booking
             is_production = NODE_ENV == "production"
             payload = {
-                "start": start_timestamp,  # ISO 8601 format with timezone
+                "start": start_timestamp,  # Local time format (YYYY-MM-DDTHH:MM:SS)
                 "fname": first_name,
                 "lname": last_name,
                 "email": email,
                 "bookings": [
                     {
                         "id": selected_room["id"],  # Space ID from availability check
-                        "to": end_timestamp  # ISO 8601 format with timezone
+                        "to": end_timestamp  # Local time format (YYYY-MM-DDTHH:MM:SS)
                     }
                 ]
             }
@@ -913,17 +1014,20 @@ class LibCalComprehensiveReservationTool(Tool):
                     
                     # Build confirmation message
                     if booking_id:
-                        confirmation_text = f"{selected_room['name']} with capacity {selected_room['capacity']} is booked from {start_time} to {end_time} on {date} at {building.capitalize()} Library. Confirmation number: {booking_id}. A confirmation email has been sent to {email}."
+                        confirmation_text = f"{selected_room['name']} with capacity {selected_room['capacity']} is booked from {start_time} to {end_time} on {date} at {building.capitalize()} Library. Confirmation number: {booking_id}. A confirmation email has been sent to your email."
+                        return {
+                            "tool": self.name,
+                            "success": True,
+                            "booking_id": booking_id,
+                            "text": confirmation_text
+                        }
                     else:
-                        # Fallback if no booking_id
-                        confirmation_text = f"{selected_room['name']} with capacity {selected_room['capacity']} is booked from {start_time} to {end_time} on {date} at {building.capitalize()} Library. A confirmation email has been sent to {email}."
-                    
-                    return {
-                        "tool": self.name,
-                        "success": True,
-                        "booking_id": booking_id,
-                        "text": confirmation_text
-                    }
+                        # Fallback if no booking_id - this is a failure case
+                        return {
+                            "tool": self.name,
+                            "success": False,
+                            "text": f"Your booking request has failed. Please try again or contact us at (513) 529-4141 for further assistance."
+                        }
                 else:
                     error_data = response.text
                     

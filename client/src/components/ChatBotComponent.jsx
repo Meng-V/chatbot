@@ -1,4 +1,4 @@
-import { useContext, useRef, useEffect, useState } from 'react';
+import { useContext, useRef, useEffect, useState, useCallback } from 'react';
 import { AlertTriangle, Clock } from 'lucide-react';
 import MessageComponents from './ParseLinks';
 import { SocketContext } from '../context/SocketContextProvider';
@@ -17,6 +17,28 @@ const ChatBotComponent = ({ askUsStatus = { isOpen: false, hoursToday: null } })
   const chatRef = useRef();
   const [widgetVisible, setWidgetVisible] = useState(false);
   const [showTicketForm, setShowTicketForm] = useState(false);
+  const [elapsedTime, setElapsedTime] = useState(0);
+
+  // Live timer effect - updates every second while thinking
+  useEffect(() => {
+    let interval;
+    if (messageContextValues.isTyping && messageContextValues.thinkingStartTime) {
+      // Update immediately
+      setElapsedTime(Math.floor((Date.now() - messageContextValues.thinkingStartTime) / 1000));
+      
+      // Then update every second
+      interval = setInterval(() => {
+        const elapsed = Math.floor((Date.now() - messageContextValues.thinkingStartTime) / 1000);
+        setElapsedTime(elapsed);
+      }, 1000);
+    } else {
+      setElapsedTime(0);
+    }
+    
+    return () => {
+      if (interval) clearInterval(interval);
+    };
+  }, [messageContextValues.isTyping, messageContextValues.thinkingStartTime]);
 
   const handleFormSubmit = (e) => {
     e.preventDefault();
@@ -26,10 +48,21 @@ const ChatBotComponent = ({ askUsStatus = { isOpen: false, hoursToday: null } })
         'user',
       );
       messageContextValues.setInputMessage('');
-      messageContextValues.setIsTyping(true);
+      // Use startThinking to begin timer
+      messageContextValues.startThinking();
       socketContextValues.sendUserMessage(messageContextValues.inputMessage);
     }
   };
+
+  // Format time for display
+  const formatTime = useCallback((seconds) => {
+    if (seconds < 60) {
+      return `${seconds}s`;
+    }
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return `${mins}m ${secs}s`;
+  }, []);
 
   useEffect(() => {
     if (chatRef.current) {
@@ -64,7 +97,7 @@ const ChatBotComponent = ({ askUsStatus = { isOpen: false, hoursToday: null } })
                 ? 'The chatbot service is experiencing technical difficulties. '
                 : 'Unable to connect to the chatbot service. '}
               {askUsStatus.isOpen 
-                ? 'Please chat with a human librarian for immediate assistance.'
+                ? 'Please talk to a human librarian for immediate assistance.'
                 : 'Please submit a ticket and we\'ll get back to you.'}
             </AlertDescription>
           </div>
@@ -93,7 +126,7 @@ const ChatBotComponent = ({ askUsStatus = { isOpen: false, hoursToday: null } })
         <div className="mb-4 p-4 border border-blue-200 rounded-md bg-blue-50">
           <div className="flex justify-between items-center mb-2">
             <span className="font-bold text-blue-700">
-              Chat with a Human Librarian
+              Talk to a Human Librarian
             </span>
             <Button size="xs" variant="ghost" onClick={() => setWidgetVisible(false)}>
               ✕
@@ -145,12 +178,19 @@ const ChatBotComponent = ({ askUsStatus = { isOpen: false, hoursToday: null } })
                 className={message.sender === 'user' ? 'self-end' : 'self-start'}
               >
                 <div
-                  className={`max-w-md px-5 py-3 rounded-md ${
+                  className={`max-w-md px-5 py-3 rounded-md relative ${
                     message.sender === 'user'
                       ? 'bg-white border border-red-400'
                       : 'bg-gray-200'
-                  }`}
+                  } ${message.sender !== 'user' && message.responseTime != null ? 'bot-message-with-time' : ''}`}
                 >
+                  {/* Response time badge for bot messages */}
+                  {message.sender !== 'user' && message.responseTime !== null && message.responseTime !== undefined && (
+                    <div className="response-time-badge" title="Response time">
+                      <Clock size={12} className="inline mr-1" />
+                      {formatTime(message.responseTime)}
+                    </div>
+                  )}
                   <div
                     className={`whitespace-pre-line ${
                       message.sender === 'user' ? 'text-red-600' : 'text-black'
@@ -203,7 +243,7 @@ const ChatBotComponent = ({ askUsStatus = { isOpen: false, hoursToday: null } })
                       <span className="text-sm flex-1">
                         This answer may be uncertain. 
                         {askUsStatus.isOpen 
-                          ? ' Chat with a human librarian for faster help.'
+                          ? ' Talk to a human librarian for faster help.'
                           : ' Submit a ticket during off-hours or check back during business hours.'}
                       </span>
                       {askUsStatus.isOpen ? (
@@ -233,7 +273,11 @@ const ChatBotComponent = ({ askUsStatus = { isOpen: false, hoursToday: null } })
             );
           })}
           {messageContextValues.isTyping && (
-            <div className="max-w-md px-5 py-3 rounded-md bg-gray-200">
+            <div className="max-w-md px-5 py-3 rounded-md bg-gray-200 relative bot-message-with-time">
+              <div className="thinking-timer" title="Time elapsed">
+                <Clock size={14} className="inline mr-1 animate-pulse" />
+                <span className="font-mono">{formatTime(elapsedTime)}</span>
+              </div>
               <p>
                 Chatbot is thinking <span className="dots"></span>
               </p>
@@ -272,7 +316,7 @@ const ChatBotComponent = ({ askUsStatus = { isOpen: false, hoursToday: null } })
       <p className="text-xs pt-2 text-gray-500">
         Chatbot can make mistakes. 
         {askUsStatus.isOpen 
-          ? ' Chat with a human librarian during business hours if needed.'
+          ? ' Talk to a human librarian during business hours if needed.'
           : askUsStatus.hoursToday 
             ? ` Human chat available ${askUsStatus.hoursToday.open} - ${askUsStatus.hoursToday.close}. Submit a ticket for off-hours help.`
             : ' Submit a ticket for assistance.'}

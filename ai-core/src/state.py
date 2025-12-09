@@ -15,6 +15,14 @@ class AgentState(MessagesState):
     conversation_history: List[Dict[str, Any]] = []  # Previous messages for context
     token_usage: Optional[Dict[str, Any]] = None  # Token usage tracking
     tool_executions: List[Dict[str, Any]] = []  # Detailed tool execution logs
+    
+    # Query Understanding Layer fields
+    original_query: Optional[str] = None  # Original user input before processing
+    processed_query: Optional[str] = None  # Translated/simplified query for system
+    query_understanding: Optional[Dict[str, Any]] = None  # Full understanding result
+    needs_clarification: bool = False  # Flag to request user clarification
+    clarifying_question: Optional[str] = None  # Question to ask user if ambiguous
+    query_type_hint: Optional[str] = None  # Hint for routing from understanding layer
 
 # Intent types based on screenshot
 IntentType = Literal[

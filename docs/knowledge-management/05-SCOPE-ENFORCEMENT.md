@@ -305,7 +305,7 @@ OFFICIAL_LIBRARY_CONTACTS = {
         "contact_page": "https://www.lib.miamioh.edu/research/research-support/ask/",
     },
     "ask_a_librarian": {
-        "chat_url": "https://libanswers.lib.miamioh.edu/chat/widget/...",
+        "chat_url": "https://www.lib.miamioh.edu/research/research-support/ask/",
         "email_form": "https://www.lib.miamioh.edu/research/research-support/ask/",
         "phone": "(513) 529-4141",
     },
@@ -478,7 +478,7 @@ I found information about Biology:
 - Contact: https://www.lib.miamioh.edu/research/research-support/ask/
 
 **Ask-a-Librarian**:
-- Chat: https://libanswers.lib.miamioh.edu/chat/widget/...
+- Chat: https://www.lib.miamioh.edu/research/research-support/ask/
 - Phone: (513) 529-4141
 
 ---

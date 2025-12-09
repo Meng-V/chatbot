@@ -6,10 +6,10 @@ from typing import Dict, Any, List, Tuple, Optional
 from src.tools.base import Tool
 from src.services.libapps_oauth import get_libapps_oauth_service
 
-LIBAPPS_OAUTH_URL = os.getenv("LIBAPPS_OAUTH_URL", "")
-LIBAPPS_CLIENT_ID = os.getenv("LIBAPPS_CLIENT_ID", "")
-LIBAPPS_CLIENT_SECRET = os.getenv("LIBAPPS_CLIENT_SECRET", "")
-LIBAPPS_GRANT_TYPE = os.getenv("LIBAPPS_GRANT_TYPE", "client_credentials")
+LIBGUIDE_OAUTH_URL = os.getenv("LIBGUIDE_OAUTH_URL", "")
+LIBGUIDE_CLIENT_ID = os.getenv("LIBGUIDE_CLIENT_ID", "")
+LIBGUIDE_CLIENT_SECRET = os.getenv("LIBGUIDE_CLIENT_SECRET", "")
+LIBGUIDE_GRANT_TYPE = os.getenv("LIBGUIDE_GRANT_TYPE", "client_credentials")
 
 # Fallback message when API is unavailable
 FALLBACK_CONTACT = """**Need Research Help?**
