@@ -382,5 +382,6 @@ Testing Workflow:
 
 ---
 
-**Architecture Version**: 1.0  
-**Last Updated**: November 2025
+**Architecture Version**: 2.3  
+**Last Updated**: December 9, 2025  
+**Developer**: Meng Qu, Miami University Libraries - Oxford, OH

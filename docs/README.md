@@ -101,8 +101,9 @@ Process of preparing transcript data for efficient semantic search in the knowle
 
 ## 📝 Document Version
 
-**Last Updated**: November 2025  
-**System Version**: 0.2  
+**Last Updated**: December 9, 2025  
+**System Version**: 2.3.0  
+**Developer**: Meng Qu, Miami University Libraries - Oxford, OH  
 **Documentation Structure**: Organized by feature area
 
 ---
@@ -117,3 +118,7 @@ Process of preparing transcript data for efficient semantic search in the knowle
 ---
 
 **Welcome to the Miami University Library AI Chatbot Documentation!**
+
+---
+
+*Developed and maintained by Meng Qu, Miami University Libraries Web Services*

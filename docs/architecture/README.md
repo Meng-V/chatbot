@@ -196,3 +196,8 @@ For system administrators:
 ---
 
 **Build on a solid foundation!** 🏗️
+
+---
+
+**Last Updated**: December 9, 2025  
+**Developer**: Meng Qu, Miami University Libraries - Oxford, OH

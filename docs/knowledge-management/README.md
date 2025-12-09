@@ -144,3 +144,8 @@ For technical implementation:
 ---
 
 **Guide students to the right resources!** 📚✨
+
+---
+
+**Last Updated**: December 9, 2025  
+**Developer**: Meng Qu, Miami University Libraries - Oxford, OH

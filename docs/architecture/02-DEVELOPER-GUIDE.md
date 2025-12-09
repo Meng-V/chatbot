@@ -754,14 +754,19 @@ open http://localhost:8000/docs
 
 ---
 
-**Built by Miami University Libraries Web Services Team**  
-**Version 2.0.0 | November 2025**
+**Developed by Meng Qu, Miami University Libraries - Oxford, OH**  
+**Version 2.3.0 | December 9, 2025**
 
-**What's New in 2.0:**
+**What's New in 2.3:**
+- ✅ **Multi-Campus Support**: Full support for Oxford, Hamilton, and Middletown campuses
+- ✅ **Enhanced LibAnswers Integration**: Ask Us Chat Service hours API
+- ✅ **Campus-Specific Building IDs**: Organized environment variables by campus
+- ✅ **Real-time Librarian Availability**: Check human chat service hours
+
+**Previous Features (2.0-2.2):**
 - ✅ **Strict Scope Enforcement**: ONLY answers library questions (not general university)
 - ✅ **MuGuide Integration**: 710 subjects mapped to LibGuides and librarians
 - ✅ **Contact Validation**: NEVER makes up emails, phone numbers, or names
-- ✅ **7th Agent**: Subject Librarian agent for subject-to-librarian routing
-- ✅ **Out-of-Scope Detection**: Automatically redirects non-library questions
-- ✅ **Enhanced Database**: 5 new Subject-related tables in Prisma schema
-- ✅ **Comprehensive Documentation**: Detailed scope and MuGuide integration reports
+- ✅ **8 Specialized Agents**: Including Subject Librarian for subject-to-librarian routing
+- ✅ **Weaviate RAG**: 1,568 Q&A pairs with fact grounding
+- ✅ **Hybrid Routing**: Function calling + LangGraph orchestration

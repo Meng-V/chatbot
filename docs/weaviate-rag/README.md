@@ -150,3 +150,8 @@ For ongoing maintenance:
 ---
 
 **Keep your knowledge base accurate and up-to-date!** 🎯
+
+---
+
+**Last Updated**: December 9, 2025  
+**Developer**: Meng Qu, Miami University Libraries - Oxford, OH

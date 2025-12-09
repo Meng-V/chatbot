@@ -80,7 +80,7 @@ Ready for RAG Queries ✓
 
 ## 📊 Data Statistics
 
-**Current Data** (as of Nov 2025):
+**Current Data** (as of December 2025):
 - Raw transcripts: 2023-2025 (3 years)
 - Cleaned Q&A pairs: 1,568
 - Data location: `/ai-core/data/optimized_for_weaviate.json`
@@ -115,3 +115,8 @@ For adding new data:
 ---
 
 **Clean data = Accurate answers!** 📊✨
+
+---
+
+**Last Updated**: December 9, 2025  
+**Developer**: Meng Qu, Miami University Libraries - Oxford, OH

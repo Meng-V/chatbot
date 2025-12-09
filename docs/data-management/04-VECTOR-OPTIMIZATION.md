@@ -406,6 +406,6 @@ elif top_similarity >= 0.80:  # Stricter medium
 
 ---
 
-**Last Updated**: November 16, 2024  
-**Version**: 1.0  
-**Maintainer**: Chatbot Team
+**Last Updated**: December 9, 2025  
+**Version**: 2.3  
+**Developer**: Meng Qu, Miami University Libraries - Oxford, OH

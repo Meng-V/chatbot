@@ -1,6 +1,6 @@
 # 2025 RAG Data Optimization Project Summary Report
 
-**Date**: November 16, 2024  
+**Date**: November 16, 2025  
 **Status**: ✅ Completed
 
 ---
@@ -356,5 +356,6 @@ This project successfully:
 ---
 
 **Project Completion Date**: November 16, 2025  
-**Lead**: AI Assistant  
-**Status**: ✅ Complete, Weaviate Ingestion Done
+**Last Updated**: December 9, 2025  
+**Developer**: Meng Qu, Miami University Libraries - Oxford, OH  
+**Status**: ✅ Complete, Weaviate Ingestion Done, Multi-Campus Support Added

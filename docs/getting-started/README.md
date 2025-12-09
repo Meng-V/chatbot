@@ -309,3 +309,8 @@ Before going to production:
 ---
 
 **Ready to dive deeper? Check out the [Documentation Index](../README.md)!**
+
+---
+
+**Last Updated**: December 9, 2025  
+**Developer**: Meng Qu, Miami University Libraries - Oxford, OH

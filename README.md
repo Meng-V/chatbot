@@ -265,19 +265,38 @@ Miami University Libraries serve the academic community across three campuses (O
 
 ## ⚙️ Version Information
 
-- **Current Version**: 2.2.0
-- **Last Updated**: November 17, 2025
+- **Current Version**: 2.3.0
+- **Last Updated**: December 9, 2025
 - **Platform**: Python 3.12 AI-Core with React 19 Frontend
 - **AI Model**: OpenAI o4-mini
 - **Routing**: Hybrid Router (function calling + LangGraph)
 - **Agents**: 8 specialized agents (7 domain agents + hybrid router)
 - **Subject Mappings**: 710 subjects, 587 LibGuides, 586 majors
 - **RAG Database**: Weaviate Cloud with 1,568 Q&A pairs
+- **Multi-Campus Support**: Oxford, Hamilton, and Middletown libraries
 - **Status**: Production-ready
 
-### **What's New in Version 2.2**
+### **What's New in Version 2.3**
 
-#### ✅ Weaviate RAG System with Record Management (NEW)
+#### ✅ Multi-Campus Library Support (NEW)
+- **Full support for all Miami University campuses**: Oxford, Hamilton, and Middletown
+- **Building-specific room booking**: King Library, Art & Architecture Library, Rentschler Library, Gardner-Harvey Library
+- **Campus-aware hours**: Each library's hours accessible independently
+- **Environment variables**: Organized by campus for easy configuration
+
+#### ✅ Enhanced LibAnswers Integration (NEW)
+- **Ask Us Chat Service hours API**: Check human librarian availability in real-time
+- **LIBCAL_ASKUS_ID**: Dedicated service ID for chat availability
+- **LibAnswers OAuth**: Secure integration with LibAnswers API
+
+#### ✅ Improved MuGuide Subject Routing
+- **710 academic subjects mapped** to librarians and LibGuides
+- **Fuzzy matching**: Handles variations in subject names
+- **Database integration**: Subject mappings stored in PostgreSQL
+
+### **Previous Version (2.2)**
+
+#### ✅ Weaviate RAG System with Record Management
 - **1,568 Q&A pairs** loaded into Weaviate Cloud vector database
 - **Automatic ID tracking** - Every RAG query stores Weaviate record IDs
 - **Find problematic records** - Search by low confidence or specific queries
@@ -310,4 +329,4 @@ Miami University Libraries serve the academic community across three campuses (O
 
 ---
 
-**Built with ❤️ by Miami University Libraries Web Services Team**
+**Built with ❤️ by Meng Qu, Miami University Libraries - Oxford, OH**

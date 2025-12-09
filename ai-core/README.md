@@ -263,14 +263,18 @@ psql "postgresql://..."
 
 ## ⚙️ Version
 
-- **AI-Core Version**: 2.2.0
+- **AI-Core Version**: 2.3.0
+- **Last Updated**: December 9, 2025
 - **Python**: 3.12+
 - **LangGraph**: Latest
 - **OpenAI Model**: o4-mini
 - **FastAPI**: Latest
 - **Prisma**: Latest
 - **Weaviate**: Cloud (1,568 Q&A pairs)
+- **Multi-Campus Support**: Oxford, Hamilton, Middletown libraries
 
 ---
+
+**Developed by Meng Qu, Miami University Libraries - Oxford, OH**
 
 **For complete documentation, see [Documentation Index](../docs/README.md)**
