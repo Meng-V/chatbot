@@ -1125,3 +1125,159 @@ class LibCalCancelReservationTool(Tool):
                 "error": str(e),
                 "text": "Cancellation failed. Please visit https://www.lib.miamioh.edu/use/spaces/room-reservations/ or contact the library."
             }
+
+
+# Ask Us Chat Service ID from environment
+LIBCAL_ASKUS_ID = os.getenv("LIBCAL_ASKUS_ID", "")
+
+
+class AskUsChatHoursTool(Tool):
+    """Tool to check Ask Us Chat Service business hours."""
+    
+    @property
+    def name(self) -> str:
+        return "askus_chat_hours"
+    
+    @property
+    def description(self) -> str:
+        return "Check Ask Us Chat Service business hours - live chat with a librarian. Use this when users ask about chat service hours, librarian availability for live chat, or when to talk to a human librarian."
+    
+    async def execute(
+        self, 
+        query: str, 
+        log_callback=None,
+        date: str = None,
+        **kwargs
+    ) -> Dict[str, Any]:
+        """Get Ask Us Chat Service hours for today or specified date."""
+        try:
+            if log_callback:
+                log_callback("🔍 [Ask Us Hours Tool] Checking chat service hours")
+            
+            if not LIBCAL_ASKUS_ID:
+                return {
+                    "tool": self.name,
+                    "success": False,
+                    "text": "Ask Us Chat hours configuration not available. Please visit https://www.lib.miamioh.edu/ask/"
+                }
+            
+            # Use today if no date specified
+            if not date:
+                from zoneinfo import ZoneInfo
+                est = ZoneInfo("America/New_York")
+                date = datetime.now(est).strftime("%Y-%m-%d")
+            else:
+                # Parse the date if provided
+                date_success, parsed_date, date_error = _parse_date_intelligent(date)
+                if not date_success:
+                    return {
+                        "tool": self.name,
+                        "success": False,
+                        "text": f"Date parsing error: {date_error}"
+                    }
+                date = parsed_date
+            
+            # Calculate week range (Monday to Sunday)
+            date_obj = datetime.strptime(date, "%Y-%m-%d")
+            day_of_week = date_obj.weekday()
+            monday = date_obj - timedelta(days=day_of_week)
+            sunday = monday + timedelta(days=6)
+            
+            from_date = monday.strftime("%Y-%m-%d")
+            to_date = sunday.strftime("%Y-%m-%d")
+            
+            token = await _get_oauth_token()
+            async with httpx.AsyncClient(timeout=10) as client:
+                response = await client.get(
+                    f"{LIBCAL_HOUR_URL}/{LIBCAL_ASKUS_ID}",
+                    headers={"Authorization": f"Bearer {token}"},
+                    params={"from": from_date, "to": to_date}
+                )
+                response.raise_for_status()
+                data = response.json()
+                
+                if not data or len(data) == 0:
+                    return {
+                        "tool": self.name,
+                        "success": False,
+                        "text": "No hours data available. Please visit https://www.lib.miamioh.edu/ask/"
+                    }
+                
+                # Extract hours by day
+                location = data[0]
+                dates = location.get("dates", {})
+                
+                hours_text = f"**{location.get('name', 'Ask Us Chat Service')} Hours (Week of {monday.strftime('%B %d')}):**\n\n"
+                hours_text += "_Chat with a librarian online during these hours:_\n\n"
+                
+                day_names = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+                current_date = monday
+                
+                # Check if currently open
+                from zoneinfo import ZoneInfo
+                est = ZoneInfo("America/New_York")
+                now = datetime.now(est)
+                today_str = now.strftime("%Y-%m-%d")
+                is_currently_open = False
+                
+                for day_name in day_names:
+                    date_str = current_date.strftime("%Y-%m-%d")
+                    day_data = dates.get(date_str)
+                    
+                    is_today = date_str == today_str
+                    
+                    if day_data and day_data.get("status") == "open" and day_data.get("hours"):
+                        hours_list = day_data["hours"]
+                        hours_str = ", ".join([f"{h['from']} - {h['to']}" for h in hours_list])
+                        
+                        # Check if currently within hours
+                        if is_today:
+                            for h in hours_list:
+                                try:
+                                    open_time = datetime.strptime(h['from'], "%I:%M%p").replace(
+                                        year=now.year, month=now.month, day=now.day, tzinfo=est
+                                    )
+                                    close_time = datetime.strptime(h['to'], "%I:%M%p").replace(
+                                        year=now.year, month=now.month, day=now.day, tzinfo=est
+                                    )
+                                    if open_time <= now <= close_time:
+                                        is_currently_open = True
+                                except:
+                                    pass
+                        
+                        today_marker = " ← **TODAY**" if is_today else ""
+                        hours_text += f"• **{day_name}** ({current_date.strftime('%m/%d')}): {hours_str}{today_marker}\n"
+                    else:
+                        today_marker = " ← **TODAY**" if is_today else ""
+                        hours_text += f"• **{day_name}** ({current_date.strftime('%m/%d')}): Closed{today_marker}\n"
+                    
+                    current_date += timedelta(days=1)
+                
+                # Add current status
+                if is_currently_open:
+                    hours_text += "\n✅ **The Ask Us Chat is currently OPEN!** Click the chat widget on the library website to connect with a librarian.\n"
+                else:
+                    hours_text += "\n⏰ **The Ask Us Chat is currently closed.** Please submit a ticket or check back during business hours.\n"
+                
+                hours_text += "\n**Need help outside these hours?**\n"
+                hours_text += "• Submit a ticket: https://www.lib.miamioh.edu/ask/\n"
+                hours_text += "• Call: (513) 529-4141\n"
+                
+                if log_callback:
+                    log_callback("✅ [Ask Us Hours Tool] Hours retrieved successfully")
+                
+                return {
+                    "tool": self.name,
+                    "success": True,
+                    "text": hours_text
+                }
+                
+        except Exception as e:
+            if log_callback:
+                log_callback(f"❌ [Ask Us Hours Tool] Error: {str(e)}")
+            return {
+                "tool": self.name,
+                "success": False,
+                "error": str(e),
+                "text": "Couldn't retrieve Ask Us Chat hours. Please visit https://www.lib.miamioh.edu/ask/"
+            }

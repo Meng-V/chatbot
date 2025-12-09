@@ -1,20 +1,22 @@
 import { useContext, useRef, useEffect, useState } from 'react';
-import { AlertTriangle } from 'lucide-react';
+import { AlertTriangle, Clock } from 'lucide-react';
 import MessageComponents from './ParseLinks';
 import { SocketContext } from '../context/SocketContextProvider';
 import { MessageContext } from '../context/MessageContextProvider';
 import MessageRatingComponent from './MessageRatingComponent';
 import HumanLibrarianWidget from './HumanLibrarianWidget';
+import OfflineTicketWidget from './OfflineTicketWidget';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Alert, AlertTitle, AlertDescription } from '@/components/ui/alert';
 import './ChatBotComponent.css';
 
-const ChatBotComponent = () => {
+const ChatBotComponent = ({ askUsStatus = { isOpen: false, hoursToday: null } }) => {
   const { socketContextValues } = useContext(SocketContext);
   const { messageContextValues } = useContext(MessageContext);
   const chatRef = useRef();
   const [widgetVisible, setWidgetVisible] = useState(false);
+  const [showTicketForm, setShowTicketForm] = useState(false);
 
   const handleFormSubmit = (e) => {
     e.preventDefault();
@@ -61,21 +63,33 @@ const ChatBotComponent = () => {
               {!socketContextValues.serviceHealthy
                 ? 'The chatbot service is experiencing technical difficulties. '
                 : 'Unable to connect to the chatbot service. '}
-              Please contact a human librarian for immediate assistance.
+              {askUsStatus.isOpen 
+                ? 'Please chat with a human librarian for immediate assistance.'
+                : 'Please submit a ticket and we\'ll get back to you.'}
             </AlertDescription>
           </div>
-          <Button
-            size="sm"
-            variant="default"
-            onClick={() => setWidgetVisible(!widgetVisible)}
-          >
-            {widgetVisible ? 'Hide' : 'Chat with Human Librarian'}
-          </Button>
+          {askUsStatus.isOpen ? (
+            <Button
+              size="sm"
+              variant="default"
+              onClick={() => setWidgetVisible(!widgetVisible)}
+            >
+              {widgetVisible ? 'Hide' : 'Chat with Human Librarian'}
+            </Button>
+          ) : (
+            <Button
+              size="sm"
+              variant="default"
+              onClick={() => setShowTicketForm(!showTicketForm)}
+            >
+              {showTicketForm ? 'Hide' : 'Submit a Ticket'}
+            </Button>
+          )}
         </Alert>
       )}
 
-      {/* Human Librarian Widget */}
-      {widgetVisible && (
+      {/* Human Librarian Widget - only shown during business hours */}
+      {widgetVisible && askUsStatus.isOpen && (
         <div className="mb-4 p-4 border border-blue-200 rounded-md bg-blue-50">
           <div className="flex justify-between items-center mb-2">
             <span className="font-bold text-blue-700">
@@ -86,6 +100,21 @@ const ChatBotComponent = () => {
             </Button>
           </div>
           <HumanLibrarianWidget />
+        </div>
+      )}
+
+      {/* Ticket Form Widget - shown when human chat not available */}
+      {showTicketForm && !askUsStatus.isOpen && (
+        <div className="mb-4 p-4 border border-orange-200 rounded-md bg-orange-50">
+          <div className="flex justify-between items-center mb-2">
+            <span className="font-bold text-orange-700">
+              Submit a Ticket
+            </span>
+            <Button size="xs" variant="ghost" onClick={() => setShowTicketForm(false)}>
+              ✕
+            </Button>
+          </div>
+          <OfflineTicketWidget />
         </div>
       )}
 
@@ -166,21 +195,34 @@ const ChatBotComponent = () => {
                     </ul>
                   </div>
                 )}
-                {/* Suggest human librarian when confidence appears low */}
+                {/* Suggest human librarian or ticket when confidence appears low */}
                 {message.sender !== 'user' && lowConfidenceHint && (
                   <div className="mt-2">
                     <Alert variant="info" className="flex items-center">
                       <AlertTriangle className="h-4 w-4" />
                       <span className="text-sm flex-1">
-                        This answer may be uncertain. You can chat with a human librarian for faster help.
+                        This answer may be uncertain. 
+                        {askUsStatus.isOpen 
+                          ? ' Chat with a human librarian for faster help.'
+                          : ' Submit a ticket during off-hours or check back during business hours.'}
                       </span>
-                      <Button
-                        size="xs"
-                        variant="default"
-                        onClick={() => setWidgetVisible(true)}
-                      >
-                        Chat with Human Librarian
-                      </Button>
+                      {askUsStatus.isOpen ? (
+                        <Button
+                          size="xs"
+                          variant="default"
+                          onClick={() => setWidgetVisible(true)}
+                        >
+                          Chat with Human Librarian
+                        </Button>
+                      ) : (
+                        <Button
+                          size="xs"
+                          variant="default"
+                          onClick={() => setShowTicketForm(true)}
+                        >
+                          Submit a Ticket
+                        </Button>
+                      )}
                     </Alert>
                   </div>
                 )}
@@ -228,7 +270,12 @@ const ChatBotComponent = () => {
         </div>
       </form>
       <p className="text-xs pt-2 text-gray-500">
-        Chatbot can make mistakes, please contact librarians if needed.
+        Chatbot can make mistakes. 
+        {askUsStatus.isOpen 
+          ? ' Chat with a human librarian during business hours if needed.'
+          : askUsStatus.hoursToday 
+            ? ` Human chat available ${askUsStatus.hoursToday.open} - ${askUsStatus.hoursToday.close}. Submit a ticket for off-hours help.`
+            : ' Submit a ticket for assistance.'}
       </p>
     </>
   );

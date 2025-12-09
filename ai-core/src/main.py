@@ -24,6 +24,7 @@ from src.memory.conversation_store import (
 from src.database.prisma_client import connect_database, disconnect_database
 from src.api.health import router as health_router
 from src.api.summarize import router as summarize_router
+from src.api.askus_hours import router as askus_router
 
 # Load .env from project root (parent of ai-core)
 # Path calculation: main.py -> src -> ai-core -> root
@@ -109,6 +110,7 @@ app.add_middleware(
 # Include health/monitoring routers
 app.include_router(health_router)
 app.include_router(summarize_router)
+app.include_router(askus_router)
 
 # Socket.IO server for real-time communication
 # Allow all origins in development for easier debugging

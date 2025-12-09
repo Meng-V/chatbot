@@ -1,5 +1,5 @@
-import { useContext, useEffect, useState } from 'react';
-import { ArrowLeft } from 'lucide-react';
+import { useContext, useEffect, useState, useCallback } from 'react';
+import { ArrowLeft, Clock } from 'lucide-react';
 import { toast } from 'sonner';
 import HumanLibrarianWidget from './components/HumanLibrarianWidget';
 import OfflineTicketWidget from './components/OfflineTicketWidget';
@@ -21,6 +21,42 @@ const App = () => {
   const [step, setStep] = useState('initial');
   const { socketContextValues } = useContext(SocketContext);
   const { serverStatus, needsAttention } = useServerHealth();
+  
+  // Ask Us Chat Service availability state
+  const [askUsStatus, setAskUsStatus] = useState({
+    isOpen: false,
+    message: '',
+    hoursToday: null,
+    loading: true
+  });
+
+  // Fetch Ask Us Chat Service availability
+  const checkAskUsAvailability = useCallback(async () => {
+    try {
+      const response = await fetch('/askus-hours/status');
+      if (response.ok) {
+        const data = await response.json();
+        setAskUsStatus({
+          isOpen: data.is_open,
+          message: data.message || '',
+          hoursToday: data.hours_today,
+          loading: false
+        });
+      } else {
+        setAskUsStatus(prev => ({ ...prev, loading: false }));
+      }
+    } catch (error) {
+      console.error('Failed to check Ask Us availability:', error);
+      setAskUsStatus(prev => ({ ...prev, loading: false }));
+    }
+  }, []);
+
+  // Check availability on mount and every 5 minutes
+  useEffect(() => {
+    checkAskUsAvailability();
+    const interval = setInterval(checkAskUsAvailability, 5 * 60 * 1000);
+    return () => clearInterval(interval);
+  }, [checkAskUsAvailability]);
 
   useEffect(() => {
     if (
@@ -28,17 +64,19 @@ const App = () => {
       socketContextValues.attemptedConnection
     ) {
       toast.error('Connection Error', {
-        description:
-          'The Smart Chatbot is currently not available. Please talk to a human librarian or create a ticket for further help.',
+        description: askUsStatus.isOpen
+          ? 'The Smart Chatbot is currently not available. Please talk to a human librarian during business hours or create a ticket for help.'
+          : 'The Smart Chatbot is currently not available. Please create a ticket and we\'ll get back to you.',
         duration: 9000,
       });
     }
   }, [
     socketContextValues.isConnected,
     socketContextValues.attemptedConnection,
+    askUsStatus.isOpen,
   ]);
 
-  // Auto-redirect to librarian if server is critically unhealthy or connection issues
+  // Auto-redirect based on server health and business hours
   useEffect(() => {
     if (
       (serverStatus === 'unhealthy' ||
@@ -47,12 +85,21 @@ const App = () => {
       isOpen &&
       step === 'services'
     ) {
-      toast.warning('Service Unavailable', {
-        description:
-          'The Smart Chatbot is currently unavailable. Redirecting you to a human librarian for assistance.',
-        duration: 5000,
-      });
-      setStep('humanLibrarian');
+      if (askUsStatus.isOpen) {
+        toast.warning('Service Unavailable', {
+          description:
+            'The Smart Chatbot is currently unavailable. Redirecting you to a human librarian for assistance.',
+          duration: 5000,
+        });
+        setStep('humanLibrarian');
+      } else {
+        toast.warning('Service Unavailable', {
+          description:
+            'The Smart Chatbot is currently unavailable. Please submit a ticket and we\'ll get back to you.',
+          duration: 5000,
+        });
+        setStep('ticket');
+      }
     }
   }, [
     serverStatus,
@@ -60,6 +107,7 @@ const App = () => {
     socketContextValues.attemptedConnection,
     isOpen,
     step,
+    askUsStatus.isOpen,
   ]);
 
   // Handler for when user clicks "Talk to Librarian" from error boundary
@@ -67,12 +115,20 @@ const App = () => {
     if (!isOpen) {
       setIsOpen(true);
     }
-    setStep('humanLibrarian');
-
-    toast.info('Connecting to Librarian', {
-      description: 'Redirecting you to chat with a human librarian.',
-      duration: 3000,
-    });
+    
+    if (askUsStatus.isOpen) {
+      setStep('humanLibrarian');
+      toast.info('Connecting to Librarian', {
+        description: 'Redirecting you to chat with a human librarian.',
+        duration: 3000,
+      });
+    } else {
+      setStep('ticket');
+      toast.info('Submit a Ticket', {
+        description: 'Human chat is currently offline. Please submit a ticket and we\'ll get back to you.',
+        duration: 3000,
+      });
+    }
   };
 
   const handleClose = () => {
@@ -160,10 +216,14 @@ const App = () => {
                     if (isChatbotUnavailable) {
                       toast.error('Chatbot Unavailable', {
                         description:
-                          'The Smart Chatbot is currently unavailable. Please talk to a human librarian instead.',
+                          'The Smart Chatbot is currently unavailable. Please talk to a human librarian during business hours or submit a ticket.',
                         duration: 5000,
                       });
-                      setStep('humanLibrarian');
+                      if (askUsStatus.isOpen) {
+                        setStep('humanLibrarian');
+                      } else {
+                        setStep('ticket');
+                      }
                     } else {
                       setStep('services');
                     }
@@ -177,9 +237,23 @@ const App = () => {
                       socketContextValues.attemptedConnection)) &&
                     '(Unavailable)'}
                 </Button>
-                <Button variant="secondary" onClick={() => setStep('humanLibrarian')}>
-                  Talk to a human librarian
-                </Button>
+                
+                {/* Show "Talk to human" only during business hours */}
+                {askUsStatus.isOpen ? (
+                  <Button variant="secondary" onClick={() => setStep('humanLibrarian')}>
+                    Talk to a human librarian
+                  </Button>
+                ) : (
+                  <div className="text-center text-sm text-gray-500 py-2">
+                    <Clock className="inline-block w-4 h-4 mr-1" />
+                    {askUsStatus.hoursToday ? (
+                      <span>Human chat available {askUsStatus.hoursToday.open} - {askUsStatus.hoursToday.close}</span>
+                    ) : (
+                      <span>Human chat is currently offline</span>
+                    )}
+                  </div>
+                )}
+                
                 <Button variant="secondary" onClick={() => setStep('ticket')}>
                   Create a ticket for offline help
                 </Button>
@@ -187,36 +261,48 @@ const App = () => {
             )}
             {step === 'services' &&
               (serverStatus === 'healthy' && socketContextValues.isConnected ? (
-                <ChatBotComponent />
+                <ChatBotComponent askUsStatus={askUsStatus} />
               ) : (
                 <div className="flex flex-col gap-4 text-center py-6">
                   <p className="text-red-500 font-bold">
                     Smart Chatbot is currently unavailable
                   </p>
                   <p className="text-gray-600 text-sm">
-                    We're experiencing technical difficulties. Let us connect
-                    you with a human librarian instead.
+                    We're experiencing technical difficulties. 
+                    {askUsStatus.isOpen 
+                      ? ' Let us connect you with a human librarian.'
+                      : ' Please submit a ticket and we\'ll get back to you.'}
                   </p>
-                  <Button
-                    variant="default"
-                    onClick={() => setStep('humanLibrarian')}
-                  >
-                    Talk to a Human Librarian
-                  </Button>
+                  {askUsStatus.isOpen ? (
+                    <Button
+                      variant="default"
+                      onClick={() => setStep('humanLibrarian')}
+                    >
+                      Talk to a Human Librarian
+                    </Button>
+                  ) : (
+                    <Button
+                      variant="default"
+                      onClick={() => setStep('ticket')}
+                    >
+                      Submit a Ticket
+                    </Button>
+                  )}
                 </div>
               ))}
             {step === 'humanLibrarian' && <HumanLibrarianWidget />}
             {step === 'ticket' && <OfflineTicketWidget />}
           </div>
           
+          {/* Bottom action button during chat - shows human chat or ticket based on availability */}
           {step === 'services' && (
             <Button
               size="sm"
               variant="miami"
               className="fixed bottom-10 right-20 mr-4"
-              onClick={() => setStep('humanLibrarian')}
+              onClick={() => askUsStatus.isOpen ? setStep('humanLibrarian') : setStep('ticket')}
             >
-              Chat with a human librarian
+              {askUsStatus.isOpen ? 'Chat with a human librarian' : 'Submit a ticket'}
             </Button>
           )}
         </DialogContent>

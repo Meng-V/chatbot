@@ -5,7 +5,8 @@ from src.tools.libcal_comprehensive_tools import (
     LibCalWeekHoursTool,
     LibCalEnhancedAvailabilityTool,
     LibCalComprehensiveReservationTool,
-    LibCalCancelReservationTool
+    LibCalCancelReservationTool,
+    AskUsChatHoursTool
 )
 
 class LibCalComprehensiveAgent(Agent):
@@ -21,10 +22,19 @@ class LibCalComprehensiveAgent(Agent):
         self.register_tool(LibCalEnhancedAvailabilityTool())
         self.register_tool(LibCalComprehensiveReservationTool())
         self.register_tool(LibCalCancelReservationTool())
+        self.register_tool(AskUsChatHoursTool())
     
     async def route_to_tool(self, query: str) -> str:
         """Route to appropriate LibCal tool based on query keywords."""
         q_lower = query.lower()
+        
+        # Ask Us Chat hours keywords
+        if any(phrase in q_lower for phrase in [
+            "ask us", "chat hours", "chat service", "librarian chat", 
+            "talk to librarian", "human librarian hours", "chat with librarian",
+            "when can i chat", "live chat hours", "librarian availability"
+        ]):
+            return "askus_chat_hours"
         
         # Cancellation keywords
         if any(word in q_lower for word in ["cancel", "remove", "delete reservation", "cancel booking"]):

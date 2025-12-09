@@ -164,7 +164,7 @@ const ErrorBoundaryComponent = ({ children, onLibrarianHelp }) => {
               onClick={onLibrarianHelp}
             >
               <MessageCircle className="h-3 w-3 mr-1" />
-              Talk to Librarian
+              Get Help
             </Button>
           </div>
         </div>
