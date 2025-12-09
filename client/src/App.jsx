@@ -2,7 +2,7 @@ import { useContext, useEffect, useState, useCallback } from 'react';
 import { ArrowLeft, Clock } from 'lucide-react';
 import { toast } from 'sonner';
 import HumanLibrarianWidget from './components/HumanLibrarianWidget';
-import OfflineTicketWidget from './components/OfflineTicketWidget';
+import OfflineTicketWidget from './components/TicketWidget';
 import ChatBotComponent from './components/ChatBotComponent';
 import ErrorBoundaryComponent from './components/ErrorBoundaryComponent';
 import { SocketContext } from './context/SocketContextProvider';
@@ -255,7 +255,7 @@ const App = () => {
                 )}
                 
                 <Button variant="secondary" onClick={() => setStep('ticket')}>
-                  Create a ticket for offline help
+                  Create a ticket
                 </Button>
               </div>
             )}

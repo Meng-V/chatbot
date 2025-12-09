@@ -5,7 +5,7 @@ import { SocketContext } from '../context/SocketContextProvider';
 import { MessageContext } from '../context/MessageContextProvider';
 import MessageRatingComponent from './MessageRatingComponent';
 import HumanLibrarianWidget from './HumanLibrarianWidget';
-import OfflineTicketWidget from './OfflineTicketWidget';
+import OfflineTicketWidget from './TicketWidget';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Alert, AlertTitle, AlertDescription } from '@/components/ui/alert';

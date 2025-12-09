@@ -123,10 +123,34 @@ const UserInfoForm = ({ onFormSubmit, chatHistory }) => {
                     onClick={handleCopyHistory}
                   >
                     <Copy className="h-3 w-3 mr-1" />
-                    {copied ? 'Copied!' : 'Copy Full History'}
+                    {copied ? 'Copied!' : 'Copy Transcript'}
                   </Button>
                 </TooltipTrigger>
-                <TooltipContent>Copy full chat history</TooltipContent>
+                <TooltipContent className="bg-gray-900/80 text-white text-xs">Copy full chat history</TooltipContent>
+              </Tooltip>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    type="button"
+                    size="xs"
+                    variant="outline"
+                    onClick={handleCopySummary}
+                    disabled={generatingSummary}
+                  >
+                    {generatingSummary ? (
+                      <>
+                        <Spinner className="h-3 w-3 mr-1" />
+                        Generating...
+                      </>
+                    ) : (
+                      <>
+                        <Sparkles className="h-3 w-3 mr-1" />
+                        {summaryCopied ? 'Copied!' : 'AI Summary'}
+                      </>
+                    )}
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent className="bg-gray-900/80 text-white text-xs">Generate AI summary of chat history</TooltipContent>
               </Tooltip>
             </div>
           )}
