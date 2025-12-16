@@ -1,61 +1,79 @@
-"""Building ID mappings for Miami University campuses."""
-import os
-from typing import Dict
+"""Building ID mappings for Miami University campuses.
 
-# Building IDs for LibCal room booking
-BUILDING_IDS: Dict[str, str] = {
-    # Oxford Campus (Main)
-    "king": os.getenv("OXFORD_KING_LIBRARY", "2047"),
-    "king library": os.getenv("OXFORD_KING_LIBRARY", "2047"),
-    "art": os.getenv("OXFORD_ART_ARCHITECTURE_LIBRARY", "4089"),
-    "art library": os.getenv("OXFORD_ART_ARCHITECTURE_LIBRARY", "4089"),
-    "art and architecture": os.getenv("OXFORD_ART_ARCHITECTURE_LIBRARY", "4089"),
-    "architecture": os.getenv("OXFORD_ART_ARCHITECTURE_LIBRARY", "4089"),
-    
-    # Hamilton Campus (Regional)
-    "hamilton": os.getenv("HAMILTON_RENTSCHLER_LIBRARY", "4792"),
-    "rentschler": os.getenv("HAMILTON_RENTSCHLER_LIBRARY", "4792"),
-    "rentschler library": os.getenv("HAMILTON_RENTSCHLER_LIBRARY", "4792"),
-    
-    # Middletown Campus (Regional)
-    "middletown": os.getenv("MIDDLETOWN_GARDNER_HARVEY_LIBRARY", "4845"),
-    "gardner-harvey": os.getenv("MIDDLETOWN_GARDNER_HARVEY_LIBRARY", "4845"),
-    "gardner harvey": os.getenv("MIDDLETOWN_GARDNER_HARVEY_LIBRARY", "4845"),
-    "gardner": os.getenv("MIDDLETOWN_GARDNER_HARVEY_LIBRARY", "4845"),
-}
+DEPRECATED: This module is being migrated to use the database location service.
+Use src.services.location_service instead for new code.
 
-# Default building (King Library - Main Oxford Campus)
-DEFAULT_BUILDING_ID = os.getenv("OXFORD_KING_LIBRARY", "2047")
+For backward compatibility, async wrapper functions are provided.
+"""
+import asyncio
+from typing import Optional
+from src.services.location_service import get_location_service
+
+
+async def get_building_id_async(building_name: str) -> str:
+    """
+    Get building ID from building name (case-insensitive) - async version.
+    Returns default building ID if building not found.
+    """
+    if not building_name:
+        service = get_location_service()
+        return await service.get_default_building_id()
+    
+    service = get_location_service()
+    building_id = await service.get_building_id(building_name)
+    
+    if building_id:
+        return building_id
+    
+    # Fallback to default
+    return await service.get_default_building_id()
+
+
+async def get_building_display_name_async(building_id: str) -> str:
+    """Get display name for a building by its LibCal building ID - async version."""
+    service = get_location_service()
+    return await service.get_building_display_name(building_id)
+
+
+async def get_all_buildings_async() -> dict:
+    """Get all building mappings - async version."""
+    service = get_location_service()
+    return await service.get_all_buildings()
+
+
+# LEGACY SYNCHRONOUS FUNCTIONS (for backward compatibility)
+# These use asyncio.run() which is not ideal but maintains compatibility
+# TODO: Migrate all callers to use async versions
 
 def get_building_id(building_name: str) -> str:
     """
+    DEPRECATED: Use get_building_id_async() instead.
     Get building ID from building name (case-insensitive).
-    Returns DEFAULT_BUILDING_ID if building not found.
+    Returns default building ID if building not found.
     """
-    if not building_name:
-        return DEFAULT_BUILDING_ID
-    
-    building_key = building_name.lower().strip()
-    return BUILDING_IDS.get(building_key, DEFAULT_BUILDING_ID)
+    try:
+        loop = asyncio.get_event_loop()
+        if loop.is_running():
+            # If loop is already running, we can't use asyncio.run()
+            # Fall back to hardcoded default
+            return "2047"
+        return loop.run_until_complete(get_building_id_async(building_name))
+    except Exception:
+        # Fallback to hardcoded default
+        return "2047"
+
 
 def get_building_display_name(building_name: str) -> str:
-    """Get display name for a building."""
-    building_key = building_name.lower().strip() if building_name else ""
-    
-    display_names = {
-        "king": "King Library (Oxford)",
-        "king library": "King Library (Oxford)",
-        "art": "Art & Architecture Library (Oxford)",
-        "art library": "Art & Architecture Library (Oxford)",
-        "art and architecture": "Art & Architecture Library (Oxford)",
-        "architecture": "Art & Architecture Library (Oxford)",
-        "hamilton": "Rentschler Library (Hamilton)",
-        "rentschler": "Rentschler Library (Hamilton)",
-        "rentschler library": "Rentschler Library (Hamilton)",
-        "middletown": "Gardner-Harvey Library (Middletown)",
-        "gardner-harvey": "Gardner-Harvey Library (Middletown)",
-        "gardner harvey": "Gardner-Harvey Library (Middletown)",
-        "gardner": "Gardner-Harvey Library (Middletown)",
-    }
-    
-    return display_names.get(building_key, "King Library (Oxford)")
+    """
+    DEPRECATED: Use get_building_display_name_async() instead.
+    Get display name for a building.
+    """
+    try:
+        # Try to get building ID first
+        building_id = get_building_id(building_name)
+        loop = asyncio.get_event_loop()
+        if loop.is_running():
+            return "Library"
+        return loop.run_until_complete(get_building_display_name_async(building_id))
+    except Exception:
+        return "Library"

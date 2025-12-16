@@ -22,9 +22,15 @@ load_dotenv(dotenv_path=root_dir / ".env")
 WEAVIATE_HOST = os.getenv("WEAVIATE_HOST", "")
 WEAVIATE_API_KEY = os.getenv("WEAVIATE_API_KEY", "")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
+# Flag to temporarily disable Weaviate (set WEAVIATE_ENABLED=true in .env to re-enable)
+WEAVIATE_ENABLED = os.getenv("WEAVIATE_ENABLED", "true").lower() == "true"
 
 def _make_client():
     """Create Weaviate v4 client with cloud auth."""
+    # Check if Weaviate is disabled via flag
+    if not WEAVIATE_ENABLED:
+        print("ℹ️  Weaviate disabled via WEAVIATE_ENABLED=false")
+        return None
     if not WEAVIATE_HOST or not WEAVIATE_API_KEY:
         return None
     

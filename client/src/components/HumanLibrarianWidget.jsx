@@ -1,8 +1,12 @@
-import { Box, Button, FormControl, FormLabel, Input, Textarea, HStack, VStack, Icon, Tooltip, Spinner, Text } from '@chakra-ui/react';
 import { useEffect, useState, useContext } from 'react';
+import { Copy, Sparkles } from 'lucide-react';
 import { MessageContext } from '../context/MessageContextProvider';
-import { FiCopy } from 'react-icons/fi';
-import { BsStars } from 'react-icons/bs';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
+import { Label } from '@/components/ui/label';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import { Spinner } from '@/components/ui/spinner';
 
 /**
  * Functional component that renders a form to collect user info
@@ -83,63 +87,82 @@ const UserInfoForm = ({ onFormSubmit, chatHistory }) => {
   };
 
   return (
-    <form onSubmit={handleSubmit}>
-      <FormControl isRequired>
-        <FormLabel>Name</FormLabel>
+    <form onSubmit={handleSubmit} className="space-y-4">
+      <div>
+        <Label className="required">Name</Label>
         <Input
-          placeholder='Enter your name...'
+          placeholder="Enter your name..."
           value={name}
           onChange={(e) => setName(e.target.value)}
+          required
+          className="mt-1"
         />
-      </FormControl>
-      <FormControl mt={2} isRequired>
-        <FormLabel>Email</FormLabel>
+      </div>
+      <div>
+        <Label className="required">Email</Label>
         <Input
-          type='email'
-          placeholder='Enter your email...'
+          type="email"
+          placeholder="Enter your email..."
           value={email}
           onChange={(e) => setEmail(e.target.value)}
+          required
+          className="mt-1"
         />
-      </FormControl>
-      <FormControl mt={2}>
-        <HStack justify='space-between' mb={1}>
-          <FormLabel mb={0}>Initial Question (optional)</FormLabel>
+      </div>
+      <div>
+        <div className="flex justify-between items-center mb-1">
+          <Label>Initial Question (optional)</Label>
           {chatHistory && chatHistory.length > 0 && (
-            <HStack spacing={2}>
-              {/* <Tooltip label='Copy AI-generated summary of conversation'>
-                <Button
-                  size='xs'
-                  variant='outline'
-                  colorScheme='purple'
-                  leftIcon={generatingSummary ? <Spinner size='xs' /> : <Icon as={BsStars} />}
-                  onClick={handleCopySummary}
-                  isDisabled={generatingSummary}
-                >
-                  {generatingSummary ? 'Generating...' : summaryCopied ? 'Copied!' : 'Copy AI Summary'}
-                </Button>
-              </Tooltip> */}
-              <Tooltip label='Copy full chat history'>
-                <Button
-                  size='xs'
-                  variant='outline'
-                  colorScheme='blue'
-                  leftIcon={<Icon as={FiCopy} />}
-                  onClick={handleCopyHistory}
-                >
-                  {copied ? 'Copied!' : 'Copy Full History'}
-                </Button>
+            <div className="flex gap-2">
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    type="button"
+                    size="xs"
+                    variant="outline"
+                    onClick={handleCopyHistory}
+                  >
+                    <Copy className="h-3 w-3 mr-1" />
+                    {copied ? 'Copied!' : 'Copy Transcript'}
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent className="bg-gray-900/80 text-white text-xs">Copy full chat history</TooltipContent>
               </Tooltip>
-            </HStack>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    type="button"
+                    size="xs"
+                    variant="outline"
+                    onClick={handleCopySummary}
+                    disabled={generatingSummary}
+                  >
+                    {generatingSummary ? (
+                      <>
+                        <Spinner className="h-3 w-3 mr-1" />
+                        Generating...
+                      </>
+                    ) : (
+                      <>
+                        <Sparkles className="h-3 w-3 mr-1" />
+                        {summaryCopied ? 'Copied!' : 'AI Summary'}
+                      </>
+                    )}
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent className="bg-gray-900/80 text-white text-xs">Generate AI summary of chat history</TooltipContent>
+              </Tooltip>
+            </div>
           )}
-        </HStack>
+        </div>
         <Textarea
-          placeholder='Enter your question...'
+          placeholder="Enter your question..."
           value={question}
           onChange={(e) => setQuestion(e.target.value)}
           rows={4}
         />
-      </FormControl>
-      <Button type='submit' mt={3} colorScheme='blue' width='full'>
+      </div>
+      <Button type="submit" variant="default" className="w-full">
         Start Chat with Librarian
       </Button>
     </form>
@@ -191,15 +214,15 @@ const HumanLibrarianWidget = () => {
           chatHistory={messageContextValues.message}
         />
       ) : (
-        <Box height='60vh' overflowY='auto'>
+        <div className="h-[60vh] overflow-y-auto">
           <iframe
             src={formURL}
-            title='Chat Widget'
-            width='100%'
-            height='100%'
+            title="Chat Widget"
+            width="100%"
+            height="100%"
             style={{ border: 'none' }}
           />
-        </Box>
+        </div>
       )}
     </div>
   );

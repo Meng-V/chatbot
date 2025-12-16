@@ -26,7 +26,7 @@ class ChatSummaryResponse(BaseModel):
     summary: str
 
 
-@router.post("/api/summarize-chat", response_model=ChatSummaryResponse)
+@router.post("/summarize-chat", response_model=ChatSummaryResponse)
 async def summarize_chat(request: ChatSummaryRequest):
     """
     Generate an AI-powered summary of a chat conversation.

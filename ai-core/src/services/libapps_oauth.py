@@ -8,10 +8,10 @@ class LibAppsOAuthService:
     """Manages OAuth tokens for LibApps API access (LibGuides)."""
     
     def __init__(self):
-        self.oauth_url = os.getenv("LIBAPPS_OAUTH_URL", "")
-        self.client_id = os.getenv("LIBAPPS_CLIENT_ID", "")
-        self.client_secret = os.getenv("LIBAPPS_CLIENT_SECRET", "")
-        self.grant_type = os.getenv("LIBAPPS_GRANT_TYPE", "client_credentials")
+        self.oauth_url = os.getenv("LIBGUIDE_OAUTH_URL", "")
+        self.client_id = os.getenv("LIBGUIDE_CLIENT_ID", "")
+        self.client_secret = os.getenv("LIBGUIDE_CLIENT_SECRET", "")
+        self.grant_type = os.getenv("LIBGUIDE_GRANT_TYPE", "client_credentials")
         
         self._token: Optional[str] = None
         self._token_expiry: Optional[datetime] = None

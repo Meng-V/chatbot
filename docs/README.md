@@ -1,119 +1,78 @@
-# Miami University Library Chatbot - Documentation Index
+# Developer Documentation
 
-Welcome to the comprehensive documentation for the Miami University Library AI Chatbot system. This documentation is organized by feature area to help you quickly find what you need.
-
----
-
-## 📁 Documentation Structure
-
-### 🚀 [Getting Started](./getting-started/)
-Essential guides for understanding and using the chatbot system.
-- **[Quick Start Guide](./getting-started/README.md)** - 5-minute setup and common tasks
-- **[Main README](../README.md)** - Complete overview for library managers
-
-### 🤖 [Weaviate RAG System](./weaviate-rag/)
-Everything about the knowledge base and retrieval-augmented generation.
-- **01-SETUP.md** - Initial Weaviate cloud setup
-- **02-RAG-USAGE-TRACKING.md** - Tracking RAG query usage and analytics
-- **03-RECORD-MANAGEMENT.md** - Managing and deleting problematic records
-- **04-CLEANUP-QUICKSTART.md** - Quick reference for cleaning bad records
-- **05-FACT-GROUNDING.md** - Ensuring factual accuracy in responses
-- **06-FACT-GROUNDING-QUICKSTART.md** - Quick start for fact correction
-- **07-FACT-CORRECTION.md** - Summary of fact correction features
-
-### 📊 [Data Management](./data-management/)
-Processing, cleaning, and optimizing transcript data.
-- **01-CLEANING-STRATEGY.md** - Comprehensive transcript cleaning strategy
-- **02-PROCESS-NEW-YEAR-DATA.md** - Adding new year transcript data
-- **03-DATA-PIPELINE.md** - Complete RAG data pipeline
-- **04-VECTOR-OPTIMIZATION.md** - Optimizing vector search performance
-- **05-OPTIMIZATION-QUICKSTART.md** - Quick optimization guide
-
-### 🏗️ [Architecture](./architecture/)
-System design, components, and developer resources.
-- **01-SYSTEM-ARCHITECTURE.md** - Complete system architecture diagram
-- **02-DEVELOPER-GUIDE.md** - Developer setup and contribution guide
-- **03-PROJECT-SUMMARY.md** - 2025 RAG project summary
-
-### 📚 [Knowledge Management](./knowledge-management/)
-Managing library guides and knowledge routing.
-- **01-OVERVIEW.md** - Knowledge management overview
-- **02-DETAILED-GUIDE.md** - Detailed knowledge management guide
-- **03-ROUTING-GUIDE.md** - LibGuide vs MyGuide routing
-- **04-INTEGRATION-REPORT.md** - MyGuide integration report
-- **05-SCOPE-ENFORCEMENT.md** - Scope enforcement implementation
+**Miami University Libraries Chatbot - Version 3.0.0**  
+**Last Updated:** December 16, 2025
 
 ---
 
-## 🎯 Quick Access by Task
+## 📚 Documentation Index
 
-### For Library Managers (Non-Technical)
-Start here to understand what the chatbot does and how to use it:
-1. [Main README](./getting-started/README.md) - System overview
-2. [Weaviate RAG Overview](./weaviate-rag/) - Understanding the knowledge base
+This folder contains technical documentation for developers working on the chatbot system.
 
-### For Developers
-Technical setup and development:
-1. [Developer Guide](./architecture/02-DEVELOPER-GUIDE.md)
-2. [System Architecture](./architecture/01-SYSTEM-ARCHITECTURE.md)
-3. [Data Pipeline](./data-management/03-DATA-PIPELINE.md)
+### Core Documentation
 
-### For Data Management
-Working with transcript data:
-1. [Cleaning Strategy](./data-management/01-CLEANING-STRATEGY.md)
-2. [Process New Year Data](./data-management/02-PROCESS-NEW-YEAR-DATA.md)
-3. [Vector Optimization](./data-management/04-VECTOR-OPTIMIZATION.md)
+1. **[01-SYSTEM-OVERVIEW.md](./01-SYSTEM-OVERVIEW.md)**  
+   Complete system architecture, technology stack, components, data flow, and agent system.
 
-### For RAG Management
-Managing the knowledge base:
-1. [Weaviate Setup](./weaviate-rag/01-SETUP.md)
-2. [Record Management](./weaviate-rag/03-RECORD-MANAGEMENT.md)
-3. [Cleanup Guide](./weaviate-rag/04-CLEANUP-QUICKSTART.md)
+2. **[02-SETUP-AND-DEPLOYMENT.md](./02-SETUP-AND-DEPLOYMENT.md)**  
+   Initial setup, database configuration, running locally, production deployment, and server maintenance.
 
-### For Quality Assurance
-Ensuring accurate responses:
-1. [Fact Grounding](./weaviate-rag/05-FACT-GROUNDING.md)
-2. [RAG Usage Tracking](./weaviate-rag/02-RAG-USAGE-TRACKING.md)
-3. [Fact Correction](./weaviate-rag/07-FACT-CORRECTION.md)
+3. **[05-WEAVIATE-RAG-CORRECTION-POOL.md](./05-WEAVIATE-RAG-CORRECTION-POOL.md)**  
+   Using Weaviate as a correction pool to fix bot mistakes. Includes scripts and workflows.
+
+4. **[07-ENVIRONMENT-VARIABLES.md](./07-ENVIRONMENT-VARIABLES.md)**  
+   Complete reference for all environment variables and configuration.
 
 ---
 
-## 🔑 Key Concepts
+## 🚀 Quick Start
 
-### What is RAG (Retrieval-Augmented Generation)?
-RAG combines your library's Q&A knowledge base with AI to provide accurate, grounded answers to student questions.
+**For Administrators (Non-Technical):**  
+Start with the main [README.md](../README.md) in the project root.
 
-### What is Weaviate?
-Weaviate is the cloud vector database that stores your 1,568 Q&A pairs with semantic search capabilities.
+**For Developers:**
+1. Read [01-SYSTEM-OVERVIEW.md](./01-SYSTEM-OVERVIEW.md) for architecture
+2. Follow [02-SETUP-AND-DEPLOYMENT.md](./02-SETUP-AND-DEPLOYMENT.md) for setup
+3. Review [07-ENVIRONMENT-VARIABLES.md](./07-ENVIRONMENT-VARIABLES.md) for configuration
 
-### What is Vector Optimization?
-Process of preparing transcript data for efficient semantic search in the knowledge base.
+**For RAG Correction Management:**  
+See [05-WEAVIATE-RAG-CORRECTION-POOL.md](./05-WEAVIATE-RAG-CORRECTION-POOL.md) for adding corrections to fix bot mistakes.
+
+---
+
+## 🔑 Key Changes in Version 3.0
+
+### Removed Features
+- ❌ **Primo catalog search** - Archived to `/archived/primo/`
+- ❌ **RAG as active search** - Repurposed as correction pool only
+
+### Updated Features
+- ✅ **RAG correction pool** - Quality control tool for fixing bot errors
+- ✅ **6 focused capabilities** - Hours, booking, guides, librarians, search, chat
+- ✅ **Weaviate management scripts** - Easy correction workflow
+
+---
+
+## 📝 System Version
+
+**Version:** 3.0.0  
+**Release Date:** December 16, 2025  
+**Developer:** Meng Qu, Miami University Libraries  
+**Repository:** Internal GitHub
 
 ---
 
 ## 📞 Support
 
-- **Technical Issues**: Check [Developer Guide](./architecture/02-DEVELOPER-GUIDE.md)
-- **Data Problems**: See [Cleaning Strategy](./data-management/01-CLEANING-STRATEGY.md)
-- **Wrong Answers**: Use [Record Management](./weaviate-rag/03-RECORD-MANAGEMENT.md)
+**Technical Questions:**  
+Review documentation or contact development team.
+
+**Deployment Issues:**  
+See [02-SETUP-AND-DEPLOYMENT.md](./02-SETUP-AND-DEPLOYMENT.md) troubleshooting section.
+
+**Bot Errors:**  
+Use RAG correction pool - [05-WEAVIATE-RAG-CORRECTION-POOL.md](./05-WEAVIATE-RAG-CORRECTION-POOL.md)
 
 ---
 
-## 📝 Document Version
-
-**Last Updated**: November 2025  
-**System Version**: 2.0  
-**Documentation Structure**: Organized by feature area
-
----
-
-## 🗺️ Navigation Tips
-
-- **Numbered files** (01-, 02-) indicate recommended reading order
-- **QUICKSTART** files provide quick reference
-- **GUIDE** files provide detailed instructions
-- **SUMMARY** files provide overview information
-
----
-
-**Welcome to the Miami University Library AI Chatbot Documentation!**
+*Developed and maintained by Miami University Libraries Web Services*

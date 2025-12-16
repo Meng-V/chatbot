@@ -1,11 +1,10 @@
-import { Box, Button, useToast } from '@chakra-ui/react';
-import { FiThumbsUp } from 'react-icons/fi';
-import { FiThumbsDown } from 'react-icons/fi';
-import { SocketContext } from '../context/SocketContextProvider';
 import { useContext, useRef, useState } from 'react';
+import { ThumbsUp, ThumbsDown } from 'lucide-react';
+import { toast } from 'sonner';
+import { SocketContext } from '../context/SocketContextProvider';
+import { Button } from '@/components/ui/button';
 
 const MessageRatingComponent = ({ message }) => {
-  const toast = useToast();
   const [isDisabled, setIsDisabled] = useState(false);
   const isRated = useRef(false);
   const { socketContextValues } = useContext(SocketContext);
@@ -18,45 +17,34 @@ const MessageRatingComponent = ({ message }) => {
         messageId: message.messageId,
         isPositiveRated: isPositiveRated,
       });
-      toast({
-        title: 'Thank you for your feedback!',
+      toast.success('Thank you for your feedback!', {
         description: 'We will use this information to improve user experience.',
-        status: 'success',
         duration: 2000,
-        isClosable: true,
-        position: 'bottom-left',
       });
     }
   };
 
   return (
-    <Box marginTop='1'>
+    <div className="mt-1 flex gap-1">
       <Button
-        _hover={{
-          color: 'white',
-          bg: '#51a4f0',
-        }}
-        bg='gray.200'
-        size='sm'
-        marginRight='1'
-        isDisabled={isDisabled}
+        variant="ghost"
+        size="sm"
+        className="bg-gray-200 hover:bg-blue-400 hover:text-white"
+        disabled={isDisabled}
         onClick={() => handleClick(true)}
       >
-        <FiThumbsUp />
+        <ThumbsUp className="h-4 w-4" />
       </Button>
       <Button
-        _hover={{
-          color: 'white',
-          bg: '#ff6b7f',
-        }}
-        bg='gray.200'
-        size='sm'
-        isDisabled={isDisabled}
+        variant="ghost"
+        size="sm"
+        className="bg-gray-200 hover:bg-red-400 hover:text-white"
+        disabled={isDisabled}
         onClick={() => handleClick(false)}
       >
-        <FiThumbsDown />
+        <ThumbsDown className="h-4 w-4" />
       </Button>
-    </Box>
+    </div>
   );
 };
 

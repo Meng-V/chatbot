@@ -1,57 +1,82 @@
-import { useContext, useEffect, useState } from 'react';
-import {
-  Box,
-  Button,
-  VStack,
-  useDisclosure,
-  Modal,
-  ModalOverlay,
-  ModalContent,
-  ModalHeader,
-  ModalCloseButton,
-  ModalBody,
-  Flex,
-  Text,
-} from '@chakra-ui/react';
-import { ArrowBackIcon } from '@chakra-ui/icons';
+import { useContext, useEffect, useState, useCallback } from 'react';
+import { ArrowLeft, Clock } from 'lucide-react';
+import { toast } from 'sonner';
 import HumanLibrarianWidget from './components/HumanLibrarianWidget';
-import OfflineTicketWidget from './components/OfflineTicketWidget';
+import OfflineTicketWidget from './components/TicketWidget';
 import ChatBotComponent from './components/ChatBotComponent';
 import ErrorBoundaryComponent from './components/ErrorBoundaryComponent';
-import { useToast } from '@chakra-ui/react';
 import { SocketContext } from './context/SocketContextProvider';
 import FeedbackFormComponent from './components/FeedbackFormComponent';
 import useServerHealth from './hooks/useServerHealth';
+import { Button } from '@/components/ui/button';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 
 const App = () => {
-  const { isOpen, onOpen, onClose } = useDisclosure({ defaultIsOpen: true }); // Open by default
+  const [isOpen, setIsOpen] = useState(true); // Open by default
   const [step, setStep] = useState('initial');
-  const toast = useToast();
   const { socketContextValues } = useContext(SocketContext);
-  const { serverStatus, needsAttention, retryHealthCheck } = useServerHealth();
+  const { serverStatus, needsAttention } = useServerHealth();
+  
+  // Ask Us Chat Service availability state
+  const [askUsStatus, setAskUsStatus] = useState({
+    isOpen: false,
+    message: '',
+    hoursToday: null,
+    loading: true
+  });
+
+  // Fetch Ask Us Chat Service availability
+  const checkAskUsAvailability = useCallback(async () => {
+    try {
+      const response = await fetch('/askus-hours/status');
+      if (response.ok) {
+        const data = await response.json();
+        setAskUsStatus({
+          isOpen: data.is_open,
+          message: data.message || '',
+          hoursToday: data.hours_today,
+          loading: false
+        });
+      } else {
+        setAskUsStatus(prev => ({ ...prev, loading: false }));
+      }
+    } catch (error) {
+      console.error('Failed to check Ask Us availability:', error);
+      setAskUsStatus(prev => ({ ...prev, loading: false }));
+    }
+  }, []);
+
+  // Check availability on mount and every 5 minutes
+  useEffect(() => {
+    checkAskUsAvailability();
+    const interval = setInterval(checkAskUsAvailability, 5 * 60 * 1000);
+    return () => clearInterval(interval);
+  }, [checkAskUsAvailability]);
 
   useEffect(() => {
     if (
       !socketContextValues.isConnected &&
       socketContextValues.attemptedConnection
     ) {
-      toast({
-        title: 'Connection Error',
-        description:
-          'The Smart Chatbot is currently not available. Please talk to a human librarian or create a ticket for further help.',
-        status: 'error',
+      toast.error('Connection Error', {
+        description: askUsStatus.isOpen
+          ? 'The Smart Chatbot is currently not available. Please talk to a human librarian during business hours or create a ticket for help.'
+          : 'The Smart Chatbot is currently not available. Please create a ticket and we\'ll get back to you.',
         duration: 9000,
-        isClosable: true,
-        position: 'bottom-left',
       });
     }
   }, [
     socketContextValues.isConnected,
     socketContextValues.attemptedConnection,
-    toast,
+    askUsStatus.isOpen,
   ]);
 
-  // Auto-redirect to librarian if server is critically unhealthy or connection issues
+  // Auto-redirect based on server health and business hours
   useEffect(() => {
     if (
       (serverStatus === 'unhealthy' ||
@@ -60,15 +85,21 @@ const App = () => {
       isOpen &&
       step === 'services'
     ) {
-      toast({
-        title: 'Service Unavailable',
-        description:
-          'The Smart Chatbot is currently unavailable. Redirecting you to a human librarian for assistance.',
-        status: 'warning',
-        duration: 5000,
-        isClosable: true,
-      });
-      setStep('humanLibrarian');
+      if (askUsStatus.isOpen) {
+        toast.warning('Service Unavailable', {
+          description:
+            'The Smart Chatbot is currently unavailable. Redirecting you to a human librarian for assistance.',
+          duration: 5000,
+        });
+        setStep('humanLibrarian');
+      } else {
+        toast.warning('Service Unavailable', {
+          description:
+            'The Smart Chatbot is currently unavailable. Please submit a ticket and we\'ll get back to you.',
+          duration: 5000,
+        });
+        setStep('ticket');
+      }
     }
   }, [
     serverStatus,
@@ -76,176 +107,129 @@ const App = () => {
     socketContextValues.attemptedConnection,
     isOpen,
     step,
-    toast,
+    askUsStatus.isOpen,
   ]);
 
   // Handler for when user clicks "Talk to Librarian" from error boundary
   const handleLibrarianHelp = () => {
     if (!isOpen) {
-      onOpen(); // Open the modal if it's not already open
+      setIsOpen(true);
     }
-    setStep('humanLibrarian'); // Navigate to the librarian step
-
-    toast({
-      title: 'Connecting to Librarian',
-      description: 'Redirecting you to chat with a human librarian.',
-      status: 'info',
-      duration: 3000,
-      isClosable: true,
-    });
+    
+    if (askUsStatus.isOpen) {
+      setStep('humanLibrarian');
+      toast.info('Connecting to Librarian', {
+        description: 'Redirecting you to a human librarian.',
+        duration: 3000,
+      });
+    } else {
+      setStep('ticket');
+      toast.info('Submit a Ticket', {
+        description: 'Human chat is currently offline. Please submit a ticket and we\'ll get back to you.',
+        duration: 3000,
+      });
+    }
   };
 
   const handleClose = () => {
     setStep('initial');
-    onClose();
+    setIsOpen(false);
   };
+
+  const isChatbotUnavailable =
+    serverStatus === 'unhealthy' ||
+    (!socketContextValues.isConnected && socketContextValues.attemptedConnection);
 
   return (
     <ErrorBoundaryComponent onLibrarianHelp={handleLibrarianHelp}>
       {/* Welcome background */}
-      <Box
-        minH='100vh'
-        bg='gray.50'
-        display='flex'
-        alignItems='center'
-        justifyContent='center'
-        p={4}
-      >
-        <Box
-          textAlign='center'
-          mb={8}
-          opacity={isOpen ? 0.3 : 1}
-          transition='all 0.3s ease'
-          cursor={!isOpen ? 'pointer' : 'default'}
-          onClick={!isOpen ? onOpen : undefined}
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
+        <div
+          className={`text-center mb-8 transition-all duration-300 ${
+            isOpen ? 'opacity-30' : 'opacity-100 cursor-pointer hover:opacity-80 hover:-translate-y-0.5'
+          } ${!isOpen ? 'focus:outline-none focus:ring-4 focus:ring-blue-400/60 focus:scale-[1.02] focus:-translate-y-0.5 focus:bg-blue-500/5' : ''}`}
+          onClick={!isOpen ? () => setIsOpen(true) : undefined}
           onKeyDown={!isOpen ? (e) => {
             if (e.key === 'Enter' || e.key === ' ') {
               e.preventDefault();
-              onOpen();
+              setIsOpen(true);
             }
           } : undefined}
           tabIndex={!isOpen ? 0 : -1}
           role={!isOpen ? 'button' : undefined}
           aria-label={!isOpen ? 'Open Smart Chatbot services' : undefined}
-          _hover={!isOpen ? { opacity: 0.8, transform: 'translateY(-2px)' } : {}}
-          _focus={!isOpen ? {
-            outline: 'none',
-            boxShadow: '0 0 0 4px rgba(66, 153, 225, 0.6), 0 0 20px rgba(66, 153, 225, 0.3)',
-            transform: 'scale(1.02) translateY(-2px)',
-            bg: 'rgba(66, 153, 225, 0.05)'
-          } : {}}
-          _focusVisible={!isOpen ? {
-            outline: 'none',
-            boxShadow: '0 0 0 4px rgba(66, 153, 225, 0.6), 0 0 20px rgba(66, 153, 225, 0.3)',
-            transform: 'scale(1.02) translateY(-2px)',
-            bg: 'rgba(66, 153, 225, 0.05)'
-          } : {}}
-          sx={!isOpen ? {
-            '&:focus': {
-              outline: 'none !important',
-              boxShadow: '0 0 0 4px rgba(66, 153, 225, 0.6), 0 0 20px rgba(66, 153, 225, 0.3) !important',
-              transform: 'scale(1.02) translateY(-2px) !important',
-              backgroundColor: 'rgba(66, 153, 225, 0.05) !important'
-            },
-            '&:focus-visible': {
-              outline: 'none !important',
-              boxShadow: '0 0 0 4px rgba(66, 153, 225, 0.6), 0 0 20px rgba(66, 153, 225, 0.3) !important',
-              transform: 'scale(1.02) translateY(-2px) !important',
-              backgroundColor: 'rgba(66, 153, 225, 0.05) !important'
-            }
-          } : {}}
         >
           <img
             src='https://libapps.s3.amazonaws.com/accounts/190074/images/0721_STier1_Libraries_HS_186KW_K_Digital.png'
             height={80}
             width={200}
             alt='library logo'
-            style={{ margin: '0 auto 20px' }}
+            className="mx-auto mb-5"
           />
-          <Text fontSize='2xl' fontWeight='bold' color='gray.700' mb={2}>
+          <h2 className="text-2xl font-bold text-gray-700 mb-2">
             Welcome to the Smart Chatbot
-          </Text>
-          <Text fontSize='md' color='gray.600'>
+          </h2>
+          <p className="text-base text-gray-600">
             Get help with research, ask questions, or talk to a librarian
-          </Text>
+          </p>
           {!isOpen && (
-            <Text fontSize='sm' color='blue.500' mt={3} fontWeight='semibold'>
+            <p className="text-sm text-blue-500 mt-3 font-semibold">
               Get Started
-            </Text>
+            </p>
           )}
-        </Box>
-      </Box>
+        </div>
+      </div>
 
-      <Modal isOpen={isOpen} onClose={handleClose} isCentered>
-        <ModalOverlay bg='blackAlpha.300' backdropFilter='blur(10px)' />
-        <ModalContent maxW='450px' mx={4} borderRadius='lg' boxShadow='xl'>
-          <ModalHeader
-            display='flex'
-            alignItems='center'
-            justifyContent={'space-evenly'}
-            ps={0}
-          >
+      <Dialog open={isOpen} onOpenChange={(open) => !open && handleClose()}>
+        <DialogContent className="max-w-[450px] mx-4">
+          <DialogHeader className="flex flex-row items-center justify-evenly ps-0">
             <img
               src='https://libapps.s3.amazonaws.com/accounts/190074/images/0721_STier1_Libraries_HS_186KW_K_Digital.png'
               height={50}
               width={120}
               alt='library logo'
             />
-            Smart Chatbot
-          </ModalHeader>
-          <ModalCloseButton />
-          <Flex justify='space-between'>
+            <DialogTitle>Smart Chatbot</DialogTitle>
+          </DialogHeader>
+          
+          <div className="flex justify-between">
             {step !== 'initial' && (
               <Button
-                leftIcon={<ArrowBackIcon />}
-                colorScheme='red'
-                variant='outline'
-                width='20%'
-                size='xs'
-                ml={'7%'}
+                variant="outline"
+                size="xs"
+                className="ml-[7%] text-miami-red border-miami-red hover:bg-miami-red hover:text-white"
                 onClick={() => setStep('initial')}
               >
+                <ArrowLeft className="h-3 w-3 mr-1" />
                 Back
               </Button>
             )}
             {step === 'services' && <FeedbackFormComponent />}
-          </Flex>
-          <ModalBody py={5}>
+          </div>
+          
+          <div className="py-5">
             {step === 'initial' && (
-              <VStack>
+              <div className="flex flex-col gap-3">
                 <Button
+                  variant="miami"
                   onClick={() => {
-                    // Check if server is healthy and connected before allowing access to chatbot
-                    if (
-                      serverStatus === 'unhealthy' ||
-                      (!socketContextValues.isConnected &&
-                        socketContextValues.attemptedConnection)
-                    ) {
-                      toast({
-                        title: 'Chatbot Unavailable',
+                    if (isChatbotUnavailable) {
+                      toast.error('Chatbot Unavailable', {
                         description:
-                          'The Smart Chatbot is currently unavailable. Please talk to a human librarian instead.',
-                        status: 'error',
+                          'The Smart Chatbot is currently unavailable. Please talk to a human librarian during business hours or submit a ticket.',
                         duration: 5000,
-                        isClosable: true,
                       });
-                      setStep('humanLibrarian');
+                      if (askUsStatus.isOpen) {
+                        setStep('humanLibrarian');
+                      } else {
+                        setStep('ticket');
+                      }
                     } else {
                       setStep('services');
                     }
                   }}
-                  isDisabled={
-                    serverStatus === 'unhealthy' ||
-                    (!socketContextValues.isConnected &&
-                      socketContextValues.attemptedConnection)
-                  }
-                  opacity={
-                    serverStatus === 'unhealthy' ||
-                    (!socketContextValues.isConnected &&
-                      socketContextValues.attemptedConnection)
-                      ? 0.6
-                      : 1
-                  }
+                  disabled={isChatbotUnavailable}
+                  className={isChatbotUnavailable ? 'opacity-60' : ''}
                 >
                   Library Chatbot{' '}
                   {(needsAttention ||
@@ -253,55 +237,76 @@ const App = () => {
                       socketContextValues.attemptedConnection)) &&
                     '(Unavailable)'}
                 </Button>
-                <Button onClick={() => setStep('humanLibrarian')}>
-                  Talk to a human librarian
+                
+                {/* Show "Talk to human" only during business hours */}
+                {askUsStatus.isOpen ? (
+                  <Button variant="secondary" onClick={() => setStep('humanLibrarian')}>
+                    Talk to a human librarian
+                  </Button>
+                ) : (
+                  <div className="text-center text-sm text-gray-500 py-2">
+                    <Clock className="inline-block w-4 h-4 mr-1" />
+                    {askUsStatus.hoursToday ? (
+                      <span>Human chat available {askUsStatus.hoursToday.open} - {askUsStatus.hoursToday.close}</span>
+                    ) : (
+                      <span>Human chat is currently offline</span>
+                    )}
+                  </div>
+                )}
+                
+                <Button variant="secondary" onClick={() => setStep('ticket')}>
+                  Create a ticket
                 </Button>
-                <Button onClick={() => setStep('ticket')}>
-                  Create a ticket for offline help
-                </Button>
-              </VStack>
+              </div>
             )}
             {step === 'services' &&
-              // Only render ChatBotComponent if server is healthy and connected
               (serverStatus === 'healthy' && socketContextValues.isConnected ? (
-                <ChatBotComponent />
+                <ChatBotComponent askUsStatus={askUsStatus} />
               ) : (
-                // If server becomes unhealthy while in services step, show message and redirect
-                <VStack spacing={4} textAlign='center' py={6}>
-                  <Text color='red.500' fontWeight='bold'>
+                <div className="flex flex-col gap-4 text-center py-6">
+                  <p className="text-red-500 font-bold">
                     Smart Chatbot is currently unavailable
-                  </Text>
-                  <Text color='gray.600' fontSize='sm'>
-                    We're experiencing technical difficulties. Let us connect
-                    you with a human librarian instead.
-                  </Text>
-                  <Button
-                    colorScheme='blue'
-                    onClick={() => setStep('humanLibrarian')}
-                    size='md'
-                  >
-                    Talk to a Human Librarian
-                  </Button>
-                </VStack>
+                  </p>
+                  <p className="text-gray-600 text-sm">
+                    We're experiencing technical difficulties. 
+                    {askUsStatus.isOpen 
+                      ? ' Let us connect you with a human librarian.'
+                      : ' Please submit a ticket and we\'ll get back to you.'}
+                  </p>
+                  {askUsStatus.isOpen ? (
+                    <Button
+                      variant="default"
+                      onClick={() => setStep('humanLibrarian')}
+                    >
+                      Talk to a Human Librarian
+                    </Button>
+                  ) : (
+                    <Button
+                      variant="default"
+                      onClick={() => setStep('ticket')}
+                    >
+                      Submit a Ticket
+                    </Button>
+                  )}
+                </div>
               ))}
             {step === 'humanLibrarian' && <HumanLibrarianWidget />}
             {step === 'ticket' && <OfflineTicketWidget />}
-          </ModalBody>
-          {step == 'services' && (
+          </div>
+          
+          {/* Bottom action button during chat - shows human chat or ticket based on availability */}
+          {step === 'services' && (
             <Button
-              size='sm'
-              colorScheme='red'
-              position='fixed'
-              bottom={10}
-              right={20}
-              mr={4}
-              onClick={() => setStep('humanLibrarian')}
+              size="sm"
+              variant="miami"
+              className="fixed bottom-10 right-20 mr-4 absolute right-0 bottom-0 mb-2"
+              onClick={() => askUsStatus.isOpen ? setStep('humanLibrarian') : setStep('ticket')}
             >
-              Chat with a human librarian
+              {askUsStatus.isOpen ? 'Talk to a Human Librarian' : 'Submit a ticket'}
             </Button>
           )}
-        </ModalContent>
-      </Modal>
+        </DialogContent>
+      </Dialog>
     </ErrorBoundaryComponent>
   );
 };

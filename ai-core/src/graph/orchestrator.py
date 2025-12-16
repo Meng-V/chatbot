@@ -18,7 +18,6 @@ from src.config.scope_definition import (
     OFFICIAL_LIBRARY_CONTACTS
 )
 # Comprehensive multi-tool agents
-from src.agents.primo_multi_tool_agent import PrimoAgent
 from src.agents.libcal_comprehensive_agent import LibCalComprehensiveAgent
 from src.agents.libguide_comprehensive_agent import LibGuideComprehensiveAgent
 from src.agents.google_site_comprehensive_agent import GoogleSiteComprehensiveAgent
@@ -42,6 +41,19 @@ from src.utils.fact_grounding import (
     create_grounded_synthesis_prompt,
     should_enforce_strict_grounding
 )
+from src.utils.query_understanding import (
+    understand_query,
+    should_request_clarification,
+    get_processed_query,
+    format_clarifying_response,
+    get_query_type_hint
+)
+from src.config.capability_scope import (
+    detect_limitation_request,
+    get_limitation_response,
+    get_limitation_response_with_availability,
+    is_account_action
+)
 
 # Use o4-mini as specified
 OPENAI_MODEL = os.getenv("OPENAI_MODEL", "o4-mini")
@@ -53,6 +65,24 @@ if not OPENAI_MODEL.startswith("o"):
     llm_kwargs["temperature"] = 0
 llm = ChatOpenAI(**llm_kwargs)
 
+# ============================================================================
+# AVAILABLE INFORMATION SOURCES (Version 3.0 - Dec 2025)
+# ============================================================================
+# ACTIVE AGENTS (6 core capabilities):
+#   - LibGuide (SpringShare): Subject guides, research guides, MyGuide
+#   - LibCal (SpringShare): Library hours, room reservations
+#   - LibChat (SpringShare): Human librarian handoff
+#   - Google Site Search: Library website search
+#   - Subject Librarian Agent: Find librarians by subject
+#   - Transcript RAG: Correction pool only (fixes bot mistakes)
+#
+# ARCHIVED (not in active use):
+#   - Primo Agent: Catalog search (see /archived/primo/)
+#
+# IMPORTANT: Only information from active agents is reliable.
+# Do NOT generate or guess information not provided by agents.
+# ============================================================================
+
 ROUTER_SYSTEM_PROMPT = """You are a classification assistant for Miami University Libraries.
 
 CRITICAL SCOPE RULE:
@@ -60,28 +90,37 @@ CRITICAL SCOPE RULE:
 - If question is about general Miami University, admissions, courses, housing, dining, campus life, or non-library services, respond with: out_of_scope
 - If question is about homework help, assignments, or academic content, respond with: out_of_scope
 
+🚨 CATALOG SEARCH NOT AVAILABLE 🚨
+The following requests MUST be classified as "human_help" (NOT discovery_search):
+- Searching for books, articles, journals, e-resources
+- Finding specific publications or call numbers
+- "I need articles about...", "Find me books on...", "Do you have..."
+- Any request to search the library catalog or databases
+REASON: Catalog search is not available. Redirect users to human librarians for book/article searches.
+
 IN-SCOPE LIBRARY QUESTIONS - Classify into ONE of these categories:
 
-1. **discovery_search** - Searching for books, articles, journals, e-resources, call numbers, catalog items
-   Examples: "Do you have The Great Gatsby?", "Find articles on climate change", "What's the call number for..."
-
-2. **subject_librarian** - Finding subject librarian, LibGuides for a specific major, department, or academic subject. ALSO use for general questions about all subject librarians.
+1. **subject_librarian** - Finding subject librarian, LibGuides for a specific major, department, or academic subject. ALSO use for general questions about all subject librarians.
    Examples: "Who's the biology librarian?", "LibGuide for accounting", "I need help with psychology research", "list of subject librarians", "show me all subject librarians", "subject librarian map"
 
-3. **course_subject_help** - Course guides, recommended databases for a specific class
+2. **course_subject_help** - Course guides, recommended databases for a specific class
    Examples: "What databases for ENG 111?", "Guide for PSY 201", "Resources for CHM 201"
 
-4. **booking_or_hours** - Library building hours, room reservations, library schedule
+3. **booking_or_hours** - Library building hours, room reservations, library schedule
    Examples: "What time does King Library close?", "Book a study room", "Library hours tomorrow"
 
-5. **policy_or_service** - Library policies, services, renewals, printing, fines, access info
+4. **policy_or_service** - Library policies, services, questions about library website content
    Examples: "How do I renew a book?", "Can I print in library?", "What's the late fee for library books?"
 
-6. **human_help** - User explicitly wants to talk to a librarian
+5. **human_help** - MUST use for ANY of these:
+   - User wants to talk to a librarian
+   - User asks for books, articles, journals, e-resources (catalog search disabled!)
+   - User wants to search the library catalog or databases
    Examples: "Can I talk to a librarian?", "Connect me to library staff", "I need human help"
+   CATALOG SEARCH EXAMPLES (classify as human_help): "I need 3 articles about...", "Do you have [book]?", "Find articles on...", "Search for books about...", "Looking for journal articles"
 
-7. **general_question** - General library questions not fitting above (use RAG)
-   Examples: "How can I print in the library?", "Where is the quiet study area?"
+6. **general_question** - General library questions about services, locations, policies
+   Examples: "Where is the quiet study area?", "What services does the library offer?"
 
 OUT-OF-SCOPE (respond with: out_of_scope):
 - General university questions, admissions, financial aid, tuition
@@ -90,22 +129,196 @@ OUT-OF-SCOPE (respond with: out_of_scope):
 - Housing, dining, parking
 - Student organizations, campus events
 
-Respond with ONLY the category name (e.g., discovery_search or out_of_scope). No explanation."""
+Respond with ONLY the category name (e.g., subject_librarian or out_of_scope). No explanation."""
+
+# ============================================================================
+# QUERY UNDERSTANDING NODE (NEW - Pre-processing layer)
+# ============================================================================
+
+async def query_understanding_node(state: AgentState) -> AgentState:
+    """
+    Query Understanding Layer: Analyze and translate user input before routing.
+    
+    This node:
+    1. Translates verbose/complex queries into clear, actionable requests
+    2. Detects ambiguous queries that need clarification
+    3. Extracts key entities (dates, subjects, buildings, etc.)
+    4. Provides hints for better routing
+    """
+    user_msg = state["user_message"]
+    logger = state.get("_logger") or AgentLogger()
+    history = state.get("conversation_history", [])
+    
+    logger.log("🔍 [Query Understanding] Processing user input", {"query": user_msg})
+    
+    # Store original query
+    state["original_query"] = user_msg
+    
+    # Run query understanding
+    understanding = await understand_query(
+        user_message=user_msg,
+        conversation_history=history,
+        log_callback=logger.log
+    )
+    
+    state["query_understanding"] = understanding
+    
+    # Check if clarification is needed
+    if should_request_clarification(understanding):
+        logger.log("⚠️ [Query Understanding] Query is ambiguous, requesting clarification")
+        state["needs_clarification"] = True
+        state["clarifying_question"] = format_clarifying_response(understanding)
+        # Use original query but mark for clarification
+        state["processed_query"] = user_msg
+    else:
+        # Use the processed/translated query
+        processed = get_processed_query(understanding)
+        state["processed_query"] = processed
+        state["needs_clarification"] = False
+        
+        # Store query type hint for routing assistance
+        hint = get_query_type_hint(understanding)
+        if hint:
+            state["query_type_hint"] = hint
+            logger.log(f"💡 [Query Understanding] Query type hint: {hint}")
+        
+        if processed != user_msg:
+            logger.log(f"✅ [Query Understanding] Translated: '{user_msg}' → '{processed}'")
+    
+    state["_logger"] = logger
+    return state
+
+
+def should_skip_to_clarification(state: AgentState) -> str:
+    """
+    Routing function: decide if we need clarification or can proceed.
+    
+    Returns:
+        'clarify' if user needs to provide more info
+        'classify' if we can proceed with intent classification
+    """
+    if state.get("needs_clarification"):
+        return "clarify"
+    return "classify"
+
+
+async def clarification_node(state: AgentState) -> AgentState:
+    """
+    Handle ambiguous queries by asking for clarification.
+    
+    This node generates a friendly response asking the user for more details.
+    """
+    logger = state.get("_logger") or AgentLogger()
+    
+    clarifying_q = state.get("clarifying_question")
+    if clarifying_q:
+        logger.log(f"❓ [Clarification] Asking user: {clarifying_q}")
+        state["final_answer"] = clarifying_q
+    else:
+        # Fallback
+        state["final_answer"] = (
+            "I want to make sure I understand your question correctly. "
+            "Could you provide a bit more detail about what you're looking for?"
+        )
+    
+    state["_logger"] = logger
+    return state
+
+
+# ============================================================================
+# INTENT CLASSIFICATION NODE
+# ============================================================================
 
 async def classify_intent_node(state: AgentState) -> AgentState:
     """Meta Router: classify user intent using LLM."""
-    user_msg = state["user_message"]
+    import re
+    
+    # Use processed query if available, otherwise original
+    user_msg = state.get("processed_query") or state["user_message"]
+    original_msg = state["user_message"]  # Keep original for capability check
     logger = state.get("_logger") or AgentLogger()
+    
+    # 🚨 CAPABILITY CHECK: Detect requests for things the bot CANNOT do
+    # This prevents asking for clarification on things we can't help with
+    limitation = detect_limitation_request(original_msg)
+    if limitation.get("is_limitation"):
+        limitation_type = limitation.get("limitation_type")
+        logger.log(f"🚫 [Capability Check] Detected limitation: {limitation_type} - {limitation.get('description')}")
+        
+        # Return the appropriate response for this limitation
+        state["classified_intent"] = "capability_limitation"
+        state["selected_agents"] = []
+        state["_limitation_response"] = limitation.get("response")
+        state["_limitation_type"] = limitation_type
+        state["_logger"] = logger
+        return state
+    
+    # 🚨 PRE-CHECK: Catch catalog search patterns BEFORE LLM routing
+    # These patterns MUST go to human_help (catalog search disabled)
+    catalog_patterns = [
+        r'\b(find|search|look\s*for|need|want|get)\b.*\b(articles?|books?|journals?|e-?resources?|publications?)\b',
+        r'\b(articles?|books?|journals?)\b.*\b(about|on|regarding)\b',
+        r'\bdo you have\b.*\b(book|article|journal|copy)\b',
+        r'\b\d+\s*(articles?|books?|sources?|pages?)\b',  # "3 articles", "5 books"
+        r'\bcall\s*number\b',
+        r'\bcatalog\s*search\b',
+        r'\bsearch\s*(the\s*)?(catalog|database)',
+    ]
+    
+    user_msg_lower = user_msg.lower()
+    for pattern in catalog_patterns:
+        if re.search(pattern, user_msg_lower, re.IGNORECASE):
+            logger.log(f"📚 [Meta Router] Detected catalog search request - routing to human_help (service disabled)")
+            state["classified_intent"] = "human_help"
+            state["selected_agents"] = ["libchat"]
+            state["_catalog_search_requested"] = True  # Flag for special message
+            state["_logger"] = logger
+            return state
+    
+    # Check if Query Understanding Layer detected a capability limitation
+    understanding = state.get("query_understanding", {})
+    if understanding.get("query_type_hint") == "capability_limitation":
+        limitation_type = understanding.get("limitation_type", "unknown")
+        limitation_response = understanding.get("limitation_response")
+        logger.log(f"🚫 [Meta Router] Query Understanding detected limitation: {limitation_type}")
+        state["classified_intent"] = "capability_limitation"
+        state["selected_agents"] = []
+        state["_limitation_type"] = limitation_type
+        state["_limitation_response"] = limitation_response
+        state["_logger"] = logger
+        return state
+    
+    # Check if Query Understanding Layer detected a greeting
+    if understanding.get("query_type_hint") == "greeting" or understanding.get("skip_understanding"):
+        logger.log("👋 [Meta Router] Detected greeting, responding directly")
+        state["classified_intent"] = "greeting"
+        state["selected_agents"] = []
+        state["_needs_availability_check"] = True  # Flag to check availability in greeting
+        state["_logger"] = logger
+        return state
     
     logger.log("🧠 [Meta Router] Classifying user intent", {"query": user_msg})
     
-    messages = [
-        SystemMessage(content=ROUTER_SYSTEM_PROMPT),
-        HumanMessage(content=user_msg)
-    ]
-    
-    response = await llm.ainvoke(messages)
-    intent = response.content.strip().lower()
+    # Use query type hint if available for faster routing
+    hint = state.get("query_type_hint")
+    if hint and hint in ["booking_or_hours", "subject_librarian", 
+                         "policy_or_service", "human_help", "general_question"]:
+        logger.log(f"💡 [Meta Router] Using query understanding hint: {hint}")
+        intent = hint
+    elif hint == "discovery_search":
+        # Redirect discovery_search to human_help (no catalog search available)
+        logger.log(f"💡 [Meta Router] Query hint was discovery_search -> redirecting to human_help")
+        intent = "human_help"
+        state["_catalog_search_requested"] = True
+    else:
+        # Fall back to LLM classification
+        messages = [
+            SystemMessage(content=ROUTER_SYSTEM_PROMPT),
+            HumanMessage(content=user_msg)
+        ]
+        
+        response = await llm.ainvoke(messages)
+        intent = response.content.strip().lower()
     
     logger.log(f"🎯 [Meta Router] Classified as: {intent}")
     
@@ -118,18 +331,20 @@ async def classify_intent_node(state: AgentState) -> AgentState:
         logger.log("🚫 [Meta Router] Question is OUT OF SCOPE - will redirect to appropriate service")
         return state
     
-    # Map intent to agents (multi-tool agents can handle sub-routing internally)
+    # Map intent to agents (6 core capabilities)
+    # Note: transcript_rag is available for correction pool but not used in routing
     agent_mapping = {
-        "discovery_search": ["primo"],  # Primo agent will route to search/availability tool
-        "subject_librarian": ["subject_librarian"],  # MuGuide + LibGuides API for subject-to-librarian routing
-        "course_subject_help": ["libguide", "transcript_rag"],
-        "booking_or_hours": ["libcal"],  # LibCal agent will route to hours/rooms/reservation tool
-        "policy_or_service": ["google_site", "transcript_rag"],  # Google agent handles site search
-        "human_help": ["libchat"],
-        "general_question": ["transcript_rag", "google_site"]
+        "discovery_search": ["libchat"],  # Redirect to human librarian (no catalog search)
+        "subject_librarian": ["subject_librarian"],  # MyGuide + LibGuides API
+        "course_subject_help": ["libguide"],  # Research guides
+        "booking_or_hours": ["libcal"],  # Hours and room booking
+        "policy_or_service": ["google_site"],  # Website search
+        "human_help": ["libchat"],  # Live chat handoff
+        "general_question": ["google_site"]  # Website search
     }
     
-    agents = agent_mapping.get(intent, ["transcript_rag"])
+    # Default to google_site for unknown intents
+    agents = agent_mapping.get(intent, ["google_site"])
     
     # 🎯 CRITICAL: Pre-filter agents for factual queries to prevent hallucinations
     from src.utils.fact_grounding import detect_factual_query_type
@@ -149,7 +364,6 @@ async def classify_intent_node(state: AgentState) -> AgentState:
     return state
 
 # Initialize comprehensive multi-tool agent instances
-primo_agent = PrimoAgent()
 libcal_agent = LibCalComprehensiveAgent()
 libguide_agent = LibGuideComprehensiveAgent()
 google_site_agent = GoogleSiteComprehensiveAgent()
@@ -160,19 +374,24 @@ async def execute_agents_node(state: AgentState) -> AgentState:
     logger = state.get("_logger") or AgentLogger()
     results = {}
     
+    # Handle greeting or pre-answered queries (no agents to execute)
+    if not agents:
+        if state.get("final_answer"):
+            logger.log("✅ [Orchestrator] Query already answered (greeting/clarification)")
+            state["agent_responses"] = {}
+            state["_logger"] = logger
+            return state
+    
     logger.log(f"⚡ [Orchestrator] Executing {len(agents)} agent(s) in parallel")
     
-    # Map agent names to agent instances (comprehensive multi-tool) or functions (legacy)
+    # Map agent names to agent instances
     agent_map = {
-        "primo": primo_agent,
         "libcal": libcal_agent,
         "libguide": libguide_agent,
         "google_site": google_site_agent,
-        # Subject-to-librarian routing agent
         "subject_librarian": find_subject_librarian_query,
-        # Legacy function-based agents
         "libchat": libchat_handoff,
-        "transcript_rag": transcript_rag_query
+        "transcript_rag": transcript_rag_query  # Correction pool only
     }
     
     import asyncio
@@ -246,19 +465,151 @@ async def execute_agents_node(state: AgentState) -> AgentState:
 
 async def synthesize_answer_node(state: AgentState) -> AgentState:
     """Synthesize final answer from agent responses using LLM with fact grounding."""
-    intent = state["classified_intent"]
+    intent = state.get("classified_intent")
     user_msg = state["user_message"]
     history = state.get("conversation_history", [])
     logger = state.get("_logger") or AgentLogger()
     
     logger.log("🤖 [Synthesizer] Generating final answer", {"history_messages": len(history)})
     
+    # Handle greetings with availability check
+    if intent == "greeting" and state.get("_needs_availability_check"):
+        logger.log("👋 [Synthesizer] Generating greeting with librarian availability")
+        from src.api.askus_hours import get_askus_hours_for_date
+        
+        try:
+            hours_data = await get_askus_hours_for_date()
+            is_open = hours_data.get("is_open", False)
+            current_period = hours_data.get("current_period")
+            hours_list = hours_data.get("hours", [])
+            
+            base_greeting = (
+                "Hello! I'm the Miami University Libraries assistant. 📚\n\n"
+                "I can help you with:\n"
+                "• **Library hours and study room reservations**\n"
+                "• **Research guides and subject librarians**\n"
+                "• **Library services and policies**\n\n"
+            )
+            
+            if is_open and current_period:
+                availability_msg = (
+                    f"✅ **Librarians are available NOW** (until {current_period['close']})\n"
+                    f"For help finding books or articles, you can chat with a librarian live.\n\n"
+                )
+            elif hours_list and len(hours_list) > 0:
+                next_open = hours_list[0].get("from")
+                next_close = hours_list[0].get("to")
+                availability_msg = (
+                    f"⏰ Live chat with librarians: {next_open} - {next_close} today\n"
+                    f"For help finding books or articles, submit a ticket or chat during business hours.\n\n"
+                )
+            else:
+                availability_msg = (
+                    "For help finding books or articles, I can connect you with a librarian.\n\n"
+                )
+            
+            state["final_answer"] = base_greeting + availability_msg + "What can I help you with today?"
+        except Exception as e:
+            logger.log(f"⚠️ [Synthesizer] Error checking availability: {str(e)}")
+            state["final_answer"] = (
+                "Hello! I'm the Miami University Libraries assistant. 📚\n\n"
+                "I can help you with:\n"
+                "• **Library hours and study room reservations**\n"
+                "• **Research guides and subject librarians**\n"
+                "• **Library services and policies**\n\n"
+                "For help finding books or articles, I can connect you with a librarian.\n\n"
+                "What can I help you with today?"
+            )
+        return state
+    
+    # Handle pre-answered queries (clarification responses)
+    if state.get("final_answer") and intent is None:
+        logger.log("✅ [Synthesizer] Using pre-generated answer")
+        return state
+    
+    # Handle capability limitations (things the bot cannot do)
+    if intent == "capability_limitation" or state.get("_limitation_response"):
+        limitation_type = state.get("_limitation_type", "unknown")
+        logger.log(f"🚫 [Synthesizer] Responding to capability limitation: {limitation_type}")
+        
+        # Get availability-aware response for limitations that redirect to human help
+        try:
+            limitation_response = await get_limitation_response_with_availability(limitation_type)
+        except Exception as e:
+            logger.log(f"⚠️ [Synthesizer] Error getting availability-aware response: {str(e)}")
+            limitation_response = state.get("_limitation_response", 
+                "I can't help with that directly. Please contact a librarian at (513) 529-4141 or visit https://www.lib.miamioh.edu/research/research-support/ask/")
+        
+        # Validate URLs before returning
+        validated_msg, had_invalid_urls = await validate_and_clean_response(
+            limitation_response, 
+            log_callback=logger.log
+        )
+        state["final_answer"] = validated_msg
+        state["needs_human"] = True
+        return state
+    
+    # Handle catalog search requests (not available)
+    # Triggered by: discovery_search intent OR _catalog_search_requested flag from regex pattern
+    if intent == "discovery_search" or state.get("_catalog_search_requested"):
+        logger.log("📚 [Synthesizer] Catalog search requested - service not available")
+        from src.api.askus_hours import get_askus_hours_for_date
+        
+        base_msg = """I'd love to help you find those materials! However, our catalog search feature is currently unavailable.
+
+**To search for books, articles, and e-resources, please:**
+
+• **Use our online catalog directly**: https://www.lib.miamioh.edu/
+• **Call us**: (513) 529-4141
+
+"""
+        
+        try:
+            hours_data = await get_askus_hours_for_date()
+            is_open = hours_data.get("is_open", False)
+            current_period = hours_data.get("current_period")
+            hours_list = hours_data.get("hours", [])
+            
+            if is_open and current_period:
+                availability_msg = (
+                    f"✅ **Librarians are available NOW** (until {current_period['close']})\n"
+                    f"Our librarians are experts at finding exactly what you need - they can help with specific article requirements, page counts, and topic searches.\n\n"
+                    f"**Chat with a librarian**: https://www.lib.miamioh.edu/research/research-support/ask/"
+                )
+            elif hours_list and len(hours_list) > 0:
+                next_open = hours_list[0].get("from")
+                next_close = hours_list[0].get("to")
+                availability_msg = (
+                    f"⏰ **Live chat hours today**: {next_open} - {next_close}\n"
+                    f"Our librarians are experts at finding exactly what you need.\n\n"
+                    f"**Submit a ticket for off-hours help**: https://www.lib.miamioh.edu/research/research-support/ask/\n"
+                    f"Or come back during chat hours to talk to a librarian live."
+                )
+            else:
+                availability_msg = (
+                    "**Submit a ticket** and our librarians will help you find the materials you need:\n"
+                    "https://www.lib.miamioh.edu/research/research-support/ask/"
+                )
+            
+            catalog_unavailable_msg = base_msg + availability_msg
+        except Exception as e:
+            logger.log(f"⚠️ [Synthesizer] Error checking availability: {str(e)}")
+            catalog_unavailable_msg = base_msg + "• **Chat with a librarian or submit a ticket**: https://www.lib.miamioh.edu/research/research-support/ask/"
+        
+        # Validate URLs before returning
+        validated_msg, had_invalid_urls = await validate_and_clean_response(
+            catalog_unavailable_msg, 
+            log_callback=logger.log
+        )
+        state["final_answer"] = validated_msg
+        state["needs_human"] = True
+        return state
+    
     # Handle out-of-scope questions
     if state.get("out_of_scope"):
         logger.log("🚫 [Synthesizer] Providing out-of-scope response")
         out_of_scope_msg = f"""I appreciate your question, but that's outside the scope of library services. I can only help with library-related questions such as:
 
-• Finding books, articles, and research materials
 • Library hours and study room reservations
 • Subject librarians and research guides
 • Library policies and services
@@ -268,7 +619,7 @@ For questions about general university matters, admissions, courses, or campus s
 • **University Information**: (513) 529-0001
 
 For immediate library assistance, you can:
-• **Chat with a librarian**: https://www.lib.miamioh.edu/research/research-support/ask/
+• **Chat with a librarian or leave a ticket**: https://www.lib.miamioh.edu/research/research-support/ask/
 • **Call us**: (513) 529-4141
 • **Visit our website**: https://www.lib.miamioh.edu
 
@@ -297,13 +648,12 @@ Is there anything library-related I can help you with?"""
     # Combine agent outputs with PRIORITY ORDER
     # Priority: API functions > RAG > Google Site Search
     priority_order = {
-        "primo": 1,           # API: Catalog search
         "libcal": 1,          # API: Hours & reservations
         "libguide": 1,        # API: Research guides
         "subject_librarian": 1, # API: Subject librarian routing
         "libchat": 1,         # API: Chat handoff
-        "transcript_rag": 2,  # RAG: Curated knowledge base (HIGHER PRIORITY)
-        "google_site": 3      # Website search (LOWER PRIORITY - fallback only)
+        "google_site": 2,      # Website search (LOWER PRIORITY - fallback only)
+        "transcript_rag": 3,  # RAG: Correction pool for fixing mistakes
     }
     
     # Sort responses by priority
@@ -429,45 +779,53 @@ Current user question: {user_msg}
 Information from library systems:
 {context}
 
+🚨 CRITICAL: AGENT-ONLY INFORMATION POLICY 🚨
+============================================
+You MUST ONLY use information provided by library agents above.
+DO NOT generate, guess, or recall ANY information from your training data.
+If the agents did not provide information to answer the question, say so honestly.
+
+⚠️ TEMPORARILY UNAVAILABLE SERVICES:
+- Catalog search (books, articles, e-resources) is NOT available
+- If user asks for books/articles, redirect them to a human librarian
+
+ACTIVE INFORMATION SOURCES:
+- LibGuide (SpringShare): Subject guides, research guides
+- LibCal (SpringShare): Library hours, room reservations  
+- Google Site Search: Library website content
+- Subject Librarian Agent: Librarian contact info via MyGuide API
+
 CRITICAL RULES - MUST FOLLOW:
 1. ONLY provide information about Miami University LIBRARIES
 
-2. **WHEN TO TRUST DATA:**
-   ✅ ALWAYS TRUST data marked as [VERIFIED API DATA] or from "Subject Librarian Agent (MyGuide + LibGuides API)"
-   ✅ Use librarian names, emails, and links from these verified sources CONFIDENTLY
-   ✅ These sources have already been validated - use them without hesitation
+2. **STRICTLY USE ONLY AGENT-PROVIDED DATA:**
+   ✅ USE data marked as [VERIFIED API DATA] - it's reliable
+   ✅ USE information from Subject Librarian Agent, LibGuide, LibCal agents
+   ✅ USE URLs and contacts ONLY if they appear in the context above
 
-3. **WHAT YOU MUST NEVER MAKE UP (only if NOT in context):**
-   🚫 DO NOT invent email addresses if none are provided
-   🚫 DO NOT create fake librarian names like "Dr. John Smith" if not in context
-   🚫 DO NOT generate phone numbers (except library main: 513-529-4141)
-   🚫 DO NOT make up URLs if none are provided
+3. **ABSOLUTELY FORBIDDEN - DO NOT GENERATE:**
+   🚫 DO NOT invent ANY information not in the context above
+   🚫 DO NOT recall facts from your training data (it may be outdated)
+   🚫 DO NOT create URLs, emails, phone numbers, or names
+   🚫 DO NOT guess library hours, locations, or services
+   🚫 DO NOT provide book/article information (catalog search disabled)
 
-4. **How to Use Context:**
-   - If context contains librarian names/emails → USE THEM (they're verified!)
-   - If context is empty or doesn't answer the question → Provide general library contact
-   - NEVER supplement context with made-up information from your training data
+4. **IF CONTEXT IS EMPTY OR INSUFFICIENT:**
+   - Be honest: "I don't have that information from our library systems."
+   - Provide ONLY this general contact:
+     • Phone: (513) 529-4141
+     • Website: https://www.lib.miamioh.edu/research/research-support/ask/
+   - Suggest chatting with a human librarian
 
-5. ONLY use URLs that appear EXACTLY in the context above
-6. Allowed URL domains ONLY:
-   - lib.miamioh.edu
-   - libguides.lib.miamioh.edu
-   - digital.lib.miamioh.edu
-7. NEVER create URLs even if they look correct - only use URLs from context
-8. If the context says "verified from LibGuides API" - use that data EXACTLY as provided
-9. If contact info is not in the context, provide ONLY this general library contact:
-   - Phone: (513) 529-4141
-   - Website: https://www.lib.miamioh.edu/research/research-support/ask/
-10. **SOURCE PRIORITY:**
-    - TRUST and USE: [VERIFIED API DATA] and "Subject Librarian Agent" responses
-    - TRUST and USE: [CURATED KNOWLEDGE BASE - HIGH PRIORITY] (TranscriptRAG)
-    - Use cautiously: [WEBSITE SEARCH] (verify URLs match allowed domains)
-    - If sources conflict, prefer API data over other sources
+5. **SOURCE PRIORITY:**
+    - TRUST: [VERIFIED API DATA] and agent responses
+    - Use cautiously: [WEBSITE SEARCH] results (URLs must be from context)
+    - If no agent data available, redirect to human librarian
 
-11. **Response Guidelines:**
-    - Answer questions directly and helpfully when you have verified data
-    - Only redirect to general contact if context truly doesn't have the answer
-    - Don't be overly cautious - if data is marked as verified, USE IT!
+6. **Response Guidelines:**
+    - Answer questions directly when you have verified agent data
+    - Be honest when you don't have information - don't make things up
+    - Redirect to human librarian for catalog/book searches
     
     **Example of GOOD response:**
     Context: "Source: Subject Librarian Agent (MyGuide + LibGuides API)
@@ -495,7 +853,7 @@ STUDY ROOM BOOKING RULES - EXTREMELY IMPORTANT:
   * Building preference
 - ONLY present the FINAL result from the context:
   1. If missing information: Ask for the specific missing details (especially first name, last name, email)
-  2. If no rooms available: State directly that no rooms are available
+  2. If no rooms are available: State directly that no rooms are available
   3. If booking confirmed: Present the confirmation number and mention the confirmation email
 - DO NOT provide intermediate status messages about what you're doing
 
@@ -596,16 +954,33 @@ def should_end(state: AgentState) -> str:
 
 # Build the graph
 def create_library_graph():
-    """Create the LangGraph orchestrator."""
+    """Create the LangGraph orchestrator with Query Understanding Layer."""
     workflow = StateGraph(AgentState)
     
-    # Add nodes
+    # Add nodes - Query Understanding Layer is the entry point
+    workflow.add_node("understand_query", query_understanding_node)
+    workflow.add_node("clarify", clarification_node)
     workflow.add_node("classify_intent", classify_intent_node)
     workflow.add_node("execute_agents", execute_agents_node)
     workflow.add_node("synthesize", synthesize_answer_node)
     
-    # Add edges
-    workflow.set_entry_point("classify_intent")
+    # Set entry point to Query Understanding Layer
+    workflow.set_entry_point("understand_query")
+    
+    # Conditional edge: after understanding, either clarify or proceed to classification
+    workflow.add_conditional_edges(
+        "understand_query",
+        should_skip_to_clarification,
+        {
+            "clarify": "clarify",      # Ambiguous query → ask for clarification
+            "classify": "classify_intent"  # Clear query → proceed to classification
+        }
+    )
+    
+    # Clarification ends the flow (user needs to respond)
+    workflow.add_edge("clarify", END)
+    
+    # Normal flow: classify → execute → synthesize → end
     workflow.add_edge("classify_intent", "execute_agents")
     workflow.add_edge("execute_agents", "synthesize")
     workflow.add_edge("synthesize", END)

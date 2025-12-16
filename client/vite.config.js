@@ -1,7 +1,11 @@
 import { defineConfig, loadEnv } from 'vite'
 import react from '@vitejs/plugin-react'
+import tailwindcss from '@tailwindcss/vite'
 import process from 'process';
 import path from 'path';
+import { fileURLToPath } from 'url';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 // https://vitejs.dev/config/
 export default defineConfig(({ mode }) => {
@@ -9,6 +13,11 @@ export default defineConfig(({ mode }) => {
   const rootDir = path.resolve(__dirname, '..');
   const env = loadEnv(mode, rootDir, '');
   return {
+    resolve: {
+      alias: {
+        "@": path.resolve(__dirname, "./src"),
+      },
+    },
     preview: {
       port: 5173,
       strictPort: true,
@@ -40,6 +49,10 @@ export default defineConfig(({ mode }) => {
           target: 'http://localhost:8000',
           changeOrigin: true,
         },
+        '/askus-hours': {
+          target: 'http://localhost:8000',
+          changeOrigin: true,
+        },
         '/socket.io': {
           target: 'http://localhost:8000',
           changeOrigin: true,
@@ -55,7 +68,7 @@ export default defineConfig(({ mode }) => {
     define: {
       'process.env.SOME_KEY': JSON.stringify(env.SOME_KEY)
     },
-    plugins: [react()],
+    plugins: [tailwindcss(), react()],
   }
 })
 

@@ -8,6 +8,7 @@ from dateutil import parser as date_parser
 import pytz
 from src.tools.base import Tool
 from src.services.libcal_oauth import get_libcal_oauth_service
+from src.services.location_service import get_location_service
 from src.config.building_ids import get_building_id, get_building_display_name
 
 # Environment variables
@@ -22,56 +23,35 @@ LIBCAL_BOOKING_INFO_URL = os.getenv("LIBCAL_BOOKING_INFO_URL", "")  # GET /space
 LIBCAL_CANCEL_URL = os.getenv("LIBCAL_CANCEL_URL", "")
 NODE_ENV = os.getenv("NODE_ENV", "development")
 
-# Building IDs for Miami University Campuses
-BUILDINGS = {
-    # Oxford Campus (Main Campus)
-    "king": os.getenv("OXFORD_KING_LIBRARY", "2047"),
-    "king library": os.getenv("OXFORD_KING_LIBRARY", "2047"),
-    "art": os.getenv("OXFORD_ART_ARCHITECTURE_LIBRARY", "4089"),
-    "art library": os.getenv("OXFORD_ART_ARCHITECTURE_LIBRARY", "4089"),
-    "art and architecture": os.getenv("OXFORD_ART_ARCHITECTURE_LIBRARY", "4089"),
-    
-    # Hamilton Campus (Regional)
-    "hamilton": os.getenv("HAMILTON_RENTSCHLER_LIBRARY", "4792"),
-    "rentschler": os.getenv("HAMILTON_RENTSCHLER_LIBRARY", "4792"),
-    "rentschler library": os.getenv("HAMILTON_RENTSCHLER_LIBRARY", "4792"),
-    
-    # Middletown Campus (Regional)
-    "middletown": os.getenv("MIDDLETOWN_GARDNER_HARVEY_LIBRARY", "4845"),
-    "gardner-harvey": os.getenv("MIDDLETOWN_GARDNER_HARVEY_LIBRARY", "4845"),
-    "gardner harvey": os.getenv("MIDDLETOWN_GARDNER_HARVEY_LIBRARY", "4845"),
-    "gardner-harvey library": os.getenv("MIDDLETOWN_GARDNER_HARVEY_LIBRARY", "4845"),
-}
+# DEPRECATED: Building mappings now retrieved from database via location_service
+# Legacy constants kept for backward compatibility during migration
+DEFAULT_BUILDING = "2047"  # King Library - hardcoded fallback
 
-# Default building
-DEFAULT_BUILDING = os.getenv("OXFORD_KING_LIBRARY", "2047")
+# Helper functions to get building/location IDs from database
+async def _get_building_id_from_db(building_name: str) -> str:
+    """Get building ID from database by name."""
+    location_service = get_location_service()
+    building_id = await location_service.get_building_id(building_name)
+    if building_id:
+        return building_id
+    # Fallback to default
+    return await location_service.get_default_building_id()
 
-# Building ID to Location ID mapping for hours API
-BUILDING_TO_LOCATION_ID = {
-    "2047": "8113",  # King Library
-    "4089": "10997",  # Art & Architecture Library
-    "4792": "12082",  # Rentschler Library
-    "4845": "12083",  # Gardner-Harvey Library
-}
+async def _get_location_id_from_db(building_id: str) -> Optional[str]:
+    """Get location ID from database by building ID."""
+    location_service = get_location_service()
+    building_to_location = await location_service.get_building_to_location_map()
+    return building_to_location.get(building_id)
 
-# Campus mapping for building information
-CAMPUS_INFO = {
-    "oxford": {
-        "name": "Oxford Campus",
-        "libraries": ["King Library", "Art and Architecture Library"],
-        "centers": ["Maker Space", "Special Collections", "Writing Center"]
-    },
-    "hamilton": {
-        "name": "Hamilton Campus",
-        "libraries": ["Rentschler Library"],
-        "centers": []
-    },
-    "middletown": {
-        "name": "Middletown Campus",
-        "libraries": ["Gardner-Harvey Library"],
-        "centers": []
-    }
-}
+async def _get_all_buildings_from_db() -> Dict[str, str]:
+    """Get all building mappings from database."""
+    location_service = get_location_service()
+    return await location_service.get_all_buildings()
+
+async def _get_campus_info_from_db() -> Dict[str, Dict]:
+    """Get campus information from database."""
+    location_service = get_location_service()
+    return await location_service.get_campus_info()
 
 async def _get_oauth_token() -> str:
     """Get LibCal OAuth token using centralized service."""
@@ -180,17 +160,71 @@ def _parse_date_intelligent(date_input: str) -> Tuple[bool, Optional[str], Optio
                 return False, None, f"Could not understand 'this {remainder}'"
         
         else:
-            # Try parsing with dateutil for flexibility
-            # Set dayfirst=False for American format (MM/DD/YYYY)
-            parsed = date_parser.parse(date_input, dayfirst=False, fuzzy=True)
+            # Handle "new year" references - interpret as next year
+            if 'new year' in date_lower:
+                # Extract any day/date from the string
+                # e.g., "tenth day of the new year" -> January 10, next year
+                next_year = now.year + 1 if now.month >= 11 else now.year + 1
+                
+                # Try to extract a day number
+                day_match = re.search(r'(\d+)(?:st|nd|rd|th)?', date_lower)
+                ordinal_map = {
+                    'first': 1, 'second': 2, 'third': 3, 'fourth': 4, 'fifth': 5,
+                    'sixth': 6, 'seventh': 7, 'eighth': 8, 'ninth': 9, 'tenth': 10,
+                    'eleventh': 11, 'twelfth': 12, 'thirteenth': 13, 'fourteenth': 14,
+                    'fifteenth': 15, 'sixteenth': 16, 'seventeenth': 17, 'eighteenth': 18,
+                    'nineteenth': 19, 'twentieth': 20, 'twenty-first': 21, 'twenty-second': 22,
+                    'twenty-third': 23, 'twenty-fourth': 24, 'twenty-fifth': 25,
+                    'twenty-sixth': 26, 'twenty-seventh': 27, 'twenty-eighth': 28,
+                    'twenty-ninth': 29, 'thirtieth': 30, 'thirty-first': 31
+                }
+                
+                day = 1  # Default to January 1st
+                if day_match:
+                    day = int(day_match.group(1))
+                else:
+                    for word, num in ordinal_map.items():
+                        if word in date_lower:
+                            day = num
+                            break
+                
+                # Default to January for "new year"
+                result_date = datetime(next_year, 1, min(day, 31)).date()
             
-            # Convert to New York timezone if not already aware
-            if parsed.tzinfo is None:
-                parsed = ny_tz.localize(parsed)
+            # Handle month names without year (use next occurrence)
+            elif any(month in date_lower for month in ['january', 'february', 'march', 'april', 'may', 'june', 
+                                                        'july', 'august', 'september', 'october', 'november', 'december']):
+                # Try parsing with dateutil for flexibility
+                # Set dayfirst=False for American format (MM/DD/YYYY)
+                parsed = date_parser.parse(date_input, dayfirst=False, fuzzy=True)
+                
+                # Convert to New York timezone if not already aware
+                if parsed.tzinfo is None:
+                    parsed = ny_tz.localize(parsed)
+                else:
+                    parsed = parsed.astimezone(ny_tz)
+                
+                result_date = parsed.date()
+                
+                # If the parsed date is in the past and no year was explicitly provided,
+                # assume they mean the next occurrence (next year)
+                if result_date < now.date():
+                    # Check if a 4-digit year was in the original input
+                    if not re.search(r'\b20\d{2}\b', date_input):
+                        result_date = result_date.replace(year=result_date.year + 1)
+            
             else:
-                parsed = parsed.astimezone(ny_tz)
-            
-            result_date = parsed.date()
+                # Try parsing with dateutil for flexibility
+                # Set dayfirst=False for American format (MM/DD/YYYY)
+                parsed = date_parser.parse(date_input, dayfirst=False, fuzzy=True)
+                
+                # Convert to New York timezone if not already aware
+                if parsed.tzinfo is None:
+                    parsed = ny_tz.localize(parsed)
+                else:
+                    parsed = parsed.astimezone(ny_tz)
+                
+                result_date = parsed.date()
         
         # Format as YYYY-MM-DD
         formatted_date = result_date.strftime("%Y-%m-%d")
@@ -348,8 +382,8 @@ async def _check_building_hours(building_id: str, date: str, start_time: str, en
         Tuple of (is_valid, building_hours_message)
     """
     try:
-        # Get location ID for hours API
-        location_id = BUILDING_TO_LOCATION_ID.get(building_id)
+        # Get location ID for hours API from database
+        location_id = await _get_location_id_from_db(building_id)
         if not location_id:
             # If not in our mapping, assume valid (skip check)
             return True, None
@@ -381,9 +415,29 @@ async def _check_building_hours(building_id: str, date: str, start_time: str, en
             end_normalized = end_time.replace("-", ":")
             
             def time_to_minutes(time_str: str) -> int:
-                """Convert time string to minutes since midnight."""
+                """Convert time string to minutes since midnight.
+                Handles both 12-hour (10:00am, 10:00pm) and 24-hour (10:00) formats.
+                """
+                time_str = time_str.lower().strip()
+                
+                # Check for AM/PM
+                is_pm = 'pm' in time_str
+                is_am = 'am' in time_str
+                
+                # Remove AM/PM markers
+                time_str = time_str.replace('am', '').replace('pm', '').strip()
+                
                 parts = time_str.split(":")
-                return int(parts[0]) * 60 + int(parts[1])
+                hours = int(parts[0])
+                minutes = int(parts[1]) if len(parts) > 1 else 0
+                
+                # Convert to 24-hour format
+                if is_pm and hours != 12:
+                    hours += 12
+                elif is_am and hours == 12:
+                    hours = 0
+                
+                return hours * 60 + minutes
             
             booking_start = time_to_minutes(start_normalized)
             booking_end = time_to_minutes(end_normalized)
@@ -577,9 +631,8 @@ class LibCalEnhancedAvailabilityTool(Tool):
             start_formatted = start_time.replace("-", ":")
             end_formatted = end_time.replace("-", ":")
             
-            # Resolve building ID
-            building_key = building.lower().strip()
-            building_id = BUILDINGS.get(building_key, DEFAULT_BUILDING)
+            # Resolve building ID from database
+            building_id = await _get_building_id_from_db(building)
             
             token = await _get_oauth_token()
             
@@ -609,10 +662,23 @@ class LibCalEnhancedAvailabilityTool(Tool):
                         break
             
             if not available_rooms:
+                # Check if date might be too far in advance
+                try:
+                    booking_date = datetime.strptime(date, "%Y-%m-%d")
+                    days_ahead = (booking_date.date() - now.date()).days
+                    if days_ahead > 14:
+                        return {
+                            "tool": self.name,
+                            "success": True,
+                            "text": f"No rooms available at {building.capitalize() if building else 'any'} Library for {booking_date.strftime('%B %d, %Y')} from {start_time} to {end_time}. Note: Room reservations typically open 2 weeks in advance."
+                        }
+                except:
+                    pass
+                
                 return {
                     "tool": self.name,
                     "success": True,
-                    "text": f"No rooms available at {building.capitalize()} Library for {date} from {start_time} to {end_time}."
+                    "text": f"No rooms available at {building.capitalize() if building else 'any'} Library for {date} from {start_time} to {end_time}."
                 }
             
             # Sort by capacity and censor IDs
@@ -753,9 +819,8 @@ class LibCalComprehensiveReservationTool(Tool):
                     "text": f"Booking duration ({duration_hours:.1f} hours) exceeds the 2-hour maximum. Please reduce your booking time to 2 hours or less."
                 }
             
-            # Resolve building ID first for hours check
-            building_key = building.lower().strip()
-            building_id = BUILDINGS.get(building_key, DEFAULT_BUILDING)
+            # Resolve building ID first for hours check from database
+            building_id = await _get_building_id_from_db(building)
             
             # Validate building hours (only for King and Art libraries)
             if building_id in ["2047", "4089"]:
@@ -819,10 +884,24 @@ class LibCalComprehensiveReservationTool(Tool):
                         break
                 
                 if not availability_result.get("rooms_data"):
+                    # Check if date might be too far in advance
+                    from datetime import datetime
+                    try:
+                        booking_date = datetime.strptime(date, "%Y-%m-%d")
+                        days_ahead = (booking_date - datetime.now()).days
+                        if days_ahead > 14:
+                            return {
+                                "tool": self.name,
+                                "success": False,
+                                "text": f"No rooms are available for {booking_date.strftime('%B %d, %Y')}. Note: Room reservations typically open 2 weeks in advance. Please try a closer date, or contact the library at (513) 529-4141 for further assistance."
+                            }
+                    except:
+                        pass
+                    
                     return {
                         "tool": self.name,
                         "success": False,
-                        "text": "No rooms available at any library building for the requested time. Please try a different time or contact the library at (513) 529-4141."
+                        "text": "No rooms available at any library building for the requested time. You might try a different time slot or date, or feel free to contact us at (513) 529-4141 for further assistance."
                     }
             
             rooms_data = availability_result.get("rooms_data", [])
@@ -851,26 +930,26 @@ class LibCalComprehensiveReservationTool(Tool):
                 if not selected_room:
                     selected_room = rooms_data[0]  # Take smallest available
             
-            # Create ISO 8601 timestamps with timezone
-            offset = _detect_dst(date)
+            # Create timestamps in local time (LibCal expects local time without timezone offset)
             start_formatted = start_time.replace("-", ":")
             end_formatted = end_time.replace("-", ":")
             
-            # Build proper ISO 8601 timestamps (e.g., "2024-11-12T14:00:00-05:00")
-            start_timestamp = f"{date}T{start_formatted}:00{offset}"
-            end_timestamp = f"{date}T{end_formatted}:00{offset}"
+            # Build timestamps in local time format (e.g., "2024-11-12T14:00:00")
+            # LibCal operates in building's local timezone and doesn't need/want timezone offsets
+            start_timestamp = f"{date}T{start_formatted}:00"
+            end_timestamp = f"{date}T{end_formatted}:00"
             
             # Make booking
             is_production = NODE_ENV == "production"
             payload = {
-                "start": start_timestamp,  # ISO 8601 format with timezone
+                "start": start_timestamp,  # Local time format (YYYY-MM-DDTHH:MM:SS)
                 "fname": first_name,
                 "lname": last_name,
                 "email": email,
                 "bookings": [
                     {
                         "id": selected_room["id"],  # Space ID from availability check
-                        "to": end_timestamp  # ISO 8601 format with timezone
+                        "to": end_timestamp  # Local time format (YYYY-MM-DDTHH:MM:SS)
                     }
                 ]
             }
@@ -913,17 +992,20 @@ class LibCalComprehensiveReservationTool(Tool):
                     
                     # Build confirmation message
                     if booking_id:
-                        confirmation_text = f"{selected_room['name']} with capacity {selected_room['capacity']} is booked from {start_time} to {end_time} on {date} at {building.capitalize()} Library. Confirmation number: {booking_id}. A confirmation email has been sent to {email}."
+                        confirmation_text = f"{selected_room['name']} with capacity {selected_room['capacity']} is booked from {start_time} to {end_time} on {date} at {building.capitalize()} Library. Confirmation number: {booking_id}. A confirmation email has been sent to your email."
+                        return {
+                            "tool": self.name,
+                            "success": True,
+                            "booking_id": booking_id,
+                            "text": confirmation_text
+                        }
                     else:
-                        # Fallback if no booking_id
-                        confirmation_text = f"{selected_room['name']} with capacity {selected_room['capacity']} is booked from {start_time} to {end_time} on {date} at {building.capitalize()} Library. A confirmation email has been sent to {email}."
-                    
-                    return {
-                        "tool": self.name,
-                        "success": True,
-                        "booking_id": booking_id,
-                        "text": confirmation_text
-                    }
+                        # Fallback if no booking_id - this is a failure case
+                        return {
+                            "tool": self.name,
+                            "success": False,
+                            "text": f"Your booking request has failed. Please try again or contact us at (513) 529-4141 for further assistance."
+                        }
                 else:
                     error_data = response.text
                     
@@ -1124,4 +1206,160 @@ class LibCalCancelReservationTool(Tool):
                 "success": False,
                 "error": str(e),
                 "text": "Cancellation failed. Please visit https://www.lib.miamioh.edu/use/spaces/room-reservations/ or contact the library."
+            }
+
+
+# Ask Us Chat Service ID from environment
+LIBCAL_ASKUS_ID = os.getenv("LIBCAL_ASKUS_ID", "")
+
+
+class AskUsChatHoursTool(Tool):
+    """Tool to check Ask Us Chat Service business hours."""
+    
+    @property
+    def name(self) -> str:
+        return "askus_chat_hours"
+    
+    @property
+    def description(self) -> str:
+        return "Check Ask Us Chat Service business hours - live chat with a librarian. Use this when users ask about chat service hours, librarian availability for live chat, or when to talk to a human librarian."
+    
+    async def execute(
+        self, 
+        query: str, 
+        log_callback=None,
+        date: str = None,
+        **kwargs
+    ) -> Dict[str, Any]:
+        """Get Ask Us Chat Service hours for today or specified date."""
+        try:
+            if log_callback:
+                log_callback("🔍 [Ask Us Hours Tool] Checking chat service hours")
+            
+            if not LIBCAL_ASKUS_ID:
+                return {
+                    "tool": self.name,
+                    "success": False,
+                    "text": "Ask Us Chat hours configuration not available. Please visit https://www.lib.miamioh.edu/ask/"
+                }
+            
+            # Use today if no date specified
+            if not date:
+                from zoneinfo import ZoneInfo
+                est = ZoneInfo("America/New_York")
+                date = datetime.now(est).strftime("%Y-%m-%d")
+            else:
+                # Parse the date if provided
+                date_success, parsed_date, date_error = _parse_date_intelligent(date)
+                if not date_success:
+                    return {
+                        "tool": self.name,
+                        "success": False,
+                        "text": f"Date parsing error: {date_error}"
+                    }
+                date = parsed_date
+            
+            # Calculate week range (Monday to Sunday)
+            date_obj = datetime.strptime(date, "%Y-%m-%d")
+            day_of_week = date_obj.weekday()
+            monday = date_obj - timedelta(days=day_of_week)
+            sunday = monday + timedelta(days=6)
+            
+            from_date = monday.strftime("%Y-%m-%d")
+            to_date = sunday.strftime("%Y-%m-%d")
+            
+            token = await _get_oauth_token()
+            async with httpx.AsyncClient(timeout=10) as client:
+                response = await client.get(
+                    f"{LIBCAL_HOUR_URL}/{LIBCAL_ASKUS_ID}",
+                    headers={"Authorization": f"Bearer {token}"},
+                    params={"from": from_date, "to": to_date}
+                )
+                response.raise_for_status()
+                data = response.json()
+                
+                if not data or len(data) == 0:
+                    return {
+                        "tool": self.name,
+                        "success": False,
+                        "text": "No hours data available. Please visit https://www.lib.miamioh.edu/ask/"
+                    }
+                
+                # Extract hours by day
+                location = data[0]
+                dates = location.get("dates", {})
+                
+                hours_text = f"**{location.get('name', 'Ask Us Chat Service')} Hours (Week of {monday.strftime('%B %d')}):**\n\n"
+                hours_text += "_Chat with a librarian online during these hours:_\n\n"
+                
+                day_names = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+                current_date = monday
+                
+                # Check if currently open
+                from zoneinfo import ZoneInfo
+                est = ZoneInfo("America/New_York")
+                now = datetime.now(est)
+                today_str = now.strftime("%Y-%m-%d")
+                is_currently_open = False
+                
+                for day_name in day_names:
+                    date_str = current_date.strftime("%Y-%m-%d")
+                    day_data = dates.get(date_str)
+                    
+                    is_today = date_str == today_str
+                    
+                    if day_data and day_data.get("status") == "open" and day_data.get("hours"):
+                        hours_list = day_data["hours"]
+                        hours_str = ", ".join([f"{h['from']} - {h['to']}" for h in hours_list])
+                        
+                        # Check if currently within hours
+                        if is_today:
+                            for h in hours_list:
+                                try:
+                                    open_time = datetime.strptime(h['from'], "%I:%M%p").replace(
+                                        year=now.year, month=now.month, day=now.day, tzinfo=est
+                                    )
+                                    close_time = datetime.strptime(h['to'], "%I:%M%p").replace(
+                                        year=now.year, month=now.month, day=now.day, tzinfo=est
+                                    )
+                                    if open_time <= now <= close_time:
+                                        is_currently_open = True
+                                except:
+                                    pass
+                        
+                        today_marker = " ← **TODAY**" if is_today else ""
+                        hours_text += f"• **{day_name}** ({current_date.strftime('%m/%d')}): {hours_str}{today_marker}\n"
+                    else:
+                        today_marker = " ← **TODAY**" if is_today else ""
+                        hours_text += f"• **{day_name}** ({current_date.strftime('%m/%d')}): Closed{today_marker}\n"
+                    
+                    current_date += timedelta(days=1)
+                
+                # Add current status
+                if is_currently_open:
+                    hours_text += "\n✅ **The Ask Us Chat is currently OPEN!** Click the chat widget on the library website to connect with a librarian.\n"
+                else:
+                    hours_text += "\n⏰ **The Ask Us Chat is currently closed.** Please submit a ticket or check back during business hours.\n"
+                
+                hours_text += "\n**Need help outside these hours?**\n"
+                hours_text += "• Submit a ticket: https://www.lib.miamioh.edu/ask/\n"
+                hours_text += "• Call: (513) 529-4141\n"
+                
+                if log_callback:
+                    log_callback("✅ [Ask Us Hours Tool] Hours retrieved successfully")
+                
+                return {
+                    "tool": self.name,
+                    "success": True,
+                    "text": hours_text
+                }
+                
+        except Exception as e:
+            if log_callback:
+                log_callback(f"❌ [Ask Us Hours Tool] Error: {str(e)}")
+            return {
+                "tool": self.name,
+                "success": False,
+                "error": str(e),
+                "text": "Couldn't retrieve Ask Us Chat hours. Please visit https://www.lib.miamioh.edu/ask/"
             }

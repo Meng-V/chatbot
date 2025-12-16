@@ -6,10 +6,20 @@ from typing import Dict, Any, List, Tuple, Optional
 from src.tools.base import Tool
 from src.services.libapps_oauth import get_libapps_oauth_service
 
-LIBAPPS_OAUTH_URL = os.getenv("LIBAPPS_OAUTH_URL", "")
-LIBAPPS_CLIENT_ID = os.getenv("LIBAPPS_CLIENT_ID", "")
-LIBAPPS_CLIENT_SECRET = os.getenv("LIBAPPS_CLIENT_SECRET", "")
-LIBAPPS_GRANT_TYPE = os.getenv("LIBAPPS_GRANT_TYPE", "client_credentials")
+LIBGUIDE_OAUTH_URL = os.getenv("LIBGUIDE_OAUTH_URL", "")
+LIBGUIDE_CLIENT_ID = os.getenv("LIBGUIDE_CLIENT_ID", "")
+LIBGUIDE_CLIENT_SECRET = os.getenv("LIBGUIDE_CLIENT_SECRET", "")
+LIBGUIDE_GRANT_TYPE = os.getenv("LIBGUIDE_GRANT_TYPE", "client_credentials")
+
+# Fallback message when API is unavailable
+FALLBACK_CONTACT = """**Need Research Help?**
+
+Please contact Miami University Libraries:
+• **General Reference:** Ask-A-Librarian at https://www.lib.miamioh.edu/ask/
+• **Subject Librarians:** https://www.lib.miamioh.edu/about/organization/liaisons/
+• **Phone:** (513) 529-4141
+
+We apologize for the inconvenience. Our librarians are happy to help!"""
 
 async def _get_libapps_oauth_token() -> str:
     """Get LibApps OAuth token using centralized service."""
@@ -152,8 +162,19 @@ class LibGuideSubjectLookupTool(Tool):
                 response = await client.get(
                     "https://lgapi-us.libapps.com/1.2/accounts",
                     headers={"Authorization": f"Bearer {token}"},
-                    params={"expand[]": "subjects"}
+                    params={"expand": "subjects"}
                 )
+                
+                # Handle 401 gracefully - return fallback
+                if response.status_code == 401:
+                    if log_callback:
+                        log_callback("⚠️ [LibGuide Subject Lookup] API access denied - using fallback")
+                    return {
+                        "source": "LibGuide Subject Lookup (Fallback)",
+                        "text": f"I'd be happy to help you find information about **{subject_name}**!\n\n{FALLBACK_CONTACT}",
+                        "has_result": True
+                    }
+                
                 response.raise_for_status()
                 librarian_data = response.json()
             
