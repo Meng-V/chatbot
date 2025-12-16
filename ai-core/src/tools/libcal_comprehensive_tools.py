@@ -8,6 +8,7 @@ from dateutil import parser as date_parser
 import pytz
 from src.tools.base import Tool
 from src.services.libcal_oauth import get_libcal_oauth_service
+from src.services.location_service import get_location_service
 from src.config.building_ids import get_building_id, get_building_display_name
 
 # Environment variables
@@ -22,56 +23,35 @@ LIBCAL_BOOKING_INFO_URL = os.getenv("LIBCAL_BOOKING_INFO_URL", "")  # GET /space
 LIBCAL_CANCEL_URL = os.getenv("LIBCAL_CANCEL_URL", "")
 NODE_ENV = os.getenv("NODE_ENV", "development")
 
-# Building IDs for Miami University Campuses
-BUILDINGS = {
-    # Oxford Campus (Main Campus)
-    "king": os.getenv("OXFORD_KING_LIBRARY", "2047"),
-    "king library": os.getenv("OXFORD_KING_LIBRARY", "2047"),
-    "art": os.getenv("OXFORD_ART_ARCHITECTURE_LIBRARY", "4089"),
-    "art library": os.getenv("OXFORD_ART_ARCHITECTURE_LIBRARY", "4089"),
-    "art and architecture": os.getenv("OXFORD_ART_ARCHITECTURE_LIBRARY", "4089"),
-    
-    # Hamilton Campus (Regional)
-    "hamilton": os.getenv("HAMILTON_RENTSCHLER_LIBRARY", "4792"),
-    "rentschler": os.getenv("HAMILTON_RENTSCHLER_LIBRARY", "4792"),
-    "rentschler library": os.getenv("HAMILTON_RENTSCHLER_LIBRARY", "4792"),
-    
-    # Middletown Campus (Regional)
-    "middletown": os.getenv("MIDDLETOWN_GARDNER_HARVEY_LIBRARY", "4845"),
-    "gardner-harvey": os.getenv("MIDDLETOWN_GARDNER_HARVEY_LIBRARY", "4845"),
-    "gardner harvey": os.getenv("MIDDLETOWN_GARDNER_HARVEY_LIBRARY", "4845"),
-    "gardner-harvey library": os.getenv("MIDDLETOWN_GARDNER_HARVEY_LIBRARY", "4845"),
-}
+# DEPRECATED: Building mappings now retrieved from database via location_service
+# Legacy constants kept for backward compatibility during migration
+DEFAULT_BUILDING = "2047"  # King Library - hardcoded fallback
 
-# Default building
-DEFAULT_BUILDING = os.getenv("OXFORD_KING_LIBRARY", "2047")
+# Helper functions to get building/location IDs from database
+async def _get_building_id_from_db(building_name: str) -> str:
+    """Get building ID from database by name."""
+    location_service = get_location_service()
+    building_id = await location_service.get_building_id(building_name)
+    if building_id:
+        return building_id
+    # Fallback to default
+    return await location_service.get_default_building_id()
 
-# Building ID to Location ID mapping for hours API
-BUILDING_TO_LOCATION_ID = {
-    "2047": "8113",  # King Library
-    "4089": "10997",  # Art & Architecture Library
-    "4792": "12082",  # Rentschler Library
-    "4845": "12083",  # Gardner-Harvey Library
-}
+async def _get_location_id_from_db(building_id: str) -> Optional[str]:
+    """Get location ID from database by building ID."""
+    location_service = get_location_service()
+    building_to_location = await location_service.get_building_to_location_map()
+    return building_to_location.get(building_id)
 
-# Campus mapping for building information
-CAMPUS_INFO = {
-    "oxford": {
-        "name": "Oxford Campus",
-        "libraries": ["King Library", "Art and Architecture Library"],
-        "centers": ["Maker Space", "Special Collections", "Writing Center"]
-    },
-    "hamilton": {
-        "name": "Hamilton Campus",
-        "libraries": ["Rentschler Library"],
-        "centers": []
-    },
-    "middletown": {
-        "name": "Middletown Campus",
-        "libraries": ["Gardner-Harvey Library"],
-        "centers": []
-    }
-}
+async def _get_all_buildings_from_db() -> Dict[str, str]:
+    """Get all building mappings from database."""
+    location_service = get_location_service()
+    return await location_service.get_all_buildings()
+
+async def _get_campus_info_from_db() -> Dict[str, Dict]:
+    """Get campus information from database."""
+    location_service = get_location_service()
+    return await location_service.get_campus_info()
 
 async def _get_oauth_token() -> str:
     """Get LibCal OAuth token using centralized service."""
@@ -402,8 +382,8 @@ async def _check_building_hours(building_id: str, date: str, start_time: str, en
         Tuple of (is_valid, building_hours_message)
     """
     try:
-        # Get location ID for hours API
-        location_id = BUILDING_TO_LOCATION_ID.get(building_id)
+        # Get location ID for hours API from database
+        location_id = await _get_location_id_from_db(building_id)
         if not location_id:
             # If not in our mapping, assume valid (skip check)
             return True, None
@@ -651,9 +631,8 @@ class LibCalEnhancedAvailabilityTool(Tool):
             start_formatted = start_time.replace("-", ":")
             end_formatted = end_time.replace("-", ":")
             
-            # Resolve building ID
-            building_key = building.lower().strip()
-            building_id = BUILDINGS.get(building_key, DEFAULT_BUILDING)
+            # Resolve building ID from database
+            building_id = await _get_building_id_from_db(building)
             
             token = await _get_oauth_token()
             
@@ -840,9 +819,8 @@ class LibCalComprehensiveReservationTool(Tool):
                     "text": f"Booking duration ({duration_hours:.1f} hours) exceeds the 2-hour maximum. Please reduce your booking time to 2 hours or less."
                 }
             
-            # Resolve building ID first for hours check
-            building_key = building.lower().strip()
-            building_id = BUILDINGS.get(building_key, DEFAULT_BUILDING)
+            # Resolve building ID first for hours check from database
+            building_id = await _get_building_id_from_db(building)
             
             # Validate building hours (only for King and Art libraries)
             if building_id in ["2047", "4089"]:

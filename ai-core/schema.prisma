@@ -8,6 +8,8 @@ generator client {
   recursive_type_depth = 5
 }
 
+// NOTE: Python Prisma client (v5.17) still requires url property
+// Main schema uses Prisma v7 syntax, but Python client hasn't upgraded yet
 datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
@@ -127,4 +129,58 @@ model SubjectDeptCode {
   @@unique([subjectId, deptCode])
   @@index([deptCode])
   @@index([deptName])
+}
+
+// Library Location Hierarchy Models
+model Campus {
+  id          String    @id @default(uuid())
+  name        String    @unique // "Oxford", "Hamilton", "Middletown"
+  displayName String    // "Oxford Campus", "Hamilton Campus"
+  isMain      Boolean   @default(false) // True for Oxford (flagship)
+  libraries   Library[]
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@index([name])
+}
+
+model Library {
+  id              String         @id @default(uuid())
+  campusId        String
+  name            String         // "King Library", "Rentschler Library"
+  displayName     String         // "Edgar W. King Library"
+  shortName       String?        // "King", "Art", "Rentschler"
+  libcalBuildingId String        @unique // LibCal building ID for RESERVATIONS API (e.g., "2047" for King - from Image 2)
+  libcalLocationId String?       // LibCal location ID for HOURS API (e.g., "8113" for King - from Image 1)
+  phone           String?        // Contact phone number (e.g., "513-529-4141")
+  address         String?        // Physical address (e.g., "151 S. Campus Ave, Oxford, OH 45056")
+  isMain          Boolean        @default(false) // True for main library on each campus
+  spaces          LibrarySpace[]
+  campus          Campus         @relation(fields: [campusId], references: [id], onDelete: Cascade)
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+
+  @@index([name])
+  @@index([shortName])
+  @@index([libcalBuildingId])
+  @@index([libcalLocationId])
+}
+
+model LibrarySpace {
+  id              String   @id @default(uuid())
+  libraryId       String
+  name            String   // "Maker Space", "Special Collections & University Archives"
+  displayName     String   // Full display name
+  shortName       String?  // "Makerspace", "Special Collections"
+  libcalLocationId String  @unique // LibCal location ID for hours API (e.g., "11904" for Makerspace, "8424" for Special Collections)
+  libcalBuildingId String? @unique // LibCal building ID for reservations (e.g., "8269" for Makerspace, "10395" for Special Collections)
+  spaceType       String   @default("service") // "service", "collection", "study_area"
+  library         Library  @relation(fields: [libraryId], references: [id], onDelete: Cascade)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([name])
+  @@index([shortName])
+  @@index([libcalLocationId])
+  @@index([libcalBuildingId])
 }

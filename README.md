@@ -1,332 +1,336 @@
 # Miami University Libraries Smart Chatbot
 
-**An intelligent AI assistant that helps students, faculty, and staff navigate library resources and services 24/7.**
+**An intelligent AI assistant helping library users 24/7**
 
 ---
 
-## 🎯 What Does This Chatbot Do?
+## For Library Administrators and Staff
 
-The Smart Chatbot is your virtual library assistant, designed to answer questions and help with common library tasks instantly. It can:
-
-### **Find Resources**
-- Search for books, articles, journals, and e-resources in our catalog
-- Check if materials are available and where to find them
-- Provide call numbers and location information
-
-### **Library Information**
-- **Hours**: Get current and upcoming hours for all Miami University library locations:
-  - King Library (Oxford)
-  - Art & Architecture Library (Oxford)
-  - Rentschler Library (Hamilton)
-  - Gardner-Harvey Library (Middletown)
-- **Room Booking**: Reserve study rooms and spaces
-- **Policies**: Answer questions about borrowing, renewals, fines, printing, and more
-
-### **Course & Subject Help**
-- Find course-specific research guides
-- Connect you with subject librarians for your major or class
-- Recommend databases and resources for your field of study
-
-### **Website Search**
-- Search all library website content (lib.miamioh.edu)
-- Find policies, services, and general information
-- Access guides, tutorials, and FAQs
-
-### **Human Support**
-- Connect you with a real librarian via chat when needed
-- Seamlessly hand off complex questions to human experts
-
-### **Smart Memory**
-- Remembers context from your conversation
-- Uses AI-powered search through library documentation and FAQs
+This chatbot serves as a virtual library assistant, available around the clock to help students, faculty, and staff with common library questions and services.
 
 ---
 
-## ⚠️ Important: What This Chatbot Can and Cannot Answer
+## What Can This Chatbot Do?
 
-### ✅ IN SCOPE - Library Questions ONLY
+The chatbot currently provides **6 core services**:
 
-This chatbot is **strictly limited** to Miami University **LIBRARIES** questions. It can help with:
+### 1. 📅 Library Hours
+Check current and upcoming hours for all Miami University library locations:
+- King Library (Oxford campus)
+- Art & Architecture Library (Oxford campus)  
+- Rentschler Library (Hamilton campus)
+- Gardner-Harvey Library (Middletown campus)
 
-- **Library resources**: Books, articles, databases, research materials
-- **Library services**: Study rooms, hours, borrowing, renewals, printing IN THE LIBRARY
-- **Library spaces**: King Library, Art & Architecture Library, regional libraries
-- **Library staff**: Subject librarians, research consultations
-- **Library policies**: Borrowing policies, fines FOR LIBRARY MATERIALS, access rules
+**Example questions:**
+- "What time does King Library close today?"
+- "Is the Art Library open on Saturday?"
+- "Library hours for next week"
 
-### ❌ OUT OF SCOPE - Cannot Answer
+### 2. 🏢 Study Room Reservations
+Book study rooms and spaces at any library location.
 
-The chatbot **CANNOT** answer questions about:
+**Example questions:**
+- "Book a study room at King Library"
+- "Reserve a room for 2 hours tomorrow"
+- "Available rooms this afternoon"
 
-- ❌ General Miami University (admissions, housing, dining, campus life)
-- ❌ Course content, homework, assignments, test preparation
-- ❌ IT support (Canvas, email, Wi-Fi) unless library-specific
-- ❌ Academic advising, career services, health services
-- ❌ Student organizations, campus events unless library-related
-- ❌ Tuition, financial aid, course registration
+### 3. 📚 Research Guides & Course Support
+Find subject-specific research guides and course-related library resources through LibGuides integration.
 
-**For these questions**, you'll be redirected to the appropriate university service.
+**Example questions:**
+- "Research guide for psychology"
+- "Resources for ENG 111"
+- "Guide for business students"
 
-### 🔒 Information Accuracy Guarantee
+### 4. 👤 Subject Librarian Finder
+Connect users with the right subject librarian based on their academic major, department, or research topic. Covers 710 academic subjects mapped to librarians.
 
-**The chatbot will NEVER make up information**:
-- ✅ All contact information (emails, phone numbers) comes from official APIs
-- ✅ Librarian names and contact details are verified from LibGuides API
-- ✅ If specific information isn't available, general library contact is provided
-- ✅ Phone: (513) 529-4141 | Website: https://www.lib.miamioh.edu
+**Example questions:**
+- "Who is the biology librarian?"
+- "Librarian for computer science"
+- "I need help with engineering research"
 
-See [SCOPE_ENFORCEMENT_REPORT.md](SCOPE_ENFORCEMENT_REPORT.md) for complete details on scope boundaries.
+### 5. 🔍 Library Website Search
+Search the library website (lib.miamioh.edu) for policies, services, and general information.
 
----
+**Example questions:**
+- "How do I renew a book?"
+- "Can I print in the library?"
+- "What are the borrowing policies?"
 
-## 💡 Why Is This Chatbot Special?
+### 6. 💬 Live Chat Handoff
+Seamlessly connect users with a human librarian when needed, including real-time availability checking.
 
-### **Always Available**
-Unlike human staff, the chatbot is available 24/7, including nights, weekends, and holidays. Students can get help whenever they need it.
-
-### **Instant Responses**
-Most questions are answered in seconds. No waiting in queues or for email responses.
-
-### **Multiple Specializations**
-The chatbot uses **8 specialized AI agents** orchestrated by an intelligent hybrid routing system:
-1. **Discovery Agent (Primo)** - Searches the library catalog for books, articles, and e-resources
-2. **Hours & Booking Agent (LibCal)** - Handles library hours and room reservations  
-3. **Subject Guide Agent (LibGuides)** - Finds course-specific research guides
-4. **Subject Librarian Agent** - Routes to appropriate subject librarian based on 710 mapped academic subjects, majors, and departments via MuGuide integration
-5. **Website Search Agent (Google CSE)** - Searches library website content and policies
-6. **Chat Handoff Agent (LibChat)** - Connects to human librarians when needed
-7. **Memory Agent (Weaviate RAG)** - Recalls library documentation and FAQs using AI-powered vector search
-8. **Hybrid Router** - Intelligently selects between fast function calling (simple queries) and multi-agent orchestration (complex queries)
-
-### **Intelligent Routing**
-The **Hybrid Router** analyzes query complexity:
-- **Simple queries** ("What time does King Library close?") → Fast function calling mode (< 2 seconds)
-- **Complex queries** ("I need research help and want to book a room") → Full LangGraph orchestration with multiple agents
-
-The **Meta Router** classifies user intent and enforces strict library scope, automatically redirecting non-library questions.
-
-### **Modern AI Technology**
-Powered by **OpenAI o4-mini** with LangGraph orchestration, the chatbot provides accurate, context-aware responses while maintaining conversation memory and strict scope boundaries.
+**Example questions:**
+- "I need to talk to a librarian"
+- "Connect me with library staff"
+- "Is a librarian available now?"
 
 ---
 
-## 📊 Key Benefits
+## What the Chatbot CANNOT Do
 
-### **For Students**
-- Get research help anytime, anywhere
-- Find materials quickly without navigating complex systems
-- Book study rooms in seconds
-- Learn about library services without reading lengthy pages
+**Currently unavailable or out of scope:**
 
-### **For Faculty & Staff**
-- Quick access to library resources and policies
-- Easy course guide discovery for class assignments
-- Fast answers to common questions
-- More time for librarians to handle complex research needs
+❌ **Catalog search** - Cannot search for books, articles, or e-resources  
+❌ **General university questions** - Only library-related questions  
+❌ **Course content help** - Homework, assignments, or academic advising  
+❌ **IT support** - Canvas, email, or technical issues (unless library-specific)  
+❌ **Campus services** - Housing, dining, financial aid, registration
 
-### **For Library Administration**
-- Reduces repetitive question volume at service desks
-- Provides 24/7 support without additional staffing
-- Tracks common questions to identify service gaps
-- Scales to handle peak periods (start of semester, finals)
-- Maintains consistent, accurate information delivery
-- **Update AI knowledge easily** - Librarians can refine responses and add new information without programming skills (see [Knowledge Management Guide](KNOWLEDGE_MANAGEMENT.md))
-
-### **For IT & Systems**
-- Modern Python-based architecture (FastAPI + LangGraph)
-- Scalable and maintainable codebase
-- Secure OAuth integration with SpringShare products
-- Real-time communication via Socket.IO
-- Comprehensive logging and monitoring
+**For these requests, the bot will redirect users to appropriate services or human librarians.**
 
 ---
 
-## 🚀 Quick Start
+## How It Works (Technical Overview)
 
-### **For End Users**
-Visit the chatbot at: **https://new.lib.miamioh.edu/smartchatbot**
+### System Components
 
-Simply type your question and the chatbot will help you immediately!
+**Backend:**
+- Python 3.13 with FastAPI framework
+- LangGraph for AI orchestration
+- OpenAI o4-mini model
+- PostgreSQL database for conversations and subject mappings
+- Socket.IO for real-time communication
 
-### **For Administrators**
-The chatbot runs on Miami University's server infrastructure. The backend is Python-based and the frontend is a React application.
+**Frontend:**
+- React 19 with Vite 7
+- TailwindCSS 4 + Radix UI components
+- Lucide icons
+- Socket.IO client
 
-**System Requirements:**
-- Backend runs on port 8000 (Python 3.12, FastAPI, LangGraph)
-- Frontend runs on port 5173 (React 19, Vite 7)
-- PostgreSQL database for conversations and MuGuide subject mappings
-- Weaviate Cloud vector database for RAG memory (1,568 Q&A pairs)
-- OpenAI API access (o4-mini model)
-- SpringShare OAuth (LibCal, LibGuides, LibAnswers)
-- Google Custom Search Engine API
+**External APIs:**
+- **LibCal API** - Library hours and room booking
+- **LibGuides API** - Research guides
+- **LibChat API** - Live chat handoff and availability
+- **Google Custom Search** - Library website search
+- **MuGuide API** - Subject-to-librarian mapping (710 subjects)
 
-### **For Developers**
-See the [Developer Guide](docs/architecture/02-DEVELOPER-GUIDE.md) for detailed technical documentation and setup instructions.
+### Architecture
 
-### **For Library Managers**
-- **Update Wrong Answers**: See [Weaviate Record Management](docs/weaviate-rag/03-RECORD-MANAGEMENT.md)
-- **Add New Q&A**: Use `/ai-core/scripts/update_rag_facts.py`
-- **View Usage Analytics**: Run `/ai-core/scripts/analyze_rag_usage.py`
-- **Process New Year Data**: Follow [Process New Year Data Guide](docs/data-management/02-PROCESS-NEW-YEAR-DATA.md)
+The chatbot uses **5 specialized agents** orchestrated by an intelligent routing system:
 
----
+1. **LibCal Agent** - Handles hours and room reservations
+2. **LibGuides Agent** - Finds research guides
+3. **Subject Librarian Agent** - Routes to appropriate librarian
+4. **Website Search Agent** - Searches library website
+5. **LibChat Agent** - Connects to human librarians
 
-## 🔐 Security & Privacy
-
-- **Data Protection**: All conversations are stored securely in our PostgreSQL database
-- **API Security**: Uses OAuth 2.0 for SpringShare API access
-- **HTTPS**: All communication is encrypted
-- **Privacy**: Conversations are used only for service improvement
-- **Compliance**: Follows university data policies and FERPA guidelines
+The **Meta Router** analyzes user questions and directs them to the appropriate agent(s).
 
 ---
 
-## 📈 Performance Metrics
+## Accessing the Chatbot
 
-### **Response Time**
-- Simple queries: < 2 seconds
-- Complex queries: 3-5 seconds
-- Multi-agent coordination: 5-8 seconds
+**Production URL:** https://new.lib.miamioh.edu/smartchatbot
 
-### **Accuracy**
-- Library hours: 99%+ accuracy (direct API integration)
-- Catalog search: Matches Primo search results
-- Subject librarian matching: 85%+ accuracy with fuzzy matching across 710 subjects
-- Contact information: 100% verified (NEVER makes up emails, phone numbers, or names)
-- Scope enforcement: Automatically detects and redirects out-of-scope questions
-- Website search: Powered by Google Custom Search Engine
+The chatbot is embedded on library web pages and available 24/7.
 
-### **Availability**
-- Uptime target: 99.9%
+---
+
+## For Library Staff: Using the Chatbot Effectively
+
+### When to Let the Bot Handle It
+- Standard hours questions
+- Room booking requests
+- Finding research guides
+- Subject librarian contact info
+- Common policy questions
+
+### When to Escalate to Human Librarians
+- Complex research consultations
+- Book/article searches (catalog search temporarily unavailable)
+- Detailed policy interpretations
+- Technical issues with library accounts
+- Complaints or sensitive situations
+
+---
+
+## Updating Bot Knowledge (For Library Managers)
+
+### Fixing Incorrect Answers: RAG Correction Pool
+
+**NEW WORKFLOW**: Weaviate database now serves as a **correction pool** - a tool for fixing bot mistakes rather than a primary information source.
+
+**When to use:**
+- The bot gives an incorrect answer about library policies
+- You want to correct outdated information
+- You need to add an exception or special case
+
+**How it works:**
+1. Identify an incorrect bot response
+2. Create a corrected question-answer pair
+3. Add it to Weaviate using the correction script
+4. The bot will learn the correction and use it in future responses
+
+**Documentation:** See `/docs/05-WEAVIATE-RAG-CORRECTION-POOL.md` for detailed workflow
+
+**Scripts available:**
+- `add_correction_to_rag.py` - Add corrected Q&A pairs
+- `weaviate_cleanup.py` - Clear all corrections (reset)
+- `verify_correction.py` - Test if correction is working
+
+**Important:** Contact IT staff or developers to run these scripts.
+
+---
+
+## For IT Staff and Developers
+
+### Server Information
+- **Backend:** Runs on port 8000
+- **Frontend:** Runs on port 5173 (development) or served via web server (production)
+- **Database:** PostgreSQL at ulblwebt04.lib.miamioh.edu
+- **Process Management:** Uvicorn with auto-reload
+
+### Quick Start Commands
+
+```bash
+# Start both backend and frontend
+./local-auto-start.sh
+
+# Start backend only
+cd ai-core
+source venv/bin/activate
+python -m uvicorn src.main:app --reload --port 8000
+
+# Start frontend only
+cd client
+npm run dev
+```
+
+### Comprehensive Developer Documentation
+
+See `/docs/` folder for complete technical documentation:
+
+- **01-SYSTEM-OVERVIEW.md** - Architecture and data flow
+- **02-SETUP-AND-DEPLOYMENT.md** - Installation and deployment
+- **03-DATABASE-SETUP.md** - PostgreSQL and Prisma configuration
+- **04-API-INTEGRATIONS.md** - All API keys and configurations
+- **05-WEAVIATE-RAG-CORRECTION-POOL.md** - RAG correction workflow
+- **06-MAINTENANCE-GUIDE.md** - Troubleshooting and updates
+- **07-ENVIRONMENT-VARIABLES.md** - Complete .env reference
+
+### Environment Variables
+
+All API keys and configuration are stored in `.env` file. See `.env.example` for required variables.
+
+**Key variables:**
+- `OPENAI_API_KEY` - OpenAI API access
+- `DATABASE_URL` - PostgreSQL connection
+- `WEAVIATE_HOST` / `WEAVIATE_API_KEY` - Vector database
+- `LIBCAL_*` - LibCal API credentials
+- `LIBGUIDES_*` - LibGuides API credentials
+- `LIBANSWERS_*` - LibChat API credentials
+- `GOOGLE_CSE_*` - Google Custom Search
+
+---
+
+## Security & Privacy
+
+- All conversations stored securely in PostgreSQL
+- API access via OAuth 2.0 (SpringShare products)
+- HTTPS encryption for all communication
+- Follows FERPA and university data policies
+- No personally identifiable information shared externally
+
+---
+
+## Performance Metrics
+
+**Response Time:**
+- Simple questions: < 2 seconds
+- Complex questions: 3-5 seconds
+
+**Accuracy:**
+- Library hours: 99%+ (direct API)
+- Room booking: 99%+ (direct API)
+- Subject librarian matching: 85%+
+- Contact information: 100% verified (never makes up emails/phones)
+
+**Availability:**
 - 24/7 operation
+- 99.9% uptime target
 - Auto-restart on errors
-- Health monitoring and alerts
 
 ---
 
-## 🛠️ System Architecture
+## Troubleshooting & Support
 
-### **Technology Stack**
-- **Backend**: Python 3.12, FastAPI, LangGraph, Python-SocketIO, Uvicorn
-- **AI**: OpenAI o4-mini with hybrid routing (function calling + LangGraph orchestration)
-- **Frontend**: React 19, Vite 7, Chakra UI, Socket.IO Client
-- **Database**: PostgreSQL (conversations + 710 subject mappings), Weaviate (vector RAG)
-- **APIs**: Primo, LibCal, LibGuides, LibAnswers, Google CSE, MuGuide
-- **Features**: Hybrid routing, strict scope enforcement, contact validation, fuzzy subject matching, URL validation
+### Common Issues
 
-### **Infrastructure**
-- **Development**: Local development on localhost (auto-start script provided)
-- **Production**: Deployed at https://new.lib.miamioh.edu
-- **Environment**: Ubuntu server with Python virtual environment
-- **Process Manager**: Uvicorn with auto-reload and health monitoring
-- **Communication**: WebSocket via Socket.IO at `/smartchatbot/socket.io`
+**Bot not responding:**
+1. Check if backend is running (port 8000)
+2. Check frontend connection (port 5173 or web server)
+3. Verify DATABASE_URL in .env
+4. Check API keys are valid
 
----
+**Incorrect hours showing:**
+- LibCal API may be temporarily unavailable
+- Check LibCal credentials in .env
+- Verify LibCal location IDs in database
 
-## 📞 Support & Contact
+**Bot can't find subject librarian:**
+- MuGuide API may be down
+- Check subject mappings in PostgreSQL database
+- Verify LibGuides API credentials
 
-### **For Users**
-- If the chatbot can't help, it will connect you with a human librarian
-- Or contact library directly: https://www.lib.miamioh.edu/research/research-support/ask/
+**For technical issues:**
+- Contact IT department
+- Review logs in backend console
+- Check `/docs/06-MAINTENANCE-GUIDE.md`
 
-### **For Technical Issues**
-- Report bugs via GitHub Issues
+### Getting Help
 
-### **For Feature Requests**
-- Submit ideas to library administration
-- Technical suggestions via GitHub Issues
-- Librarian feedback via internal channels
+**For Library Staff:**
+- Report issues to library IT coordinator
+- Suggest improvements via internal channels
 
----
-
-## 📚 Additional Resources
-
-### **Documentation**
-All comprehensive documentation has been organized in the `/docs/` folder:
-
-- **[Documentation Index](docs/README.md)** - Complete documentation navigation
-- **[Weaviate RAG System](docs/weaviate-rag/)** - Knowledge base management, record cleanup, fact correction
-- **[Data Management](docs/data-management/)** - Processing transcripts, adding new year data, optimization
-- **[Architecture](docs/architecture/)** - System design, developer guide, project summary
-- **[Knowledge Management](docs/knowledge-management/)** - Guide routing, scope enforcement, integration details
-
-### **API & System**
-- **API Documentation**: Visit `/docs` endpoint when backend is running
-- **Health Check**: Visit `/health` for system status
-- **Project Repository**: [GitHub repository link]
+**For Developers:**
+- Review documentation in `/docs/`
+- Check GitHub repository for updates
+- Contact development team
 
 ---
 
-## 🎓 About Miami University Libraries
+## Version Information
+
+**Current Version:** 3.0.0  
+**Last Updated:** December 16, 2025  
+**Status:** Production
+
+**What's New in Version 3.0:**
+
+✅ **Simplified Architecture**
+- Removed catalog search (temporarily unavailable)
+- Streamlined to 5 core agents
+- Clearer scope boundaries
+
+✅ **RAG Repurposed as Correction Pool**
+- Weaviate now used for fixing bot mistakes
+- Not a primary information source
+- Librarians can add corrections easily
+
+✅ **Improved Documentation**
+- Comprehensive developer guides in `/docs/`
+- Administrator-focused README
+- Clear maintenance procedures
+
+✅ **Enhanced Multi-Campus Support**
+- All 4 library locations fully supported
+- Campus-aware hours and booking
+- Library location database with contact info
+
+---
+
+## About Miami University Libraries
 
 Miami University Libraries serve the academic community across three campuses (Oxford, Hamilton, and Middletown) with comprehensive collections, services, and technology. This chatbot represents our commitment to innovative, accessible, and student-centered library services.
 
----
-
-## ⚙️ Version Information
-
-- **Current Version**: 2.3.0
-- **Last Updated**: December 9, 2025
-- **Platform**: Python 3.12 AI-Core with React 19 Frontend
-- **AI Model**: OpenAI o4-mini
-- **Routing**: Hybrid Router (function calling + LangGraph)
-- **Agents**: 8 specialized agents (7 domain agents + hybrid router)
-- **Subject Mappings**: 710 subjects, 587 LibGuides, 586 majors
-- **RAG Database**: Weaviate Cloud with 1,568 Q&A pairs
-- **Multi-Campus Support**: Oxford, Hamilton, and Middletown libraries
-- **Status**: Production-ready
-
-### **What's New in Version 2.3**
-
-#### ✅ Multi-Campus Library Support (NEW)
-- **Full support for all Miami University campuses**: Oxford, Hamilton, and Middletown
-- **Building-specific room booking**: King Library, Art & Architecture Library, Rentschler Library, Gardner-Harvey Library
-- **Campus-aware hours**: Each library's hours accessible independently
-- **Environment variables**: Organized by campus for easy configuration
-
-#### ✅ Enhanced LibAnswers Integration (NEW)
-- **Ask Us Chat Service hours API**: Check human librarian availability in real-time
-- **LIBCAL_ASKUS_ID**: Dedicated service ID for chat availability
-- **LibAnswers OAuth**: Secure integration with LibAnswers API
-
-#### ✅ Improved MuGuide Subject Routing
-- **710 academic subjects mapped** to librarians and LibGuides
-- **Fuzzy matching**: Handles variations in subject names
-- **Database integration**: Subject mappings stored in PostgreSQL
-
-### **Previous Version (2.2)**
-
-#### ✅ Weaviate RAG System with Record Management
-- **1,568 Q&A pairs** loaded into Weaviate Cloud vector database
-- **Automatic ID tracking** - Every RAG query stores Weaviate record IDs
-- **Find problematic records** - Search by low confidence or specific queries
-- **Safe deletion tools** - Preview and delete bad records with confirmation
-- **Fact grounding** - Ensures factual accuracy with confidence thresholds
-- **Usage analytics** - Track RAG frequency and performance metrics
-
-#### ✅ Organized Documentation Structure (NEW)
-- All documentation reorganized in `/docs/` with feature-based folders:
-  - `weaviate-rag/` - Knowledge base management
-  - `data-management/` - Transcript processing and optimization
-  - `architecture/` - System design and developer guides
-  - `knowledge-management/` - Guide routing and scope enforcement
-- Numbered files for easy navigation (01-, 02-, etc.)
-- Quick reference READMEs in each folder
-- Removed all test files and outdated documentation
-
-#### ✅ Enhanced Data Management
-- **Process new year data** - Automated script for adding 2026+ transcripts
-- **Vector optimization** - Improved semantic search performance
-- **PII removal** - Automated privacy protection in transcripts
-- **Deduplication** - Removes duplicate Q&A pairs
-
-#### ✅ Previous Features (Version 2.1)
-- Hybrid routing system (function calling + LangGraph)
-- Strict scope enforcement (libraries only)
-- MuGuide integration (710 subjects)
-- URL and contact information validation
-- Enhanced performance (< 2s for simple queries)
+**Contact Information:**
+- **Phone:** (513) 529-4141
+- **Website:** https://www.lib.miamioh.edu
+- **Ask Us:** https://www.lib.miamioh.edu/research/research-support/ask/
 
 ---
 
-**Built with ❤️ by Meng Qu, Miami University Libraries - Oxford, OH**
+**Built with ❤️ by Meng Qu, Miami University Libraries**

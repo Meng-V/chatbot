@@ -221,6 +221,54 @@ def get_limitation_response(limitation_type: str) -> str:
     return limitation.get("response", "I can't help with that directly. Please contact a librarian at (513) 529-4141.")
 
 
+async def get_limitation_response_with_availability(limitation_type: str) -> str:
+    """Get the appropriate response with real-time librarian availability check.
+    
+    For limitations that redirect to human help, this will check if librarians
+    are currently available and provide specific guidance on when/how to get help.
+    """
+    from src.api.askus_hours import get_askus_hours_for_date
+    
+    limitation = LIMITATIONS.get(limitation_type, {})
+    base_response = limitation.get("response", "I can't help with that directly.")
+    redirect_to = limitation.get("redirect_to", "")
+    
+    # Only check availability for human_help redirects
+    if redirect_to != "human_help":
+        return base_response
+    
+    try:
+        hours_data = await get_askus_hours_for_date()
+        is_open = hours_data.get("is_open", False)
+        current_period = hours_data.get("current_period")
+        hours_list = hours_data.get("hours", [])
+        
+        if is_open and current_period:
+            availability_info = (
+                f"\n\n✅ **Librarians are available NOW** (until {current_period['close']})\n"
+                f"Chat with a librarian: https://www.lib.miamioh.edu/research/research-support/ask/"
+            )
+        elif hours_list and len(hours_list) > 0:
+            next_open = hours_list[0].get("from")
+            next_close = hours_list[0].get("to")
+            availability_info = (
+                f"\n\n⏰ **Live chat is currently closed**\n"
+                f"Chat hours today: {next_open} - {next_close}\n"
+                f"Submit a ticket for off-hours help: https://www.lib.miamioh.edu/research/research-support/ask/"
+            )
+        else:
+            availability_info = (
+                f"\n\n⏰ **Live chat is not available today**\n"
+                f"Submit a ticket: https://www.lib.miamioh.edu/research/research-support/ask/\n"
+                f"Or call us at (513) 529-4141"
+            )
+        
+        return base_response + availability_info
+    
+    except Exception as e:
+        return base_response + "\n\nContact us at (513) 529-4141 for assistance."
+
+
 # Quick check for common limitations
 def is_account_action(message: str) -> bool:
     """Check if message is about patron account actions (renew, holds, fines)."""

@@ -18,7 +18,6 @@ from src.config.scope_definition import (
     OFFICIAL_LIBRARY_CONTACTS
 )
 # Comprehensive multi-tool agents
-# from src.agents.primo_multi_tool_agent import PrimoAgent  # DISABLED - Catalog search temporarily unavailable
 from src.agents.libcal_comprehensive_agent import LibCalComprehensiveAgent
 from src.agents.libguide_comprehensive_agent import LibGuideComprehensiveAgent
 from src.agents.google_site_comprehensive_agent import GoogleSiteComprehensiveAgent
@@ -52,6 +51,7 @@ from src.utils.query_understanding import (
 from src.config.capability_scope import (
     detect_limitation_request,
     get_limitation_response,
+    get_limitation_response_with_availability,
     is_account_action
 )
 
@@ -66,18 +66,18 @@ if not OPENAI_MODEL.startswith("o"):
 llm = ChatOpenAI(**llm_kwargs)
 
 # ============================================================================
-# AVAILABLE INFORMATION SOURCES (Updated Dec 2025)
+# AVAILABLE INFORMATION SOURCES (Version 3.0 - Dec 2025)
 # ============================================================================
-# ACTIVE AGENTS:
+# ACTIVE AGENTS (6 core capabilities):
 #   - LibGuide (SpringShare): Subject guides, research guides, MyGuide
 #   - LibCal (SpringShare): Library hours, room reservations
 #   - LibChat (SpringShare): Human librarian handoff
 #   - Google Site Search: Library website search
 #   - Subject Librarian Agent: Find librarians by subject
+#   - Transcript RAG: Correction pool only (fixes bot mistakes)
 #
-# TEMPORARILY DISABLED:
-#   - Primo Agent: Catalog search (books, articles, e-resources)
-#   - Transcript RAG: Knowledge base (Weaviate disabled)
+# ARCHIVED (not in active use):
+#   - Primo Agent: Catalog search (see /archived/primo/)
 #
 # IMPORTANT: Only information from active agents is reliable.
 # Do NOT generate or guess information not provided by agents.
@@ -90,13 +90,13 @@ CRITICAL SCOPE RULE:
 - If question is about general Miami University, admissions, courses, housing, dining, campus life, or non-library services, respond with: out_of_scope
 - If question is about homework help, assignments, or academic content, respond with: out_of_scope
 
-🚨 SERVICE LIMITATION - CATALOG SEARCH DISABLED 🚨
+🚨 CATALOG SEARCH NOT AVAILABLE 🚨
 The following requests MUST be classified as "human_help" (NOT discovery_search):
 - Searching for books, articles, journals, e-resources
 - Finding specific publications or call numbers
 - "I need articles about...", "Find me books on...", "Do you have..."
 - Any request to search the library catalog or databases
-REASON: Catalog search service is temporarily unavailable. Redirect users to human librarians.
+REASON: Catalog search is not available. Redirect users to human librarians for book/article searches.
 
 IN-SCOPE LIBRARY QUESTIONS - Classify into ONE of these categories:
 
@@ -293,15 +293,7 @@ async def classify_intent_node(state: AgentState) -> AgentState:
         logger.log("👋 [Meta Router] Detected greeting, responding directly")
         state["classified_intent"] = "greeting"
         state["selected_agents"] = []
-        state["final_answer"] = (
-            "Hello! I'm the Miami University Libraries assistant. 📚\n\n"
-            "I can help you with:\n"
-            "• **Library hours and study room reservations**\n"
-            "• **Research guides and subject librarians**\n"
-            "• **Library services and policies**\n\n"
-            "For help finding books or articles, I can connect you with a librarian.\n\n"
-            "What can I help you with today?"
-        )
+        state["_needs_availability_check"] = True  # Flag to check availability in greeting
         state["_logger"] = logger
         return state
     
@@ -314,7 +306,7 @@ async def classify_intent_node(state: AgentState) -> AgentState:
         logger.log(f"💡 [Meta Router] Using query understanding hint: {hint}")
         intent = hint
     elif hint == "discovery_search":
-        # Redirect discovery_search to human_help (catalog search disabled)
+        # Redirect discovery_search to human_help (no catalog search available)
         logger.log(f"💡 [Meta Router] Query hint was discovery_search -> redirecting to human_help")
         intent = "human_help"
         state["_catalog_search_requested"] = True
@@ -339,21 +331,19 @@ async def classify_intent_node(state: AgentState) -> AgentState:
         logger.log("🚫 [Meta Router] Question is OUT OF SCOPE - will redirect to appropriate service")
         return state
     
-    # Map intent to agents (multi-tool agents can handle sub-routing internally)
-    # ⚠️ TEMPORARILY DISABLED: primo (catalog search), transcript_rag (Weaviate)
-    # Only using: LibGuide, LibCal, LibChat, Google Site Search, Subject Librarian
+    # Map intent to agents (6 core capabilities)
+    # Note: transcript_rag is available for correction pool but not used in routing
     agent_mapping = {
-        # "discovery_search": ["primo"],  # DISABLED - Primo catalog search temporarily unavailable
-        "discovery_search": ["libchat"],  # Redirect to human librarian for catalog searches
-        "subject_librarian": ["subject_librarian"],  # MyGuide + LibGuides API for subject-to-librarian routing
-        "course_subject_help": ["libguide"],  # LibGuide only (no RAG)
-        "booking_or_hours": ["libcal"],  # LibCal agent will route to hours/rooms/reservation tool
-        "policy_or_service": ["google_site"],  # Google site search only (no RAG)
-        "human_help": ["libchat"],
-        "general_question": ["google_site"]  # Google site search only (no RAG)
+        "discovery_search": ["libchat"],  # Redirect to human librarian (no catalog search)
+        "subject_librarian": ["subject_librarian"],  # MyGuide + LibGuides API
+        "course_subject_help": ["libguide"],  # Research guides
+        "booking_or_hours": ["libcal"],  # Hours and room booking
+        "policy_or_service": ["google_site"],  # Website search
+        "human_help": ["libchat"],  # Live chat handoff
+        "general_question": ["google_site"]  # Website search
     }
     
-    # Default to google_site if intent not found (transcript_rag is disabled)
+    # Default to google_site for unknown intents
     agents = agent_mapping.get(intent, ["google_site"])
     
     # 🎯 CRITICAL: Pre-filter agents for factual queries to prevent hallucinations
@@ -374,7 +364,6 @@ async def classify_intent_node(state: AgentState) -> AgentState:
     return state
 
 # Initialize comprehensive multi-tool agent instances
-# primo_agent = PrimoAgent()  # DISABLED - Catalog search temporarily unavailable
 libcal_agent = LibCalComprehensiveAgent()
 libguide_agent = LibGuideComprehensiveAgent()
 google_site_agent = GoogleSiteComprehensiveAgent()
@@ -395,18 +384,14 @@ async def execute_agents_node(state: AgentState) -> AgentState:
     
     logger.log(f"⚡ [Orchestrator] Executing {len(agents)} agent(s) in parallel")
     
-    # Map agent names to agent instances (comprehensive multi-tool) or functions (legacy)
-    # ⚠️ PRIMO DISABLED - Catalog search temporarily unavailable (Dec 2025)
+    # Map agent names to agent instances
     agent_map = {
-        # "primo": primo_agent,  # DISABLED - Catalog search
         "libcal": libcal_agent,
         "libguide": libguide_agent,
         "google_site": google_site_agent,
-        # Subject-to-librarian routing agent
         "subject_librarian": find_subject_librarian_query,
-        # Legacy function-based agents
         "libchat": libchat_handoff,
-        "transcript_rag": transcript_rag_query
+        "transcript_rag": transcript_rag_query  # Correction pool only
     }
     
     import asyncio
@@ -487,18 +472,73 @@ async def synthesize_answer_node(state: AgentState) -> AgentState:
     
     logger.log("🤖 [Synthesizer] Generating final answer", {"history_messages": len(history)})
     
-    # Handle pre-answered queries (greetings, clarification responses)
-    if state.get("final_answer") and intent in ["greeting", None]:
+    # Handle greetings with availability check
+    if intent == "greeting" and state.get("_needs_availability_check"):
+        logger.log("👋 [Synthesizer] Generating greeting with librarian availability")
+        from src.api.askus_hours import get_askus_hours_for_date
+        
+        try:
+            hours_data = await get_askus_hours_for_date()
+            is_open = hours_data.get("is_open", False)
+            current_period = hours_data.get("current_period")
+            hours_list = hours_data.get("hours", [])
+            
+            base_greeting = (
+                "Hello! I'm the Miami University Libraries assistant. 📚\n\n"
+                "I can help you with:\n"
+                "• **Library hours and study room reservations**\n"
+                "• **Research guides and subject librarians**\n"
+                "• **Library services and policies**\n\n"
+            )
+            
+            if is_open and current_period:
+                availability_msg = (
+                    f"✅ **Librarians are available NOW** (until {current_period['close']})\n"
+                    f"For help finding books or articles, you can chat with a librarian live.\n\n"
+                )
+            elif hours_list and len(hours_list) > 0:
+                next_open = hours_list[0].get("from")
+                next_close = hours_list[0].get("to")
+                availability_msg = (
+                    f"⏰ Live chat with librarians: {next_open} - {next_close} today\n"
+                    f"For help finding books or articles, submit a ticket or chat during business hours.\n\n"
+                )
+            else:
+                availability_msg = (
+                    "For help finding books or articles, I can connect you with a librarian.\n\n"
+                )
+            
+            state["final_answer"] = base_greeting + availability_msg + "What can I help you with today?"
+        except Exception as e:
+            logger.log(f"⚠️ [Synthesizer] Error checking availability: {str(e)}")
+            state["final_answer"] = (
+                "Hello! I'm the Miami University Libraries assistant. 📚\n\n"
+                "I can help you with:\n"
+                "• **Library hours and study room reservations**\n"
+                "• **Research guides and subject librarians**\n"
+                "• **Library services and policies**\n\n"
+                "For help finding books or articles, I can connect you with a librarian.\n\n"
+                "What can I help you with today?"
+            )
+        return state
+    
+    # Handle pre-answered queries (clarification responses)
+    if state.get("final_answer") and intent is None:
         logger.log("✅ [Synthesizer] Using pre-generated answer")
         return state
     
     # Handle capability limitations (things the bot cannot do)
     if intent == "capability_limitation" or state.get("_limitation_response"):
         limitation_type = state.get("_limitation_type", "unknown")
-        limitation_response = state.get("_limitation_response", 
-            "I can't help with that directly. Please contact a librarian at (513) 529-4141 or visit https://www.lib.miamioh.edu/research/research-support/ask/")
-        
         logger.log(f"🚫 [Synthesizer] Responding to capability limitation: {limitation_type}")
+        
+        # Get availability-aware response for limitations that redirect to human help
+        try:
+            limitation_response = await get_limitation_response_with_availability(limitation_type)
+        except Exception as e:
+            logger.log(f"⚠️ [Synthesizer] Error getting availability-aware response: {str(e)}")
+            limitation_response = state.get("_limitation_response", 
+                "I can't help with that directly. Please contact a librarian at (513) 529-4141 or visit https://www.lib.miamioh.edu/research/research-support/ask/")
         
         # Validate URLs before returning
         validated_msg, had_invalid_urls = await validate_and_clean_response(
@@ -509,19 +549,52 @@ async def synthesize_answer_node(state: AgentState) -> AgentState:
         state["needs_human"] = True
         return state
     
-    # Handle catalog search requests (temporarily unavailable)
+    # Handle catalog search requests (not available)
     # Triggered by: discovery_search intent OR _catalog_search_requested flag from regex pattern
     if intent == "discovery_search" or state.get("_catalog_search_requested"):
-        logger.log("📚 [Synthesizer] Catalog search requested - service temporarily unavailable")
-        catalog_unavailable_msg = """I'd love to help you find those materials! However, our catalog search feature is currently unavailable.
+        logger.log("📚 [Synthesizer] Catalog search requested - service not available")
+        from src.api.askus_hours import get_askus_hours_for_date
+        
+        base_msg = """I'd love to help you find those materials! However, our catalog search feature is currently unavailable.
 
 **To search for books, articles, and e-resources, please:**
 
 • **Use our online catalog directly**: https://www.lib.miamioh.edu/
-• **Chat with a librarian or submit a ticket**: https://www.lib.miamioh.edu/research/research-support/ask/
 • **Call us**: (513) 529-4141
 
-Our librarians are experts at finding exactly what you need - they can help with specific article requirements, page counts, and topic searches. Would you like me to connect you with a librarian now?"""
+"""
+        
+        try:
+            hours_data = await get_askus_hours_for_date()
+            is_open = hours_data.get("is_open", False)
+            current_period = hours_data.get("current_period")
+            hours_list = hours_data.get("hours", [])
+            
+            if is_open and current_period:
+                availability_msg = (
+                    f"✅ **Librarians are available NOW** (until {current_period['close']})\n"
+                    f"Our librarians are experts at finding exactly what you need - they can help with specific article requirements, page counts, and topic searches.\n\n"
+                    f"**Chat with a librarian**: https://www.lib.miamioh.edu/research/research-support/ask/"
+                )
+            elif hours_list and len(hours_list) > 0:
+                next_open = hours_list[0].get("from")
+                next_close = hours_list[0].get("to")
+                availability_msg = (
+                    f"⏰ **Live chat hours today**: {next_open} - {next_close}\n"
+                    f"Our librarians are experts at finding exactly what you need.\n\n"
+                    f"**Submit a ticket for off-hours help**: https://www.lib.miamioh.edu/research/research-support/ask/\n"
+                    f"Or come back during chat hours to talk to a librarian live."
+                )
+            else:
+                availability_msg = (
+                    "**Submit a ticket** and our librarians will help you find the materials you need:\n"
+                    "https://www.lib.miamioh.edu/research/research-support/ask/"
+                )
+            
+            catalog_unavailable_msg = base_msg + availability_msg
+        except Exception as e:
+            logger.log(f"⚠️ [Synthesizer] Error checking availability: {str(e)}")
+            catalog_unavailable_msg = base_msg + "• **Chat with a librarian or submit a ticket**: https://www.lib.miamioh.edu/research/research-support/ask/"
         
         # Validate URLs before returning
         validated_msg, had_invalid_urls = await validate_and_clean_response(
@@ -580,8 +653,7 @@ Is there anything library-related I can help you with?"""
         "subject_librarian": 1, # API: Subject librarian routing
         "libchat": 1,         # API: Chat handoff
         "google_site": 2,      # Website search (LOWER PRIORITY - fallback only)
-        "transcript_rag": 3,  # RAG: Curated knowledge base (HIGHER PRIORITY)
-        "primo": 3,           # API: Catalog search
+        "transcript_rag": 3,  # RAG: Correction pool for fixing mistakes
     }
     
     # Sort responses by priority
