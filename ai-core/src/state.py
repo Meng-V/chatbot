@@ -34,6 +34,10 @@ class AgentState(MessagesState):
     _live_chat_hours_query: bool = False
     _personal_account_query: bool = False  # Flag for live chat/Ask Us hours query
     out_of_scope: bool = False  # Flag for out-of-scope questions
+    _policy_type: Optional[str] = None  # Type of policy question (loan_periods, etc.)
+    _policy_url: Optional[str] = None  # Authoritative URL for policy question
+    _research_handoff_response: Optional[str] = None  # Pre-built research handoff response
+    _research_pattern_type: Optional[str] = None  # Type of research question pattern
 
 # Intent types based on screenshot
 IntentType = Literal[

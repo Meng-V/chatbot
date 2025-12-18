@@ -37,6 +37,15 @@ async def _get_building_id_from_db(building_name: str) -> str:
     # Fallback to default
     return await location_service.get_default_building_id()
 
+async def _validate_library_for_rooms(building_name: str) -> tuple[bool, str, str]:
+    """Validate if library name is valid for room reservations.
+    
+    Returns:
+        Tuple of (is_valid, building_id_or_error_message, display_name)
+    """
+    location_service = get_location_service()
+    return await location_service.validate_library_for_rooms(building_name)
+
 async def _get_location_id_from_db(building_id: str) -> Optional[str]:
     """Get location ID from database by building ID."""
     location_service = get_location_service()
@@ -653,8 +662,17 @@ class LibCalEnhancedAvailabilityTool(Tool):
     ) -> Dict[str, Any]:
         """Check availability with capacity range fallback."""
         try:
+            # Validate library name FIRST
+            is_valid, result, display_name = await _validate_library_for_rooms(building)
+            if not is_valid:
+                return {
+                    "tool": self.name,
+                    "success": False,
+                    "text": result  # Error message with valid options
+                }
+            
             if log_callback:
-                log_callback(f"🔍 [LibCal Enhanced Availability Tool] Searching {building} building")
+                log_callback(f"🔍 [LibCal Enhanced Availability Tool] Searching {display_name}")
             
             # Validate required parameters
             if not all([date, start_time, end_time]):
@@ -811,6 +829,18 @@ class LibCalComprehensiveReservationTool(Tool):
     ) -> Dict[str, Any]:
         """Book a room with comprehensive validation."""
         try:
+            # Validate library name FIRST before collecting other details
+            is_valid, result, display_name = await _validate_library_for_rooms(building)
+            if not is_valid:
+                return {
+                    "tool": self.name,
+                    "success": False,
+                    "text": result  # Error message with valid options
+                }
+            
+            if log_callback:
+                log_callback(f"📍 [Library Validated] {display_name}")
+            
             # Validate all required parameters
             missing_params = []
             if not first_name:

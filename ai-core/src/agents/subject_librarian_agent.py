@@ -17,6 +17,7 @@ from typing import Dict, Any, List
 from pathlib import Path
 from dotenv import load_dotenv
 from prisma import Prisma
+from src.database.prisma_client import get_prisma_client
 from src.tools.subject_matcher import match_subject
 from src.utils.logger import AgentLogger
 
@@ -180,11 +181,11 @@ class SubjectLibrarianAgent:
             "api_errors": []
         }
         
-        # Create DB connection if not provided
-        db_provided = db is not None
-        if not db_provided:
-            db = Prisma()
-            await db.connect()
+        # Use singleton Prisma client to avoid connection pool exhaustion
+        if db is None:
+            db = get_prisma_client()
+            if not db.is_connected():
+                await db.connect()
         
         try:
             # Step 1: Match subject using MyGuide data (from Prisma DB)
@@ -269,10 +270,7 @@ class SubjectLibrarianAgent:
             self.logger.log(traceback.format_exc())
             result["error"] = str(e)
         
-        finally:
-            # Only disconnect if we created the connection
-            if not db_provided:
-                await db.disconnect()
+        # Note: Don't disconnect singleton client
         
         return result
     

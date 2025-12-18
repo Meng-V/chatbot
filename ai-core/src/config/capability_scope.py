@@ -85,9 +85,9 @@ LIMITATIONS = {
     },
     "interlibrary_loan": {
         "description": "Request or check status of interlibrary loans (ILL)",
-        "reason": "No integration with ILL system",
-        "redirect_to": "human_help",
-        "response": "I can't manage ILL requests. Please visit https://lib.miamioh.edu/use/borrow/ill/ or contact a librarian for ILL help.",
+        "reason": "No integration with ILL system - but can provide ILL portal links",
+        "redirect_to": "ill_info",  # Special handling for campus-specific ILL
+        "response": "I can't submit ILL requests directly, but I can show you how to request items from other libraries.",
     },
     "pay_fines": {
         "description": "Pay library fines or fees",
@@ -147,6 +147,10 @@ LIMITATION_PATTERNS = {
         r'\b(ill|interlibrary\s*loan)\b',
         r'\b(request|get|order)\s*(a)?\s*book.*another\s*library\b',
         r'\bborrow.*other\s*librar',
+        r'\b(book|article|item)\s*(not\s*)?(available|held|owned)\b',
+        r'\bnot\s*(available|held)\s*(at|by)\s*(miami|the\s*library)\b',
+        r'\bget\s*(a\s*)?(book|article)\s*from\s*(another|other|different)\s*library\b',
+        r'\bhow\s*(do|can)\s*i\s*(get|borrow|request)\b.*\bnot\s*(at|in|available)\b',
     ],
     "pay_fines": [
         r'\b(pay|paying)\s*(my|library|a)?\s*(fines?|fees?|balance)\b',
@@ -267,6 +271,196 @@ async def get_limitation_response_with_availability(limitation_type: str) -> str
     
     except Exception as e:
         return base_response + "\n\nContact us at (513) 529-4141 for assistance."
+
+
+# ============================================================================
+# ILL (INTERLIBRARY LOAN) CAMPUS-SPECIFIC URLS
+# ============================================================================
+
+ILL_URLS = {
+    "main": {
+        "name": "Oxford (Main Campus)",
+        "url": "https://www.lib.miamioh.edu/use/borrow/ill/",
+        "description": "King Library and main Oxford campus",
+    },
+    "hamilton": {
+        "name": "Hamilton Campus (Rentschler Library)",
+        "url": "https://libguides.lib.miamioh.edu/ILL",
+        "description": "Hamilton regional campus",
+    },
+    "middletown": {
+        "name": "Middletown Campus (Gardner-Harvey Library)", 
+        "url": "https://www.mid.miamioh.edu/library/interlibraryloan.htm",
+        "description": "Middletown regional campus",
+    },
+}
+
+def detect_campus_from_message(user_message: str) -> str:
+    """Detect which campus the user is asking about for ILL.
+    
+    Returns:
+        'hamilton', 'middletown', or 'main' (default)
+    """
+    user_msg_lower = user_message.lower()
+    
+    # Hamilton campus patterns
+    hamilton_patterns = [
+        r'\bhamilton\b',
+        r'\brentschler\b',
+        r'\bham\s*campus\b',
+    ]
+    
+    # Middletown campus patterns  
+    middletown_patterns = [
+        r'\bmiddletown\b',
+        r'\bgardner[\s-]?harvey\b',
+        r'\bmid\s*campus\b',
+    ]
+    
+    for pattern in hamilton_patterns:
+        if re.search(pattern, user_msg_lower, re.IGNORECASE):
+            return "hamilton"
+    
+    for pattern in middletown_patterns:
+        if re.search(pattern, user_msg_lower, re.IGNORECASE):
+            return "middletown"
+    
+    # Default to main campus
+    return "main"
+
+
+def get_ill_response(user_message: str) -> str:
+    """Get campus-specific ILL response.
+    
+    Args:
+        user_message: The user's message to detect campus
+        
+    Returns:
+        Formatted ILL response with appropriate campus URL
+    """
+    campus = detect_campus_from_message(user_message)
+    campus_info = ILL_URLS.get(campus, ILL_URLS["main"])
+    
+    # Build response with all campus options
+    response = f"""**Interlibrary Loan (ILL)** lets you borrow items not available at Miami University Libraries.
+
+**Your ILL Portal** ({campus_info['name']}):
+🔗 {campus_info['url']}
+
+**How to request:**
+1. Sign in with your Miami credentials
+2. Choose "Borrowing" and select book or article
+3. Fill in the citation details and submit
+4. You'll receive email updates when it arrives
+
+**Turnaround time:** 1-2 weeks for books, 2-5 days for articles
+
+"""
+    
+    # Add other campus links if user might need them
+    if campus == "main":
+        response += """**Regional Campus ILL:**
+• Hamilton: https://libguides.lib.miamioh.edu/ILL
+• Middletown: https://www.mid.miamioh.edu/library/interlibraryloan.htm"""
+    else:
+        response += f"""**Main Campus (Oxford) ILL:**
+• {ILL_URLS['main']['url']}"""
+    
+    return response
+
+
+# ============================================================================
+# POLICY URLS - Authoritative sources for specific policy questions
+# ============================================================================
+
+POLICY_URLS = {
+    "loan_periods": {
+        "url": "https://libguides.lib.miamioh.edu/circulation-policies/loan-periods-fines",
+        "description": "Loan periods and fines for different patron types",
+        "patterns": [
+            r'\b(how\s*long|loan\s*period|checkout\s*period|borrow\s*period)\b',
+            r'\b(check\s*out|checkout)\b.*\b(how\s*long|period|time|days?|weeks?)\b',
+            r'\bhow\s*(long|many\s*(days?|weeks?))\s*(can\s*i|to)\s*(keep|borrow|check\s*out|have)\b',
+            r'\b(loan|lending|borrowing|checkout)\s*(period|policy|policies|time|limit)\b',
+            r'\bwhen\s*(is|are)\s*(it|books?|items?)\s*due\b',
+            r'\bdue\s*date\s*(policy|policies)?\b',
+            r'\b(renewal|renew)\s*(policy|policies|limit|period)\b',
+            r'\bfines?\s*(policy|policies|amount|rate)\b',
+            r'\b(overdue|late)\s*(fee|fine|charge|policy)\b',
+        ],
+    },
+    "circulation_policies": {
+        "url": "https://libguides.lib.miamioh.edu/circulation-policies",
+        "description": "General circulation policies",
+        "patterns": [
+            r'\bcirculation\s*(policy|policies)\b',
+            r'\bborrowing\s*(policy|policies|rules?|privileges?)\b',
+        ],
+    },
+}
+
+
+def detect_policy_question(user_message: str) -> Dict[str, any]:
+    """Detect if user is asking about a specific policy with authoritative URL.
+    
+    Args:
+        user_message: The user's message
+        
+    Returns:
+        Dict with:
+        - is_policy_question: True if this is a policy question
+        - policy_type: The type of policy (e.g., "loan_periods")
+        - url: The authoritative URL for this policy
+        - description: Description of what the URL covers
+    """
+    user_msg_lower = user_message.lower()
+    
+    for policy_type, policy_info in POLICY_URLS.items():
+        for pattern in policy_info.get("patterns", []):
+            if re.search(pattern, user_msg_lower, re.IGNORECASE):
+                return {
+                    "is_policy_question": True,
+                    "policy_type": policy_type,
+                    "url": policy_info["url"],
+                    "description": policy_info["description"],
+                }
+    
+    return {"is_policy_question": False}
+
+
+def get_policy_response(policy_type: str, user_message: str = "") -> str:
+    """Get authoritative response for a policy question.
+    
+    Args:
+        policy_type: Type of policy from POLICY_URLS
+        user_message: Original user message for context
+        
+    Returns:
+        Formatted response with authoritative URL
+    """
+    policy_info = POLICY_URLS.get(policy_type, {})
+    url = policy_info.get("url", "https://www.lib.miamioh.edu/")
+    description = policy_info.get("description", "library policies")
+    
+    if policy_type == "loan_periods":
+        return f"""For accurate and up-to-date information on **loan periods and fines**, please visit our official circulation policies page:
+
+🔗 **{url}**
+
+This page has detailed information on:
+• Loan periods for undergraduates, graduates, faculty & staff
+• Renewal policies and limits
+• Fines and fees for overdue items
+• Course reserves loan periods
+• DVD and media loan periods
+
+If you have specific questions, feel free to ask a librarian at (513) 529-4141 or chat at https://www.lib.miamioh.edu/research/research-support/ask/"""
+    
+    return f"""For information on {description}, please visit:
+
+🔗 **{url}**
+
+For additional help, contact a librarian at (513) 529-4141."""
 
 
 # Quick check for common limitations

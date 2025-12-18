@@ -1,8 +1,11 @@
 """Hybrid router: decides between function calling and LangGraph orchestration."""
 import os
+import re
 from typing import Dict, Any
 from langchain_openai import ChatOpenAI
 from langchain_core.messages import HumanMessage, SystemMessage
+from src.config.research_question_detection import detect_research_question
+from src.config.capability_scope import detect_policy_question
 
 OPENAI_MODEL = os.getenv("OPENAI_MODEL", "o4-mini")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
@@ -39,6 +42,96 @@ async def should_use_function_calling(user_message: str, logger=None) -> bool:
     """
     import re
     user_msg_lower = user_message.lower()
+    
+    # ✅ EQUIPMENT BORROWING - Library offers PC/laptop/chromebook checkout (IN-SCOPE)
+    # Check this FIRST to exclude from out-of-scope patterns
+    equipment_borrow_patterns = [
+        r'\b(borrow|checkout|check\s*out|rent|loan|reserve|get)\b.*\b(laptop|pc|computer|chromebook|charger|equipment|device|camera|tripod|headphone|calculator|adapter|ipad|tablet|macbook)\b',
+        r'\b(laptop|pc|computer|chromebook|charger|equipment|device|camera|tripod|headphone|calculator|adapter|ipad|tablet|macbook)\b.*\b(borrow|checkout|check\s*out|rent|loan|available|availability)\b',
+        r'\b(can\s*i|do\s*you|does\s*the\s*library)\b.*\b(check\s*out|checkout|borrow|rent|loan)\b.*\b(pc|computer|laptop|chromebook|equipment)\b',
+        r'\b(adobe|software|license|photoshop|illustrator|creative\s*cloud)\b',
+        r'\b(do\s*you\s*have|can\s*i\s*get|where\s*can\s*i)\b.*\b(laptop|pc|computer|chromebook|charger|equipment)\b',
+    ]
+    is_equipment_borrow = any(re.search(p, user_msg_lower, re.IGNORECASE) for p in equipment_borrow_patterns)
+    
+    # Skip out-of-scope check if this is equipment borrowing
+    if is_equipment_borrow:
+        if logger:
+            logger.log(f"✅ [Hybrid Router] Equipment borrowing question detected → allowing through")
+    
+    # 🚫 OUT-OF-SCOPE queries MUST use LangGraph for proper denial (but NOT equipment borrowing)
+    if not is_equipment_borrow:
+        out_of_scope_patterns = [
+            # Weather
+            r'\b(weather|temperature|forecast|rain|snow|sunny|cloudy|cold|hot|warm)\b',
+            # Course registration/academics
+            r'\b(register|registration|enroll|enrollment|add\s*a?\s*class|drop\s*a?\s*class|course\s*selection)\b',
+            r'\b(when\s*is\s*(class|course)\s*registration|how\s*do\s*i\s*register)\b',
+            # Dining
+            r'\b(dining|food|lunch|dinner|breakfast|cafeteria|restaurant|eat)\b',
+            # Sports
+            r'\b(football|basketball|soccer|sports?|game|score|schedule)\b.*\b(game|schedule|score)\b',
+            # Homework/assignments
+            r'\b(homework|assignment|essay|paper|test|quiz|exam)\b.*\b(help|write|do|solve|answer)\b',
+            # Campus locations (non-library)
+            r'\b(where\s*is|how\s*do\s*i\s*get\s*to)\b.*\b(student\s*center|armstrong|upham|shriver|bachelor)\b',
+            # IT/Technology - tech support PROBLEMS (NOT equipment borrowing)
+            r'\b(wifi|internet|canvas|email|login|password)\b.*\b(issue|problem|broken|not\s*working|fix|down)\b',
+            r'\b(my|a)\s*(computer|laptop|phone|device)\b.*\b(broken|not\s*working|crashed|frozen|slow|virus|issue|problem)\b',
+            r'\b(fix|repair|troubleshoot)\s*(my|a)?\s*(computer|laptop|phone|device)\b',
+            r'\b(computer|laptop|phone|device)\b.*\b(won\'t|doesn\'t|isn\'t|not)\s*(work|start|turn\s*on|boot|connect)\b',
+            # Generic tech help requests (not equipment borrowing)
+            r'\bwho\s*(can|could|would)\s*(help|assist)\b.*\b(computer|tech|software|hardware)\b',
+            r'\b(help|assist)\b.*\b(computer|tech)\s*question\b',
+            r'\b(computer|tech)\s*(help|support|assistance)\b',
+            # Financial
+            r'\b(tuition|financial\s*aid|scholarship|payment|pay|bursar)\b',
+        ]
+        
+        for pattern in out_of_scope_patterns:
+            if re.search(pattern, user_msg_lower, re.IGNORECASE):
+                if logger:
+                    logger.log(f"🚫 [Hybrid Router] Out-of-scope query detected → FORCING LangGraph for denial")
+                return False  # Force LangGraph for proper out-of-scope handling
+    
+    # 📋 POLICY QUESTIONS MUST use LangGraph for authoritative URL response
+    # These are questions about loan periods, circulation policies, etc.
+    policy_check = detect_policy_question(user_message)
+    if policy_check.get("is_policy_question"):
+        if logger:
+            policy_type = policy_check.get("policy_type", "unknown")
+            logger.log(f"📋 [Hybrid Router] Policy question detected ({policy_type}) → FORCING LangGraph for authoritative URL")
+        return False  # Force LangGraph for policy question handling
+    
+    # 🔬 RESEARCH QUESTIONS MUST use LangGraph for proper handoff to librarians
+    # These are questions asking for specific articles, sources, research help
+    research_check = detect_research_question(user_message)
+    if research_check.get("is_research_question") and research_check.get("should_handoff"):
+        if logger:
+            pattern_type = research_check.get("pattern_type", "unknown")
+            logger.log(f"🔬 [Hybrid Router] Research question detected ({pattern_type}) → FORCING LangGraph for librarian handoff")
+        return False  # Force LangGraph for research question handling
+    
+    # 🔬 Additional research patterns that MUST go to LangGraph
+    research_patterns = [
+        # Specific article/source requirements
+        r'\b(i\s*need|looking\s*for|find|get|want)\s*\d+\s*(articles?|sources?|papers?|publications?|peer[- ]?reviewed)\b',
+        r'\b\d+\s*(articles?|sources?|papers?|publications?)\b.*\b(pages?|about|on|regarding|that)\b',
+        r'\b(articles?|papers?|sources?)\b.*\b\d+\s*pages?\b',
+        # Research help requests
+        r'\b(scholarly|academic|peer[- ]?reviewed)\s*(articles?|sources?|papers?|journals?)\b',
+        r'\b(research|write|writing)\s*(a\s*)?(paper|essay|thesis|dissertation)\b.*\b(about|on|regarding)\b',
+        r'\b(effects?|impacts?|relationship|correlation)\s*(of|between)\b.*\b(on|and)\b',
+        # Database/search strategy questions  
+        r'\b(which|what|best)\s*(databases?|resources?)\s*(should|can|do|for)\b',
+        r'\bhow\s*(do|can|to)\s*(i\s*)?(search|find|locate)\b.*\b(articles?|sources?|research)\b',
+    ]
+    
+    for pattern in research_patterns:
+        if re.search(pattern, user_msg_lower, re.IGNORECASE):
+            if logger:
+                logger.log(f"🔬 [Hybrid Router] Research pattern matched → FORCING LangGraph for librarian handoff")
+            return False  # Force LangGraph
     
     # 👤 Personal account queries MUST use LangGraph for direct URL response
     personal_account_patterns = [

@@ -456,6 +456,40 @@ class LocationService:
     def clear_cache(self):
         """Clear the internal cache."""
         self._cache.clear()
+    
+    async def validate_library_for_rooms(self, building_name: str) -> tuple[bool, str, str]:
+        """Validate if a library name is valid for room reservations.
+        
+        Args:
+            building_name: Library name to validate
+        
+        Returns:
+            Tuple of (is_valid, building_id_or_error, normalized_name)
+        """
+        if not building_name:
+            return False, "Please specify a library name.", ""
+        
+        building_lower = building_name.lower().strip()
+        
+        # Try to get building ID
+        building_id = await self.get_building_id(building_lower)
+        
+        if building_id:
+            # Get display name
+            display_name = await self.get_building_display_name(building_id)
+            return True, building_id, display_name
+        
+        # Not found - get list of valid libraries
+        libraries = await self._client.library.find_many(
+            where={"libcalBuildingId": {"not": None}}
+        )
+        
+        valid_names = [lib.displayName for lib in libraries if lib.libcalBuildingId]
+        valid_list = "\n".join([f"• {name}" for name in valid_names])
+        
+        error_msg = f"'{building_name}' is not a valid library for room reservations. Study rooms are available at:\n{valid_list}\n\nPlease specify one of these libraries."
+        
+        return False, error_msg, ""
 
 
 # Singleton instance

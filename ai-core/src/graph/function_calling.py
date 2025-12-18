@@ -75,12 +75,18 @@ class CancelReservationInput(BaseModel):
     email: str = Field(description="User's @miamioh.edu email address used for the booking")
 
 async def search_catalog_wrapper(query: str) -> str:
-    """Search library catalog for books and articles."""
-    try:
-        result = await primo_agent.execute(query)
-        return result.get("text", "No results found")
-    except Exception as e:
-        return f"Error searching catalog: {str(e)}"
+    """Catalog search is NOT available - redirect to human librarian."""
+    # CRITICAL: Do NOT provide book/article titles, authors, or any catalog information
+    # User MUST search themselves or contact a librarian
+    return """I'd love to help you find those materials! However, our catalog search feature is currently unavailable.
+
+**To search for books, articles, and e-resources, please:**
+
+• **Search the library catalog yourself**: https://ohiolink-mu.primo.exlibrisgroup.com/discovery/search?vid=01OHIOLINK_MU:MU&lang=en&mode=basic
+
+• **Chat with a librarian for personalized help**: https://www.lib.miamioh.edu/research/research-support/ask/
+
+A librarian can help you find the best resources for your research needs."""
 
 async def get_library_hours_wrapper(building: str = "king") -> str:
     """Get library hours for a building."""
@@ -90,9 +96,45 @@ async def get_library_hours_wrapper(building: str = "king") -> str:
     except Exception as e:
         return f"Error getting hours: {str(e)}"
 
+# Valid libraries with study rooms (from database)
+VALID_ROOM_LIBRARIES = {
+    "king": "King Library",
+    "art": "Art & Architecture Library",
+    "rentschler": "Rentschler Library (Hamilton)",
+    "hamilton": "Rentschler Library (Hamilton)",
+    "gardner-harvey": "Gardner-Harvey Library (Middletown)",
+    "middletown": "Gardner-Harvey Library (Middletown)",
+}
+
+def _validate_library_name(building: str) -> tuple[bool, str]:
+    """Validate library name for room booking.
+    
+    Returns:
+        Tuple of (is_valid, error_message_or_normalized_name)
+    """
+    building_lower = building.lower().strip()
+    
+    if building_lower in VALID_ROOM_LIBRARIES:
+        return True, building_lower
+    
+    # Check for partial matches
+    for key in VALID_ROOM_LIBRARIES:
+        if key in building_lower or building_lower in key:
+            return True, key
+    
+    # Invalid library - return error with valid options
+    valid_options = "\n".join([f"• {name}" for name in set(VALID_ROOM_LIBRARIES.values())])
+    return False, f"'{building}' is not a valid library for room reservations. Study rooms are available at:\n{valid_options}\n\nPlease specify one of these libraries."
+
 async def search_rooms_wrapper(date: str, start_time: str, end_time: str, capacity: int = 1, building: str = "king") -> str:
     """Search for available study rooms."""
     try:
+        # Validate library name
+        is_valid, result = _validate_library_name(building)
+        if not is_valid:
+            return result
+        building = result
+        
         query = f"room on {date} from {start_time} to {end_time} for {capacity} people at {building}"
         result = await libcal_agent.execute(query)
         return result.get("text", "No rooms available")
@@ -102,6 +144,12 @@ async def search_rooms_wrapper(date: str, start_time: str, end_time: str, capaci
 async def book_room_wrapper(first_name: str, last_name: str, email: str, date: str, start_time: str, end_time: str, capacity: int = 1, building: str = "king") -> str:
     """Book a study room with full user information and email validation."""
     try:
+        # Validate library name first
+        is_valid, result = _validate_library_name(building)
+        if not is_valid:
+            return result
+        building = result
+        
         # Validate email
         if not email.lower().endswith("@miamioh.edu"):
             return "Error: Email must be a valid @miamioh.edu address. Please provide your Miami University email to complete the booking."
@@ -343,6 +391,15 @@ OTHER RULES:
 - Always cite the source of your information
 
 STUDY ROOM BOOKING RULES - EXTREMELY IMPORTANT:
+- VALID LIBRARIES FOR STUDY ROOMS (ONLY these 4):
+  * King Library (Oxford campus) - use "king"
+  * Art & Architecture Library (Oxford campus) - use "art"
+  * Rentschler Library (Hamilton campus) - use "rentschler" or "hamilton"
+  * Gardner-Harvey Library (Middletown campus) - use "gardner-harvey" or "middletown"
+- If user mentions ANY OTHER library name (e.g., "Farmer", "Science", "Law", etc.), you MUST:
+  * Inform them that library does NOT have study rooms
+  * List the 4 valid libraries above
+  * Ask which one they'd like to book
 - NEVER say "checking availability", "let me check", "I'll look for", or similar status updates
 - The backend handles all availability checking automatically
 - BEFORE calling book_room tool, you MUST collect ALL required information:
@@ -352,7 +409,7 @@ STUDY ROOM BOOKING RULES - EXTREMELY IMPORTANT:
   * Date (accept ANY format: 11/12/2025, tomorrow, next Monday, Dec 15, etc.)
   * Start time and end time (accept ANY format: 8pm, 8:00 PM, 20:00, 2pm, etc.)
   * Number of people
-  * Building preference
+  * Building preference (MUST be one of the 4 valid libraries above)
 - The system automatically converts all date/time formats, so accept user's natural language
 - DO NOT call book_room until you have ALL of the above information
 - ONLY present the FINAL result from the tool:
@@ -424,7 +481,8 @@ Always provide clear, helpful responses and cite sources when relevant."""
                 
                 validated_answer, had_invalid_urls = await validate_and_clean_response(
                     final_response.content,
-                    log_callback=logger.log if logger else None
+                    log_callback=logger.log if logger else None,
+                    user_message=user_message
                 )
                 
                 if had_invalid_urls and logger:
@@ -470,7 +528,8 @@ Always provide clear, helpful responses and cite sources when relevant."""
             
             validated_answer, had_invalid_urls = await validate_and_clean_response(
                 response.content,
-                log_callback=logger.log if logger else None
+                log_callback=logger.log if logger else None,
+                user_message=user_message
             )
             
             if had_invalid_urls and logger:

@@ -20,6 +20,15 @@ import asyncio
 # URL pattern (basic)
 URL_PATTERN = r'https?://[^\s<>"{}|\\^`\[\]]+'
 
+# ILL URL corrections - Regional campus URLs should default to main campus
+# unless the user specifically mentions a regional campus
+ILL_URL_CORRECTIONS = {
+    # Hamilton ILL (regional) → Main campus (default)
+    "https://libguides.lib.miamioh.edu/ILL": "https://www.lib.miamioh.edu/use/borrow/ill/",
+    # Middletown ILL (regional) → Main campus (default)  
+    "https://www.mid.miamioh.edu/library/interlibraryloan.htm": "https://www.lib.miamioh.edu/use/borrow/ill/",
+}
+
 # Email pattern for detecting @miamioh.edu emails
 EMAIL_PATTERN = r'\b[A-Za-z0-9._%+-]+@miamioh\.edu\b'
 
@@ -474,7 +483,53 @@ def remove_fabricated_contact_info(text: str, detected_info: Dict, log_callback=
     return modified_text
 
 
-async def validate_and_clean_response(response_text: str, log_callback=None, agents_used=None) -> Tuple[str, bool]:
+def correct_ill_urls(text: str, user_message: str = "", log_callback=None) -> str:
+    """Correct ILL URLs to default to main campus unless user specifies regional campus.
+    
+    The bot sometimes picks up regional campus ILL URLs from Google Site Search.
+    This function corrects them to the main campus URL by default, unless the
+    user specifically mentioned Hamilton or Middletown.
+    
+    Args:
+        text: Response text that may contain ILL URLs
+        user_message: Original user message to check for campus mentions
+        log_callback: Optional logging function
+        
+    Returns:
+        Text with corrected ILL URLs
+    """
+    user_msg_lower = user_message.lower() if user_message else ""
+    
+    # Check if user specifically mentioned a regional campus
+    mentions_hamilton = any(p in user_msg_lower for p in ["hamilton", "rentschler"])
+    mentions_middletown = any(p in user_msg_lower for p in ["middletown", "gardner-harvey", "gardner harvey"])
+    
+    corrected_text = text
+    
+    for regional_url, main_url in ILL_URL_CORRECTIONS.items():
+        if regional_url in corrected_text:
+            # Only correct if user didn't specifically ask about that campus
+            should_correct = True
+            
+            if "libguides.lib.miamioh.edu/ILLPolicy" in regional_url and mentions_hamilton:
+                should_correct = False
+                if log_callback:
+                    log_callback(f"✅ [ILL Correction] Keeping Hamilton ILL URL - user mentioned Hamilton")
+            
+            if "mid.miamioh.edu" in regional_url and mentions_middletown:
+                should_correct = False
+                if log_callback:
+                    log_callback(f"✅ [ILL Correction] Keeping Middletown ILL URL - user mentioned Middletown")
+            
+            if should_correct:
+                corrected_text = corrected_text.replace(regional_url, main_url)
+                if log_callback:
+                    log_callback(f"🔄 [ILL Correction] Corrected regional ILL URL → main campus: {main_url}")
+    
+    return corrected_text
+
+
+async def validate_and_clean_response(response_text: str, log_callback=None, agents_used=None, user_message: str = "") -> Tuple[str, bool]:
     """Validate URLs and contact info in response and remove invalid/fabricated ones.
     
     This is the main function to call before returning a response to the user.
@@ -483,12 +538,16 @@ async def validate_and_clean_response(response_text: str, log_callback=None, age
         response_text: The response text to validate
         log_callback: Optional logging function
         agents_used: Optional list of agent names that were used (to skip validation for verified agents)
+        user_message: Original user message (used for ILL URL correction)
         
     Returns:
         Tuple of (cleaned_text: str, had_issues: bool)
     """
     had_issues = False
     cleaned_text = response_text
+    
+    # Step 0: Correct ILL URLs to default to main campus
+    cleaned_text = correct_ill_urls(cleaned_text, user_message, log_callback)
     
     # Step 1: Validate all URLs (with fallback to parent URLs on 4xx errors)
     validation_results = await validate_urls_in_text(cleaned_text, log_callback, use_fallback=True)

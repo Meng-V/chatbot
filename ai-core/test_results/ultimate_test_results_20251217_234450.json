@@ -1,0 +1,2256 @@
+[
+  {
+    "category": "1_LIBRARY_HOURS",
+    "index": 1,
+    "question": "What time does King Library close today?",
+    "status": "SUCCESS",
+    "agents": [
+      "get_library_hours"
+    ],
+    "response": "Today (Monday, December 15) King Library closes at **5:00 pm**.  \nSource: King Library hours (lib.miamioh.edu)",
+    "analysis": {
+      "has_email": false,
+      "has_url": true,
+      "has_error": false,
+      "is_out_of_scope": false,
+      "has_handoff": false,
+      "has_confirmation": false,
+      "asks_for_info": false,
+      "rejects_invalid": false,
+      "response_length": 110
+    }
+  },
+  {
+    "category": "1_LIBRARY_HOURS",
+    "index": 2,
+    "question": "When does the Art Library open tomorrow?",
+    "status": "SUCCESS",
+    "agents": [
+      "libcal"
+    ],
+    "response": "Tomorrow (Tuesday, December 16) the Wertz Art & Architecture Library opens at **8:00 am** and stays open until 5:00 pm.  \nSource: LibCal [VERIFIED API DATA]",
+    "analysis": {
+      "has_email": false,
+      "has_url": false,
+      "has_error": false,
+      "is_out_of_scope": false,
+      "has_handoff": false,
+      "has_confirmation": false,
+      "asks_for_info": false,
+      "rejects_invalid": false,
+      "response_length": 156
+    }
+  },
+  {
+    "category": "1_LIBRARY_HOURS",
+    "index": 3,
+    "question": "What are the hours for Rentschler Library?",
+    "status": "SUCCESS",
+    "agents": [
+      "libcal"
+    ],
+    "response": "Here are the **Rentschler Library (Hamilton) and curbside service hours** for the week of **December 15 \u2013 21, 2025**:\n\n\u2022 Monday, December 15: 8:00 am \u2013 5:00 pm  \n\u2022 Tuesday, December 16: 8:00 am \u2013 5:00 pm  \n\u2022 Wednesday, December 17: 8:00 am \u2013 5:00 pm  \n\u2022 Thursday, December 18: 8:00 am \u2013 5:00 pm  \n\u2022 Friday, December 19: 8:00 am \u2013 5:00 pm  \n\u2022 Saturday, December 20: Closed  \n\u2022 Sunday, December 21: Closed  \n\nSource: LibCal [VERIFIED API DATA]",
+    "analysis": {
+      "has_email": false,
+      "has_url": false,
+      "has_error": false,
+      "is_out_of_scope": false,
+      "has_handoff": false,
+      "has_confirmation": false,
+      "asks_for_info": false,
+      "rejects_invalid": false,
+      "response_length": 441
+    }
+  },
+  {
+    "category": "1_LIBRARY_HOURS",
+    "index": 4,
+    "question": "Gardner-Harvey Library hours this week",
+    "status": "SUCCESS",
+    "agents": [
+      "libcal"
+    ],
+    "response": "Here are the **Gardner-Harvey Library and curbside service (Middletown)** hours for the week of **December 15\u201321, 2025** (source: [VERIFIED API DATA]):\n\n\u2022 **Monday (2025-12-15):** 8:00 am \u2013 5:00 pm  \n\u2022 **Tuesday (2025-12-16):** 8:00 am \u2013 5:00 pm  \n\u2022 **Wednesday (2025-12-17):** 8:00 am \u2013 5:00 pm  \n\u2022 **Thursday (2025-12-18):** 8:00 am \u2013 5:00 pm  \n\u2022 **Friday (2025-12-19):** 8:00 am \u2013 5:00 pm  \n\u2022 **Saturday (2025-12-20):** Closed  \n\u2022 **Sunday (2025-12-21):** Closed",
+    "analysis": {
+      "has_email": false,
+      "has_url": false,
+      "has_error": false,
+      "is_out_of_scope": false,
+      "has_handoff": false,
+      "has_confirmation": false,
+      "asks_for_info": false,
+      "rejects_invalid": false,
+      "response_length": 465
+    }
+  },
+  {
+    "category": "1_LIBRARY_HOURS",
+    "index": 5,
+    "question": "Is the library open on Sunday?",
+    "status": "SUCCESS",
+    "agents": [
+      "get_library_hours"
+    ],
+    "response": "King Library is **closed on Sunday** for the week of December 15\u201321, 2025. (Source: Miami University Libraries schedule) If you need weekend access, consider our Hamilton or Middletown campuses, or contact us at (513) 529-4141 or visit https://www.lib.miamioh.edu for more details.",
+    "analysis": {
+      "has_email": false,
+      "has_url": true,
+      "has_error": false,
+      "is_out_of_scope": false,
+      "has_handoff": false,
+      "has_confirmation": false,
+      "asks_for_info": false,
+      "rejects_invalid": false,
+      "response_length": 281
+    }
+  },
+  {
+    "category": "1_LIBRARY_HOURS",
+    "index": 6,
+    "question": "What time does the makerspace close?",
+    "status": "SUCCESS",
+    "agents": [
+      "search_website"
+    ],
+    "response": "The Miami University Makerspace in King Library follows the library\u2019s third-floor service hours. During the regular semester those are:\n\n\u2022 Monday\u2013Thursday: 8 AM\u201311 PM  \n\u2022 Friday: 8 AM\u20137 PM  \n\u2022 Saturday: 10 AM\u20137 PM  \n\u2022 Sunday: 1 PM\u201311 PM  \n\nThese hours vary slightly between semesters and breaks. For the most up-to-date schedule, check the Makerspace guide: https://libguides.lib.miamioh.edu/create/makerspace",
+    "analysis": {
+      "has_email": false,
+      "has_url": true,
+      "has_error": false,
+      "is_out_of_scope": false,
+      "has_handoff": false,
+      "has_confirmation": false,
+      "asks_for_info": false,
+      "rejects_invalid": false,
+      "response_length": 409
+    }
+  },
+  {
+    "category": "1_LIBRARY_HOURS",
+    "index": 7,
+    "question": "Special Collections hours",
+    "status": "SUCCESS",
+    "agents": [
+      "libcal"
+    ],
+    "response": "Here are the Walter Havighurst Special Collections & University Archives hours for the week of December 15\u201321, 2025 (Source: LibCal [VERIFIED API DATA]):\n\n\u2022 Monday (2025-12-15): Closed  \n\u2022 Tuesday (2025-12-16): Closed  \n\u2022 Wednesday (2025-12-17): Closed  \n\u2022 Thursday (2025-12-18): Closed  \n\u2022 Friday (2025-12-19): Closed  \n\u2022 Saturday (2025-12-20): Closed  \n\u2022 Sunday (2025-12-21): Closed  \n\nIf you need hours for a different week or have other questions about Special Collections, I\u2019d be happy to connect you with a librarian! You can also reach us at (513) 529-4141 or via our Ask-a-Librarian chat: https://www.lib.miamioh.edu/research/research-support/ask/",
+    "analysis": {
+      "has_email": false,
+      "has_url": true,
+      "has_error": false,
+      "is_out_of_scope": false,
+      "has_handoff": false,
+      "has_confirmation": false,
+      "asks_for_info": false,
+      "rejects_invalid": false,
+      "response_length": 655
+    }
+  },
+  {
+    "category": "1_LIBRARY_HOURS",
+    "index": 8,
+    "question": "Hamilton campus library hours",
+    "status": "SUCCESS",
+    "agents": [
+      "libcal"
+    ],
+    "response": "Here are the Rentschler Library (Hamilton) hours for the week of December 15, 2025, according to LibCal:\n\n\u2022 **Monday (12 / 15):** 8:00 am \u2013 5:00 pm  \n\u2022 **Tuesday (12 / 16):** 8:00 am \u2013 5:00 pm  \n\u2022 **Wednesday (12 / 17):** 8:00 am \u2013 5:00 pm  \n\u2022 **Thursday (12 / 18):** 8:00 am \u2013 5:00 pm  \n\u2022 **Friday (12 / 19):** 8:00 am \u2013 5:00 pm  \n\u2022 **Saturday (12 / 20):** Closed  \n\u2022 **Sunday (12 / 21):** Closed  \n\nIf you need hours for a different week or have other questions, please let me know!",
+    "analysis": {
+      "has_email": false,
+      "has_url": false,
+      "has_error": false,
+      "is_out_of_scope": false,
+      "has_handoff": false,
+      "has_confirmation": false,
+      "asks_for_info": false,
+      "rejects_invalid": false,
+      "response_length": 484
+    }
+  },
+  {
+    "category": "1_LIBRARY_HOURS",
+    "index": 9,
+    "question": "Middletown library schedule",
+    "status": "SUCCESS",
+    "agents": [
+      "get_library_hours"
+    ],
+    "response": "Here are the **Gardner-Harvey Library (Middletown campus)** hours for the week of **December 15\u201321, 2025** (including curbside service):  \n\u2022 **Monday (Dec 15)**: 8 am\u20135 pm  \n\u2022 **Tuesday (Dec 16)**: 8 am\u20135 pm  \n\u2022 **Wednesday (Dec 17)**: 8 am\u20135 pm  \n\u2022 **Thursday (Dec 18)**: 8 am\u20135 pm  \n\u2022 **Friday (Dec 19)**: 8 am\u20135 pm  \n\u2022 **Saturday (Dec 20)**: Closed  \n\u2022 **Sunday (Dec 21)**: Closed  \n\n(Source: Miami University Libraries hours tool)",
+    "analysis": {
+      "has_email": false,
+      "has_url": false,
+      "has_error": false,
+      "is_out_of_scope": false,
+      "has_handoff": false,
+      "has_confirmation": false,
+      "asks_for_info": false,
+      "rejects_invalid": false,
+      "response_length": 434
+    }
+  },
+  {
+    "category": "1_LIBRARY_HOURS",
+    "index": 10,
+    "question": "Are libraries open during finals week?",
+    "status": "SUCCESS",
+    "agents": [
+      "search_website"
+    ],
+    "response": "Yes\u2014during finals week (Saturday, May 12 through Friday, May 18), Miami University Libraries extend their hours to give you more study time. Here\u2019s the schedule from the Libraries\u2019 announcement:\n\n\u2022 **King Library**  \n  \u2013 May 12\u201313: open 24 hours  \n  \u2013 May 14\u201317: open 24 hours  \n  \u2013 May 18: closes at 5 p.m.\n\n\u2022 **B.E.S.T. Library** (Business, Education & Social Sciences)  \n  \u2013 May 12: 9 a.m.\u201310 p.m.  \n  \u2013 May 13: 9 a.m.\u20132 a.m.  \n  \u2013 May 14\u201317: 7:30 a.m.\u20132 a.m.  \n  \u2013 May 18: 7:30 a.m.\u20135 p.m.\n\n\u2022 **Wertz Art & Architecture Library**  \n  \u2013 May 12: noon\u20136 p.m.  \n  \u2013 May 13: noon\u201311 p.m.  \n  \u2013 May 14\u201317: 8 a.m.\u201311 p.m.  \n  \u2013 May 18: 8 a.m.\u20135 p.m.\n\n\u2022 **Amos Music Library**  \n  \u2013 May 12: 1 p.m.\u20135 p.m.  \n  \u2013 May 13: 1 p.m.\u201311 p.m.  \n  \u2013 May 14\u201317: 8 a.m.\u201311 p.m.  \n  \u2013 May 18: 8 a.m.\u20135 p.m.\n\nFor the full announcement and any last-minute updates, see:  \nhttps://www.lib.miamioh.edu/2018-05-09-libraries-extend-hours-for-finals-week ",
+    "analysis": {
+      "has_email": false,
+      "has_url": true,
+      "has_error": false,
+      "is_out_of_scope": false,
+      "has_handoff": false,
+      "has_confirmation": false,
+      "asks_for_info": false,
+      "rejects_invalid": false,
+      "response_length": 931
+    }
+  },
+  {
+    "category": "2_ROOM_RESERVATIONS",
+    "index": 1,
+    "question": "Book a study room at King Library for tomorrow 2pm-4pm for 4 people. Name: Meng Qu, Email: qum@miamioh.edu",
+    "status": "SUCCESS",
+    "agents": [
+      "book_room"
+    ],
+    "response": "I\u2019m sorry\u2014the booking for **King Library** tomorrow from **2 pm\u20134 pm** can\u2019t be completed because it exceeds the **120-minute per-day limit** at that location. Would you like to:\n\n\u2022 Book a shorter time slot?  \n\u2022 Try a different library?  \n\nLet me know which option works for you!",
+    "analysis": {
+      "has_email": false,
+      "has_url": false,
+      "has_error": false,
+      "is_out_of_scope": false,
+      "has_handoff": false,
+      "has_confirmation": true,
+      "asks_for_info": false,
+      "rejects_invalid": false,
+      "response_length": 279
+    }
+  },
+  {
+    "category": "2_ROOM_RESERVATIONS",
+    "index": 2,
+    "question": "I need to reserve a room at Art Library on 12/18/2025 from 10am to 12pm for 2 people. Meng Qu, qum@miamioh.edu",
+    "status": "SUCCESS",
+    "agents": [
+      "book_room"
+    ],
+    "response": "I\u2019m sorry, but it looks like Art & Architecture Library study rooms can only be booked for up to **2 hours (120 minutes) per day**, and your requested time slot is exactly 2 hours. It seems our system interpreted this as exceeding the limit. \n\nWould you like to:\n\u2022 Adjust the reservation to a shorter duration (for example, 11am\u201312pm)?  \n\u2022 Try a different library location (King Library, Rentschler Library, Gardner-Harvey Library)?  \n\nLet me know what you\u2019d like to do!",
+    "analysis": {
+      "has_email": false,
+      "has_url": false,
+      "has_error": false,
+      "is_out_of_scope": false,
+      "has_handoff": false,
+      "has_confirmation": false,
+      "asks_for_info": false,
+      "rejects_invalid": false,
+      "response_length": 470
+    }
+  },
+  {
+    "category": "2_ROOM_RESERVATIONS",
+    "index": 3,
+    "question": "Check room availability at King Library tomorrow 3pm-5pm for 3 people",
+    "status": "SUCCESS",
+    "agents": [
+      "search_rooms"
+    ],
+    "response": "Sure\u2014before I check availability, I just need a few more details:\n\n\u2022 Your first name  \n\u2022 Your last name  \n\u2022 Your Miami University email (ending in @miamioh.edu)  \n\nOnce I have those, I can complete the booking search for King Library tomorrow from 3 PM to 5 PM for 3 people.",
+    "analysis": {
+      "has_email": true,
+      "has_url": false,
+      "has_error": false,
+      "is_out_of_scope": false,
+      "has_handoff": false,
+      "has_confirmation": true,
+      "asks_for_info": false,
+      "rejects_invalid": false,
+      "response_length": 274
+    }
+  },
+  {
+    "category": "2_ROOM_RESERVATIONS",
+    "index": 4,
+    "question": "Are there any study rooms available at Rentschler Library tomorrow afternoon?",
+    "status": "SUCCESS",
+    "agents": [],
+    "response": "Sure\u2014let\u2019s get you the most accurate availability. For tomorrow afternoon at Rentschler Library, could you let me know:\n\n\u2022 What time you\u2019d like your booking to start and end (e.g., 1:00 PM to 3:00 PM)  \n\u2022 How many people will be in your group  \n\nOnce I have those details, I can check which rooms are open.",
+    "analysis": {
+      "has_email": false,
+      "has_url": false,
+      "has_error": false,
+      "is_out_of_scope": false,
+      "has_handoff": false,
+      "has_confirmation": true,
+      "asks_for_info": false,
+      "rejects_invalid": false,
+      "response_length": 306
+    }
+  },
+  {
+    "category": "2_ROOM_RESERVATIONS",
+    "index": 5,
+    "question": "Book a study room at Farmer Library tomorrow",
+    "status": "SUCCESS",
+    "agents": [],
+    "response": "I\u2019m sorry, but **Farmer Library doesn\u2019t offer study rooms** for booking. The libraries that do are:  \n\u2022 **King Library** (Oxford campus)  \n\u2022 **Art & Architecture Library** (Oxford campus)  \n\u2022 **Rentschler Library** (Hamilton campus)  \n\u2022 **Gardner-Harvey Library** (Middletown campus)  \n\nWhich of these would you like to book, and could you please provide your full name, @miamioh.edu email, date, time range, and number of people?",
+    "analysis": {
+      "has_email": true,
+      "has_url": false,
+      "has_error": false,
+      "is_out_of_scope": false,
+      "has_handoff": false,
+      "has_confirmation": true,
+      "asks_for_info": true,
+      "rejects_invalid": false,
+      "response_length": 430
+    }
+  },
+  {
+    "category": "2_ROOM_RESERVATIONS",
+    "index": 6,
+    "question": "Reserve a room at Science Library",
+    "status": "SUCCESS",
+    "agents": [],
+    "response": "I\u2019m sorry, but the Science Library doesn\u2019t offer reservable study rooms. We have study rooms at these four libraries:  \n\u2022 **King Library** (Oxford campus)  \n\u2022 **Art & Architecture Library** (Oxford campus)  \n\u2022 **Rentschler Library** (Hamilton campus)  \n\u2022 **Gardner-Harvey Library** (Middletown campus)  \n\nWhich of these would you like to book a room in?",
+    "analysis": {
+      "has_email": false,
+      "has_url": false,
+      "has_error": false,
+      "is_out_of_scope": false,
+      "has_handoff": false,
+      "has_confirmation": false,
+      "asks_for_info": false,
+      "rejects_invalid": false,
+      "response_length": 353
+    }
+  },
+  {
+    "category": "2_ROOM_RESERVATIONS",
+    "index": 7,
+    "question": "I want to book the Law Library study room",
+    "status": "SUCCESS",
+    "agents": [],
+    "response": "The Law Library doesn\u2019t offer reservable study rooms. The four campus libraries that do are:\n\n\u2022 **King Library** (Oxford campus)  \n\u2022 **Art & Architecture Library** (Oxford campus)  \n\u2022 **Rentschler Library** (Hamilton campus)  \n\u2022 **Gardner-Harvey Library** (Middletown campus)  \n\nWhich of these would you like to book a room in?",
+    "analysis": {
+      "has_email": false,
+      "has_url": false,
+      "has_error": false,
+      "is_out_of_scope": false,
+      "has_handoff": false,
+      "has_confirmation": false,
+      "asks_for_info": false,
+      "rejects_invalid": false,
+      "response_length": 327
+    }
+  },
+  {
+    "category": "2_ROOM_RESERVATIONS",
+    "index": 8,
+    "question": "I need to book a study room",
+    "status": "SUCCESS",
+    "agents": [],
+    "response": "Sure\u2014let\u2019s get your reservation set up! To book a study room I\u2019ll need:\n\n\u2022 Which library: **King (Oxford)**, **Art & Architecture (Oxford)**, **Rentschler (Hamilton)**, or **Gardner-Harvey (Middletown)**  \n\u2022 Your full name (first and last)  \n\u2022 Your @miamioh.edu email address  \n\u2022 Date of booking (e.g., 11/12/2025, tomorrow, next Monday)  \n\u2022 Start and end times (e.g., 2 pm\u20134 pm)  \n\u2022 Number of people in your group  \n\nOnce you send those details I can complete the booking for you!",
+    "analysis": {
+      "has_email": true,
+      "has_url": false,
+      "has_error": false,
+      "is_out_of_scope": false,
+      "has_handoff": false,
+      "has_confirmation": true,
+      "asks_for_info": false,
+      "rejects_invalid": false,
+      "response_length": 481
+    }
+  },
+  {
+    "category": "2_ROOM_RESERVATIONS",
+    "index": 9,
+    "question": "Reserve a room for tomorrow",
+    "status": "SUCCESS",
+    "agents": [],
+    "response": "Sure\u2014I'd be happy to help you reserve a study room for tomorrow. To complete your booking, I just need a few details:\n\n\u2022 Your **first name**  \n\u2022 Your **last name**  \n\u2022 Your **@miamioh.edu email address**  \n\u2022 **Which library** (please choose one):  \n  \u2022 King Library (Oxford campus)  \n  \u2022 Art & Architecture Library (Oxford campus)  \n  \u2022 Rentschler Library (Hamilton campus)  \n  \u2022 Gardner-Harvey Library (Middletown campus)  \n\u2022 Your desired **start time** and **end time**  \n\u2022 **Number of people** in your group  \n\nOnce I have those, I can go ahead and book the room for you.",
+    "analysis": {
+      "has_email": true,
+      "has_url": false,
+      "has_error": false,
+      "is_out_of_scope": false,
+      "has_handoff": false,
+      "has_confirmation": true,
+      "asks_for_info": false,
+      "rejects_invalid": false,
+      "response_length": 574
+    }
+  },
+  {
+    "category": "2_ROOM_RESERVATIONS",
+    "index": 10,
+    "question": "Book King Library room",
+    "status": "SUCCESS",
+    "agents": [],
+    "response": "Sure\u2014let\u2019s get your King Library study room booked! I just need a few details:\n\n\u2022 First name  \n\u2022 Last name  \n\u2022 Your @miamioh.edu email address  \n\u2022 Date you\u2019d like to book (e.g., \u201cApril 10, 2024\u201d or \u201cnext Tuesday\u201d)  \n\u2022 Start time and end time (e.g., \u201c2 pm to 4 pm\u201d)  \n\u2022 Number of people in your group  \n\nOnce I have those, I can confirm your reservation.",
+    "analysis": {
+      "has_email": true,
+      "has_url": false,
+      "has_error": false,
+      "is_out_of_scope": false,
+      "has_handoff": false,
+      "has_confirmation": false,
+      "asks_for_info": false,
+      "rejects_invalid": false,
+      "response_length": 353
+    }
+  },
+  {
+    "category": "3_SUBJECT_LIBRARIANS",
+    "index": 1,
+    "question": "Who is the biology librarian?",
+    "status": "SUCCESS",
+    "agents": [
+      "subject_librarian"
+    ],
+    "response": "For biology research help, you can reach out to **Ginny Boehme**, Science Librarian:\n\n\u2022 **Email:** boehmemv@miamioh.edu  \n\u2022 **Phone:** (513) 529-1726  \n\nNeed more assistance? Chat with a librarian any time: https://www.lib.miamioh.edu/research/research-support/ask/",
+    "analysis": {
+      "has_email": true,
+      "has_url": true,
+      "has_error": false,
+      "is_out_of_scope": false,
+      "has_handoff": true,
+      "has_confirmation": false,
+      "asks_for_info": false,
+      "rejects_invalid": false,
+      "response_length": 265
+    }
+  },
+  {
+    "category": "3_SUBJECT_LIBRARIANS",
+    "index": 2,
+    "question": "I need help with my English paper",
+    "status": "SUCCESS",
+    "agents": [
+      "google_site"
+    ],
+    "response": "Here are a few Miami University Libraries resources to help with your English paper:\n\n\u2022 **Literatures in English LibGuide** \u2013 a subject guide with overviews, recommended databases, and research strategies tailored to English studies  \n  https://libguides.lib.miamioh.edu/english  \n\n\u2022 **ENG 298: Citing Your Sources and Academic Integrity** \u2013 guidance on citation styles, avoiding plagiarism, and managing your references  \n  https://libguides.lib.miamioh.edu/ENG298/citations  \n\nIf you\u2019d like one-on-one support\u2014whether it\u2019s narrowing a topic, finding sources, or polishing your citations\u2014please chat with a librarian or reach out:  \n\u2022 Phone: (513) 529-4141  \n\u2022 Ask-A-Librarian: https://www.lib.miamioh.edu/research/research-support/ask/  \n\nI\u2019d be happy to connect you with a librarian who can help you dive deeper into your paper.",
+    "analysis": {
+      "has_email": false,
+      "has_url": true,
+      "has_error": false,
+      "is_out_of_scope": false,
+      "has_handoff": true,
+      "has_confirmation": false,
+      "asks_for_info": false,
+      "rejects_invalid": false,
+      "response_length": 831
+    }
+  },
+  {
+    "category": "3_SUBJECT_LIBRARIANS",
+    "index": 3,
+    "question": "Psychology department librarian contact",
+    "status": "EXCEPTION",
+    "error": ""
+  },
+  {
+    "category": "3_SUBJECT_LIBRARIANS",
+    "index": 4,
+    "question": "Who can help me with chemistry research?",
+    "status": "EXCEPTION",
+    "error": ""
+  },
+  {
+    "category": "3_SUBJECT_LIBRARIANS",
+    "index": 5,
+    "question": "Business librarian email",
+    "status": "EXCEPTION",
+    "error": ""
+  },
+  {
+    "category": "3_SUBJECT_LIBRARIANS",
+    "index": 6,
+    "question": "History subject librarian",
+    "status": "EXCEPTION",
+    "error": ""
+  },
+  {
+    "category": "3_SUBJECT_LIBRARIANS",
+    "index": 7,
+    "question": "I'm taking ENG 111, who is my librarian?",
+    "status": "SUCCESS",
+    "agents": [
+      "subject_librarian"
+    ],
+    "response": "For ENG 111 research support, you can contact the English subject librarian:\n\n\u2022 **Mark Dahlquist**, Humanities and Social Sciences Librarian  \n  Email: dahlqumj@miamioh.edu  \n  Phone: (513) 529-8494  \n\nNeed additional help? Chat with a librarian: https://www.lib.miamioh.edu/research/research-support/ask/",
+    "analysis": {
+      "has_email": true,
+      "has_url": true,
+      "has_error": false,
+      "is_out_of_scope": false,
+      "has_handoff": true,
+      "has_confirmation": false,
+      "asks_for_info": false,
+      "rejects_invalid": false,
+      "response_length": 305
+    }
+  },
+  {
+    "category": "3_SUBJECT_LIBRARIANS",
+    "index": 8,
+    "question": "PSY 201 librarian contact",
+    "status": "EXCEPTION",
+    "error": ""
+  },
+  {
+    "category": "3_SUBJECT_LIBRARIANS",
+    "index": 9,
+    "question": "Who helps with BIO courses?",
+    "status": "SUCCESS",
+    "agents": [
+      "find_subject_librarian"
+    ],
+    "response": "For biology courses, contact **Ginny Boehme** (Science Librarian). You can reach her at **boehmemv@miamioh.edu** or (513) 529-1726. \n\nView her subject guide for biology: https://libguides.lib.miamioh.edu/biology \n\nIf you need further assistance, you can also chat with a librarian: https://www.lib.miamioh.edu/research/research-support/ask/",
+    "analysis": {
+      "has_email": true,
+      "has_url": true,
+      "has_error": false,
+      "is_out_of_scope": false,
+      "has_handoff": true,
+      "has_confirmation": false,
+      "asks_for_info": false,
+      "rejects_invalid": false,
+      "response_length": 340
+    }
+  },
+  {
+    "category": "3_SUBJECT_LIBRARIANS",
+    "index": 10,
+    "question": "Music librarian at Miami",
+    "status": "EXCEPTION",
+    "error": ""
+  },
+  {
+    "category": "3_SUBJECT_LIBRARIANS",
+    "index": 11,
+    "question": "Art history research help",
+    "status": "SUCCESS",
+    "agents": [
+      "find_subject_librarian"
+    ],
+    "response": "For Art History research, please reach out to:\n\n\u2022 **Stefanie Hilles**, Arts & If you\u2019d like more general research assistance or don\u2019t hear back promptly, you can chat with a librarian anytime at https://www.lib.miamioh.edu/research/research-support/ask/ or call **(513) 529-4141**.\n\n\u26a0\ufe0f **Note**: Some contact information could not be verified. For accurate contact details, visit https://www.lib.miamioh.edu/research/research-support/ask/ or call (513) 529-4141.",
+    "analysis": {
+      "has_email": false,
+      "has_url": true,
+      "has_error": false,
+      "is_out_of_scope": false,
+      "has_handoff": true,
+      "has_confirmation": false,
+      "asks_for_info": false,
+      "rejects_invalid": false,
+      "response_length": 462
+    }
+  },
+  {
+    "category": "3_SUBJECT_LIBRARIANS",
+    "index": 12,
+    "question": "Political science librarian",
+    "status": "EXCEPTION",
+    "error": ""
+  },
+  {
+    "category": "3_SUBJECT_LIBRARIANS",
+    "index": 13,
+    "question": "Who is the librarian at Hamilton campus?",
+    "status": "EXCEPTION",
+    "error": ""
+  },
+  {
+    "category": "3_SUBJECT_LIBRARIANS",
+    "index": 14,
+    "question": "Middletown campus librarian contact",
+    "status": "SUCCESS",
+    "agents": [
+      "search_website"
+    ],
+    "response": "For general library assistance on the Middletown campus, please contact **Gardner-Harvey Library**:\n\n\u2022 Phone: **(513) 727-3222**  \n\u2022 Address: 4200 N. University Blvd., Middletown, OH 45042  \n\nIf you need research help or don\u2019t have a specific librarian in mind, you can also submit your question online via Ask a Librarian:  \nhttps://www.lib.miamioh.edu/research/research-support/ask/  \n\nSource: Regional Libraries | Miami University Libraries (lib.miamioh.edu)",
+    "analysis": {
+      "has_email": false,
+      "has_url": true,
+      "has_error": false,
+      "is_out_of_scope": false,
+      "has_handoff": true,
+      "has_confirmation": false,
+      "asks_for_info": false,
+      "rejects_invalid": false,
+      "response_length": 461
+    }
+  },
+  {
+    "category": "3_SUBJECT_LIBRARIANS",
+    "index": 15,
+    "question": "I'm a nursing major, who is my librarian?",
+    "status": "EXCEPTION",
+    "error": ""
+  },
+  {
+    "category": "4_LIBGUIDE_SEARCHES",
+    "index": 1,
+    "question": "Research guide for biology",
+    "status": "EXCEPTION",
+    "error": ""
+  },
+  {
+    "category": "4_LIBGUIDE_SEARCHES",
+    "index": 2,
+    "question": "Find guide for ENG 111",
+    "status": "SUCCESS",
+    "agents": [
+      "find_course_guide"
+    ],
+    "response": "For ENG 111 questions, contact **Mark Dahlquist** (dahlqumj@miamioh.edu). View the subject guide here: https://libguides.lib.miamioh.edu/sb.php?subject_id=8447",
+    "analysis": {
+      "has_email": true,
+      "has_url": true,
+      "has_error": false,
+      "is_out_of_scope": false,
+      "has_handoff": false,
+      "has_confirmation": false,
+      "asks_for_info": false,
+      "rejects_invalid": false,
+      "response_length": 159
+    }
+  },
+  {
+    "category": "4_LIBGUIDE_SEARCHES",
+    "index": 3,
+    "question": "Psychology research resources",
+    "status": "EXCEPTION",
+    "error": ""
+  },
+  {
+    "category": "4_LIBGUIDE_SEARCHES",
+    "index": 4,
+    "question": "Business LibGuide",
+    "status": "EXCEPTION",
+    "error": ""
+  },
+  {
+    "category": "4_LIBGUIDE_SEARCHES",
+    "index": 5,
+    "question": "Chemistry research guide",
+    "status": "EXCEPTION",
+    "error": ""
+  },
+  {
+    "category": "4_LIBGUIDE_SEARCHES",
+    "index": 6,
+    "question": "History primary sources guide",
+    "status": "EXCEPTION",
+    "error": ""
+  },
+  {
+    "category": "4_LIBGUIDE_SEARCHES",
+    "index": 7,
+    "question": "Where can I find nursing resources?",
+    "status": "SUCCESS",
+    "agents": [],
+    "response": "I'm having trouble accessing our systems right now. Please visit https://www.lib.miamioh.edu/ or chat with a librarian at (513) 529-4141.",
+    "analysis": {
+      "has_email": false,
+      "has_url": true,
+      "has_error": true,
+      "is_out_of_scope": false,
+      "has_handoff": true,
+      "has_confirmation": false,
+      "asks_for_info": false,
+      "rejects_invalid": false,
+      "response_length": 137
+    }
+  },
+  {
+    "category": "4_LIBGUIDE_SEARCHES",
+    "index": 8,
+    "question": "Political science databases",
+    "status": "EXCEPTION",
+    "error": ""
+  },
+  {
+    "category": "4_LIBGUIDE_SEARCHES",
+    "index": 9,
+    "question": "Art history research guide",
+    "status": "SUCCESS",
+    "agents": [
+      "find_subject_librarian"
+    ],
+    "response": "For art history research help, please reach out to:\n\n\u2022 **Stefanie Hilles**, Arts & Humanities Librarian  \n  Email: **hillessa@miamioh.edu**  \n  Phone: **(513) 529-6650**  \n\nNeed additional support or resources? Chat with a librarian anytime:  \nhttps://www.lib.miamioh.edu/research/research-support/ask/  \n\nSource: Miami University Libraries subject librarians tool.",
+    "analysis": {
+      "has_email": true,
+      "has_url": true,
+      "has_error": false,
+      "is_out_of_scope": false,
+      "has_handoff": true,
+      "has_confirmation": false,
+      "asks_for_info": false,
+      "rejects_invalid": false,
+      "response_length": 365
+    }
+  },
+  {
+    "category": "4_LIBGUIDE_SEARCHES",
+    "index": 10,
+    "question": "Music research resources",
+    "status": "EXCEPTION",
+    "error": ""
+  },
+  {
+    "category": "5_POLICY_SERVICE",
+    "index": 1,
+    "question": "How do I renew a book?",
+    "status": "SUCCESS",
+    "agents": [],
+    "response": "I can't renew books or check renewal status directly. Please renew online at https://ohiolink-mu.primo.exlibrisgroup.com/discovery/account?vid=01OHIOLINK_MU:MU&section=overview&lang=en or contact a librarian for help.\n\n\u23f0 **Live chat is currently closed**\nChat hours today: 9:00am - 5:00pm\nSubmit a ticket for off-hours help: https://www.lib.miamioh.edu/research/research-support/ask/",
+    "analysis": {
+      "has_email": false,
+      "has_url": true,
+      "has_error": false,
+      "is_out_of_scope": false,
+      "has_handoff": false,
+      "has_confirmation": false,
+      "asks_for_info": false,
+      "rejects_invalid": false,
+      "response_length": 383
+    }
+  },
+  {
+    "category": "5_POLICY_SERVICE",
+    "index": 2,
+    "question": "What are the late fees for overdue books?",
+    "status": "SUCCESS",
+    "agents": [
+      "search_website"
+    ],
+    "response": "Here\u2019s a quick breakdown of overdue\u2010book fines at Miami University Libraries:  \n\u2022 **University-owned books** (Oxford, Hamilton, Middletown)  \n  \u2013 $0.25 per day, per item  \n  \u2013 Maximum fine: $10.00 per item  \n\n\u2022 **OhioLINK books**  \n  \u2013 $1.00 per day, per item  \n  \u2013 No maximum fine cap  \n\nFor full details on loan periods, fine schedules and billing procedures, please see the Circulation Policies page:  \nhttps://libguides.lib.miamioh.edu/circulation-policies/loan-periods-fines  \n\nSource: Circulation Policies: Loan Periods, Fines and Charges (Miami University Items)",
+    "analysis": {
+      "has_email": false,
+      "has_url": true,
+      "has_error": false,
+      "is_out_of_scope": false,
+      "has_handoff": false,
+      "has_confirmation": false,
+      "asks_for_info": false,
+      "rejects_invalid": false,
+      "response_length": 569
+    }
+  },
+  {
+    "category": "5_POLICY_SERVICE",
+    "index": 3,
+    "question": "Can I eat in the library?",
+    "status": "SUCCESS",
+    "agents": [
+      "google_site"
+    ],
+    "response": "I\u2019m not seeing a specific food\u2010and\u2010drink policy in our available resources. For the most accurate information, please reach out to a librarian:\n\n\u2022 Call: (513) 529-4141  \n\u2022 Chat or email: https://www.lib.miamioh.edu/research/research-support/ask/\n\nThey\u2019ll be happy to let you know where eating is (or isn\u2019t) allowed.",
+    "analysis": {
+      "has_email": false,
+      "has_url": true,
+      "has_error": false,
+      "is_out_of_scope": false,
+      "has_handoff": false,
+      "has_confirmation": false,
+      "asks_for_info": false,
+      "rejects_invalid": false,
+      "response_length": 315
+    }
+  },
+  {
+    "category": "5_POLICY_SERVICE",
+    "index": 4,
+    "question": "How do I print in the library?",
+    "status": "SUCCESS",
+    "agents": [
+      "search_website"
+    ],
+    "response": "You can print from any Miami University Libraries printer in two simple steps:\n\n\u2022 Get your document into the MUprint queue  \n  \u2013 From your computer or device, choose \u201cMUprint Black and White\u201d or \u201cMUprint Color\u201d as your printer  \n  \u2013 Email a PDF or image file to MUprint-BW@MiamiOH.edu (black & white) or MUprint-Color@MiamiOH.edu (color)  \n  \u2013 Or upload your file at MUprint.MiamiOH.edu  \n\n\u2022 Release your job at the printer  \n  \u2013 Scan the QR code on the printer with your phone to open the release webpage and log in  \n  \u2013 Or swipe your Miami ID on the card reader and use the touchscreen  \n\nPrinting rates per side remain:  \n  \u2022 8.5\u201d\u00d711\u201d: B/W $0.10  Color $0.25  \n  \u2022 11\u201d\u00d717\u201d: B/W $0.20  Color $0.50  \n\nFor more details, see Miami U\u2019s printing guide:  \nhttps://www.lib.miamioh.edu/use/technology/printing/  \n\nSource: Services, technology, and resources | Miami University Libraries (lib.miamioh.edu/libraryhealthy/tech/)",
+    "analysis": {
+      "has_email": false,
+      "has_url": true,
+      "has_error": false,
+      "is_out_of_scope": false,
+      "has_handoff": false,
+      "has_confirmation": false,
+      "asks_for_info": false,
+      "rejects_invalid": false,
+      "response_length": 921
+    }
+  },
+  {
+    "category": "5_POLICY_SERVICE",
+    "index": 5,
+    "question": "What is the library's guest policy?",
+    "status": "SUCCESS",
+    "agents": [],
+    "response": "I'm having trouble accessing our systems right now. Please visit https://www.lib.miamioh.edu/ or chat with a librarian at (513) 529-4141.",
+    "analysis": {
+      "has_email": false,
+      "has_url": true,
+      "has_error": true,
+      "is_out_of_scope": false,
+      "has_handoff": true,
+      "has_confirmation": false,
+      "asks_for_info": false,
+      "rejects_invalid": false,
+      "response_length": 137
+    }
+  },
+  {
+    "category": "5_POLICY_SERVICE",
+    "index": 6,
+    "question": "How do I get a library card?",
+    "status": "SUCCESS",
+    "agents": [
+      "search_website"
+    ],
+    "response": "To get a Miami University Libraries card, follow these steps:\n\n\u2022 If you\u2019re a Miami student, faculty or staff member, your valid Miami University ID serves as your library card\u2014simply bring it to any campus library to borrow materials.  \n\u2022 If you\u2019re an Oxford community member, you can apply in person at King Library (325 S. Patterson Ave., Oxford, OH). Bring a government-issued photo ID plus proof of local address (e.g., utility bill).  \n\u2022 If you\u2019re a regional campus community member (Hamilton or Middletown), visit Rentschler Library or Gardner-Harvey Library with the same documents.  \n\nOnce you have your card (your Miami ID or community borrower card), you can:  \n\u2022 Check out books, DVDs and other items in person  \n\u2022 Request items online via our catalog  \n\u2022 Access electronic resources on- and off-campus  \n\nFor complete details and eligibility requirements, visit: https://www.lib.miamioh.edu/ (general library borrowing page) or call (513) 529-4141.",
+    "analysis": {
+      "has_email": false,
+      "has_url": true,
+      "has_error": false,
+      "is_out_of_scope": false,
+      "has_handoff": false,
+      "has_confirmation": false,
+      "asks_for_info": false,
+      "rejects_invalid": false,
+      "response_length": 960
+    }
+  },
+  {
+    "category": "5_POLICY_SERVICE",
+    "index": 7,
+    "question": "Can I check out equipment?",
+    "status": "SUCCESS",
+    "agents": [
+      "google_site"
+    ],
+    "response": "Yes\u2014you can borrow a variety of tech gear from Miami University Libraries. Here\u2019s how it works:\n\n\u2022 Bring your **Miami University ID** to any library checkout desk.  \n\u2022 Call ahead at **(513) 529-4141** to confirm availability\u2014items do go out or get returned late.  \n\u2022 Typical loan periods:  \n  \u2013 Chromebook laptops: 30 days  \n  \u2013 Tablets, cameras & camcorders: 24 hours  \n\u2022 Available items include:  \n  \u2013 Laptops & tablets (Chromebooks, iPad Pros + Apple Pencils at Art & Architecture Library)  \n  \u2013 Audio gear at King Library (digital recorders, mics, headphones)  \n\u2022 Lost/damaged fees can range up to $2,000 for laptops/tablets and $495 for cameras/audio-visual equipment.  \n\nFor full details or to see the complete list of gear, visit:  \nhttps://www.lib.miamioh.edu/use/technology/tech-checkout/  \n\nIf you have any other questions, feel free to call (513) 529-4141 or chat with us at https://www.lib.miamioh.edu/research/research-support/ask/",
+    "analysis": {
+      "has_email": false,
+      "has_url": true,
+      "has_error": false,
+      "is_out_of_scope": false,
+      "has_handoff": false,
+      "has_confirmation": false,
+      "asks_for_info": false,
+      "rejects_invalid": false,
+      "response_length": 944
+    }
+  },
+  {
+    "category": "5_POLICY_SERVICE",
+    "index": 8,
+    "question": "What cameras are available to borrow?",
+    "status": "SUCCESS",
+    "agents": [],
+    "response": "I'm having trouble accessing our systems right now. Please visit https://www.lib.miamioh.edu/ or chat with a librarian at (513) 529-4141.",
+    "analysis": {
+      "has_email": false,
+      "has_url": true,
+      "has_error": true,
+      "is_out_of_scope": false,
+      "has_handoff": true,
+      "has_confirmation": false,
+      "asks_for_info": false,
+      "rejects_invalid": false,
+      "response_length": 137
+    }
+  },
+  {
+    "category": "5_POLICY_SERVICE",
+    "index": 9,
+    "question": "Interlibrary loan policy",
+    "status": "SUCCESS",
+    "agents": [],
+    "response": "I can't manage ILL requests. Please visit https://lib.miamioh.edu/use/borrow/ill/ or contact a librarian for ILL help.\n\n\u23f0 **Live chat is currently closed**\nChat hours today: 9:00am - 5:00pm\nSubmit a ticket for off-hours help: https://www.lib.miamioh.edu/research/research-support/ask/",
+    "analysis": {
+      "has_email": false,
+      "has_url": true,
+      "has_error": false,
+      "is_out_of_scope": false,
+      "has_handoff": false,
+      "has_confirmation": false,
+      "asks_for_info": false,
+      "rejects_invalid": false,
+      "response_length": 284
+    }
+  },
+  {
+    "category": "5_POLICY_SERVICE",
+    "index": 10,
+    "question": "How long can I keep a book?",
+    "status": "SUCCESS",
+    "agents": [
+      "search_website"
+    ],
+    "response": "Miami University Libraries\u2019 standard loan periods for printed books (Miami-owned items) are:  \n\u2022 **Undergraduate students & alumni**: 28 days  \n\u2022 **Graduate students & staff**: 84 days  \n\u2022 **Faculty**: 120 days  \n\nMost books can be renewed up to three times (online via your library account or at the Circulation Desk) unless another patron places a hold.  \n\nFor full details on loan periods, renewals, fines and recalls, see the **Loan Periods, Fines and Charges** guide:  \nhttps://libguides.lib.miamioh.edu/circulation-policies/loan-periods-fines",
+    "analysis": {
+      "has_email": false,
+      "has_url": true,
+      "has_error": false,
+      "is_out_of_scope": false,
+      "has_handoff": false,
+      "has_confirmation": false,
+      "asks_for_info": false,
+      "rejects_invalid": false,
+      "response_length": 548
+    }
+  },
+  {
+    "category": "5_POLICY_SERVICE",
+    "index": 11,
+    "question": "Can I reserve a laptop?",
+    "status": "SUCCESS",
+    "agents": [
+      "search_website"
+    ],
+    "response": "Yes\u2014Miami University Libraries lets you reserve laptops through our Equipment Checkout service. To place a hold:\n\n\u2022 Go to https://www.lib.miamioh.edu/ and pick \u201cLaptop\u201d  \n\u2022 Sign in with your Miami credentials, select your pickup location (King Library or your regional campus), date and time  \n\u2022 You\u2019ll receive a confirmation email once your reservation is complete  \n\nIf you need help, stop by the Service Desk, call us at **(513) 529-4141**, or submit a question online: https://www.lib.miamioh.edu/research/research-support/ask/",
+    "analysis": {
+      "has_email": false,
+      "has_url": true,
+      "has_error": false,
+      "is_out_of_scope": false,
+      "has_handoff": false,
+      "has_confirmation": true,
+      "asks_for_info": false,
+      "rejects_invalid": false,
+      "response_length": 531
+    }
+  },
+  {
+    "category": "5_POLICY_SERVICE",
+    "index": 12,
+    "question": "What is the quiet study policy?",
+    "status": "SUCCESS",
+    "agents": [],
+    "response": "I'm having trouble accessing our systems right now. Please visit https://www.lib.miamioh.edu/ or chat with a librarian at (513) 529-4141.",
+    "analysis": {
+      "has_email": false,
+      "has_url": true,
+      "has_error": true,
+      "is_out_of_scope": false,
+      "has_handoff": true,
+      "has_confirmation": false,
+      "asks_for_info": false,
+      "rejects_invalid": false,
+      "response_length": 137
+    }
+  },
+  {
+    "category": "6_PERSONAL_ACCOUNT",
+    "index": 1,
+    "question": "Check my library account",
+    "status": "SUCCESS",
+    "agents": [],
+    "response": "I don't have access to your library account. Please check your account at https://ohiolink-mu.primo.exlibrisgroup.com/discovery/account?vid=01OHIOLINK_MU:MU&section=overview&lang=en or contact us at (513) 529-4141.\n\n\u23f0 **Live chat is currently closed**\nChat hours today: 9:00am - 5:00pm\nSubmit a ticket for off-hours help: https://www.lib.miamioh.edu/research/research-support/ask/",
+    "analysis": {
+      "has_email": false,
+      "has_url": true,
+      "has_error": false,
+      "is_out_of_scope": false,
+      "has_handoff": false,
+      "has_confirmation": false,
+      "asks_for_info": false,
+      "rejects_invalid": false,
+      "response_length": 380
+    }
+  },
+  {
+    "category": "6_PERSONAL_ACCOUNT",
+    "index": 2,
+    "question": "How do I access my account?",
+    "status": "SUCCESS",
+    "agents": [],
+    "response": "I don't have access to your library account. Please check your account at https://ohiolink-mu.primo.exlibrisgroup.com/discovery/account?vid=01OHIOLINK_MU:MU&section=overview&lang=en or contact us at (513) 529-4141.\n\n\u23f0 **Live chat is currently closed**\nChat hours today: 9:00am - 5:00pm\nSubmit a ticket for off-hours help: https://www.lib.miamioh.edu/research/research-support/ask/",
+    "analysis": {
+      "has_email": false,
+      "has_url": true,
+      "has_error": false,
+      "is_out_of_scope": false,
+      "has_handoff": false,
+      "has_confirmation": false,
+      "asks_for_info": false,
+      "rejects_invalid": false,
+      "response_length": 380
+    }
+  },
+  {
+    "category": "6_PERSONAL_ACCOUNT",
+    "index": 3,
+    "question": "View my checked out books",
+    "status": "SUCCESS",
+    "agents": [],
+    "response": "To see your currently checked-out items, please:\n\n\u2022 Go to the Miami University Libraries website at https://www.lib.miamioh.edu  \n\u2022 Click on **My Account** (top right corner) and sign in with your Miami University credentials  \n\u2022 Once logged in, select the **Checked Out** tab to view and renew your loans\n\nIf you have trouble logging in or need assistance, you can call the Library at (513) 529-4141 or submit a question at https://www.lib.miamioh.edu/research/research-support/ask/",
+    "analysis": {
+      "has_email": false,
+      "has_url": true,
+      "has_error": false,
+      "is_out_of_scope": false,
+      "has_handoff": false,
+      "has_confirmation": false,
+      "asks_for_info": false,
+      "rejects_invalid": false,
+      "response_length": 483
+    }
+  },
+  {
+    "category": "6_PERSONAL_ACCOUNT",
+    "index": 4,
+    "question": "My library fines",
+    "status": "SUCCESS",
+    "agents": [],
+    "response": "I don't have access to your library account. Please check your account at https://ohiolink-mu.primo.exlibrisgroup.com/discovery/account?vid=01OHIOLINK_MU:MU&section=overview&lang=en or contact us at (513) 529-4141.\n\n\u23f0 **Live chat is currently closed**\nChat hours today: 9:00am - 5:00pm\nSubmit a ticket for off-hours help: https://www.lib.miamioh.edu/research/research-support/ask/",
+    "analysis": {
+      "has_email": false,
+      "has_url": true,
+      "has_error": false,
+      "is_out_of_scope": false,
+      "has_handoff": false,
+      "has_confirmation": false,
+      "asks_for_info": false,
+      "rejects_invalid": false,
+      "response_length": 380
+    }
+  },
+  {
+    "category": "6_PERSONAL_ACCOUNT",
+    "index": 5,
+    "question": "Renew my books online",
+    "status": "SUCCESS",
+    "agents": [],
+    "response": "I'm having trouble accessing our systems right now. Please visit https://www.lib.miamioh.edu/ or chat with a librarian at (513) 529-4141.",
+    "analysis": {
+      "has_email": false,
+      "has_url": true,
+      "has_error": true,
+      "is_out_of_scope": false,
+      "has_handoff": true,
+      "has_confirmation": false,
+      "asks_for_info": false,
+      "rejects_invalid": false,
+      "response_length": 137
+    }
+  },
+  {
+    "category": "6_PERSONAL_ACCOUNT",
+    "index": 6,
+    "question": "Check my holds",
+    "status": "SUCCESS",
+    "agents": [],
+    "response": "**My Library Account**\n\nTo view your personal library account information (loans, fines, requests, holds, messages), please sign in to your account:\n\n\ud83d\udd17 **[Access My Library Account](https://ohiolink-mu.primo.exlibrisgroup.com/discovery/account?vid=01OHIOLINK_MU:MU&section=overview&lang=en)**\n\nFrom your account you can:\n\u2022 View your current **loans** and due dates\n\u2022 Check any **fines or fees**\n\u2022 See your **requests** and holds\n\u2022 View **blocks** or messages on your account\n\u2022 Update your **personal details** and settings\n\nIf you need help with your account, call us at **(513) 529-4141**.",
+    "analysis": {
+      "has_email": false,
+      "has_url": false,
+      "has_error": false,
+      "is_out_of_scope": false,
+      "has_handoff": false,
+      "has_confirmation": false,
+      "asks_for_info": true,
+      "rejects_invalid": false,
+      "response_length": 590
+    }
+  },
+  {
+    "category": "7_OUT_OF_SCOPE",
+    "index": 1,
+    "question": "What's the weather today?",
+    "status": "SUCCESS",
+    "agents": [
+      "google_site"
+    ],
+    "response": "I\u2019m sorry, but I don\u2019t have information on today\u2019s weather. For library-related questions, you can reach us at (513) 529-4141 or via our Ask-a-Librarian chat: https://www.lib.miamioh.edu/research/research-support/ask/",
+    "analysis": {
+      "has_email": false,
+      "has_url": true,
+      "has_error": false,
+      "is_out_of_scope": false,
+      "has_handoff": false,
+      "has_confirmation": false,
+      "asks_for_info": false,
+      "rejects_invalid": false,
+      "response_length": 217
+    }
+  },
+  {
+    "category": "7_OUT_OF_SCOPE",
+    "index": 2,
+    "question": "Will it rain tomorrow?",
+    "status": "SUCCESS",
+    "agents": [
+      "google_site"
+    ],
+    "response": "I\u2019m sorry, but I can\u2019t help with weather forecasts. I specialize in Miami University Libraries information\u2014if you need library assistance, please call (513) 529-4141 or chat with us at https://www.lib.miamioh.edu/research/research-support/ask/.",
+    "analysis": {
+      "has_email": false,
+      "has_url": true,
+      "has_error": false,
+      "is_out_of_scope": false,
+      "has_handoff": false,
+      "has_confirmation": false,
+      "asks_for_info": true,
+      "rejects_invalid": false,
+      "response_length": 244
+    }
+  },
+  {
+    "category": "7_OUT_OF_SCOPE",
+    "index": 3,
+    "question": "How do I register for classes?",
+    "status": "SUCCESS",
+    "agents": [
+      "google_site"
+    ],
+    "response": "For general university questions like class registration, please visit miamioh.edu or contact the university at (513) 529-1809.",
+    "analysis": {
+      "has_email": false,
+      "has_url": false,
+      "has_error": false,
+      "is_out_of_scope": false,
+      "has_handoff": false,
+      "has_confirmation": false,
+      "asks_for_info": false,
+      "rejects_invalid": false,
+      "response_length": 127
+    }
+  },
+  {
+    "category": "7_OUT_OF_SCOPE",
+    "index": 4,
+    "question": "When is course registration?",
+    "status": "SUCCESS",
+    "agents": [],
+    "response": "I'm having trouble accessing our systems right now. Please visit https://www.lib.miamioh.edu/ or chat with a librarian at (513) 529-4141.",
+    "analysis": {
+      "has_email": false,
+      "has_url": true,
+      "has_error": true,
+      "is_out_of_scope": false,
+      "has_handoff": true,
+      "has_confirmation": false,
+      "asks_for_info": false,
+      "rejects_invalid": false,
+      "response_length": 137
+    }
+  },
+  {
+    "category": "7_OUT_OF_SCOPE",
+    "index": 5,
+    "question": "Can you help me add a class?",
+    "status": "SUCCESS",
+    "agents": [
+      "google_site"
+    ],
+    "response": "I\u2019m afraid class registration falls outside the library\u2019s services. Please contact your academic advisor for help adding a class.",
+    "analysis": {
+      "has_email": false,
+      "has_url": false,
+      "has_error": false,
+      "is_out_of_scope": false,
+      "has_handoff": false,
+      "has_confirmation": false,
+      "asks_for_info": false,
+      "rejects_invalid": false,
+      "response_length": 129
+    }
+  },
+  {
+    "category": "7_OUT_OF_SCOPE",
+    "index": 6,
+    "question": "What's for lunch at the dining hall?",
+    "status": "SUCCESS",
+    "agents": [
+      "google_site"
+    ],
+    "response": "I\u2019m sorry, but dining hall menus fall outside the library\u2019s scope. For information about campus dining, please visit miamioh.edu or contact the university at (513) 529-1809.",
+    "analysis": {
+      "has_email": false,
+      "has_url": false,
+      "has_error": false,
+      "is_out_of_scope": false,
+      "has_handoff": false,
+      "has_confirmation": false,
+      "asks_for_info": false,
+      "rejects_invalid": false,
+      "response_length": 173
+    }
+  },
+  {
+    "category": "7_OUT_OF_SCOPE",
+    "index": 7,
+    "question": "Where can I eat on campus?",
+    "status": "SUCCESS",
+    "agents": [],
+    "response": "I'm having trouble accessing our systems right now. Please visit https://www.lib.miamioh.edu/ or chat with a librarian at (513) 529-4141.",
+    "analysis": {
+      "has_email": false,
+      "has_url": true,
+      "has_error": true,
+      "is_out_of_scope": false,
+      "has_handoff": true,
+      "has_confirmation": false,
+      "asks_for_info": false,
+      "rejects_invalid": false,
+      "response_length": 137
+    }
+  },
+  {
+    "category": "7_OUT_OF_SCOPE",
+    "index": 8,
+    "question": "Dining hall hours",
+    "status": "SUCCESS",
+    "agents": [],
+    "response": "I'm having trouble accessing our systems right now. Please visit https://www.lib.miamioh.edu/ or chat with a librarian at (513) 529-4141.",
+    "analysis": {
+      "has_email": false,
+      "has_url": true,
+      "has_error": true,
+      "is_out_of_scope": false,
+      "has_handoff": true,
+      "has_confirmation": false,
+      "asks_for_info": false,
+      "rejects_invalid": false,
+      "response_length": 137
+    }
+  },
+  {
+    "category": "7_OUT_OF_SCOPE",
+    "index": 9,
+    "question": "When is the football game?",
+    "status": "SUCCESS",
+    "agents": [],
+    "response": "I'm having trouble accessing our systems right now. Please visit https://www.lib.miamioh.edu/ or chat with a librarian at (513) 529-4141.",
+    "analysis": {
+      "has_email": false,
+      "has_url": true,
+      "has_error": true,
+      "is_out_of_scope": false,
+      "has_handoff": true,
+      "has_confirmation": false,
+      "asks_for_info": false,
+      "rejects_invalid": false,
+      "response_length": 137
+    }
+  },
+  {
+    "category": "7_OUT_OF_SCOPE",
+    "index": 10,
+    "question": "Basketball schedule",
+    "status": "SUCCESS",
+    "agents": [
+      "google_site"
+    ],
+    "response": "I\u2019m sorry, but basketball schedules fall outside the Library\u2019s scope. For general university information, please visit miamioh.edu or contact the university at (513) 529-1809.",
+    "analysis": {
+      "has_email": false,
+      "has_url": false,
+      "has_error": false,
+      "is_out_of_scope": false,
+      "has_handoff": false,
+      "has_confirmation": false,
+      "asks_for_info": false,
+      "rejects_invalid": false,
+      "response_length": 175
+    }
+  },
+  {
+    "category": "7_OUT_OF_SCOPE",
+    "index": 11,
+    "question": "Can you help me with my math homework?",
+    "status": "SUCCESS",
+    "agents": [
+      "google_site"
+    ],
+    "response": "I\u2019m sorry, but I can\u2019t help with course\u2010specific math homework. For assistance with your math questions, please contact your professor or your academic department. If you need help finding library resources or research support, you can reach the Miami University Libraries at (513) 529-4141 or via our Ask-a-Librarian service: https://www.lib.miamioh.edu/research/research-support/ask/",
+    "analysis": {
+      "has_email": false,
+      "has_url": true,
+      "has_error": false,
+      "is_out_of_scope": false,
+      "has_handoff": false,
+      "has_confirmation": false,
+      "asks_for_info": false,
+      "rejects_invalid": false,
+      "response_length": 385
+    }
+  },
+  {
+    "category": "7_OUT_OF_SCOPE",
+    "index": 12,
+    "question": "What's the answer to question 5?",
+    "status": "SUCCESS",
+    "agents": [],
+    "response": "I\u2019m not sure which \u201cquestion 5\u201d you\u2019re referring to\u2014could you please share the full text or context of that question? Once I know what it asks, I can help you find the answer or point you to the right resources.",
+    "analysis": {
+      "has_email": false,
+      "has_url": false,
+      "has_error": false,
+      "is_out_of_scope": false,
+      "has_handoff": false,
+      "has_confirmation": false,
+      "asks_for_info": false,
+      "rejects_invalid": false,
+      "response_length": 211
+    }
+  },
+  {
+    "category": "7_OUT_OF_SCOPE",
+    "index": 13,
+    "question": "Write my essay for me",
+    "status": "SUCCESS",
+    "agents": [],
+    "response": "I\u2019m happy to help you get started, but I can\u2019t write the essay for you. Instead, let\u2019s work together on:\n\n\u2022 Clarifying your assignment prompt and topic  \n\u2022 Developing a strong thesis statement  \n\u2022 Creating an outline to organize your ideas  \n\u2022 Finding and evaluating credible library sources  \n\nCould you share more about your essay\u2019s topic, course, or any guidelines you\u2019ve been given? Once I know your subject area, I can point you to research guides, relevant databases, and even put you in touch with the right subject librarian for additional support.",
+    "analysis": {
+      "has_email": false,
+      "has_url": false,
+      "has_error": false,
+      "is_out_of_scope": false,
+      "has_handoff": false,
+      "has_confirmation": false,
+      "asks_for_info": false,
+      "rejects_invalid": false,
+      "response_length": 556
+    }
+  },
+  {
+    "category": "7_OUT_OF_SCOPE",
+    "index": 14,
+    "question": "Where is the student center?",
+    "status": "SUCCESS",
+    "agents": [],
+    "response": "I'm having trouble accessing our systems right now. Please visit https://www.lib.miamioh.edu/ or chat with a librarian at (513) 529-4141.",
+    "analysis": {
+      "has_email": false,
+      "has_url": true,
+      "has_error": true,
+      "is_out_of_scope": false,
+      "has_handoff": true,
+      "has_confirmation": false,
+      "asks_for_info": false,
+      "rejects_invalid": false,
+      "response_length": 137
+    }
+  },
+  {
+    "category": "7_OUT_OF_SCOPE",
+    "index": 15,
+    "question": "How do I get to Armstrong?",
+    "status": "SUCCESS",
+    "agents": [
+      "google_site"
+    ],
+    "response": "I\u2019m sorry, I don\u2019t have that information from our library systems. For help finding Armstrong, please contact the Miami University Libraries:  \n\u2022 Phone: **(513) 529-4141**  \n\u2022 Ask-a-Librarian chat: https://www.lib.miamioh.edu/research/research-support/ask/",
+    "analysis": {
+      "has_email": false,
+      "has_url": true,
+      "has_error": false,
+      "is_out_of_scope": false,
+      "has_handoff": false,
+      "has_confirmation": false,
+      "asks_for_info": false,
+      "rejects_invalid": false,
+      "response_length": 256
+    }
+  },
+  {
+    "category": "7_OUT_OF_SCOPE",
+    "index": 16,
+    "question": "Campus map",
+    "status": "SUCCESS",
+    "agents": [
+      "search_website"
+    ],
+    "response": "I\u2019m sorry, our search service is temporarily unavailable. For a campus map and directions, please visit the Miami University Libraries website at https://www.lib.miamioh.edu or give us a call at **(513) 529-4141**.",
+    "analysis": {
+      "has_email": false,
+      "has_url": true,
+      "has_error": false,
+      "is_out_of_scope": false,
+      "has_handoff": false,
+      "has_confirmation": false,
+      "asks_for_info": false,
+      "rejects_invalid": false,
+      "response_length": 214
+    }
+  },
+  {
+    "category": "7_OUT_OF_SCOPE",
+    "index": 17,
+    "question": "How do I connect to WiFi?",
+    "status": "SUCCESS",
+    "agents": [
+      "search_website"
+    ],
+    "response": "Here\u2019s how to get online in any Miami University library:\n\n\u2022 **Students & Employees**  \n    \u2022 Select the eduroam network  \n    \u2022 Log in with your full Miami University  and your university password  \n\n\u2022 **Visitors & Guests**  \n    \u2022 Select the MiamiU-Guest network  \n    \u2022 Follow the on-screen prompts to register and agree to the acceptable-use policy  \n\nIf you run into trouble, stop by any library service desk or call us at **(513) 529-4141**. You can also find more details at https://www.lib.miamioh.edu.\n\n\u26a0\ufe0f **Note**: Some contact information could not be verified. For accurate contact details, visit https://www.lib.miamioh.edu/research/research-support/ask/ or call (513) 529-4141.",
+    "analysis": {
+      "has_email": false,
+      "has_url": true,
+      "has_error": false,
+      "is_out_of_scope": false,
+      "has_handoff": false,
+      "has_confirmation": false,
+      "asks_for_info": false,
+      "rejects_invalid": false,
+      "response_length": 691
+    }
+  },
+  {
+    "category": "7_OUT_OF_SCOPE",
+    "index": 18,
+    "question": "My laptop is broken",
+    "status": "SUCCESS",
+    "agents": [
+      "google_site"
+    ],
+    "response": "It sounds like you need IT support rather than library assistance. Please contact IT Services at .\n\n\u26a0\ufe0f **Note**: Some contact information could not be verified. For accurate contact details, visit https://www.lib.miamioh.edu/research/research-support/ask/ or call (513) 529-4141.",
+    "analysis": {
+      "has_email": false,
+      "has_url": true,
+      "has_error": false,
+      "is_out_of_scope": false,
+      "has_handoff": false,
+      "has_confirmation": false,
+      "asks_for_info": true,
+      "rejects_invalid": false,
+      "response_length": 279
+    }
+  },
+  {
+    "category": "7_OUT_OF_SCOPE",
+    "index": 19,
+    "question": "Canvas login issues",
+    "status": "SUCCESS",
+    "agents": [
+      "search_website"
+    ],
+    "response": "I\u2019m sorry you\u2019re having trouble logging into Canvas. Canvas support is handled by Miami University\u2019s IT Service Desk rather than the library. Please reach out to the IT Service Desk through your Miami University portal or search \u201cMiami University IT Service Desk\u201d for their contact details. \n\nIf you have other library\u2010related questions, feel free to call us at **(513) 529-4141** or visit our website at https://www.lib.miamioh.edu.",
+    "analysis": {
+      "has_email": false,
+      "has_url": true,
+      "has_error": false,
+      "is_out_of_scope": false,
+      "has_handoff": false,
+      "has_confirmation": false,
+      "asks_for_info": false,
+      "rejects_invalid": false,
+      "response_length": 433
+    }
+  },
+  {
+    "category": "7_OUT_OF_SCOPE",
+    "index": 20,
+    "question": "How do I pay tuition?",
+    "status": "SUCCESS",
+    "agents": [
+      "google_site"
+    ],
+    "response": "I\u2019m sorry, but I only handle Miami University Libraries questions. For general University matters like paying tuition, please visit miamioh.edu or contact the University at (513) 529-1809.",
+    "analysis": {
+      "has_email": false,
+      "has_url": false,
+      "has_error": false,
+      "is_out_of_scope": false,
+      "has_handoff": false,
+      "has_confirmation": false,
+      "asks_for_info": false,
+      "rejects_invalid": false,
+      "response_length": 188
+    }
+  },
+  {
+    "category": "7_OUT_OF_SCOPE",
+    "index": 21,
+    "question": "Financial aid office hours",
+    "status": "SUCCESS",
+    "agents": [],
+    "response": "I'm having trouble accessing our systems right now. Please visit https://www.lib.miamioh.edu/ or chat with a librarian at (513) 529-4141.",
+    "analysis": {
+      "has_email": false,
+      "has_url": true,
+      "has_error": true,
+      "is_out_of_scope": false,
+      "has_handoff": true,
+      "has_confirmation": false,
+      "asks_for_info": false,
+      "rejects_invalid": false,
+      "response_length": 137
+    }
+  },
+  {
+    "category": "7_OUT_OF_SCOPE",
+    "index": 22,
+    "question": "Scholarship information",
+    "status": "SUCCESS",
+    "agents": [
+      "google_site"
+    ],
+    "response": "It looks like scholarship inquiries fall under University Financial Aid rather than the Libraries. For general university questions\u2014including scholarships\u2014please visit miamioh.edu or call the University at (513) 529-1809.",
+    "analysis": {
+      "has_email": false,
+      "has_url": false,
+      "has_error": false,
+      "is_out_of_scope": false,
+      "has_handoff": false,
+      "has_confirmation": false,
+      "asks_for_info": false,
+      "rejects_invalid": false,
+      "response_length": 221
+    }
+  },
+  {
+    "category": "8_STRESS_TESTING",
+    "index": 1,
+    "question": "I need to find a book about psychology and also I want to know the library hours and can you help me with my research paper and I also need to book a study room for tomorrow and I'm not sure what time but probably in the afternoon maybe around 2 or 3 pm and I need it for about 2 hours and there will be 4 people in my group and my name is Meng Qu and my email is qum@miamioh.edu and I'm a psychology major and I need help finding sources for my paper on cognitive development",
+    "status": "SUCCESS",
+    "agents": [],
+    "response": "Catalog search is currently unavailable. Please search directly at https://www.lib.miamioh.edu/ or chat with a librarian who can help find materials.\n\n\u23f0 **Live chat is currently closed**\nChat hours today: 9:00am - 5:00pm\nSubmit a ticket for off-hours help: https://www.lib.miamioh.edu/research/research-support/ask/",
+    "analysis": {
+      "has_email": false,
+      "has_url": true,
+      "has_error": false,
+      "is_out_of_scope": false,
+      "has_handoff": true,
+      "has_confirmation": false,
+      "asks_for_info": false,
+      "rejects_invalid": false,
+      "response_length": 315
+    }
+  },
+  {
+    "category": "8_STRESS_TESTING",
+    "index": 2,
+    "question": "'; DROP TABLE users; --",
+    "status": "SUCCESS",
+    "agents": [],
+    "response": "Hi there! It looks like you\u2019ve entered some code that resembles an SQL injection snippet. How can I help you today? If you\u2019re looking for assistance with library resources, research support, study rooms, or anything else, just let me know!",
+    "analysis": {
+      "has_email": false,
+      "has_url": false,
+      "has_error": false,
+      "is_out_of_scope": false,
+      "has_handoff": false,
+      "has_confirmation": false,
+      "asks_for_info": false,
+      "rejects_invalid": false,
+      "response_length": 239
+    }
+  },
+  {
+    "category": "8_STRESS_TESTING",
+    "index": 3,
+    "question": "1' OR '1'='1",
+    "status": "SUCCESS",
+    "agents": [],
+    "response": "Hi there! It looks like you\u2019ve entered a string often used in programming or databases. How can I help you today with library resources or services?",
+    "analysis": {
+      "has_email": false,
+      "has_url": false,
+      "has_error": false,
+      "is_out_of_scope": false,
+      "has_handoff": false,
+      "has_confirmation": false,
+      "asks_for_info": false,
+      "rejects_invalid": false,
+      "response_length": 148
+    }
+  },
+  {
+    "category": "8_STRESS_TESTING",
+    "index": 4,
+    "question": "<script>alert('xss')</script>",
+    "status": "SUCCESS",
+    "agents": [],
+    "response": "Hello! It looks like you entered some code\u2014how can I assist you today with library resources or services? If you have questions about books, study rooms, research guides, or anything else, just let me know!",
+    "analysis": {
+      "has_email": false,
+      "has_url": false,
+      "has_error": false,
+      "is_out_of_scope": false,
+      "has_handoff": false,
+      "has_confirmation": false,
+      "asks_for_info": false,
+      "rejects_invalid": false,
+      "response_length": 206
+    }
+  },
+  {
+    "category": "8_STRESS_TESTING",
+    "index": 5,
+    "question": "What are the hours for King Library?!@#$%^&*()",
+    "status": "SUCCESS",
+    "agents": [
+      "libcal"
+    ],
+    "response": "Here are the **King Library** hours for the week of **December 15\u201321, 2025** (Source: LibCal [VERIFIED API DATA]):\n\n\u2022 **Monday (12/15/2025):** 8:00 am \u2013 5:00 pm  \n\u2022 **Tuesday (12/16/2025):** 8:00 am \u2013 5:00 pm  \n\u2022 **Wednesday (12/17/2025):** 8:00 am \u2013 5:00 pm  \n\u2022 **Thursday (12/18/2025):** 8:00 am \u2013 5:00 pm  \n\u2022 **Friday (12/19/2025):** 8:00 am \u2013 5:00 pm  \n\u2022 **Saturday (12/20/2025):** Closed  \n\u2022 **Sunday (12/21/2025):** Closed",
+    "analysis": {
+      "has_email": false,
+      "has_url": false,
+      "has_error": false,
+      "is_out_of_scope": false,
+      "has_handoff": false,
+      "has_confirmation": false,
+      "asks_for_info": false,
+      "rejects_invalid": false,
+      "response_length": 428
+    }
+  },
+  {
+    "category": "8_STRESS_TESTING",
+    "index": 6,
+    "question": "Book room @#$%",
+    "status": "SUCCESS",
+    "agents": [],
+    "response": "Sure\u2014let\u2019s get your study room booked! I just need a few details:\n\n\u2022 Your first and last name  \n\u2022 Your @miamioh.edu email address  \n\u2022 Date you\u2019d like to reserve (e.g., \u201cDecember 1\u201d or \u201c12/1/2025\u201d)  \n\u2022 Start time and end time (e.g., \u201c2 pm\u20134 pm\u201d)  \n\u2022 Number of people in your group  \n\u2022 Which library: King (Oxford), Art & Architecture (Oxford), Rentschler (Hamilton), or Gardner-Harvey (Middletown)  \n\nOnce I have all of that, I can complete your booking.",
+    "analysis": {
+      "has_email": true,
+      "has_url": false,
+      "has_error": false,
+      "is_out_of_scope": false,
+      "has_handoff": false,
+      "has_confirmation": true,
+      "asks_for_info": false,
+      "rejects_invalid": false,
+      "response_length": 453
+    }
+  },
+  {
+    "category": "8_STRESS_TESTING",
+    "index": 7,
+    "question": "Librarian contact: <test@test.com>",
+    "status": "SUCCESS",
+    "agents": [],
+    "response": "I\u2019m not finding a subject librarian associated with that email address. To help you connect with the right librarian, could you please tell me what subject or course you need assistance with?  \n\nIf you need immediate help or aren\u2019t sure whom to contact, you can also:  \n\u2022 Visit our Ask a Librarian page: https://www.lib.miamioh.edu/research/research-support/ask/  \n\u2022 Call the library at **(513) 529-4141**  \n\nLet me know your subject area or course, and I\u2019ll look up the correct librarian for you!",
+    "analysis": {
+      "has_email": false,
+      "has_url": true,
+      "has_error": false,
+      "is_out_of_scope": false,
+      "has_handoff": true,
+      "has_confirmation": false,
+      "asks_for_info": false,
+      "rejects_invalid": false,
+      "response_length": 497
+    }
+  },
+  {
+    "category": "8_STRESS_TESTING",
+    "index": 8,
+    "question": "   ",
+    "status": "SUCCESS",
+    "agents": [],
+    "response": "Hello! Welcome to Miami University Libraries. How can I help you today? Whether you need to find resources, book a study room, or get research assistance, I\u2019m here to help.",
+    "analysis": {
+      "has_email": false,
+      "has_url": false,
+      "has_error": false,
+      "is_out_of_scope": false,
+      "has_handoff": false,
+      "has_confirmation": false,
+      "asks_for_info": false,
+      "rejects_invalid": false,
+      "response_length": 172
+    }
+  },
+  {
+    "category": "8_STRESS_TESTING",
+    "index": 9,
+    "question": "",
+    "status": "SUCCESS",
+    "agents": [],
+    "response": "Hello! How can I assist you today with Miami University Libraries? Whether you need help finding resources, booking a study room, or connecting with a subject librarian, just let me know.",
+    "analysis": {
+      "has_email": false,
+      "has_url": false,
+      "has_error": false,
+      "is_out_of_scope": false,
+      "has_handoff": false,
+      "has_confirmation": true,
+      "asks_for_info": false,
+      "rejects_invalid": false,
+      "response_length": 187
+    }
+  },
+  {
+    "category": "8_STRESS_TESTING",
+    "index": 10,
+    "question": "\n\n\n",
+    "status": "SUCCESS",
+    "agents": [],
+    "response": "Hello! How can I assist you today with Miami University Libraries?",
+    "analysis": {
+      "has_email": false,
+      "has_url": false,
+      "has_error": false,
+      "is_out_of_scope": false,
+      "has_handoff": false,
+      "has_confirmation": false,
+      "asks_for_info": false,
+      "rejects_invalid": false,
+      "response_length": 66
+    }
+  },
+  {
+    "category": "8_STRESS_TESTING",
+    "index": 11,
+    "question": "\u56fe\u4e66\u9986\u51e0\u70b9\u5173\u95e8\uff1f",
+    "status": "SUCCESS",
+    "agents": [
+      "get_library_hours"
+    ],
+    "response": "King \u56fe\u4e66\u9986\uff08Oxford \u6821\u533a\uff09\u7684\u672c\u5468\u5f00\u653e\u65f6\u95f4\u5982\u4e0b\uff1a\n\n\u2022 \u5468\u4e00\u81f3\u5468\u4e94\uff1a\u4e0a\u5348 8:00 \u81f3 \u4e0b\u5348 5:00  \n\u2022 \u5468\u516d\u3001\u5468\u65e5\uff1a\u95ed\u9986  \n\n\u4fe1\u606f\u6765\u6e90\uff1aMiami University Libraries \u5b98\u7f51\u3002",
+    "analysis": {
+      "has_email": false,
+      "has_url": false,
+      "has_error": false,
+      "is_out_of_scope": false,
+      "has_handoff": false,
+      "has_confirmation": false,
+      "asks_for_info": false,
+      "rejects_invalid": false,
+      "response_length": 108
+    }
+  },
+  {
+    "category": "8_STRESS_TESTING",
+    "index": 12,
+    "question": "\u00bfCu\u00e1ndo cierra la biblioteca?",
+    "status": "SUCCESS",
+    "agents": [
+      "get_library_hours"
+    ],
+    "response": "La **King Library** cierra a las **5:00 pm** de lunes a viernes y est\u00e1 cerrada s\u00e1bados y domingos esta semana. (Fuente: LibCal)",
+    "analysis": {
+      "has_email": false,
+      "has_url": false,
+      "has_error": false,
+      "is_out_of_scope": false,
+      "has_handoff": false,
+      "has_confirmation": false,
+      "asks_for_info": false,
+      "rejects_invalid": false,
+      "response_length": 127
+    }
+  },
+  {
+    "category": "8_STRESS_TESTING",
+    "index": 13,
+    "question": "asdfghjkl qwertyuiop",
+    "status": "SUCCESS",
+    "agents": [],
+    "response": "I\u2019m sorry, I didn\u2019t quite catch that. Could you please clarify your question or let me know how I can help you with Miami University Libraries?",
+    "analysis": {
+      "has_email": false,
+      "has_url": false,
+      "has_error": false,
+      "is_out_of_scope": false,
+      "has_handoff": false,
+      "has_confirmation": false,
+      "asks_for_info": false,
+      "rejects_invalid": false,
+      "response_length": 143
+    }
+  },
+  {
+    "category": "8_STRESS_TESTING",
+    "index": 14,
+    "question": "blah blah blah",
+    "status": "SUCCESS",
+    "agents": [],
+    "response": "Hello! How can I help you today? For example, I can assist with:  \n\u2022 Finding books, articles, or e-resources in our catalog  \n\u2022 Booking a study room at one of our libraries  \n\u2022 Connecting you with a subject librarian or research guide  \n\u2022 Checking library hours or policies  \n\nJust let me know what you need, and I\u2019ll be happy to assist!",
+    "analysis": {
+      "has_email": false,
+      "has_url": false,
+      "has_error": false,
+      "is_out_of_scope": false,
+      "has_handoff": false,
+      "has_confirmation": true,
+      "asks_for_info": false,
+      "rejects_invalid": false,
+      "response_length": 337
+    }
+  },
+  {
+    "category": "8_STRESS_TESTING",
+    "index": 15,
+    "question": "test test test 123",
+    "status": "SUCCESS",
+    "agents": [],
+    "response": "Hello! How can I assist you today? If you have questions about our services, need help finding resources, or want to book a study room, just let me know.",
+    "analysis": {
+      "has_email": false,
+      "has_url": false,
+      "has_error": false,
+      "is_out_of_scope": false,
+      "has_handoff": false,
+      "has_confirmation": false,
+      "asks_for_info": false,
+      "rejects_invalid": false,
+      "response_length": 153
+    }
+  },
+  {
+    "category": "8_STRESS_TESTING",
+    "index": 16,
+    "question": "Book a room for yesterday",
+    "status": "SUCCESS",
+    "agents": [],
+    "response": "I\u2019m sorry, but we can\u2019t make reservations for past dates. Could you please let me know the following for a future booking?  \n\n\u2022 Your first and last name  \n\u2022 Your @miamioh.edu email address  \n\u2022 The date you\u2019d like to reserve (must be today or later)  \n\u2022 Start and end times  \n\u2022 Number of people in your group  \n\u2022 Which library: **King**, **Art & Architecture**, **Rentschler**, or **Gardner-Harvey**  \n\nOnce I have those details, I can set up your room reservation.",
+    "analysis": {
+      "has_email": true,
+      "has_url": false,
+      "has_error": false,
+      "is_out_of_scope": false,
+      "has_handoff": false,
+      "has_confirmation": true,
+      "asks_for_info": false,
+      "rejects_invalid": false,
+      "response_length": 464
+    }
+  },
+  {
+    "category": "8_STRESS_TESTING",
+    "index": 17,
+    "question": "What time does the library close before it opens?",
+    "status": "SUCCESS",
+    "agents": [],
+    "response": "Could you clarify which Miami University library location you mean? We have four with public hours:\n\n\u2022 **King Library** (Oxford campus)  \n\u2022 **Art & Architecture Library** (Oxford campus)  \n\u2022 **Rentschler Library** (Hamilton campus)  \n\u2022 **Gardner-Harvey Library** (Middletown campus)  \n\nLet me know which one, and I can share its closing (and opening) times.",
+    "analysis": {
+      "has_email": false,
+      "has_url": false,
+      "has_error": false,
+      "is_out_of_scope": false,
+      "has_handoff": false,
+      "has_confirmation": false,
+      "asks_for_info": false,
+      "rejects_invalid": false,
+      "response_length": 357
+    }
+  },
+  {
+    "category": "8_STRESS_TESTING",
+    "index": 18,
+    "question": "I need a study room at King Library on December 25th, 2025 at 3:47 AM for exactly 73 minutes for 0.5 people",
+    "status": "SUCCESS",
+    "agents": [],
+    "response": "I can help you reserve a King Library study room on December 25, 2025 beginning at 3:47 AM for a 73-minute block (that ends at 5:00 AM). To complete your booking I just need a few details:\n\n\u2022 Your first name  \n\u2022 Your last name  \n\u2022 Your @miamioh.edu email address  \n\u2022 The number of people in your group (we require a whole number, minimum 1)  \n\nOnce I have those, I can finalize your reservation. Let me know!",
+    "analysis": {
+      "has_email": true,
+      "has_url": false,
+      "has_error": false,
+      "is_out_of_scope": false,
+      "has_handoff": false,
+      "has_confirmation": true,
+      "asks_for_info": false,
+      "rejects_invalid": false,
+      "response_length": 408
+    }
+  },
+  {
+    "category": "8_STRESS_TESTING",
+    "index": 19,
+    "question": "What are the hours? Who is the librarian? Can I book a room? How do I renew?",
+    "status": "SUCCESS",
+    "agents": [],
+    "response": "I can't renew books or check renewal status directly. Please renew online at https://ohiolink-mu.primo.exlibrisgroup.com/discovery/account?vid=01OHIOLINK_MU:MU&section=overview&lang=en or contact a librarian for help.\n\n\u23f0 **Live chat is currently closed**\nChat hours today: 9:00am - 5:00pm\nSubmit a ticket for off-hours help: https://www.lib.miamioh.edu/research/research-support/ask/",
+    "analysis": {
+      "has_email": false,
+      "has_url": true,
+      "has_error": false,
+      "is_out_of_scope": false,
+      "has_handoff": false,
+      "has_confirmation": false,
+      "asks_for_info": false,
+      "rejects_invalid": false,
+      "response_length": 383
+    }
+  },
+  {
+    "category": "9_REGIONAL_CAMPUS",
+    "index": 1,
+    "question": "I'm at Hamilton campus, what are the library hours?",
+    "status": "SUCCESS",
+    "agents": [
+      "libcal"
+    ],
+    "response": "For the week of December 15\u201321, 2025, Rentschler Library and curbside service (Hamilton) hours are:  \n\u2022 Monday (12/15) \u2013 Friday (12/19): 8:00 am to 5:00 pm  \n\u2022 Saturday (12/20) \u2013 Sunday (12/21): Closed  \n\nSource: [VERIFIED API DATA] If you need hours for a different week or have any questions, please call the library at (513) 529-4141 or visit https://www.lib.miamioh.edu/research/research-support/ask/",
+    "analysis": {
+      "has_email": false,
+      "has_url": true,
+      "has_error": false,
+      "is_out_of_scope": false,
+      "has_handoff": false,
+      "has_confirmation": false,
+      "asks_for_info": false,
+      "rejects_invalid": false,
+      "response_length": 404
+    }
+  },
+  {
+    "category": "9_REGIONAL_CAMPUS",
+    "index": 2,
+    "question": "Who is the librarian at Rentschler Library?",
+    "status": "EXCEPTION",
+    "error": ""
+  },
+  {
+    "category": "9_REGIONAL_CAMPUS",
+    "index": 3,
+    "question": "Book a room at Hamilton",
+    "status": "SUCCESS",
+    "agents": [],
+    "response": "Sure\u2014let\u2019s get your Rentschler Library (Hamilton campus) study room booked. Could you please provide:  \n\u2022 Your first and last name  \n\u2022 Your @miamioh.edu email address  \n\u2022 The date you\u2019d like to reserve  \n\u2022 Start time and end time  \n\u2022 Number of people in your group  \n\nOnce I have those details, I\u2019ll confirm your booking and send you the confirmation number.",
+    "analysis": {
+      "has_email": true,
+      "has_url": false,
+      "has_error": false,
+      "is_out_of_scope": false,
+      "has_handoff": false,
+      "has_confirmation": true,
+      "asks_for_info": true,
+      "rejects_invalid": false,
+      "response_length": 358
+    }
+  },
+  {
+    "category": "9_REGIONAL_CAMPUS",
+    "index": 4,
+    "question": "Middletown campus library contact",
+    "status": "SUCCESS",
+    "agents": [
+      "search_website"
+    ],
+    "response": "For the Gardner-Harvey Library (Middletown campus), you can reach us by phone or online:  \n\u2022 Phone: **(513) 529-4141**  \n\u2022 Submit a question online: https://www.lib.miamioh.edu/research/research-support/ask/  \n\nSource: General Miami University Libraries contact information.",
+    "analysis": {
+      "has_email": false,
+      "has_url": true,
+      "has_error": false,
+      "is_out_of_scope": false,
+      "has_handoff": false,
+      "has_confirmation": false,
+      "asks_for_info": false,
+      "rejects_invalid": false,
+      "response_length": 274
+    }
+  },
+  {
+    "category": "9_REGIONAL_CAMPUS",
+    "index": 5,
+    "question": "Gardner-Harvey Library hours",
+    "status": "SUCCESS",
+    "agents": [
+      "libcal"
+    ],
+    "response": "Here are the **Gardner\u2010Harvey Library and curbside service (Middletown)** hours for the week of December 15\u201321, 2025 (source: [VERIFIED API DATA]):\n\n\u2022 **Monday (2025-12-15):** 8:00 am to 5:00 pm  \n\u2022 **Tuesday (2025-12-16):** 8:00 am to 5:00 pm  \n\u2022 **Wednesday (2025-12-17):** 8:00 am to 5:00 pm  \n\u2022 **Thursday (2025-12-18):** 8:00 am to 5:00 pm  \n\u2022 **Friday (2025-12-19):** 8:00 am to 5:00 pm  \n\u2022 **Saturday (2025-12-20):** Closed  \n\u2022 **Sunday (2025-12-21):** Closed",
+    "analysis": {
+      "has_email": false,
+      "has_url": false,
+      "has_error": false,
+      "is_out_of_scope": false,
+      "has_handoff": false,
+      "has_confirmation": false,
+      "asks_for_info": false,
+      "rejects_invalid": false,
+      "response_length": 466
+    }
+  },
+  {
+    "category": "9_REGIONAL_CAMPUS",
+    "index": 6,
+    "question": "I'm at Middletown, who can help me with research?",
+    "status": "SUCCESS",
+    "agents": [],
+    "response": "For research help at the Middletown campus (Gardner-Harvey Library), you have a couple of easy options:  \n\u2022 Submit your question via our online research support form: https://www.lib.miamioh.edu/research/research-support/ask/  \n\u2022 Give us a call at **(513) 529-4141** and ask for the Gardner-Harvey Library staff  \n\nOur librarians will be happy to connect you with the right subject specialist or walk you through databases, citation help, and more.",
+    "analysis": {
+      "has_email": false,
+      "has_url": true,
+      "has_error": false,
+      "is_out_of_scope": false,
+      "has_handoff": false,
+      "has_confirmation": false,
+      "asks_for_info": false,
+      "rejects_invalid": false,
+      "response_length": 448
+    }
+  },
+  {
+    "category": "10_EDGE_CASES",
+    "index": 1,
+    "question": "hours",
+    "status": "SUCCESS",
+    "agents": [],
+    "response": "I'm having trouble accessing our systems right now. Please visit https://www.lib.miamioh.edu/ or chat with a librarian at (513) 529-4141.",
+    "analysis": {
+      "has_email": false,
+      "has_url": true,
+      "has_error": true,
+      "is_out_of_scope": false,
+      "has_handoff": true,
+      "has_confirmation": false,
+      "asks_for_info": false,
+      "rejects_invalid": false,
+      "response_length": 137
+    }
+  },
+  {
+    "category": "10_EDGE_CASES",
+    "index": 2,
+    "question": "librarian",
+    "status": "SUCCESS",
+    "agents": [
+      "connect_librarian"
+    ],
+    "response": "Here\u2019s how you can get in touch with a Miami University librarian right now:\n\n\u2022 Live chat is **closed** (today\u2019s hours: 9:00 am \u2013 5:00 pm).  \n\u2022 To submit a question anytime, use our online form: https://www.lib.miamioh.edu/research/research-support/ask/  \n\u2022 If you prefer phone support, call **(513) 529-4141** during library hours.  \n\nFeel free to drop back in during chat hours for live help!",
+    "analysis": {
+      "has_email": false,
+      "has_url": true,
+      "has_error": false,
+      "is_out_of_scope": false,
+      "has_handoff": false,
+      "has_confirmation": false,
+      "asks_for_info": false,
+      "rejects_invalid": false,
+      "response_length": 394
+    }
+  },
+  {
+    "category": "10_EDGE_CASES",
+    "index": 3,
+    "question": "book",
+    "status": "SUCCESS",
+    "agents": [],
+    "response": "Sure\u2014could you clarify what you\u2019d like to book?  \n\u2022 If you want to reserve a **study room**, let me know which campus library (King, Art & Architecture, Rentschler, or Gardner-Harvey) plus your full name, @miamioh.edu email, date, start/end times, and number of people.  \n\u2022 If you\u2019re looking for a **book** to borrow, please share the title, author, or subject so I can search our catalog.",
+    "analysis": {
+      "has_email": true,
+      "has_url": false,
+      "has_error": false,
+      "is_out_of_scope": false,
+      "has_handoff": false,
+      "has_confirmation": false,
+      "asks_for_info": false,
+      "rejects_invalid": false,
+      "response_length": 389
+    }
+  },
+  {
+    "category": "10_EDGE_CASES",
+    "index": 4,
+    "question": "help",
+    "status": "SUCCESS",
+    "agents": [],
+    "response": "Hello! I\u2019m the Miami University Libraries virtual assistant. I can help you with a variety of services, including:\n\n\u2022 **Finding books, articles & e-resources** \u2013 just tell me what you need or ask me to search the catalog  \n\u2022 **Checking library hours** \u2013 for King, Art & Architecture, Rentschler or Gardner-Harvey  \n\u2022 **Booking a study room** \u2013 in any of our four libraries (King, Art & Architecture, Rentschler, Gardner-Harvey)  \n\u2022 **Connecting with your subject librarian** \u2013 for research guidance in any academic area  \n\u2022 **Locating research & course guides** \u2013 guides tailored to your subject or specific course  \n\u2022 **Library policies & services** \u2013 printing, reserves, interlibrary loan and more  \n\nIf you\u2019re not sure where to start, just let me know what you\u2019re working on or what you need, and I\u2019ll point you in the right direction. For general research support you can also visit https://www.lib.miamioh.edu/research/research-support/ask/ or call us at **(513) 529-4141**.",
+    "analysis": {
+      "has_email": false,
+      "has_url": true,
+      "has_error": false,
+      "is_out_of_scope": false,
+      "has_handoff": false,
+      "has_confirmation": true,
+      "asks_for_info": false,
+      "rejects_invalid": false,
+      "response_length": 979
+    }
+  },
+  {
+    "category": "10_EDGE_CASES",
+    "index": 5,
+    "question": "libary hours",
+    "status": "SUCCESS",
+    "agents": [],
+    "response": "I'm having trouble accessing our systems right now. Please visit https://www.lib.miamioh.edu/ or chat with a librarian at (513) 529-4141.",
+    "analysis": {
+      "has_email": false,
+      "has_url": true,
+      "has_error": true,
+      "is_out_of_scope": false,
+      "has_handoff": true,
+      "has_confirmation": false,
+      "asks_for_info": false,
+      "rejects_invalid": false,
+      "response_length": 137
+    }
+  },
+  {
+    "category": "10_EDGE_CASES",
+    "index": 6,
+    "question": "libraian contact",
+    "status": "SUCCESS",
+    "agents": [],
+    "response": "Here\u2019s how to connect with a librarian at Miami University Libraries:\n\n\u2022 **Phone**: (513) 529-4141  \n\u2022 **Research Support / Ask Us**: Submit your question online and get live chat, email or text help  \n  https://www.lib.miamioh.edu/research/research-support/ask/  \n\u2022 **LibAnswers Chat**: 24/7 chat with a librarian  \n  https://libanswers.lib.miamioh.edu/\n\nIf you need a subject\u2010specific librarian (e.g., for Biology, Business, English, etc.), let me know your discipline and I can point you to the right contact and guide.",
+    "analysis": {
+      "has_email": false,
+      "has_url": true,
+      "has_error": false,
+      "is_out_of_scope": false,
+      "has_handoff": true,
+      "has_confirmation": false,
+      "asks_for_info": false,
+      "rejects_invalid": false,
+      "response_length": 522
+    }
+  },
+  {
+    "category": "10_EDGE_CASES",
+    "index": 7,
+    "question": "resereve room",
+    "status": "SUCCESS",
+    "agents": [],
+    "response": "Sure\u2014let\u2019s get your study room reserved! I\u2019ll need a few details:\n\n\u2022 Which library? (choose one)  \n  \u2013 **King Library** (Oxford campus)  \n  \u2013 **Art & Architecture Library** (Oxford campus)  \n  \u2013 **Rentschler Library** (Hamilton campus)  \n  \u2013 **Gardner-Harvey Library** (Middletown campus)  \n\n\u2022 Your **first and last name**  \n\u2022 Your **@miamioh.edu email address**  \n\u2022 **Date** you\u2019d like to book (e.g., \u201cDec 15,\u201d \u201cnext Monday,\u201d \u201c11/12/2025\u201d)  \n\u2022 **Start time** and **end time** (e.g., \u201c2 pm to 4 pm\u201d)  \n\u2022 **Number of people** in your group  \n\nOnce I have all of that, I can complete your reservation!",
+    "analysis": {
+      "has_email": true,
+      "has_url": false,
+      "has_error": false,
+      "is_out_of_scope": false,
+      "has_handoff": false,
+      "has_confirmation": false,
+      "asks_for_info": false,
+      "rejects_invalid": false,
+      "response_length": 599
+    }
+  },
+  {
+    "category": "10_EDGE_CASES",
+    "index": 8,
+    "question": "tomorow",
+    "status": "SUCCESS",
+    "agents": [],
+    "response": "Hi there! It looks like you mentioned \u201ctomorrow.\u201d Could you let me know what you\u2019d like to do for that day? For example:\n\n\u2022 Check library hours  \n\u2022 Book a study room  \n\u2022 Search for materials  \n\u2022 Ask a research question  \n\nJust let me know, and I\u2019ll be happy to help!",
+    "analysis": {
+      "has_email": false,
+      "has_url": false,
+      "has_error": false,
+      "is_out_of_scope": false,
+      "has_handoff": false,
+      "has_confirmation": false,
+      "asks_for_info": false,
+      "rejects_invalid": false,
+      "response_length": 266
+    }
+  },
+  {
+    "category": "10_EDGE_CASES",
+    "index": 9,
+    "question": "KL hours",
+    "status": "SUCCESS",
+    "agents": [],
+    "response": "I'm having trouble accessing our systems right now. Please visit https://www.lib.miamioh.edu/ or chat with a librarian at (513) 529-4141.",
+    "analysis": {
+      "has_email": false,
+      "has_url": true,
+      "has_error": true,
+      "is_out_of_scope": false,
+      "has_handoff": true,
+      "has_confirmation": false,
+      "asks_for_info": false,
+      "rejects_invalid": false,
+      "response_length": 137
+    }
+  },
+  {
+    "category": "10_EDGE_CASES",
+    "index": 10,
+    "question": "Art Lib",
+    "status": "SUCCESS",
+    "agents": [
+      "get_library_hours"
+    ],
+    "response": "Here are the hours for the **Wertz Art & Architecture Library** for the week of December 15\u201321, 2025:  \n\u2022 **Monday (12/15):** 8 am \u2013 5 pm  \n\u2022 **Tuesday (12/16):** 8 am \u2013 5 pm  \n\u2022 **Wednesday (12/17):** 8 am \u2013 5 pm  \n\u2022 **Thursday (12/18):** 8 am \u2013 5 pm  \n\u2022 **Friday (12/19):** 8 am \u2013 5 pm  \n\u2022 **Saturday (12/20):** Closed  \n\u2022 **Sunday (12/21):** Closed  \n\nNeed help booking a study room here or connecting with the Art & Architecture librarian? Just let me know!",
+    "analysis": {
+      "has_email": false,
+      "has_url": false,
+      "has_error": false,
+      "is_out_of_scope": false,
+      "has_handoff": false,
+      "has_confirmation": true,
+      "asks_for_info": false,
+      "rejects_invalid": false,
+      "response_length": 461
+    }
+  },
+  {
+    "category": "10_EDGE_CASES",
+    "index": 11,
+    "question": "subj lib",
+    "status": "SUCCESS",
+    "agents": [],
+    "response": "Sure\u2014could you let me know which academic subject or department you\u2019re interested in? For example, Biology, English, Business, etc. That way I can find the right subject librarian and guide for you.",
+    "analysis": {
+      "has_email": false,
+      "has_url": false,
+      "has_error": false,
+      "is_out_of_scope": false,
+      "has_handoff": false,
+      "has_confirmation": false,
+      "asks_for_info": false,
+      "rejects_invalid": false,
+      "response_length": 198
+    }
+  },
+  {
+    "category": "10_EDGE_CASES",
+    "index": 12,
+    "question": "WHAT ARE THE LIBRARY HOURS",
+    "status": "SUCCESS",
+    "agents": [
+      "libcal"
+    ],
+    "response": "Here are the King Library hours for the week of December 15\u201321, 2025 (Source: LibCal [VERIFIED API DATA]):\n\n\u2022 **Monday (12/15)**: 8:00 am \u2013 5:00 pm  \n\u2022 **Tuesday (12/16)**: 8:00 am \u2013 5:00 pm  \n\u2022 **Wednesday (12/17)**: 8:00 am \u2013 5:00 pm  \n\u2022 **Thursday (12/18)**: 8:00 am \u2013 5:00 pm  \n\u2022 **Friday (12/19)**: 8:00 am \u2013 5:00 pm  \n\u2022 **Saturday (12/20)**: Closed  \n\u2022 **Sunday (12/21)**: Closed\n\nIf you need hours for another week or branch, please let me know or visit our Ask-a-Librarian page: https://www.lib.miamioh.edu/research/research-support/ask/",
+    "analysis": {
+      "has_email": false,
+      "has_url": true,
+      "has_error": false,
+      "is_out_of_scope": false,
+      "has_handoff": false,
+      "has_confirmation": false,
+      "asks_for_info": false,
+      "rejects_invalid": false,
+      "response_length": 545
+    }
+  },
+  {
+    "category": "10_EDGE_CASES",
+    "index": 13,
+    "question": "who is the biology librarian",
+    "status": "SUCCESS",
+    "agents": [],
+    "response": "I encountered an error. Please try again or contact a librarian.",
+    "analysis": {
+      "has_email": false,
+      "has_url": false,
+      "has_error": true,
+      "is_out_of_scope": false,
+      "has_handoff": false,
+      "has_confirmation": false,
+      "asks_for_info": false,
+      "rejects_invalid": false,
+      "response_length": 64
+    }
+  },
+  {
+    "category": "10_EDGE_CASES",
+    "index": 14,
+    "question": "BoOk A rOoM",
+    "status": "SUCCESS",
+    "agents": [],
+    "response": "I encountered an error. Please try again or contact a librarian.",
+    "analysis": {
+      "has_email": false,
+      "has_url": false,
+      "has_error": true,
+      "is_out_of_scope": false,
+      "has_handoff": false,
+      "has_confirmation": false,
+      "asks_for_info": false,
+      "rejects_invalid": false,
+      "response_length": 64
+    }
+  }
+]

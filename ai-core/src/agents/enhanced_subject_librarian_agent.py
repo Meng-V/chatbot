@@ -12,7 +12,7 @@ Returns both LibGuide pages AND verified librarian contacts.
 """
 
 from typing import Dict, Any
-from prisma import Prisma
+from src.database.prisma_client import get_prisma_client
 from src.tools.enhanced_subject_search import (
     search_subject,
     get_subject_librarians,
@@ -53,8 +53,10 @@ class EnhancedSubjectLibrarianAgent:
         if log_callback:
             log_callback(f"🔍 [Enhanced Subject Librarian] Searching for: {query}")
         
-        db = Prisma()
-        await db.connect()
+        # Use singleton Prisma client to avoid connection pool exhaustion
+        db = get_prisma_client()
+        if not db.is_connected():
+            await db.connect()
         
         try:
             # Search for subject using enhanced search
@@ -192,5 +194,19 @@ class EnhancedSubjectLibrarianAgent:
                 "data": None
             }
             
-        finally:
-            await db.disconnect()
+        except Exception as e:
+            if log_callback:
+                log_callback(f"❌ [Enhanced Subject Librarian] Error: {str(e)}")
+            
+            return {
+                "tool": "enhanced_subject_librarian",
+                "success": False,
+                "text": (
+                    "I encountered an error searching for subject information. "
+                    "Please contact our reference desk:\n\n"
+                    "• **Chat**: https://www.lib.miamioh.edu/research/research-support/ask/\n"
+                    "• **Phone**: (513) 529-4141"
+                ),
+                "data": None
+            }
+        # Note: Don't disconnect singleton client

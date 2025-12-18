@@ -53,7 +53,15 @@ from src.config.capability_scope import (
     detect_limitation_request,
     get_limitation_response,
     get_limitation_response_with_availability,
-    is_account_action
+    is_account_action,
+    get_ill_response,
+    detect_policy_question,
+    get_policy_response
+)
+from src.config.research_question_detection import (
+    detect_research_question,
+    get_research_handoff_response,
+    is_simple_guide_request
 )
 
 # Use o4-mini as specified
@@ -238,6 +246,84 @@ async def classify_intent_node(state: AgentState) -> AgentState:
     user_msg = state.get("processed_query") or state["user_message"]
     original_msg = state["user_message"]  # Keep original for capability check
     logger = state.get("_logger") or AgentLogger()
+    
+    # 🚨 RESEARCH QUESTION CHECK: Detect research questions that need librarian help
+    # Check if this is a simple guide request first (those are OK)
+    if not is_simple_guide_request(original_msg):
+        research_check = detect_research_question(original_msg)
+        if research_check.get("is_research_question") and research_check.get("should_handoff"):
+            pattern_type = research_check.get("pattern_type")
+            confidence = research_check.get("confidence")
+            logger.log(f"🔬 [Research Question Check] Detected {pattern_type} (confidence: {confidence}) - handing off to librarian")
+            
+            state["classified_intent"] = "research_question_handoff"
+            state["selected_agents"] = []
+            state["_research_handoff_response"] = get_research_handoff_response(pattern_type)
+            state["_research_pattern_type"] = pattern_type
+            state["_logger"] = logger
+            return state
+    
+    # 🚫 EARLY OUT-OF-SCOPE CHECK: Detect tech support PROBLEMS (not equipment borrowing)
+    # Library DOES offer: laptop checkout, chromebook, Adobe licenses, chargers, etc.
+    # OUT-OF-SCOPE: "my computer is broken", "wifi not working", "fix my laptop"
+    # IN-SCOPE: "borrow a laptop", "checkout chromebook", "Adobe license", "rent equipment"
+    msg_lower = original_msg.lower()
+    
+    # First check if this is an equipment BORROWING question (in-scope)
+    # Include PC, laptop, chromebook, etc.
+    equipment_borrow_patterns = [
+        r'\b(borrow|checkout|check\s*out|rent|loan|reserve|get)\b.*\b(laptop|pc|computer|chromebook|charger|equipment|device|camera|tripod|headphone|calculator|adapter|ipad|tablet|macbook)\b',
+        r'\b(laptop|pc|computer|chromebook|charger|equipment|device|camera|tripod|headphone|calculator|adapter|ipad|tablet|macbook)\b.*\b(borrow|checkout|check\s*out|rent|loan|available|availability)\b',
+        r'\b(can\s*i|do\s*you|does\s*the\s*library)\b.*\b(check\s*out|checkout|borrow|rent|loan)\b.*\b(pc|computer|laptop|chromebook|equipment)\b',
+        r'\b(adobe|software|license|photoshop|illustrator|creative\s*cloud)\b',
+        r'\b(do\s*you\s*have|can\s*i\s*get|where\s*can\s*i)\b.*\b(laptop|pc|computer|chromebook|charger|equipment)\b',
+    ]
+    is_equipment_borrow = any(re.search(p, msg_lower, re.IGNORECASE) for p in equipment_borrow_patterns)
+    
+    if not is_equipment_borrow:
+        # Check for generic "help with computer" questions (out-of-scope tech support)
+        generic_tech_help_patterns = [
+            r'\bwho\s*(can|could|would)\s*(help|assist)\b.*\b(computer|tech|software|hardware)\b',
+            r'\b(help|assist|question)\b.*\b(computer|tech)\s*(question|issue|problem)?\b',
+            r'\b(computer|tech)\s*(help|support|assistance|question)\b',
+        ]
+        for pattern in generic_tech_help_patterns:
+            if re.search(pattern, msg_lower, re.IGNORECASE):
+                logger.log(f"🚫 [Out-of-Scope Check] Detected generic tech help request → out_of_scope")
+                state["classified_intent"] = "out_of_scope"
+                state["selected_agents"] = []
+                state["out_of_scope"] = True
+                state["_logger"] = logger
+                return state
+        
+        # Check for specific tech problems (out-of-scope)
+        tech_support_patterns = [
+            r'\b(wifi|internet|canvas|email|login|password)\b.*\b(issue|problem|broken|not\s*working|fix|down)\b',
+            r'\b(my|a)\s*(computer|laptop|phone|device)\b.*\b(broken|not\s*working|crashed|frozen|slow|virus|issue|problem)\b',
+            r'\b(fix|repair|troubleshoot)\s*(my|a)?\s*(computer|laptop|phone|device)\b',
+            r'\b(computer|laptop|phone|device)\b.*\b(won\'t|doesn\'t|isn\'t|not)\s*(work|start|turn\s*on|boot|connect)\b',
+        ]
+        for pattern in tech_support_patterns:
+            if re.search(pattern, msg_lower, re.IGNORECASE):
+                logger.log(f"🚫 [Out-of-Scope Check] Detected tech support problem → out_of_scope")
+                state["classified_intent"] = "out_of_scope"
+                state["selected_agents"] = []
+                state["out_of_scope"] = True
+                state["_logger"] = logger
+                return state
+    
+    # 📋 POLICY QUESTION CHECK: Detect questions about specific policies with authoritative URLs
+    policy_check = detect_policy_question(original_msg)
+    if policy_check.get("is_policy_question"):
+        policy_type = policy_check.get("policy_type")
+        logger.log(f"📋 [Policy Check] Detected policy question: {policy_type} - directing to authoritative URL")
+        
+        state["classified_intent"] = "policy_question"
+        state["selected_agents"] = []
+        state["_policy_type"] = policy_type
+        state["_policy_url"] = policy_check.get("url")
+        state["_logger"] = logger
+        return state
     
     # 🚨 CAPABILITY CHECK: Detect requests for things the bot CANNOT do
     # This prevents asking for clarification on things we can't help with
@@ -699,26 +785,94 @@ async def synthesize_answer_node(state: AgentState) -> AgentState:
         logger.log("✅ [Synthesizer] Using pre-generated answer")
         return state
     
-    # Handle capability limitations (things the bot cannot do)
-    if intent == "capability_limitation" or state.get("_limitation_response"):
-        limitation_type = state.get("_limitation_type", "unknown")
-        logger.log(f"🚫 [Synthesizer] Responding to capability limitation: {limitation_type}")
+    # Handle research question handoff (detailed research help needs librarian)
+    if state.get("classified_intent") == "research_question_handoff":
+        logger.log(f"🔬 [Synthesizer] Providing research question handoff response")
+        research_response = state.get("_research_handoff_response")
+        pattern_type = state.get("_research_pattern_type")
         
-        # Get availability-aware response for limitations that redirect to human help
-        try:
-            limitation_response = await get_limitation_response_with_availability(limitation_type)
-        except Exception as e:
-            logger.log(f"⚠️ [Synthesizer] Error getting availability-aware response: {str(e)}")
-            limitation_response = state.get("_limitation_response", 
-                "I can't help with that directly. Please contact a librarian at (513) 529-4141 or visit https://www.lib.miamioh.edu/research/research-support/ask/")
+        # Ensure we have a response (fallback if None)
+        if not research_response:
+            research_response = """I can see you're working on a research project that requires finding specific sources. This is exactly the kind of detailed research help our librarians specialize in!
+
+**I recommend:**
+
+• **Chat with a research librarian** who can help you:
+  - Find the right databases for your topic
+  - Develop effective search strategies
+  - Locate articles that meet your specific requirements
+
+**Get help now:**
+- Chat: https://www.lib.miamioh.edu/research/research-support/ask/
+- Call: (513) 529-4141
+
+Our librarians are experts at helping with research projects and can provide personalized guidance for your specific needs."""
+        
+        # Validate URLs before returning
+        validated_msg, had_invalid_urls = await validate_and_clean_response(
+            research_response, 
+            log_callback=logger.log,
+            user_message=user_msg
+        )
+        state["final_answer"] = validated_msg
+        state["needs_human"] = True
+        state["_logger"] = logger
+        return state
+    
+    # 🚫 Handle capability limitations (things the bot cannot do)
+    if state.get("classified_intent") == "capability_limitation":
+        logger.log(f"🚫 [Synthesizer] Providing capability limitation response")
+        limitation_response = state.get("_limitation_response")
+        limitation_type = state.get("_limitation_type")
+        
+        # 📚 Special handling for ILL - provide campus-specific response
+        if limitation_type == "interlibrary_loan":
+            logger.log("📚 [Synthesizer] ILL query - providing campus-specific ILL response")
+            try:
+                limitation_response = get_ill_response(user_msg)
+            except Exception as e:
+                logger.log(f"⚠️ [Synthesizer] Error getting ILL response: {str(e)}")
+                limitation_response = "For Interlibrary Loan requests, please visit https://www.lib.miamioh.edu/use/borrow/ill/ or contact a librarian."
+        else:
+            # Ensure we have a response (fallback if None)
+            if not limitation_response:
+                limitation_response = "I can't help with that directly. Please visit https://www.lib.miamioh.edu/ or contact a librarian at (513) 529-4141."
+            
+            # Try to get enhanced response with librarian availability
+            try:
+                enhanced_response = await get_limitation_response_with_availability(limitation_type)
+                if enhanced_response:
+                    limitation_response = enhanced_response
+            except Exception as e:
+                logger.log(f"⚠️ [Synthesizer] Error getting availability for limitation: {str(e)}")
         
         # Validate URLs before returning
         validated_msg, had_invalid_urls = await validate_and_clean_response(
             limitation_response, 
-            log_callback=logger.log
+            log_callback=logger.log,
+            user_message=user_msg
         )
         state["final_answer"] = validated_msg
-        state["needs_human"] = True
+        state["needs_human"] = False  # ILL info is helpful, not a handoff
+        state["_logger"] = logger
+        return state
+    
+    # 📋 Handle policy questions (direct to authoritative URL)
+    if state.get("classified_intent") == "policy_question":
+        policy_type = state.get("_policy_type")
+        logger.log(f"📋 [Synthesizer] Providing authoritative policy response for: {policy_type}")
+        
+        policy_response = get_policy_response(policy_type, user_msg)
+        
+        # Validate URLs before returning
+        validated_msg, had_invalid_urls = await validate_and_clean_response(
+            policy_response, 
+            log_callback=logger.log,
+            user_message=user_msg
+        )
+        state["final_answer"] = validated_msg
+        state["needs_human"] = False
+        state["_logger"] = logger
         return state
     
     # 🏠 Handle library address queries EARLY (before other checks)
@@ -901,7 +1055,8 @@ async def synthesize_answer_node(state: AgentState) -> AgentState:
         # Validate URLs before returning
         validated_msg, had_invalid_urls = await validate_and_clean_response(
             catalog_unavailable_msg, 
-            log_callback=logger.log
+            log_callback=logger.log,
+            user_message=user_msg
         )
         state["final_answer"] = validated_msg
         state["needs_human"] = True
@@ -966,7 +1121,8 @@ Is there anything library-related I can help you with?"""
         logger.log("🔍 [URL Validator] Checking URLs in out-of-scope message")
         validated_msg, had_invalid_urls = await validate_and_clean_response(
             out_of_scope_msg, 
-            log_callback=logger.log
+            log_callback=logger.log,
+            user_message=user_msg
         )
         if had_invalid_urls:
             logger.log("⚠️ [URL Validator] Removed invalid URLs from out-of-scope message")
@@ -1020,7 +1176,8 @@ Is there anything library-related I can help you with?"""
         logger.log("🔍 [URL Validator] Checking URLs in error message")
         validated_msg, had_invalid_urls = await validate_and_clean_response(
             error_msg, 
-            log_callback=logger.log
+            log_callback=logger.log,
+            user_message=user_msg
         )
         if had_invalid_urls:
             logger.log("⚠️ [URL Validator] Removed invalid URLs from error message")
@@ -1076,7 +1233,8 @@ Is there anything library-related I can help you with?"""
             logger.log("🔍 [URL Validator] Checking URLs in fallback message")
             validated_message, had_invalid_urls = await validate_and_clean_response(
                 fallback_message, 
-                log_callback=logger.log
+                log_callback=logger.log,
+                user_message=user_msg
             )
             if had_invalid_urls:
                 logger.log("⚠️ [URL Validator] Removed invalid URLs from fallback message")
@@ -1266,7 +1424,8 @@ Provide a clear, helpful answer based ONLY on the information above. Be concise,
     validated_answer, had_invalid_urls = await validate_and_clean_response(
         raw_answer, 
         log_callback=logger.log,
-        agents_used=state.get("selected_agents", [])
+        agents_used=state.get("selected_agents", []),
+        user_message=user_msg
     )
     
     if had_invalid_urls:

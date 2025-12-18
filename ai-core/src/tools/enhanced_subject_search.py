@@ -13,6 +13,7 @@ import re
 from typing import List, Dict, Any, Optional
 from difflib import SequenceMatcher
 from prisma import Prisma
+from src.database.prisma_client import get_prisma_client
 
 
 def extract_course_codes(query: str) -> List[str]:
@@ -177,11 +178,10 @@ async def search_subject(query: str, db: Prisma = None) -> Optional[Dict[str, An
         }
     """
     if db is None:
-        db = Prisma()
-        await db.connect()
-        should_disconnect = True
-    else:
-        should_disconnect = False
+        # Use singleton Prisma client to avoid connection pool exhaustion
+        db = get_prisma_client()
+        if not db.is_connected():
+            await db.connect()
     
     try:
         # Strategy 1: Extract and search by course codes (exact match)
@@ -200,9 +200,9 @@ async def search_subject(query: str, db: Prisma = None) -> Optional[Dict[str, An
         
         return None
         
-    finally:
-        if should_disconnect:
-            await db.disconnect()
+    except Exception:
+        return None
+    # Note: Don't disconnect singleton client
 
 
 async def get_subject_librarians(subject_id: str, db: Prisma, campus: str = "Oxford") -> List[Dict[str, Any]]:

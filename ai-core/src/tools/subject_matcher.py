@@ -8,6 +8,7 @@ appropriate LibGuides and subject librarians using the MuGuide mapping database.
 from typing import List, Dict, Any, Optional
 from prisma import Prisma
 from prisma.models import Subject
+from src.database.prisma_client import get_prisma_client
 from difflib import SequenceMatcher
 
 
@@ -268,8 +269,10 @@ async def subject_matcher_tool(query: str) -> str:
     Returns:
         Formatted string with matching subjects and LibGuides
     """
-    db = Prisma()
-    await db.connect()
+    # Use singleton Prisma client to avoid connection pool exhaustion
+    db = get_prisma_client()
+    if not db.is_connected():
+        await db.connect()
     
     try:
         result = await match_subject(query, db)
@@ -301,5 +304,6 @@ async def subject_matcher_tool(query: str) -> str:
         
         return "\n".join(output)
     
-    finally:
-        await db.disconnect()
+    except Exception as e:
+        return f"Error searching for subject: {str(e)}"
+    # Note: Don't disconnect singleton client

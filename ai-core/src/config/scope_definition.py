@@ -25,7 +25,6 @@ IN_SCOPE_TOPICS = {
         "Interlibrary loan information",
         "Resource availability and locations",
     ],
-    
     "library_services": [
         "Study room reservations",
         "Library building hours (King, Art & Architecture, etc.)",
@@ -36,7 +35,6 @@ IN_SCOPE_TOPICS = {
         "Equipment checkout (laptops, chargers, etc.)",
         "Accessibility services IN THE LIBRARY",
     ],
-    
     "library_spaces": [
         "King Library",
         "Art & Architecture Library",
@@ -45,14 +43,12 @@ IN_SCOPE_TOPICS = {
         "Study spaces and graduate study spaces IN LIBRARIES",
         "Library floor maps and locations",
     ],
-    
     "library_staff": [
         "Subject librarians and their contact info (FROM API ONLY)",
         "Library departments and their functions",
         "Librarian expertise areas (FROM API ONLY)",
         "How to schedule research consultations",
     ],
-    
     "library_policies": [
         "Borrowing policies",
         "Return policies",
@@ -77,7 +73,6 @@ OUT_OF_SCOPE_TOPICS = {
         "Health services",
         "Parking (unless library-specific)",
     ],
-    
     "academic_content": [
         "Homework help",
         "Assignment answers",
@@ -86,7 +81,6 @@ OUT_OF_SCOPE_TOPICS = {
         "Grading policies",
         "Professor office hours (except librarians)",
     ],
-    
     "technical_support": [
         "Canvas/Blackboard help",
         "Email account issues",
@@ -94,7 +88,6 @@ OUT_OF_SCOPE_TOPICS = {
         "Software installation (unless library software)",
         "General IT support",
     ],
-    
     "non_library_facilities": [
         "Armstrong Student Center",
         "Rec Center",
@@ -119,7 +112,6 @@ CONTACT_INFO_RULES = {
         "verification_required": True,
         "fallback": "Visit https://www.lib.miamioh.edu/research/research-support/ask/ for librarian contact information",
     },
-    
     "phone": {
         "allowed_sources": [
             "LibGuides API",
@@ -129,7 +121,6 @@ CONTACT_INFO_RULES = {
         "verification_required": True,
         "fallback": "Call the main library at (513) 529-4141",
     },
-    
     "names": {
         "allowed_sources": [
             "LibGuides API (guide owners)",
@@ -175,7 +166,6 @@ CRITICAL SCOPE RULES - MUST FOLLOW STRICTLY:
    - Provide Ask-a-Librarian chat link
    - Give general library contact: (513) 529-4141 or https://www.lib.miamioh.edu/research/research-support/ask/
 """,
-    
     "out_of_scope_response": """I appreciate your question, but that's outside the scope of library services. I can only help with library-related questions such as:
 
 • Finding books, articles, and research materials
@@ -187,7 +177,6 @@ For your question, please contact:
 {appropriate_department}
 
 Is there anything library-related I can help you with?""",
-    
     "uncertain_response": """I'm not certain about that specific information. To ensure you get accurate help, I recommend:
 
 • **Chat with a librarian**: {lib_chat_url}
@@ -201,6 +190,7 @@ Is there something else about library resources or services I can help with?""",
 # VALIDATION FUNCTIONS
 # ============================================================================
 
+
 def is_in_scope(query: str) -> bool:
     """
     Determine if a query is within the library's scope.
@@ -210,33 +200,35 @@ def is_in_scope(query: str) -> bool:
     # The LLM classification is the primary mechanism
     return True  # Let LLM decide
 
+
 def validate_contact_info(info_type: str, value: str, source: str) -> bool:
     """
     Validate that contact information comes from approved sources.
-    
+
     Args:
         info_type: 'email', 'phone', or 'name'
         value: The actual contact information
         source: Where the information came from
-    
+
     Returns:
         bool: True if valid and from approved source
     """
     rules = CONTACT_INFO_RULES.get(info_type, {})
     allowed_sources = rules.get("allowed_sources", [])
-    
+
     if source not in allowed_sources:
         return False
-    
+
     return True
+
 
 def get_out_of_scope_response(topic_category: str = None) -> str:
     """
     Get appropriate response for out-of-scope questions.
-    
+
     Args:
         topic_category: Category of the out-of-scope topic
-    
+
     Returns:
         str: Appropriate redirect message
     """
@@ -246,12 +238,15 @@ def get_out_of_scope_response(topic_category: str = None) -> str:
         "technical_support": "IT Services at ithelp@miamioh.edu or call (513) 529-7900",
         "non_library_facilities": "the appropriate university department at miamioh.edu",
     }
-    
-    appropriate_dept = redirects.get(topic_category, "the appropriate university department")
-    
+
+    appropriate_dept = redirects.get(
+        topic_category, "the appropriate university department"
+    )
+
     return SCOPE_ENFORCEMENT_PROMPTS["out_of_scope_response"].format(
         appropriate_department=appropriate_dept
     )
+
 
 # ============================================================================
 # LIBRARY OFFICIAL CONTACT INFORMATION (VERIFIED)
@@ -265,26 +260,26 @@ OFFICIAL_LIBRARY_CONTACTS = {
         "website": "https://www.lib.miamioh.edu",
         "contact_page": "https://www.lib.miamioh.edu/research/research-support/ask/",
     },
-    
     "ask_a_librarian": {
         "chat_url": "https://libanswers.lib.miamioh.edu/chat/widget/7fb43538479e4f82cbbe2c74325fdda2",
         "email_form": "https://www.lib.miamioh.edu/ask-email-form/",
         "phone": "(513) 529-4141",
     },
-    
     "art_architecture_library": {
         "name": "Wertz Art & Architecture Library",
         "website": "https://www.lib.miamioh.edu/about/locations/art-arch/",
+        "phone": "(513) 529-6638",
     },
-    
     "regional_libraries": {
         "hamilton": {
             "name": "Rentschler Library (Hamilton)",
             "website": "https://www.ham.miamioh.edu/library/",
+            "phone": "(513) 785-3235",
         },
         "middletown": {
             "name": "Gardner-Harvey Library (Middletown)",
             "website": "https://www.mid.miamioh.edu/library/",
+            "phone": "(513) 727-3222",
         },
     },
 }
