@@ -10,6 +10,13 @@
 #   - Node.js 16+ and npm installed
 #   - PostgreSQL database running (connection string in .env)
 #
+# Features:
+#   - Auto-syncs Prisma schemas between root and ai-core
+#   - Auto-generates Prisma client for Python
+#   - Auto-checks database and seeds library data if empty (prevents startup failures)
+#   - Manages backend and frontend processes
+#   - Automatic cleanup on exit
+#
 # Usage:
 #   ./local-auto-start.sh              # Start both backend and frontend
 #   ./local-auto-start.sh --backend-only   # Start only backend
@@ -142,6 +149,123 @@ ensure_backend_deps() {
   fi
 }
 
+# ==============================================================================
+# Database Connection Check Function
+# ==============================================================================
+# Verifies PostgreSQL database is reachable before starting the app
+# Will NOT start the app if database connection fails
+# ==============================================================================
+check_database_connection() {
+  echo "🔌 Checking database connection..."
+  
+  MAX_RETRIES=5
+  RETRY_COUNT=0
+  
+  while [[ $RETRY_COUNT -lt $MAX_RETRIES ]]; do
+    DB_STATUS=$(cd ai-core && .venv/bin/python -c "
+import asyncio
+from dotenv import load_dotenv
+
+# Load environment from parent directory
+load_dotenv('../.env')
+
+from prisma import Prisma
+
+async def check_connection():
+    db = Prisma()
+    try:
+        await db.connect()
+        await db.query_raw('SELECT 1')
+        print('connected')
+    except Exception as e:
+        print(f'error:{e}')
+    finally:
+        try:
+            await db.disconnect()
+        except:
+            pass
+
+asyncio.run(check_connection())
+" 2>&1)
+    
+    if [[ "$DB_STATUS" == "connected" ]]; then
+      echo "✅ Database connection successful!"
+      return 0
+    else
+      RETRY_COUNT=$((RETRY_COUNT + 1))
+      echo "⚠️  Database connection attempt $RETRY_COUNT/$MAX_RETRIES failed"
+      if [[ $RETRY_COUNT -lt $MAX_RETRIES ]]; then
+        echo "   Retrying in 3 seconds..."
+        sleep 3
+      fi
+    fi
+  done
+  
+  echo ""
+  echo "❌ DATABASE CONNECTION FAILED after $MAX_RETRIES attempts"
+  echo "   Error: $DB_STATUS"
+  echo ""
+  echo "   Please check:"
+  echo "   1. PostgreSQL is running"
+  echo "   2. DATABASE_URL in .env is correct"
+  echo "   3. Database exists and is accessible"
+  echo ""
+  echo "   The app will NOT start until database is available."
+  exit 1
+}
+
+# ==============================================================================
+# Database Seed Check Function
+# ==============================================================================
+# Checks if the database has library location data seeded
+# If not, automatically runs the seed script to prevent startup failures
+# ==============================================================================
+check_and_seed_database() {
+  echo "🔍 Checking database for library location data..."
+  
+  # Run a Python script to check if Library records exist
+  LIBRARY_COUNT=$(cd ai-core && .venv/bin/python -c "
+import asyncio
+import sys
+from pathlib import Path
+from dotenv import load_dotenv
+
+# Load environment
+env_path = Path(__file__).parent.parent / '.env'
+load_dotenv(dotenv_path=env_path)
+
+from src.database.prisma_client import get_prisma_client
+
+async def check_libraries():
+    client = get_prisma_client()
+    try:
+        await client.connect()
+        libraries = await client.library.find_many()
+        print(len(libraries))
+    except Exception as e:
+        print('0')
+    finally:
+        await client.disconnect()
+
+asyncio.run(check_libraries())
+" 2>/dev/null || echo "0")
+  
+  if [[ "$LIBRARY_COUNT" -eq "0" ]]; then
+    echo "⚠️  Database is empty (no library records found)"
+    echo "🌱 Auto-seeding library location data..."
+    
+    if (cd ai-core && .venv/bin/python -m scripts.seed_library_locations); then
+      echo "✅ Database seeded successfully!"
+    else
+      echo "❌ Failed to seed database. Please run manually:"
+      echo "   cd ai-core && .venv/bin/python -m scripts.seed_library_locations"
+      exit 1
+    fi
+  else
+    echo "✅ Database has $LIBRARY_COUNT library records"
+  fi
+}
+
 ensure_frontend_deps() {
   # Check if Node.js and npm are available
   if ! command -v node &> /dev/null; then
@@ -221,6 +345,10 @@ trap cleanup EXIT INT TERM
 
 if [[ $FRONTEND_ONLY -eq 0 ]]; then
   ensure_backend_deps
+  # Verify database connection FIRST - will NOT proceed if DB is down
+  check_database_connection
+  # Check database and auto-seed if empty to prevent startup failures
+  check_and_seed_database
 fi
 if [[ $BACKEND_ONLY -eq 0 ]]; then
   ensure_frontend_deps

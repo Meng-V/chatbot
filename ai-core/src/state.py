@@ -23,6 +23,17 @@ class AgentState(MessagesState):
     needs_clarification: bool = False  # Flag to request user clarification
     clarifying_question: Optional[str] = None  # Question to ask user if ambiguous
     query_type_hint: Optional[str] = None  # Hint for routing from understanding layer
+    
+    # Special handling flags
+    _library_address_query: bool = False  # Flag for address query handling
+    _library_website_query: bool = False  # Flag for website query handling
+    _catalog_search_requested: bool = False  # Flag for catalog search handling
+    _limitation_response: Optional[str] = None  # Pre-built limitation response
+    _limitation_type: Optional[str] = None  # Type of capability limitation
+    _needs_availability_check: bool = False  # Flag for availability check in greeting
+    _live_chat_hours_query: bool = False
+    _personal_account_query: bool = False  # Flag for live chat/Ask Us hours query
+    out_of_scope: bool = False  # Flag for out-of-scope questions
 
 # Intent types based on screenshot
 IntentType = Literal[

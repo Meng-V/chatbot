@@ -37,6 +37,26 @@ async def should_use_function_calling(user_message: str, logger=None) -> bool:
         True: Use function calling (simple, single-tool query)
         False: Use LangGraph orchestration (complex, multi-step query)
     """
+    import re
+    user_msg_lower = user_message.lower()
+    
+    # 👤 Personal account queries MUST use LangGraph for direct URL response
+    personal_account_patterns = [
+        r'\b(my|i\s*have|do\s*i\s*have|check\s*my|view\s*my|see\s*my)\b.*\b(loans?|checkouts?|books?\s*checked\s*out|borrowed|fines?|fees?|owe|owing|requests?|holds?|account|blocks?|messages?)\b',
+        r'\b(library|my)\s*account\b',
+        r'\bcheck\s*(my\s*)?(library\s*)?account\b',
+        r'\bwhat\s*(do\s*i|books?\s*do\s*i)\s*(owe|have\s*(checked\s*out|due|borrowed))\b',
+        r'\b(am\s*i|do\s*i\s*have)\s*(blocked|any\s*(fines?|fees?|holds?|blocks?))\b',
+        r'\bwhen\s*(is|are)\s*my\s*(books?|items?|loans?)\s*due\b',
+        r'\bmy\s*(due\s*dates?|overdue|renewals?)\b',
+    ]
+    
+    for pattern in personal_account_patterns:
+        if re.search(pattern, user_msg_lower, re.IGNORECASE):
+            if logger:
+                logger.log(f"👤 [Hybrid Router] Personal account query → FORCING LangGraph for account URL")
+            return False  # Force LangGraph
+    
     # 🎯 CRITICAL: Factual queries MUST use LangGraph for fact grounding
     from src.utils.fact_grounding import detect_factual_query_type
     fact_types = detect_factual_query_type(user_message)

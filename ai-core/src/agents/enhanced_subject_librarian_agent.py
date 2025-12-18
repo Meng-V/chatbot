@@ -1,0 +1,196 @@
+"""
+Enhanced Subject Librarian Agent
+
+Uses enhanced search with:
+- Course code matching (ENG 111, PSY 201)
+- Natural language understanding
+- Fuzzy matching for typos
+- Validated contacts from staff directory
+- LibGuide page URLs
+
+Returns both LibGuide pages AND verified librarian contacts.
+"""
+
+from typing import Dict, Any
+from prisma import Prisma
+from src.tools.enhanced_subject_search import (
+    search_subject,
+    get_subject_librarians,
+    get_subject_libguides,
+    detect_campus
+)
+from src.utils.logger import AgentLogger
+
+logger = AgentLogger()
+
+
+class EnhancedSubjectLibrarianAgent:
+    """Enhanced agent for finding subject librarians and LibGuides."""
+    
+    def __init__(self):
+        self.logger = logger
+    
+    async def execute(self, query: str, log_callback=None, **kwargs) -> Dict[str, Any]:
+        """
+        Execute enhanced subject librarian search.
+        
+        Args:
+            query: User query (e.g., "Who is the librarian for ENG 111?")
+            log_callback: Optional logging callback
+            
+        Returns:
+            {
+                "tool": "enhanced_subject_librarian",
+                "success": bool,
+                "text": formatted response,
+                "data": {
+                    "subject": subject name,
+                    "librarians": [...],
+                    "libguides": [...]
+                }
+            }
+        """
+        if log_callback:
+            log_callback(f"🔍 [Enhanced Subject Librarian] Searching for: {query}")
+        
+        db = Prisma()
+        await db.connect()
+        
+        try:
+            # Search for subject using enhanced search
+            result = await search_subject(query, db)
+            
+            if not result:
+                if log_callback:
+                    log_callback("❌ [Enhanced Subject Librarian] No matching subject found")
+                
+                return {
+                    "tool": "enhanced_subject_librarian",
+                    "success": False,
+                    "text": (
+                        "I couldn't find a specific subject or course match for your query. "
+                        "Please try:\n"
+                        "• Using a course code (e.g., 'ENG 111', 'PSY 201')\n"
+                        "• Using a subject name (e.g., 'Biology', 'Psychology')\n"
+                        "• Or chat with a librarian: https://www.lib.miamioh.edu/research/research-support/ask/"
+                    ),
+                    "data": None
+                }
+            
+            subject = result["subject"]
+            match_type = result["match_type"]
+            
+            # Detect campus from query
+            campus = detect_campus(query)
+            
+            if log_callback:
+                log_callback(f"✅ [Enhanced Subject Librarian] Found subject: {subject.name} (via {match_type})")
+                log_callback(f"🏫 [Enhanced Subject Librarian] Campus: {campus}")
+            
+            # Get librarians for this subject, filtered by campus
+            librarians = await get_subject_librarians(subject.id, db, campus)
+            
+            # Get LibGuides for this subject
+            libguides = await get_subject_libguides(subject.id, db)
+            
+            if not librarians and not libguides:
+                if log_callback:
+                    log_callback("⚠️ [Enhanced Subject Librarian] No librarians or guides found")
+                
+                return {
+                    "tool": "enhanced_subject_librarian",
+                    "success": True,
+                    "text": (
+                        f"**{subject.name}**\n\n"
+                        f"I found the subject but don't have specific librarian or guide information yet. "
+                        f"Please contact our general reference desk:\n\n"
+                        f"• **Chat**: https://www.lib.miamioh.edu/research/research-support/ask/\n"
+                        f"• **Phone**: (513) 529-4141"
+                    ),
+                    "data": {
+                        "subject": subject.name,
+                        "librarians": [],
+                        "libguides": []
+                    }
+                }
+            
+            # Format response
+            response_text = f"**{subject.name} Research Help**"
+            if campus != "Oxford":
+                response_text += f" ({campus} Campus)"
+            response_text += "\n\n"
+            
+            # Add LibGuides
+            if libguides:
+                response_text += "📚 **Research Guides**:\n"
+                for guide in libguides[:3]:  # Limit to top 3
+                    response_text += f"• [{guide['name']}]({guide['url']})\n"
+                response_text += "\n"
+            
+            # Add Librarians (validated contacts only)
+            if librarians:
+                primary_librarians = [l for l in librarians if l.get("isPrimary")]
+                other_librarians = [l for l in librarians if not l.get("isPrimary")]
+                
+                if primary_librarians:
+                    response_text += "👤 **Subject Librarian**:\n"
+                    for lib in primary_librarians[:1]:  # Show primary only
+                        response_text += f"• **{lib['name']}**"
+                        if lib.get('title'):
+                            response_text += f" - {lib['title']}"
+                        response_text += "\n"
+                        if lib.get('campus') and lib['campus'] != "Oxford":
+                            response_text += f"  🏫 {lib['campus']} Campus\n"
+                        if lib.get('email'):
+                            response_text += f"  📧 {lib['email']}\n"
+                        if lib.get('phone'):
+                            response_text += f"  📞 {lib['phone']}\n"
+                        if lib.get('profileUrl'):
+                            response_text += f"  🔗 [View Profile]({lib['profileUrl']})\n"
+                    response_text += "\n"
+                
+                if other_librarians and not primary_librarians:
+                    response_text += "👤 **Contact Librarian**:\n"
+                    lib = other_librarians[0]
+                    response_text += f"• **{lib['name']}**"
+                    if lib.get('title'):
+                        response_text += f" - {lib['title']}"
+                    response_text += "\n"
+                    if lib.get('email'):
+                        response_text += f"  📧 {lib['email']}\n"
+                    response_text += "\n"
+            
+            response_text += "Need more help? [Chat with a librarian](https://www.lib.miamioh.edu/research/research-support/ask/)"
+            
+            if log_callback:
+                log_callback(f"✅ [Enhanced Subject Librarian] Found {len(librarians)} librarians, {len(libguides)} guides")
+            
+            return {
+                "tool": "enhanced_subject_librarian",
+                "success": True,
+                "text": response_text,
+                "data": {
+                    "subject": subject.name,
+                    "librarians": librarians,
+                    "libguides": libguides
+                }
+            }
+            
+        except Exception as e:
+            if log_callback:
+                log_callback(f"❌ [Enhanced Subject Librarian] Error: {str(e)}")
+            
+            return {
+                "tool": "enhanced_subject_librarian",
+                "success": False,
+                "text": (
+                    "I encountered an error searching for subject information. "
+                    "Please contact our reference desk:\n\n"
+                    "• **Chat**: https://www.lib.miamioh.edu/research/research-support/ask/\n"
+                    "• **Phone**: (513) 529-4141"
+                ),
+                "data": None
+            }
+            
+        finally:
+            await db.disconnect()

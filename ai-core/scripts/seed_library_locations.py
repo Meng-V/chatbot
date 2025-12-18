@@ -80,11 +80,12 @@ async def seed_locations():
                 "libcalLocationId": "8113",   # For hours API (Image 1)
                 "phone": "513-529-4141",
                 "address": "151 S. Campus Ave, Oxford, OH 45056",
+                "website": "https://www.lib.miamioh.edu/",
                 "isMain": True
             }
         )
         print(f"  ✓ {king.displayName} (Reservations: {king.libcalBuildingId}, Hours: {king.libcalLocationId})")
-        print(f"     📞 {king.phone} | 📍 {king.address}")
+        print(f"     📞 {king.phone} | 📍 {king.address} | 🌐 {king.website}")
         
         art = await client.library.create(
             data={
@@ -96,11 +97,12 @@ async def seed_locations():
                 "libcalLocationId": "8116",   # For hours API (Image 1)
                 "phone": "513-529-6638",
                 "address": "Alumni Hall, Oxford, OH 45056",
+                "website": "https://www.lib.miamioh.edu/",
                 "isMain": False
             }
         )
         print(f"  ✓ {art.displayName} (Reservations: {art.libcalBuildingId}, Hours: {art.libcalLocationId})")
-        print(f"     📞 {art.phone} | 📍 {art.address}")
+        print(f"     📞 {art.phone} | 📍 {art.address} | 🌐 {art.website}")
         
         # Hamilton Campus Library
         rentschler = await client.library.create(
@@ -113,11 +115,12 @@ async def seed_locations():
                 "libcalLocationId": "9226",   # For hours API (Image 1)
                 "phone": "(513) 785-3235",
                 "address": "1601 University Blvd, Hamilton, Ohio 45011",
+                "website": "https://www.ham.miamioh.edu/library/",
                 "isMain": True
             }
         )
         print(f"  ✓ {rentschler.displayName} (Reservations: {rentschler.libcalBuildingId}, Hours: {rentschler.libcalLocationId})")
-        print(f"     📞 {rentschler.phone} | 📍 {rentschler.address}")
+        print(f"     📞 {rentschler.phone} | 📍 {rentschler.address} | 🌐 {rentschler.website}")
         
         # Middletown Campus Library
         gardner_harvey = await client.library.create(
@@ -130,11 +133,12 @@ async def seed_locations():
                 "libcalLocationId": "9227",   # For hours API (Image 1)
                 "phone": "(513) 727-3222",
                 "address": "4200 N. University Blvd., Middletown, Ohio 45042",
+                "website": "https://www.mid.miamioh.edu/library/",
                 "isMain": True
             }
         )
         print(f"  ✓ {gardner_harvey.displayName} (Reservations: {gardner_harvey.libcalBuildingId}, Hours: {gardner_harvey.libcalLocationId})")
-        print(f"     📞 {gardner_harvey.phone} | 📍 {gardner_harvey.address}")
+        print(f"     📞 {gardner_harvey.phone} | 📍 {gardner_harvey.address} | 🌐 {gardner_harvey.website}")
         
         # ==================== CREATE LIBRARY SPACES ====================
         print("\n🏛️  Creating library spaces...")

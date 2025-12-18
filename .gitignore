@@ -197,3 +197,6 @@ ai-core/data/*.csv
 .AppleDouble
 .LSOverride
 node_modules
+
+ai-core/logs/
+ai-core/data/

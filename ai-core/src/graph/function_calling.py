@@ -14,6 +14,7 @@ from src.agents.google_site_comprehensive_agent import GoogleSiteComprehensiveAg
 from src.agents.libchat_agent import libchat_handoff
 from src.agents.transcript_rag_agent import transcript_rag_query
 from src.agents.subject_librarian_agent import find_subject_librarian_query
+from src.agents.enhanced_subject_librarian_agent import EnhancedSubjectLibrarianAgent
 from src.tools.url_validator import validate_and_clean_response
 
 OPENAI_MODEL = os.getenv("OPENAI_MODEL", "o4-mini")
@@ -154,7 +155,8 @@ async def find_course_guide_wrapper(course_code: str) -> str:
 async def find_subject_librarian_wrapper(subject: str) -> str:
     """Find subject librarian and LibGuide for an academic subject or major."""
     try:
-        result = await find_subject_librarian_query(subject)
+        enhanced_agent = EnhancedSubjectLibrarianAgent()
+        result = await enhanced_agent.execute(subject)
         return result.get("text", "No subject librarian found") if result else "No subject librarian found"
     except Exception as e:
         return f"Error finding subject librarian: {str(e)}"

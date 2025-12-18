@@ -22,7 +22,9 @@ dependencies = [
   "asyncpg",
   "psutil",
   "python-dateutil",
-  "pytz"
+  "pytz",
+  "holidays",
+  "dateparser"
 ]
 
 [tool.pyright]

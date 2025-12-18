@@ -71,6 +71,58 @@ def _get_capacity_range(capacity: Optional[int]) -> int:
     else:
         return 3
 
+def _extract_building_from_query(query: str) -> str:
+    """Extract building/library/space name from query.
+    
+    Handles:
+    - Library names: King, Art, Rentschler, Gardner-Harvey
+    - Campus names: Hamilton, Middletown, Oxford
+    - Spaces: Makerspace, Special Collections
+    - Variations: "Art Library", "Art & Architecture", "Hamilton campus"
+    
+    Returns:
+        Extracted building name (lowercase) or "king" as default
+    """
+    q_lower = query.lower()
+    
+    # Library keywords in priority order (more specific first)
+    library_keywords = [
+        ("art & architecture", "art"),
+        ("art and architecture", "art"),
+        ("art library", "art"),
+        ("gardner-harvey", "gardner-harvey"),
+        ("gardner harvey", "gardner-harvey"),
+        ("rentschler", "rentschler"),
+        ("hamilton", "hamilton"),  # Rentschler Library at Hamilton campus
+        ("middletown", "middletown"),  # Gardner-Harvey at Middletown campus
+        ("king library", "king"),
+        ("king", "king"),
+        ("art", "art"),
+    ]
+    
+    # Space keywords (Makerspace, Special Collections, etc.)
+    space_keywords = [
+        ("special collections", "special collections"),
+        ("special collection", "special collections"),
+        ("university archives", "special collections"),
+        ("makerspace", "makerspace"),
+        ("maker space", "makerspace"),
+        ("makespace", "makerspace"),
+    ]
+    
+    # Check for spaces first (more specific)
+    for keyword, normalized in space_keywords:
+        if keyword in q_lower:
+            return normalized
+    
+    # Then check for libraries
+    for keyword, normalized in library_keywords:
+        if keyword in q_lower:
+            return normalized
+    
+    # Default to King Library
+    return "king"
+
 def _parse_date_intelligent(date_input: str) -> Tuple[bool, Optional[str], Optional[str]]:
     """Intelligently parse various date formats to YYYY-MM-DD.
     
@@ -479,11 +531,25 @@ class LibCalWeekHoursTool(Tool):
     def description(self) -> str:
         return "Get building hours for entire week (Monday-Sunday). Supports Oxford (King Library, Art & Architecture Library), Hamilton (Rentschler Library), and Middletown (Gardner-Harvey Library) campuses."
     
-    async def execute(self, query: str, log_callback=None, date: str = None, **kwargs) -> Dict[str, Any]:
-        """Get week-range hours."""
+    async def execute(self, query: str, log_callback=None, date: str = None, building: str = None, **kwargs) -> Dict[str, Any]:
+        """Get week-range hours for any library or space (King, Art, Rentschler, Makerspace, Special Collections, etc.)."""
         try:
+            # Extract building/space name from query if not provided
+            if not building:
+                building = _extract_building_from_query(query)
+            
             if log_callback:
-                log_callback("🗓️ [LibCal Week Hours Tool] Fetching weekly hours")
+                log_callback(f"🗓️ [LibCal Week Hours Tool] Fetching weekly hours for {building}")
+            
+            # Look up location ID from database (supports all libraries and spaces)
+            location_service = get_location_service()
+            location_id = await location_service.get_location_id(building)
+            
+            if not location_id:
+                # Fallback to default (King Library)
+                location_id = "8113"
+                if log_callback:
+                    log_callback(f"⚠️ [LibCal Week Hours Tool] Building '{building}' not found, using King Library")
             
             # If no date provided, use today
             if not date:
@@ -512,7 +578,7 @@ class LibCalWeekHoursTool(Tool):
             token = await _get_oauth_token()
             async with httpx.AsyncClient(timeout=10) as client:
                 response = await client.get(
-                    f"{LIBCAL_HOUR_URL}/8113",  # Location ID for King
+                    f"{LIBCAL_HOUR_URL}/{location_id}",
                     headers={"Authorization": f"Bearer {token}"},
                     params={"from": from_date, "to": to_date}
                 )
@@ -520,13 +586,14 @@ class LibCalWeekHoursTool(Tool):
                 data = response.json()
                 
                 if not data or len(data) == 0:
-                    return {"tool": self.name, "success": False, "text": "No hours data available."}
+                    return {"tool": self.name, "success": False, "text": f"No hours data available for {building}."}
                 
                 # Extract hours by day
                 location = data[0]
                 dates = location.get("dates", {})
+                location_name = location.get('name', building.title())
                 
-                hours_text = f"**{location.get('name', 'King Library')} Hours (Week of {from_date}):**\n\n"
+                hours_text = f"**{location_name} Hours (Week of {from_date}):**\n\n"
                 
                 day_names = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
                 current_date = monday
@@ -545,7 +612,7 @@ class LibCalWeekHoursTool(Tool):
                     current_date += timedelta(days=1)
                 
                 if log_callback:
-                    log_callback("✅ [LibCal Week Hours Tool] Weekly hours retrieved")
+                    log_callback(f"✅ [LibCal Week Hours Tool] Weekly hours retrieved for {location_name}")
                 
                 return {
                     "tool": self.name,

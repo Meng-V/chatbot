@@ -1,10 +1,15 @@
 import os
 import re
 import socketio
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
+import socketio
+import os
+import logging
 from dotenv import load_dotenv
 from pathlib import Path
+from src.utils.logging_config import setup_logging
 from contextlib import asynccontextmanager
 
 from src.graph.orchestrator import library_graph
@@ -74,11 +79,16 @@ async def lifespan(app: FastAPI):
     """Handle application startup and shutdown."""
     # Startup
     print("🚀 Starting Miami Libraries AI-Core...")
+    setup_logging()  # Initialize logging system
+    logging.info("🚀 Application starting...")
     await connect_database()
+    logging.info("✅ Database connected")
     yield
     # Shutdown
-    print("👋 Shutting down...")
+    print("� Shutting down Miami Libraries AI-Core...")
+    logging.info("🛑 Application shutting down...")
     await disconnect_database()
+    logging.info("✅ Database disconnected")
 
 # Create FastAPI app with lifecycle
 app = FastAPI(

@@ -1,7 +1,7 @@
 # Developer Documentation
 
 **Miami University Libraries Chatbot - Version 3.0.0**  
-**Last Updated:** December 16, 2025
+**Last Updated:** December 17, 2025
 
 ---
 
@@ -22,6 +22,15 @@ This folder contains technical documentation for developers working on the chatb
 
 4. **[07-ENVIRONMENT-VARIABLES.md](./07-ENVIRONMENT-VARIABLES.md)**  
    Complete reference for all environment variables and configuration.
+
+5. **[08-SUBJECT-LIBRARIAN-SYSTEM.md](./08-SUBJECT-LIBRARIAN-SYSTEM.md)**  
+   Enhanced subject librarian search with course codes, fuzzy matching, and regional campus support.
+
+6. **[09-SERVER-MONITORING.md](./09-SERVER-MONITORING.md)**  
+   Server health monitoring, auto-restart, email alerts, and comprehensive logging.
+
+7. **[10-DEPLOYMENT-GUIDE.md](./10-DEPLOYMENT-GUIDE.md)**  
+   Complete deployment guide with database sync, verification, and maintenance procedures.
 
 ---
 
@@ -50,6 +59,13 @@ See [05-WEAVIATE-RAG-CORRECTION-POOL.md](./05-WEAVIATE-RAG-CORRECTION-POOL.md) f
 - ✅ **RAG correction pool** - Quality control tool for fixing bot errors
 - ✅ **6 focused capabilities** - Hours, booking, guides, librarians, search, chat
 - ✅ **Weaviate management scripts** - Easy correction workflow
+
+### New in Version 3.0 (December 2025)
+- ✅ **Enhanced subject librarian search** - Course codes, fuzzy matching, regional campus support
+- ✅ **Server monitoring** - Auto-restart with email alerts
+- ✅ **Comprehensive logging** - Structured JSON logs with rotation
+- ✅ **Personal account queries** - Direct links to library account
+- ✅ **Database optimization** - 4 new tables for verified contacts and LibGuides
 
 ---
 

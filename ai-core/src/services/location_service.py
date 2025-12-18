@@ -54,7 +54,6 @@ class LocationService:
             return library.libcalBuildingId
         
         # If not found, try campus-based search (e.g., "hamilton" → Rentschler)
-        # Remove "library" suffix if present
         campus_query = building_lower.replace(" library", "").strip()
         
         campus = await self._client.campus.find_first(
@@ -67,12 +66,10 @@ class LocationService:
         )
         
         if campus and campus.libraries:
-            # Return the main library for this campus
             main_library = next((lib for lib in campus.libraries if lib.isMain), None)
             if main_library:
                 self._cache[cache_key] = main_library.libcalBuildingId
                 return main_library.libcalBuildingId
-            # Fallback to first library
             if campus.libraries:
                 self._cache[cache_key] = campus.libraries[0].libcalBuildingId
                 return campus.libraries[0].libcalBuildingId
@@ -80,24 +77,9 @@ class LocationService:
         return None
     
     async def get_location_id(self, location_name: str) -> Optional[str]:
-        """Get LibCal location ID for libraries or spaces by name.
-        
-        This returns the ID used for HOURS API (Image 1).
-        For room reservations, use get_building_id() instead.
-        
-        Handles campus-based references:
-        - "hamilton" or "hamilton library" → Rentschler Library hours ID
-        - "middletown" or "middletown library" → Gardner-Harvey Library hours ID
-        
-        Args:
-            location_name: Library or space name (e.g., "king", "makerspace", "hamilton", "middletown")
-        
-        Returns:
-            LibCal location ID for hours (e.g., "8113", "11904") or None if not found
-        """
+        """Get LibCal location ID for libraries or spaces by name."""
         location_lower = location_name.lower().strip()
         
-        # Check cache first
         cache_key = f"location_id:{location_lower}"
         if cache_key in self._cache:
             return self._cache[cache_key]
@@ -116,7 +98,7 @@ class LocationService:
             self._cache[cache_key] = library.libcalLocationId
             return library.libcalLocationId
         
-        # If not found, check library spaces
+        # Check library spaces
         space = await self._client.libraryspace.find_first(
             where={
                 "OR": [
@@ -130,25 +112,18 @@ class LocationService:
             self._cache[cache_key] = space.libcalLocationId
             return space.libcalLocationId
         
-        # If still not found, try campus-based search
+        # Try campus-based search
         campus_query = location_lower.replace(" library", "").strip()
-        
         campus = await self._client.campus.find_first(
-            where={
-                "name": {"equals": campus_query, "mode": "insensitive"}
-            },
-            include={
-                "libraries": True
-            }
+            where={"name": {"equals": campus_query, "mode": "insensitive"}},
+            include={"libraries": True}
         )
         
         if campus and campus.libraries:
-            # Return the main library's location ID for this campus
             main_library = next((lib for lib in campus.libraries if lib.isMain), None)
             if main_library and main_library.libcalLocationId:
                 self._cache[cache_key] = main_library.libcalLocationId
                 return main_library.libcalLocationId
-            # Fallback to first library with location ID
             for lib in campus.libraries:
                 if lib.libcalLocationId:
                     self._cache[cache_key] = lib.libcalLocationId
@@ -160,12 +135,11 @@ class LocationService:
         """Get display name for a building by its LibCal building ID.
         
         Args:
-            building_id: LibCal building ID (e.g., "2047")
+            building_id: LibCal building ID
         
         Returns:
-            Display name (e.g., "Edgar W. King Library") or generic name
+            Display name of the building
         """
-        # Check cache first
         cache_key = f"building_name:{building_id}"
         if cache_key in self._cache:
             return self._cache[cache_key]
@@ -184,13 +158,12 @@ class LocationService:
         """Get mapping of building names to LibCal building IDs.
         
         Returns:
-            Dict mapping lowercase names/aliases to building IDs
-            Example: {"king": "2047", "hamilton": "4792", "middletown": "4845", ...}
+            Dict mapping library names/aliases to their building IDs
         """
         if "all_buildings" in self._cache:
             return self._cache["all_buildings"]
         
-        # Get all campuses with their libraries
+        # Get all libraries from database
         campuses = await self._client.campus.find_many(
             include={"libraries": True}
         )
@@ -230,7 +203,7 @@ class LocationService:
             space_name: Space name (e.g., "makerspace", "special collections")
         
         Returns:
-            LibCal building ID for space reservations (e.g., "8269" for Makerspace)
+            LibCal building ID for space reservations or None if not found
         """
         space_lower = space_name.lower().strip()
         
@@ -259,8 +232,7 @@ class LocationService:
         """Get mapping of building IDs (for reservations) to location IDs (for hours).
         
         Returns:
-            Dict mapping reservation IDs to hours IDs
-            Example: {"2047": "8113", "4089": "8116", ...}
+            Dict mapping building IDs to location IDs
         """
         if "building_to_location" in self._cache:
             return self._cache["building_to_location"]
@@ -279,7 +251,7 @@ class LocationService:
         """Get the default building ID (main library on main campus).
         
         Returns:
-            LibCal building ID for King Library (main library)
+            LibCal building ID for King Library (default)
         """
         if "default_building" in self._cache:
             return self._cache["default_building"]
@@ -343,42 +315,96 @@ class LocationService:
         return campus_info
     
     async def get_library_contact_info(self, library_name: str = None) -> Optional[Dict[str, str]]:
-        """Get contact information for a library.
-        
-        If no library_name is provided, returns King Library info (default).
-        
-        Args:
-            library_name: Library name or campus name (e.g., "king", "hamilton", "art")
-                         If None, defaults to King Library
-        
-        Returns:
-            Dict with phone, address, displayName, or None if not found
-            Example: {"phone": "513-529-4141", "address": "151 S. Campus Ave...", "displayName": "Edgar W. King Library"}
-        """
-        # Default to King Library if no name provided
+        """Get contact information for a library."""
         if not library_name:
             library_name = "king"
         
-        # Try to get building ID first (handles campus aliases too)
+        search_name = library_name.lower().strip()
+        
+        # Direct DB query - search by short name or display name
+        library = await self._client.library.find_first(
+            where={
+                "OR": [
+                    {"shortName": {"equals": search_name, "mode": "insensitive"}},
+                    {"name": {"contains": search_name, "mode": "insensitive"}}
+                ]
+            }
+        )
+        
+        # If not found by library name, try campus-based search
+        if not library:
+            campus_query = search_name.replace(" library", "").strip()
+            campus = await self._client.campus.find_first(
+                where={"name": {"equals": campus_query, "mode": "insensitive"}},
+                include={"libraries": True}
+            )
+            if campus and campus.libraries:
+                library = next((lib for lib in campus.libraries if lib.isMain), None)
+                if not library:
+                    library = campus.libraries[0] if campus.libraries else None
+        
+        if library:
+            return {
+                "phone": library.phone or "N/A",
+                "address": library.address or "N/A",
+                "website": library.website or "https://www.lib.miamioh.edu/",
+                "displayName": library.displayName,
+                "shortName": library.shortName or ""
+            }
+        
+        return None
+    
+    async def get_library_website(self, library_name: str = None) -> str:
+        """Get website URL for a library or space.
+        
+        Args:
+            library_name: Library name, campus name, or space name
+                         (e.g., "king", "hamilton", "middletown", "art", "makerspace", "special collections")
+                         If None, defaults to King Library
+        
+        Returns:
+            Website URL string
+        """
+        # Default to King Library if no name provided
+        if not library_name:
+            return "https://www.lib.miamioh.edu/"
+        
+        # Check cache first
+        cache_key = f"website:{library_name.lower()}"
+        if cache_key in self._cache:
+            return self._cache[cache_key]
+        
+        # First check if it's a space (Makerspace, Special Collections)
+        space = await self._client.libraryspace.find_first(
+            where={
+                "OR": [
+                    {"shortName": {"contains": library_name.lower(), "mode": "insensitive"}},
+                    {"name": {"contains": library_name.lower(), "mode": "insensitive"}}
+                ]
+            }
+        )
+        
+        if space and space.website:
+            self._cache[cache_key] = space.website
+            return space.website
+        
+        # If not a space, try to get building ID (handles campus aliases too)
         building_id = await self.get_building_id(library_name)
         
         if not building_id:
-            return None
+            return "https://www.lib.miamioh.edu/"
         
         # Get library by building ID
         library = await self._client.library.find_first(
             where={"libcalBuildingId": building_id}
         )
         
-        if library:
-            return {
-                "phone": library.phone or "N/A",
-                "address": library.address or "N/A",
-                "displayName": library.displayName,
-                "shortName": library.shortName or ""
-            }
+        if library and library.website:
+            self._cache[cache_key] = library.website
+            return library.website
         
-        return None
+        # Fallback to main library website
+        return "https://www.lib.miamioh.edu/"
     
     async def is_regional_campus_ambiguous(self, query: str) -> bool:
         """Check if user mentioned 'regional' without specifying which campus.
@@ -407,7 +433,7 @@ class LocationService:
         """Get information about both regional campuses for clarification prompts.
         
         Returns:
-            List of dicts with campus and library info
+            List of dicts with campus info: [{"name": "Hamilton", "library": "Rentschler Library"}, ...]
         """
         regional_campuses = await self._client.campus.find_many(
             where={"isMain": False},

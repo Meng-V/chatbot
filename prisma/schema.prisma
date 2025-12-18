@@ -75,6 +75,8 @@ model Subject {
   regCodes    SubjectRegCode[]
   majorCodes  SubjectMajorCode[]
   deptCodes   SubjectDeptCode[]
+  librarians  LibrarianSubject[]
+  guides      LibGuideSubject[]
 
   @@index([name])
 }
@@ -147,6 +149,7 @@ model Library {
   libcalLocationId String?       // LibCal location ID for HOURS API (e.g., "8113" for King)
   phone           String?        // Contact phone number (e.g., "513-529-4141")
   address         String?        // Physical address (e.g., "151 S. Campus Ave, Oxford, OH 45056")
+  website         String?        // Library website URL (e.g., "https://www.lib.miamioh.edu/")
   isMain          Boolean        @default(false) // True for main library on each campus
   spaces          LibrarySpace[]
   campus          Campus         @relation(fields: [campusId], references: [id], onDelete: Cascade)
@@ -167,6 +170,7 @@ model LibrarySpace {
   shortName       String?  // "Makerspace", "Special Collections"
   libcalLocationId String  @unique // LibCal location ID for hours API (e.g., "11904" for Makerspace)
   libcalBuildingId String? @unique // LibCal building ID for reservations (e.g., "8269" for Makerspace)
+  website         String?  // Space website URL (e.g., "https://libguides.lib.miamioh.edu/create/makerspace")
   spaceType       String   @default("service") // "service", "collection", "study_area"
   library         Library  @relation(fields: [libraryId], references: [id], onDelete: Cascade)
   createdAt       DateTime @default(now())
@@ -176,4 +180,73 @@ model LibrarySpace {
   @@index([shortName])
   @@index([libcalLocationId])
   @@index([libcalBuildingId])
+}
+
+// Librarian/Staff Directory (verified contacts only)
+model Librarian {
+  id          String             @id @default(uuid())
+  name        String
+  email       String             @unique
+  title       String?
+  department  String?
+  phone       String?
+  photoUrl    String?
+  profileUrl  String?
+  libguideProfileId String?      // LibGuides profile ID
+  campus      String             @default("Oxford")  // "Oxford", "Hamilton", "Middletown"
+  isRegional  Boolean            @default(false)     // True for Hamilton/Middletown
+  isActive    Boolean            @default(true)
+  createdAt   DateTime           @default(now())
+  updatedAt   DateTime           @updatedAt
+  
+  subjects    LibrarianSubject[]
+  
+  @@index([email])
+  @@index([name])
+  @@index([campus])
+  @@index([isRegional])
+}
+
+// LibGuide Pages
+model LibGuide {
+  id          String            @id @default(uuid())
+  name        String
+  url         String            @unique
+  description String?
+  guideId     String?           // LibGuides API ID
+  isActive    Boolean           @default(true)
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+  
+  subjects    LibGuideSubject[]
+  
+  @@index([name])
+  @@index([guideId])
+}
+
+// Many-to-many: Librarian <-> Subject
+model LibrarianSubject {
+  id          String    @id @default(uuid())
+  librarianId String
+  subjectId   String
+  isPrimary   Boolean   @default(false)
+  librarian   Librarian @relation(fields: [librarianId], references: [id], onDelete: Cascade)
+  subject     Subject   @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+  
+  @@unique([librarianId, subjectId])
+  @@index([subjectId])
+  @@index([librarianId])
+}
+
+// Many-to-many: LibGuide <-> Subject
+model LibGuideSubject {
+  id         String   @id @default(uuid())
+  libGuideId String
+  subjectId  String
+  libGuide   LibGuide @relation(fields: [libGuideId], references: [id], onDelete: Cascade)
+  subject    Subject  @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+  
+  @@unique([libGuideId, subjectId])
+  @@index([subjectId])
+  @@index([libGuideId])
 }

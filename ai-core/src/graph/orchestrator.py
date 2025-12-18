@@ -22,6 +22,7 @@ from src.agents.libcal_comprehensive_agent import LibCalComprehensiveAgent
 from src.agents.libguide_comprehensive_agent import LibGuideComprehensiveAgent
 from src.agents.google_site_comprehensive_agent import GoogleSiteComprehensiveAgent
 from src.agents.subject_librarian_agent import find_subject_librarian_query
+from src.agents.enhanced_subject_librarian_agent import EnhancedSubjectLibrarianAgent
 # Legacy single-tool agents
 from src.agents.libchat_agent import libchat_handoff
 from src.agents.transcript_rag_agent import transcript_rag_query
@@ -253,6 +254,177 @@ async def classify_intent_node(state: AgentState) -> AgentState:
         state["_logger"] = logger
         return state
     
+    # 🚨 PRE-CHECK: Catch address/location requests BEFORE LLM routing
+    address_patterns = [
+        r'\b(library|king|art|rentschler|hamilton|middletown|gardner)\s*(address|location|where\s*is)\b',
+        r'\b(address|location|where\s*is|where.*located)\b.*\b(library|king|art|rentschler|hamilton|middletown)\b',
+        r'\bwhat\s*is\s*the\b.*\b(library|king|art|rentschler|hamilton|middletown)\b.*\b(address|location)\b',
+        r'\bhow\s*(do\s*i|can\s*i)\s*get\s*to\b.*\b(library|king|art|rentschler|hamilton|middletown)\b',
+        r'\baddress\s*(of|for)\s*(the\s*)?(library|king|art)\b',
+        r'\bwhat\s*(is|are)\s*(the\s*)?.*\baddress\b.*\blibrary\b',
+        r'\blibrary\b.*\baddress\b',
+    ]
+    
+    user_msg_lower = user_msg.lower()
+    for pattern in address_patterns:
+        if re.search(pattern, user_msg_lower, re.IGNORECASE):
+            logger.log(f"📍 [Meta Router] Detected library address query - bypassing agents, using database")
+            state["classified_intent"] = "policy_or_service"
+            state["selected_agents"] = []  # Skip agents, go directly to synthesizer
+            state["_library_address_query"] = True  # Flag for special handling
+            state["_logger"] = logger
+            return state
+    
+    # 🚨 PRE-CHECK: Catch website URL requests BEFORE LLM routing
+    website_patterns = [
+        r'\b(library|king|art|rentschler|hamilton|middletown|gardner|makerspace|maker\s*space|special\s*collections?)\s*(website|url|link|webpage|web\s*page)\b',
+        r'\b(website|url|link|webpage|web\s*page)\b.*\b(library|king|art|rentschler|hamilton|middletown|makerspace|maker\s*space|special\s*collections?)\b',
+        r'\bwhat\s*is\s*the\b.*\b(library|king|art|rentschler|hamilton|middletown|makerspace|maker\s*space|special\s*collections?)\b.*\b(website|url|link)\b',
+    ]
+    
+    for pattern in website_patterns:
+        if re.search(pattern, user_msg_lower, re.IGNORECASE):
+            logger.log(f"🌐 [Meta Router] Detected library website query - bypassing agents, using database")
+            state["classified_intent"] = "policy_or_service"
+            state["selected_agents"] = []  # Skip agents, go directly to synthesizer
+            state["_library_website_query"] = True  # Flag for special handling
+            state["_logger"] = logger
+            return state
+    
+    # 🚨 PRE-CHECK: Catch PERSONAL LIBRARY ACCOUNT queries - direct to account URL
+    # Users asking about THEIR OWN account (loans, fines, requests, holds, etc.)
+    # NOT general policy questions like "what are the late fees"
+    personal_account_patterns = [
+        r'\b(my|i\s*have|do\s*i\s*have|check\s*my|view\s*my|see\s*my)\b.*\b(loans?|checkouts?|books?\s*checked\s*out|borrowed|fines?|fees?|owe|owing|requests?|holds?|account|blocks?|messages?)\b',
+        r'\b(loans?|fines?|fees?|requests?|holds?|blocks?)\b.*\b(on\s*my\s*account|in\s*my\s*account)\b',
+        r'\b(what|how\s*many)\b.*\b(books?|items?)\b.*\b(do\s*i\s*have|have\s*i)\b.*\b(checked\s*out|borrowed|due)\b',
+        r'\b(library|my)\s*account\s*(status|overview|details?|settings?|info)?\b',
+        r'\bcheck\s*(my\s*)?(library\s*)?account\b',
+        r'\bwhat\s*(do\s*i|books?\s*do\s*i)\s*(owe|have\s*(checked\s*out|due|borrowed))\b',
+        r'\b(am\s*i|do\s*i\s*have)\s*(blocked|any\s*(fines?|fees?|holds?|blocks?))\b',
+        r'\bwhen\s*(is|are)\s*my\s*(books?|items?|loans?)\s*due\b',
+        r'\bmy\s*(due\s*dates?|overdue|renewals?)\b',
+    ]
+    
+    for pattern in personal_account_patterns:
+        if re.search(pattern, user_msg_lower, re.IGNORECASE):
+            logger.log(f"👤 [Meta Router] Detected personal account query - directing to account URL")
+            state["classified_intent"] = "policy_or_service"
+            state["selected_agents"] = []  # No agent needed, handle in synthesizer
+            state["_personal_account_query"] = True
+            state["_logger"] = logger
+            return state
+    
+    # 🚨 PRE-CHECK: Catch EQUIPMENT/TECHNOLOGY patterns - route to Google Site Search
+    # Camera, laptop, charger, equipment checkout questions
+    equipment_patterns = [
+        r'\b(check\s*out|borrow|rent|loan)\b.*\b(camera|laptop|charger|tripod|microphone|headphone|calculator|equipment)\b',
+        r'\b(camera|laptop|charger|tripod|microphone|headphone|calculator|equipment)\b.*\b(check\s*out|borrow|rent|available)\b',
+        r'\b(technology|tech|equipment)\s*(checkout|lending|loan)\b',
+        r'\bdo\s*you\s*(have|lend|loan)\b.*\b(camera|laptop|charger|equipment)\b',
+    ]
+    
+    for pattern in equipment_patterns:
+        if re.search(pattern, user_msg_lower, re.IGNORECASE):
+            logger.log(f"📷 [Meta Router] Detected equipment checkout query - routing to google_site")
+            state["classified_intent"] = "policy_or_service"
+            state["selected_agents"] = ["google_site"]
+            state["_logger"] = logger
+            return state
+    
+    # 🚨 PRE-CHECK: Catch SUBSCRIPTION patterns - route to Google Site Search
+    # NYT, WSJ, newspaper subscriptions
+    subscription_patterns = [
+        r'\b(nyt|new\s*york\s*times|wall\s*street\s*journal|wsj|newspaper)\b.*\b(subscription|access|renew|get)\b',
+        r'\b(subscription|access|renew|get)\b.*\b(nyt|new\s*york\s*times|wall\s*street\s*journal|wsj|newspaper)\b',
+        r'\bhow\s*(do\s*i|can\s*i|to)\b.*\b(nyt|new\s*york\s*times)\b',
+        r'\b(nyt|new\s*york\s*times)\b',
+    ]
+    
+    for pattern in subscription_patterns:
+        if re.search(pattern, user_msg_lower, re.IGNORECASE):
+            logger.log(f"📰 [Meta Router] Detected subscription query - routing to google_site")
+            state["classified_intent"] = "policy_or_service"
+            state["selected_agents"] = ["google_site"]
+            state["_logger"] = logger
+            return state
+    
+    # 🚨 PRE-CHECK: Catch SUBJECT LIBRARIAN patterns BEFORE LLM routing
+    # These patterns MUST go to subject_librarian agent (DB + LibGuide API)
+    subject_librarian_patterns = [
+        r'\b(subject|liaison)\s*librarian\b',
+        r'\blibrarian\s*for\s*(biology|chemistry|physics|math|psychology|english|history|art|music|business|nursing|engineering)\b',
+        r'\bwho\s*(is|are)\s*(the\s*)?(.*?)librarian\b',
+        r'\b(biology|chemistry|physics|psychology|english|history|art|music|business|nursing|engineering)\s*librarian\b',
+        r'\bfind\s*(a\s*)?librarian\s*for\b',
+        r'\bhelp\s*with\s*(.*?)\s*research\b.*\blibrarian\b',
+        # Course code patterns: "ENG 111", "BIO 201", "PSY"
+        r'\b([A-Z]{2,4})\s*\d{3,4}\b.*\blibrarian\b',
+        r'\blibrarian\b.*\b([A-Z]{2,4})\s*\d{3,4}\b',
+        # Help with subject/course/department patterns
+        r'\b(help|assist|need)\s*(with|on|for)\s*(my\s*)?([A-Z]{2,4}\s*\d{3,4})\b',  # "help with ENG 111"
+        r'\b(help|assist|need)\s*(with|on|for)\s*(the\s*)?([a-z]+)\s*department\b',  # "help with the English department"
+        r'\b(help|assist|need)\s*(with|on|for)\s*my\s*([a-z]+)\s*(class|course)\b',  # "help with my psychology class"
+        r'\b(help|assist|need)\s*(with|on|for)\s*([a-z]+)\s*research\b',  # "help with biology research"
+        # Major-based patterns
+        r'\b(biology|chemistry|physics|psychology|english|history|business|nursing|computer\s*science)\s*major\b.*\blibrarian\b',
+        r'\bmajor.*\blibrarian\b',
+        r'\bmajoring\s*in\b.*\b(who|librarian|help)\b',
+    ]
+    
+    for pattern in subject_librarian_patterns:
+        if re.search(pattern, user_msg_lower, re.IGNORECASE):
+            logger.log(f"👨‍🏫 [Meta Router] Detected subject librarian query - routing to subject_librarian agent")
+            state["classified_intent"] = "subject_librarian"
+            state["selected_agents"] = ["subject_librarian"]
+            state["_logger"] = logger
+            return state
+    
+    # 🚨 PRE-CHECK: Catch LIVE CHAT / ASK US hours patterns BEFORE LLM routing
+    # These patterns use the Ask Us hours API (same as librarian availability)
+    live_chat_patterns = [
+        r'\b(live\s*chat|ask\s*us|human\s*chat|librarian\s*chat|chat\s*with\s*librarian)\b.*\b(hours?|available|open|when)\b',
+        r'\b(hours?|when|available)\b.*\b(live\s*chat|ask\s*us|human\s*chat|librarian\s*chat|chat\s*with\s*librarian)\b',
+        r'\bwhen\s*(can\s*i|are)\b.*\b(chat|talk)\b.*\blibrarian',
+        r'\b(chat|talk)\b.*\blibrarian\b.*\b(hours?|available|when)\b',
+        r'\blive\s*chat\s*(help|support|hours?)\b',
+        r'\b(librarian|staff)\b.*\b(available|online|hours?)\b',
+        r'\bis\s*(live\s*chat|chat|ask\s*us)\s*available\b',  # "is live chat available now"
+        r'\b(live\s*chat|chat)\s*available\s*(now|right\s*now)\b',
+    ]
+    
+    for pattern in live_chat_patterns:
+        if re.search(pattern, user_msg_lower, re.IGNORECASE):
+            logger.log(f"💬 [Meta Router] Detected live chat hours query - using Ask Us hours API")
+            state["classified_intent"] = "policy_or_service"
+            state["selected_agents"] = []  # Skip agents, handle in synthesizer
+            state["_live_chat_hours_query"] = True
+            state["_logger"] = logger
+            return state
+    
+    # 🚨 PRE-CHECK: Catch hours/booking patterns BEFORE LLM routing
+    # These patterns MUST go to LibCal for reliable hours data
+    # Includes: libraries (King, Art, Rentschler, Gardner-Harvey) AND spaces (Makerspace, Special Collections)
+    hours_patterns = [
+        r'\b(library|building|king|art|rentschler|gardner|harvey|architecture|wertz|makerspace|special\s*collections?|havighurst)\s*(hours?|open|close|opening|closing)\b',
+        r'\b(hours?|open|close|opening|closing)\b.*\b(library|building|king|art|rentschler|gardner|harvey|architecture|wertz|makerspace|special\s*collections?|havighurst)\b',
+        r'\bwhat\s*time\b.*\b(library|king|art|rentschler|gardner|harvey|architecture|wertz|makerspace|special\s*collections?)\b',
+        r'\b(when\s*does|when\s*is)\b.*\b(library|king|art|rentschler|gardner|harvey|architecture|wertz|makerspace|special\s*collections?)\b.*\b(open|close)\b',
+        r'\blibrary\s*schedule\b',
+        r'\b(art\s*(and|&)\s*architecture)\b.*\b(hours?|open|close)\b',  # "Art and Architecture hours"
+        r'\b(hours?|open|close)\b.*\b(art\s*(and|&)\s*architecture)\b',  # "hours for Art and Architecture"
+        r'\bmakerspace\b',  # Any makerspace query likely wants hours/info
+        r'\bspecial\s*collections?\b.*\b(hours?|open|close|when)\b',  # Special Collections hours
+    ]
+    
+    for pattern in hours_patterns:
+        if re.search(pattern, user_msg_lower, re.IGNORECASE):
+            logger.log(f"🕐 [Meta Router] Detected hours query - routing to LibCal")
+            state["classified_intent"] = "booking_or_hours"
+            state["selected_agents"] = ["libcal"]
+            state["_logger"] = logger
+            return state
+    
     # 🚨 PRE-CHECK: Catch catalog search patterns BEFORE LLM routing
     # These patterns MUST go to human_help (catalog search disabled)
     catalog_patterns = [
@@ -265,7 +437,6 @@ async def classify_intent_node(state: AgentState) -> AgentState:
         r'\bsearch\s*(the\s*)?(catalog|database)',
     ]
     
-    user_msg_lower = user_msg.lower()
     for pattern in catalog_patterns:
         if re.search(pattern, user_msg_lower, re.IGNORECASE):
             logger.log(f"📚 [Meta Router] Detected catalog search request - routing to human_help (service disabled)")
@@ -367,6 +538,7 @@ async def classify_intent_node(state: AgentState) -> AgentState:
 libcal_agent = LibCalComprehensiveAgent()
 libguide_agent = LibGuideComprehensiveAgent()
 google_site_agent = GoogleSiteComprehensiveAgent()
+enhanced_subject_agent = EnhancedSubjectLibrarianAgent()
 
 async def execute_agents_node(state: AgentState) -> AgentState:
     """Execute selected agents in parallel."""
@@ -389,7 +561,7 @@ async def execute_agents_node(state: AgentState) -> AgentState:
         "libcal": libcal_agent,
         "libguide": libguide_agent,
         "google_site": google_site_agent,
-        "subject_librarian": find_subject_librarian_query,
+        "subject_librarian": enhanced_subject_agent,  # Use enhanced agent
         "libchat": libchat_handoff,
         "transcript_rag": transcript_rag_query  # Correction pool only
     }
@@ -549,6 +721,136 @@ async def synthesize_answer_node(state: AgentState) -> AgentState:
         state["needs_human"] = True
         return state
     
+    # 🏠 Handle library address queries EARLY (before other checks)
+    if state.get("_library_address_query"):
+        logger.log("📍 [Synthesizer] Providing library address (early check)")
+        from src.tools.libcal_comprehensive_tools import _extract_building_from_query
+        
+        # Hardcoded fallback data (no DB needed)
+        LIBRARY_DATA = {
+            "king": {"displayName": "Edgar W. King Library", "address": "151 S. Campus Ave, Oxford, OH 45056", "phone": "(513) 529-4141", "website": "https://www.lib.miamioh.edu/"},
+            "art": {"displayName": "Art & Architecture Library", "address": "Alumni Hall, Oxford, OH 45056", "phone": "(513) 529-6638", "website": "https://www.lib.miamioh.edu/"},
+            "hamilton": {"displayName": "Rentschler Library", "address": "1601 University Blvd, Hamilton, OH 45011", "phone": "(513) 785-3235", "website": "https://www.ham.miamioh.edu/library/"},
+            "middletown": {"displayName": "Gardner-Harvey Library", "address": "4200 N. University Blvd, Middletown, OH 45042", "phone": "(513) 727-3222", "website": "https://www.mid.miamioh.edu/library/"},
+        }
+        
+        library_name = _extract_building_from_query(user_msg)
+        logger.log(f"📍 [Synthesizer] Looking up: {library_name}")
+        
+        # Try database first, fall back to hardcoded data
+        contact_info = None
+        try:
+            from src.services.location_service import get_location_service
+            location_service = get_location_service()
+            contact_info = await location_service.get_library_contact_info(library_name)
+            logger.log(f"✅ [Synthesizer] Got contact info from database")
+        except Exception as e:
+            logger.log(f"⚠️ [Synthesizer] DB error: {type(e).__name__}, using fallback data")
+        
+        # Use hardcoded fallback if DB failed
+        if not contact_info:
+            key = library_name.lower() if library_name else "king"
+            if key in ["rentschler", "hamilton"]:
+                key = "hamilton"
+            elif key in ["gardner", "gardner-harvey", "middletown"]:
+                key = "middletown"
+            elif key not in LIBRARY_DATA:
+                key = "king"
+            contact_info = LIBRARY_DATA.get(key, LIBRARY_DATA["king"])
+            logger.log(f"📝 [Synthesizer] Using fallback data for: {key}")
+        
+        display_name = contact_info.get("displayName", "Library")
+        address = contact_info.get("address", "N/A")
+        phone = contact_info.get("phone", "N/A")
+        website = contact_info.get("website", "https://www.lib.miamioh.edu/")
+        
+        address_msg = f"**{display_name}**\n\n"
+        address_msg += f"📍 **Address:** {address}\n\n"
+        address_msg += f"📞 **Phone:** {phone}\n\n"
+        address_msg += f"🌐 **Website:** {website}"
+        
+        state["final_answer"] = address_msg
+        return state
+    
+    # 💬 Handle live chat / Ask Us hours queries
+    if state.get("_live_chat_hours_query"):
+        logger.log("💬 [Synthesizer] Providing live chat hours from Ask Us API")
+        from src.api.askus_hours import get_askus_hours_for_date
+        
+        try:
+            hours_data = await get_askus_hours_for_date()
+            is_open = hours_data.get("is_open", False)
+            current_period = hours_data.get("current_period")
+            hours_list = hours_data.get("hours", [])
+            
+            if is_open and current_period:
+                chat_msg = (
+                    f"**Live Chat with Librarians**\n\n"
+                    f"✅ **Librarians are available NOW!**\n\n"
+                    f"• Current hours: {current_period['open']} - {current_period['close']}\n"
+                    f"• Start a chat: https://www.lib.miamioh.edu/research/research-support/ask/\n\n"
+                    f"Our librarians can help with research questions, finding resources, and more."
+                )
+            elif hours_list:
+                # Show today's schedule
+                schedule_lines = []
+                for period in hours_list:
+                    schedule_lines.append(f"• {period.get('from', '')} - {period.get('to', '')}")
+                
+                chat_msg = (
+                    f"**Live Chat with Librarians**\n\n"
+                    f"⏰ **Today's Live Chat Hours:**\n"
+                    f"{chr(10).join(schedule_lines)}\n\n"
+                    f"• Chat link: https://www.lib.miamioh.edu/research/research-support/ask/\n"
+                    f"• Phone: (513) 529-4141\n\n"
+                    f"Outside chat hours? Submit a ticket and we'll respond as soon as possible!"
+                )
+            else:
+                chat_msg = (
+                    f"**Live Chat with Librarians**\n\n"
+                    f"Live chat hours vary. Please check:\n"
+                    f"• https://www.lib.miamioh.edu/research/research-support/ask/\n\n"
+                    f"You can also:\n"
+                    f"• Submit a ticket for help anytime\n"
+                    f"• Call: (513) 529-4141"
+                )
+            
+            state["final_answer"] = chat_msg
+            return state
+            
+        except Exception as e:
+            logger.log(f"⚠️ [Synthesizer] Error getting Ask Us hours: {str(e)}")
+            state["final_answer"] = (
+                "**Live Chat with Librarians**\n\n"
+                "For live chat hours, please visit:\n"
+                "• https://www.lib.miamioh.edu/research/research-support/ask/\n\n"
+                "You can also call: (513) 529-4141"
+            )
+            return state
+    
+    # 👤 Handle personal library account queries
+    if state.get("_personal_account_query"):
+        logger.log("👤 [Synthesizer] Providing library account URL for personal account query")
+        
+        account_url = "https://ohiolink-mu.primo.exlibrisgroup.com/discovery/account?vid=01OHIOLINK_MU:MU&section=overview&lang=en"
+        
+        account_msg = (
+            "**My Library Account**\n\n"
+            "To view your personal library account information (loans, fines, requests, holds, messages), "
+            "please sign in to your account:\n\n"
+            f"🔗 **[Access My Library Account]({account_url})**\n\n"
+            "From your account you can:\n"
+            "• View your current **loans** and due dates\n"
+            "• Check any **fines or fees**\n"
+            "• See your **requests** and holds\n"
+            "• View **blocks** or messages on your account\n"
+            "• Update your **personal details** and settings\n\n"
+            "If you need help with your account, call us at **(513) 529-4141**."
+        )
+        
+        state["final_answer"] = account_msg
+        return state
+    
     # Handle catalog search requests (not available)
     # Triggered by: discovery_search intent OR _catalog_search_requested flag from regex pattern
     if intent == "discovery_search" or state.get("_catalog_search_requested"):
@@ -603,6 +905,42 @@ async def synthesize_answer_node(state: AgentState) -> AgentState:
         )
         state["final_answer"] = validated_msg
         state["needs_human"] = True
+        return state
+    
+    # Handle library website queries
+    if state.get("_library_website_query"):
+        logger.log("🌐 [Synthesizer] Providing library/space website URL from database")
+        from src.services.location_service import get_location_service
+        from src.tools.libcal_comprehensive_tools import _extract_building_from_query
+        
+        # Extract library/space name using centralized function (handles all variations)
+        library_name = _extract_building_from_query(user_msg)
+        logger.log(f"🌐 [Synthesizer] Extracted library/space name: {library_name}")
+        
+        try:
+            location_service = get_location_service()
+            # location_service handles libraries, campuses, and spaces (makerspace, special collections)
+            website = await location_service.get_library_website(library_name)
+            
+            # Get display name from database
+            contact_info = await location_service.get_library_contact_info(library_name)
+            if contact_info:
+                display_name = contact_info.get("displayName", "Library")
+            else:
+                # For spaces like Makerspace, try to get a reasonable display name
+                if library_name == "makerspace":
+                    display_name = "Makerspace"
+                elif library_name == "special collections":
+                    display_name = "Special Collections & University Archives"
+                else:
+                    display_name = "Library"
+            
+            website_msg = f"**{display_name} Website:**\n\n{website}"
+        except Exception as e:
+            logger.log(f"⚠️ [Synthesizer] Error getting website from database: {str(e)}")
+            website_msg = "I'm having trouble accessing our systems right now. Please visit https://www.lib.miamioh.edu/ or chat with a librarian at (513) 529-4141."
+        
+        state["final_answer"] = website_msg
         return state
     
     # Handle out-of-scope questions
