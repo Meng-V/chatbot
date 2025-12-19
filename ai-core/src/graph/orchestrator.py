@@ -263,14 +263,27 @@ async def classify_intent_node(state: AgentState) -> AgentState:
             state["_logger"] = logger
             return state
     
-    # 🚫 EARLY OUT-OF-SCOPE CHECK: Detect tech support PROBLEMS (not equipment borrowing)
-    # Library DOES offer: laptop checkout, chromebook, Adobe licenses, chargers, etc.
-    # OUT-OF-SCOPE: "my computer is broken", "wifi not working", "fix my laptop"
-    # IN-SCOPE: "borrow a laptop", "checkout chromebook", "Adobe license", "rent equipment"
+    # 🚫 EARLY OUT-OF-SCOPE CHECK: Detect out-of-scope questions BEFORE routing
     msg_lower = original_msg.lower()
     
+    # 1. HOMEWORK/ASSIGNMENT HELP (out-of-scope)
+    homework_patterns = [
+        r'\b(what\'?s|what\s*is)\s*the\s*answer\s*to\b.*\b(question|problem|homework)\b',
+        r'\b(answer|solve|solution)\s*(to|for)?\s*(question|problem)\s*\d+\b',
+        r'\b(my|the)\s*(biology|chemistry|physics|math|calculus|algebra)\s*homework\b',
+        r'\bhelp\s*(me)?\s*(with|on)?\s*(my)?\s*homework\b',
+    ]
+    for pattern in homework_patterns:
+        if re.search(pattern, msg_lower, re.IGNORECASE):
+            logger.log(f"🚫 [Out-of-Scope Check] Detected homework help request → out_of_scope")
+            state["classified_intent"] = "out_of_scope"
+            state["selected_agents"] = []
+            state["out_of_scope"] = True
+            state["_logger"] = logger
+            return state
+    
+    # 2. TECH SUPPORT (but NOT equipment borrowing)
     # First check if this is an equipment BORROWING question (in-scope)
-    # Include PC, laptop, chromebook, etc.
     equipment_borrow_patterns = [
         r'\b(borrow|checkout|check\s*out|rent|loan|reserve|get)\b.*\b(laptop|pc|computer|chromebook|charger|equipment|device|camera|tripod|headphone|calculator|adapter|ipad|tablet|macbook)\b',
         r'\b(laptop|pc|computer|chromebook|charger|equipment|device|camera|tripod|headphone|calculator|adapter|ipad|tablet|macbook)\b.*\b(borrow|checkout|check\s*out|rent|loan|available|availability)\b',
