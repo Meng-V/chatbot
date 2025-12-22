@@ -1,7 +1,7 @@
 # Developer Documentation
 
-**Miami University Libraries Chatbot - Version 3.0.0**  
-**Last Updated:** December 17, 2025
+**Miami University Libraries Chatbot - Version 3.1.0**  
+**Last Updated:** December 22, 2025 Afternoon
 
 ---
 
@@ -32,6 +32,9 @@ This folder contains technical documentation for developers working on the chatb
 7. **[10-DEPLOYMENT-GUIDE.md](./10-DEPLOYMENT-GUIDE.md)**  
    Complete deployment guide with database sync, verification, and maintenance procedures.
 
+8. **[11-CLARIFICATION-SYSTEM.md](./11-CLARIFICATION-SYSTEM.md)**  
+   Smart clarification choices system with RAG-based classification, user-in-the-loop decision making, and interactive button UI.
+
 ---
 
 ## 🚀 Quick Start
@@ -49,32 +52,30 @@ See [05-WEAVIATE-RAG-CORRECTION-POOL.md](./05-WEAVIATE-RAG-CORRECTION-POOL.md) f
 
 ---
 
-## 🔑 Key Changes in Version 3.0
+## 🔑 Key Changes in Version 3.1
 
-### Removed Features
-- ❌ **Primo catalog search** - Archived to `/archived/primo/`
-- ❌ **RAG as active search** - Repurposed as correction pool only
+### New in Version 3.1 (December 2025)
+- ✅ **Smart Clarification System** - Interactive button choices for ambiguous questions
+- ✅ **RAG-Based Classification** - Weaviate vector database for intent classification with confidence scoring
+- ✅ **User-in-the-Loop** - Confirms user intent before processing unclear queries
+- ✅ **Database-Driven Addresses** - Library contact info from database, not web search
+- ✅ **Structured Clarification Choices** - Up to 3 category options + "None of the above"
+- ✅ **Socket.IO Integration** - Real-time clarification choice handling
 
-### Updated Features
-- ✅ **RAG correction pool** - Quality control tool for fixing bot errors
-- ✅ **6 focused capabilities** - Hours, booking, guides, librarians, search, chat
-- ✅ **Weaviate management scripts** - Easy correction workflow
-
-### New in Version 3.0 (December 2025)
-- ✅ **Enhanced subject librarian search** - Course codes, fuzzy matching, regional campus support
+### Previous Updates (Version 3.0)
+- ✅ **Enhanced subject librarian search** - Course codes, fuzzy matching, 710 subjects
 - ✅ **Server monitoring** - Auto-restart with email alerts
-- ✅ **Comprehensive logging** - Structured JSON logs with rotation
-- ✅ **Personal account queries** - Direct links to library account
-- ✅ **Database optimization** - 4 new tables for verified contacts and LibGuides
+- ✅ **RAG correction pool** - Quality control tool for fixing bot errors
+- ✅ **Database optimization** - Library locations and verified contacts
 
 ---
 
 ## 📝 System Version
 
-**Version:** 3.0.0  
-**Release Date:** December 16, 2025  
+**Version:** 3.1.0  
+**Release Date:** December 22, 2025  
 **Developer:** Meng Qu, Miami University Libraries  
-**Repository:** Internal GitHub
+**Repository:** GitHub
 
 ---
 

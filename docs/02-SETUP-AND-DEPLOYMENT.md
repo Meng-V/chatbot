@@ -1,7 +1,7 @@
 # Setup and Deployment Guide
 
-**Last Updated:** December 16, 2025  
-**Version:** 3.0.0
+**Last Updated:** December 22, 2025  
+**Version:** 3.1.0
 
 ---
 
@@ -21,10 +21,12 @@
 ### Required Software
 
 **On Development Machine:**
-- Python 3.13
+- Python 3.13 (required for Prisma compatibility)
 - Node.js 18+ and npm
 - Git
 - PostgreSQL client (for database access)
+
+**Important:** Python 3.13 is required because Prisma Python does not support Python 3.14+. If you have Python 3.14, you must install Python 3.13 separately.
 
 **On Production Server:**
 - Ubuntu/Linux server
@@ -59,13 +61,16 @@ cd chatbot
 ```bash
 cd ai-core
 
-# Create Python virtual environment
-python3.13 -m venv venv
+# Create Python virtual environment with Python 3.13
+python3.13 -m venv .venv
 
 # Activate virtual environment
-source venv/bin/activate  # On macOS/Linux
+source .venv/bin/activate  # On macOS/Linux
 # OR
-venv\Scripts\activate  # On Windows
+.venv\Scripts\activate  # On Windows
+
+# Upgrade pip
+pip install --upgrade pip
 
 # Install dependencies
 pip install -e .
@@ -578,5 +583,5 @@ location /smartchatbot/api {
 
 ---
 
-**Document Version:** 3.0.0  
-**Last Updated:** December 16, 2025
+**Document Version:** 3.1.0  
+**Last Updated:** December 22, 2025

@@ -3,16 +3,25 @@
 **An intelligent AI assistant helping library users 24/7**
 
 ---
+Last update: 12/22/2025 Aften
 
 ## For Library Administrators and Staff
 
-This chatbot serves as a virtual library assistant, available around the clock to help students, faculty, and staff with common library questions and services.
+This chatbot serves as a **24/7 virtual library assistant** that helps students, faculty, and staff with common library questions and services—**reducing workload for librarians** by handling routine inquiries automatically.
+
+**How This Helps Your Library:**
+- ✅ **24/7 Availability** - Answers questions even when library staff aren't available
+- ✅ **Instant Responses** - Patrons get immediate help (under 5 seconds)
+- ✅ **Reduces Repetitive Questions** - Handles common queries about hours, policies, room booking
+- ✅ **Seamless Handoff** - Connects patrons to human librarians when needed
+- ✅ **Multi-Campus Support** - Serves Oxford, Hamilton, and Middletown campuses
+- ✅ **Smart and Safe** - Never makes up contact info; only provides verified information
 
 ---
 
 ## What Can This Chatbot Do?
 
-The chatbot currently provides **6 core services**:
+The chatbot currently provides **7 core services**:
 
 ### 1. 📅 Library Hours
 Check current and upcoming hours for all Miami University library locations:
@@ -66,19 +75,31 @@ Seamlessly connect users with a human librarian when needed, including real-time
 - "Connect me with library staff"
 - "Is a librarian available now?"
 
+### 7. 🎯 Smart Clarification System
+When questions are ambiguous, the bot presents interactive button choices to help users clarify their intent, improving accuracy and user experience.
+
+**Example:**
+- User asks: "I need help with a computer"
+- Bot presents buttons:
+  - Borrow equipment (laptops, chargers)
+  - Get help with broken computer
+  - None of the above
+
 ---
 
 ## What the Chatbot CANNOT Do
 
-**Currently unavailable or out of scope:**
+**The bot focuses ONLY on library services.** It will politely redirect patrons for:
 
-❌ **Catalog search** - Cannot search for books, articles, or e-resources  
-❌ **General university questions** - Only library-related questions  
+❌ **Catalog search** - Cannot search for specific books, articles, or e-resources  
+❌ **General university questions** - Admissions, campus events, parking  
 ❌ **Course content help** - Homework, assignments, or academic advising  
 ❌ **IT support** - Canvas, email, or technical issues (unless library-specific)  
 ❌ **Campus services** - Housing, dining, financial aid, registration
 
-**For these requests, the bot will redirect users to appropriate services or human librarians.**
+**Why These Limits Matter:** By focusing on library services, the bot provides accurate, reliable answers. When a question is outside its scope, it **automatically suggests contacting a human librarian** for help.
+
+**Patron Experience:** The bot will say something like: *"This question is outside my area of expertise. I recommend contacting the Student Services office at..."* or *"Let me connect you with a librarian who can better assist you."*
 
 ---
 
@@ -108,15 +129,23 @@ Seamlessly connect users with a human librarian when needed, including real-time
 
 ### Architecture
 
-The chatbot uses **5 specialized agents** orchestrated by an intelligent routing system:
+The chatbot uses **RAG-based classification** with **5 specialized agents** orchestrated by an intelligent hybrid routing system:
 
+**Routing System:**
+- **RAG Classifier** - Uses Weaviate vector database to classify user intent with confidence scoring
+- **Hybrid Router** - Chooses between fast function calling (simple queries) or LangGraph orchestration (complex queries)
+- **Meta Router** - Intent classification with scope enforcement
+
+**Specialized Agents:**
 1. **LibCal Agent** - Handles hours and room reservations
 2. **LibGuides Agent** - Finds research guides
-3. **Subject Librarian Agent** - Routes to appropriate librarian
+3. **Subject Librarian Agent** - Routes to appropriate librarian (710 subjects)
 4. **Website Search Agent** - Searches library website
 5. **LibChat Agent** - Connects to human librarians
 
-The **Meta Router** analyzes user questions and directs them to the appropriate agent(s).
+**Smart Features:**
+- **Clarification Choices** - Interactive buttons when questions are ambiguous
+- **User-in-the-Loop** - Confirms intent before processing unclear queries
 
 ---
 
@@ -294,31 +323,38 @@ All API keys and configuration are stored in `.env` file. See `.env.example` for
 
 ## Version Information
 
-**Current Version:** 3.0.0  
-**Last Updated:** December 16, 2025  
+**Current Version:** 3.1.0  
+**Last Updated:** December 22, 2025  
 **Status:** Production
 
-**What's New in Version 3.0:**
+**What's New in Version 3.1:**
 
-✅ **Simplified Architecture**
-- Removed catalog search (temporarily unavailable)
-- Streamlined to 5 core agents
-- Clearer scope boundaries
+✅ **Smart Clarification System**
+- Interactive button choices for ambiguous questions
+- User-in-the-loop decision making
+- "None of the above" option for edge cases
+- Improved accuracy through user confirmation
 
-✅ **RAG Repurposed as Correction Pool**
-- Weaviate now used for fixing bot mistakes
-- Not a primary information source
-- Librarians can add corrections easily
+✅ **RAG-Based Classification**
+- Weaviate vector database for intent classification
+- Confidence scoring and margin-based ambiguity detection
+- Structured clarification choices when confidence is low
 
-✅ **Improved Documentation**
-- Comprehensive developer guides in `/docs/`
-- Administrator-focused README
-- Clear maintenance procedures
+✅ **Database-Driven Accuracy**
+- Library addresses from database (not web search)
+- Contact information verified and never fabricated
+- Location IDs and building data centralized
 
-✅ **Enhanced Multi-Campus Support**
-- All 4 library locations fully supported
-- Campus-aware hours and booking
-- Library location database with contact info
+✅ **Enhanced Hybrid Routing**
+- Fast function calling for simple queries (<2s)
+- LangGraph orchestration for complex queries (3-5s)
+- Intelligent complexity analysis
+
+✅ **Previous Updates (v3.0):**
+- Simplified architecture (5 core agents)
+- RAG correction pool for fixing mistakes
+- Enhanced multi-campus support
+- Comprehensive developer documentation
 
 ---
 

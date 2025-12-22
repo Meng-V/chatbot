@@ -1,7 +1,7 @@
 # System Overview - Miami University Libraries Chatbot
 
-**Last Updated:** December 16, 2025  
-**Version:** 3.0.0
+**Last Updated:** December 22, 2025  
+**Version:** 3.1.0
 
 ---
 
@@ -28,26 +28,39 @@ The Miami University Libraries Chatbot is a **multi-agent AI system** built with
 └────────┬────────┘
          │ Socket.IO
          ↓
-┌─────────────────────────────────────────┐
-│         FastAPI Backend                 │
-│  ┌───────────────────────────────────┐  │
-│  │    Meta Router (LangGraph)        │  │
-│  │  Classifies intent & selects      │  │
-│  │  appropriate agent(s)             │  │
-│  └──────────────┬────────────────────┘  │
-│                 │                       │
-│    ┌────────────┴─────────────┐        │
-│    │    5 Specialized Agents  │        │
-│    ├──────────────────────────┤        │
-│    │ 1. LibCal Agent          │        │
-│    │ 2. LibGuides Agent       │        │
-│    │ 3. Subject Librarian     │        │
-│    │ 4. Website Search        │        │
-│    │ 5. LibChat Handoff       │        │
-│    └──────────┬───────────────┘        │
-│               │                        │
-│    External APIs & Databases           │
-└───────┬───────────────────────────────┘
+┌──────────────────────────────────────────────────┐
+│         FastAPI Backend                          │
+│  ┌────────────────────────────────────────────┐  │
+│  │    RAG Classifier (Weaviate)               │  │
+│  │  - Intent classification with confidence   │  │
+│  │  - Margin-based ambiguity detection        │  │
+│  │  - Generates clarification choices         │  │
+│  └──────────────┬─────────────────────────────┘  │
+│                 │                                 │
+│  ┌──────────────▼─────────────────────────────┐  │
+│  │    Clarification System (if ambiguous)     │  │
+│  │  - Interactive button choices              │  │
+│  │  - User-in-the-loop decision making        │  │
+│  └──────────────┬─────────────────────────────┘  │
+│                 │                                 │
+│  ┌──────────────▼─────────────────────────────┐  │
+│  │    Hybrid Router                           │  │
+│  │  - Simple → Function calling (<2s)         │  │
+│  │  - Complex → LangGraph orchestration       │  │
+│  └──────────────┬─────────────────────────────┘  │
+│                 │                                 │
+│    ┌────────────┴─────────────┐                  │
+│    │    5 Specialized Agents  │                  │
+│    ├──────────────────────────┤                  │
+│    │ 1. LibCal Agent          │                  │
+│    │ 2. LibGuides Agent       │                  │
+│    │ 3. Subject Librarian     │                  │
+│    │ 4. Website Search        │                  │
+│    │ 5. LibChat Handoff       │                  │
+│    └──────────┬───────────────┘                  │
+│               │                                   │
+│    External APIs & Databases                     │
+└───────┬──────────────────────────────────────────┘
         │
    ┌────┴─────────────────┐
    │                      │
@@ -55,9 +68,8 @@ The Miami University Libraries Chatbot is a **multi-agent AI system** built with
 │ PostgreSQL  │  │  External APIs │
 │  Database   │  │  - LibCal      │
 │             │  │  - LibGuides   │
-│             │  │  - LibChat     │
-│             │  │  - Google CSE  │
-│             │  │  - MuGuide     │
+│ Weaviate    │  │  - LibChat     │
+│ (RAG + QA)  │  │  - Google CSE  │
 └─────────────┘  └────────────────┘
 ```
 
@@ -93,7 +105,7 @@ The Miami University Libraries Chatbot is a **multi-agent AI system** built with
 | Database | Purpose | Hosted |
 |----------|---------|--------|
 | **PostgreSQL** | Conversations, subject mappings, library locations | ulblwebt04.lib.miamioh.edu |
-| **Weaviate** | RAG correction pool (Q&A pairs for fixing mistakes) | Weaviate Cloud |
+| **Weaviate** | RAG classification + correction pool | Weaviate Cloud |
 
 ### External APIs
 
@@ -492,5 +504,5 @@ All configuration stored in `.env` file. See `07-ENVIRONMENT-VARIABLES.md` for c
 
 ---
 
-**Document Version:** 3.0.0  
-**Last Reviewed:** December 16, 2025
+**Document Version:** 3.1.0  
+**Last Reviewed:** December 22, 2025

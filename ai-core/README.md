@@ -2,23 +2,40 @@
 
 **Python FastAPI + LangGraph backend for Miami University Libraries Smart Chatbot**
 
-This is the intelligent backend powering the chatbot with **8 specialized AI agents** orchestrated by a hybrid routing system that combines fast function calling with complex multi-agent orchestration.
+## What This Does (For Non-Technical Readers)
+
+This is the **"brain" of the library chatbot** - the backend system that:
+- 🧠 Understands what users are asking (even when questions are unclear)
+- 🎯 Decides which library services to check (hours, guides, librarians, etc.)
+- 📞 Calls external APIs to get current, accurate information
+- 💬 Generates natural, helpful responses in under 5 seconds
+- ✅ Verifies all information before responding (never makes up phone numbers or websites)
+
+**Key Benefit for Libraries:** Handles routine questions 24/7, reducing workload for librarians while maintaining accuracy and professionalism.
 
 ---
 
+## Technical Overview (For Developers)
+
+This is the intelligent backend powering the chatbot with **RAG-based classification** and **5 specialized AI agents** orchestrated by a hybrid routing system that combines fast function calling with complex multi-agent orchestration.
+
+---
+
+Last update: 12/22/2025 Afternoon
+
 ## 🎯 Key Features
 
+- **RAG-Based Classification**: Weaviate vector database classifies user intent with confidence scoring and margin-based ambiguity detection
+- **Smart Clarification System**: Interactive button choices when questions are ambiguous - user-in-the-loop decision making
 - **Hybrid Routing System**: Intelligently selects between fast function calling (simple queries) and LangGraph orchestration (complex queries)
-- **8 Specialized Agents**: 
-  - **Primo** (Discovery) - Multi-tool agent for catalog search
+- **5 Specialized Agents**: 
   - **LibCal** (Hours/Booking) - Multi-tool agent for hours and room reservations
-  - **LibGuide** (Course Guides) - Multi-tool agent for research guides
+  - **LibGuides** (Course Guides) - Multi-tool agent for research guides
   - **Google Site** (Website Search) - Multi-tool agent for library website content
-  - **Subject Librarian** - MuGuide integration for subject-to-librarian routing
-  - **LibChat** - Human handoff agent
-  - **Transcript RAG** - Weaviate vector search for FAQ/documentation
-  - **Hybrid Router** - Complexity analyzer and mode selector
-- **Meta Router**: OpenAI o4-mini classifies user intent and enforces strict scope (libraries only)
+  - **Subject Librarian** - MuGuide integration for 710 subjects with fuzzy matching
+  - **LibChat** - Human handoff agent with real-time availability
+- **Meta Router**: Intent classification with strict scope enforcement (libraries only)
+- **Clarification Handler**: Processes user choice selections and reclassifies with additional context
 - **Strict Scope Enforcement**: Automatically detects and redirects out-of-scope questions
 - **MuGuide Integration**: 710 subjects, 587 LibGuides, 586 majors mapped with fuzzy matching
 - **URL Validation**: Validates and filters URLs to prevent hallucination
@@ -263,15 +280,16 @@ psql "postgresql://..."
 
 ## ⚙️ Version
 
-- **AI-Core Version**: 2.3.0
-- **Last Updated**: December 9, 2025
-- **Python**: 3.12+
+- **AI-Core Version**: 3.1.0
+- **Last Updated**: December 22, 2025
+- **Python**: 3.13 (3.12 compatible)
 - **LangGraph**: Latest
 - **OpenAI Model**: o4-mini
 - **FastAPI**: Latest
-- **Prisma**: Latest
-- **Weaviate**: Cloud (1,568 Q&A pairs)
+- **Prisma**: 0.15.0
+- **Weaviate**: Cloud (RAG classification + correction pool)
 - **Multi-Campus Support**: Oxford, Hamilton, Middletown libraries
+- **New Features**: RAG classification, clarification choices, database-driven addresses
 
 ---
 
