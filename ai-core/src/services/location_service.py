@@ -84,11 +84,31 @@ class LocationService:
         if cache_key in self._cache:
             return self._cache[cache_key]
         
+        # Special handling for known spaces (prevent ambiguous matches)
+        space_mappings = {
+            "makerspace": ["makerspace", "maker space"],
+            "special collections": ["special collections", "special collection", "university archives"],
+        }
+        
+        for canonical_name, aliases in space_mappings.items():
+            if any(alias in location_lower for alias in aliases):
+                space = await self._client.libraryspace.find_first(
+                    where={
+                        "OR": [
+                            {"shortName": {"equals": canonical_name.title(), "mode": "insensitive"}},
+                            {"name": {"contains": canonical_name, "mode": "insensitive"}}
+                        ]
+                    }
+                )
+                if space:
+                    self._cache[cache_key] = space.libcalLocationId
+                    return space.libcalLocationId
+        
         # First check if it's a library
         library = await self._client.library.find_first(
             where={
                 "OR": [
-                    {"shortName": {"equals": location_lower, "mode": "insensitive"}},
+                    {"shortName": {"contains": location_lower, "mode": "insensitive"}},
                     {"name": {"contains": location_lower, "mode": "insensitive"}}
                 ]
             }

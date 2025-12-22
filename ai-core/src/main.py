@@ -1,5 +1,8 @@
 import os
 import re
+import json
+from decimal import Decimal
+from datetime import datetime, date
 import socketio
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -38,6 +41,23 @@ root_dir = Path(__file__).resolve().parent.parent.parent
 env_path = root_dir / ".env"
 print(f"Loading .env from: {env_path}")
 load_dotenv(dotenv_path=env_path)
+
+
+def json_serializable(obj):
+    """
+    Convert non-JSON-serializable objects to serializable types.
+    Handles Decimal, datetime, date, and other common types.
+    """
+    if isinstance(obj, Decimal):
+        return float(obj)
+    elif isinstance(obj, (datetime, date)):
+        return obj.isoformat()
+    elif isinstance(obj, dict):
+        return {k: json_serializable(v) for k, v in obj.items()}
+    elif isinstance(obj, (list, tuple)):
+        return [json_serializable(item) for item in obj]
+    else:
+        return obj
 
 
 def clean_response_for_frontend(text: str) -> str:
@@ -336,25 +356,35 @@ async def message(sid, data):
                     execution.get("execution_time", 0)
                 )
         
-        # Emit response
-        await sio.emit("message", {
+        # Emit response (ensure all data is JSON-serializable)
+        response_data = {
             "messageId": message_id,
             "message": final_answer,
             "conversationId": conversation_id,
             "intent": result.get("classified_intent"),
             "agents_used": agents_used,
             "needs_human": result.get("needs_human", False)
-        }, to=sid)
+        }
+        
+        # Convert any non-serializable types to JSON-safe formats
+        response_data = json_serializable(response_data)
+        
+        await sio.emit("message", response_data, to=sid)
         
         logger.log("✅ [Socket.IO] Response sent successfully")
         
     except Exception as e:
         print(f"❌ [Socket.IO] Error: {str(e)}")
-        await sio.emit("message", {
+        import traceback
+        print(f"❌ [Socket.IO] Traceback: {traceback.format_exc()}")
+        
+        error_data = {
             "messageId": None,
-            "message": f"I encountered an error. Please try again or contact a librarian.",
+            "message": "I encountered an error. Please try again or contact a librarian.",
             "error": str(e)
-        }, to=sid)
+        }
+        
+        await sio.emit("message", json_serializable(error_data), to=sid)
 
 @sio.event
 async def messageRating(sid, data):
@@ -406,5 +436,201 @@ async def userFeedback(sid, data):
             "success": False,
             "error": str(e)
         }, to=sid)
+
+@sio.event
+async def clarificationChoice(sid, data):
+    """
+    Handle user's clarification choice selection.
+    Expected data: {
+        "choiceId": str,
+        "originalQuestion": str,
+        "clarificationData": dict,
+        "conversationId": str (optional)
+    }
+    """
+    try:
+        from src.classification.clarification_handler import handle_clarification_choice, reclassify_with_additional_context
+        
+        choice_id = data.get("choiceId")
+        original_question = data.get("originalQuestion")
+        clarification_data = data.get("clarificationData")
+        conversation_id = data.get("conversationId") or client_conversations.get(sid)
+        
+        print(f"🎯 [Clarification] User {sid} selected choice: {choice_id}")
+        
+        # Create logger
+        logger = AgentLogger()
+        logger.log("🎯 [Clarification Choice] Processing user selection", {
+            "sid": sid,
+            "choiceId": choice_id,
+            "originalQuestion": original_question
+        })
+        
+        # Handle the choice selection
+        result = await handle_clarification_choice(
+            choice_id=choice_id,
+            original_question=original_question,
+            clarification_data=clarification_data,
+            logger=logger
+        )
+        
+        if result.get("needs_more_info"):
+            # User selected "None of the above" - ask for more details
+            await sio.emit("requestMoreDetails", {
+                "message": result.get("response_message"),
+                "originalQuestion": original_question
+            }, to=sid)
+            
+            logger.log("💬 [Clarification Choice] Requesting more details from user")
+        else:
+            # User selected a specific category - continue processing
+            confirmed_category = result.get("confirmed_category")
+            
+            logger.log(f"✅ [Clarification Choice] Category confirmed: {confirmed_category}")
+            
+            # Get conversation history
+            history = await get_conversation_history(conversation_id, limit=10)
+            
+            # Re-route with confirmed category
+            # Create a modified question context that includes the confirmed category
+            enhanced_question = f"{original_question} [User confirmed: {confirmed_category}]"
+            
+            # Process the question with the confirmed category
+            final_result = await route_query(enhanced_question, logger, history, conversation_id)
+            
+            if final_result is None:
+                final_result = {
+                    "final_answer": "I encountered an issue. Please try again or contact a librarian.",
+                    "selected_agents": [],
+                    "classified_intent": "error"
+                }
+            
+            final_answer = final_result.get("final_answer", "")
+            final_answer = clean_response_for_frontend(final_answer)
+            
+            # Save assistant message
+            message_id = await add_message(conversation_id, "assistant", final_answer)
+            
+            # Update tools used
+            agents_used = final_result.get("selected_agents", [])
+            if "tool_used" in final_result:
+                agents_used = [final_result["tool_used"]]
+            await update_conversation_tools(conversation_id, agents_used)
+            
+            # Send response
+            response_data = json_serializable({
+                "messageId": message_id,
+                "message": final_answer,
+                "conversationId": conversation_id,
+                "intent": final_result.get("classified_intent"),
+                "agents_used": agents_used,
+                "needs_human": final_result.get("needs_human", False),
+                "clarification_resolved": True
+            })
+            
+            await sio.emit("message", response_data, to=sid)
+            
+            logger.log("✅ [Clarification Choice] Response sent successfully")
+        
+    except Exception as e:
+        print(f"❌ [Clarification Choice] Error: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        
+        await sio.emit("message", json_serializable({
+            "messageId": None,
+            "message": "I encountered an error processing your choice. Please try again or contact a librarian.",
+            "error": str(e)
+        }), to=sid)
+
+@sio.event
+async def provideMoreDetails(sid, data):
+    """
+    Handle when user provides additional details after selecting "None of the above".
+    Expected data: {
+        "originalQuestion": str,
+        "additionalDetails": str,
+        "conversationId": str (optional)
+    }
+    """
+    try:
+        from src.classification.clarification_handler import reclassify_with_additional_context
+        
+        original_question = data.get("originalQuestion")
+        additional_details = data.get("additionalDetails")
+        conversation_id = data.get("conversationId") or client_conversations.get(sid)
+        
+        print(f"💬 [More Details] User {sid} provided: {additional_details}")
+        
+        # Create logger
+        logger = AgentLogger()
+        logger.log("💬 [More Details] Reclassifying with additional context", {
+            "sid": sid,
+            "originalQuestion": original_question,
+            "additionalDetails": additional_details
+        })
+        
+        # Get conversation history
+        history = await get_conversation_history(conversation_id, limit=10)
+        
+        # Save user's additional details as a message
+        await add_message(conversation_id, "user", additional_details)
+        
+        # Reclassify with additional context
+        classification_result = await reclassify_with_additional_context(
+            original_question=original_question,
+            additional_details=additional_details,
+            conversation_history=history,
+            logger=logger
+        )
+        
+        # Process with reclassified intent
+        enhanced_question = f"{original_question}. {additional_details}"
+        final_result = await route_query(enhanced_question, logger, history, conversation_id)
+        
+        if final_result is None:
+            final_result = {
+                "final_answer": "I encountered an issue. Please try again or contact a librarian.",
+                "selected_agents": [],
+                "classified_intent": "error"
+            }
+        
+        final_answer = final_result.get("final_answer", "")
+        final_answer = clean_response_for_frontend(final_answer)
+        
+        # Save assistant message
+        message_id = await add_message(conversation_id, "assistant", final_answer)
+        
+        # Update tools used
+        agents_used = final_result.get("selected_agents", [])
+        if "tool_used" in final_result:
+            agents_used = [final_result["tool_used"]]
+        await update_conversation_tools(conversation_id, agents_used)
+        
+        # Send response
+        response_data = json_serializable({
+            "messageId": message_id,
+            "message": final_answer,
+            "conversationId": conversation_id,
+            "intent": final_result.get("classified_intent"),
+            "agents_used": agents_used,
+            "needs_human": final_result.get("needs_human", False),
+            "reclassified": True
+        })
+        
+        await sio.emit("message", response_data, to=sid)
+        
+        logger.log("✅ [More Details] Reclassified and responded successfully")
+        
+    except Exception as e:
+        print(f"❌ [More Details] Error: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        
+        await sio.emit("message", json_serializable({
+            "messageId": None,
+            "message": "I encountered an error processing your details. Please try again or contact a librarian.",
+            "error": str(e)
+        }), to=sid)
 
 # uvicorn entry: uvicorn src.main:app_sio --host 0.0.0.0 --port 8000 --reload

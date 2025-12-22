@@ -162,15 +162,19 @@ class RAGQuestionClassifier:
         self, 
         user_question: str,
         conversation_history: Optional[List[Dict]] = None,
-        logger = None
+        logger = None,
+        margin_threshold: float = 0.15,
+        use_llm_fallback: bool = True
     ) -> Dict[str, Any]:
         """
-        Classify a question using RAG-based semantic search.
+        Classify a question using RAG-based semantic search with margin-based LLM fallback.
         
         Args:
             user_question: The user's question
             conversation_history: Previous conversation for context
             logger: Optional logger
+            margin_threshold: Minimum margin between top-1 and top-2 scores (default: 0.15)
+            use_llm_fallback: Whether to use LLM when margin is low (default: True)
             
         Returns:
             Dict with:
@@ -180,6 +184,8 @@ class RAGQuestionClassifier:
             - needs_clarification: Whether clarification is needed
             - clarification_question: Question to ask user
             - similar_examples: Top matching examples
+            - margin: Confidence margin between top-1 and top-2 (if applicable)
+            - llm_decision: Whether LLM was used for final decision
         """
         self._connect()
         
@@ -219,7 +225,8 @@ class RAGQuestionClassifier:
                 "confidence": 0.0,
                 "agent": "general_question",
                 "needs_clarification": False,
-                "similar_examples": []
+                "similar_examples": [],
+                "llm_decision": False
             }
         
         top_matches = matches[:5]
@@ -233,14 +240,15 @@ class RAGQuestionClassifier:
                 confidence = top_match["_additional"]["certainty"]
                 
                 if logger:
-                    logger.log(f"🚫 [RAG Classifier] Top match is out-of-scope: {top_category} (confidence: {confidence:.2f})")
+                    logger.log(f"🚫 [RAG Classifier] Top match is out-of-scope: {top_category} (confidence: {float(confidence):.2f})")
                 
                 return {
                     "category": top_category,
                     "confidence": confidence,
                     "agent": get_category_agent(top_category),
                     "needs_clarification": False,
-                    "similar_examples": [m["question"] for m in top_matches[:3]]
+                    "similar_examples": [m["question"] for m in top_matches[:3]],
+                    "llm_decision": False
                 }
         
         # Build category scores from in-scope matches only
@@ -261,7 +269,8 @@ class RAGQuestionClassifier:
                 "confidence": 0.8,
                 "agent": "out_of_scope",
                 "needs_clarification": False,
-                "similar_examples": [m["question"] for m in top_matches[:3]]
+                "similar_examples": [m["question"] for m in top_matches[:3]],
+                "llm_decision": False
             }
         
         sorted_categories = sorted(category_scores.items(), key=lambda x: x[1], reverse=True)
@@ -281,19 +290,65 @@ class RAGQuestionClassifier:
                 "confidence": confidence,
                 "agent": get_category_agent(top_category),
                 "needs_clarification": False,
-                "similar_examples": [m["question"] for m in top_matches[:3]]
+                "similar_examples": [m["question"] for m in top_matches[:3]],
+                "llm_decision": False
             }
         
-        # Only check ambiguity and boundary cases for IN-SCOPE questions
+        # ============================================================================
+        # MARGIN-BASED LLM FALLBACK
+        # ============================================================================
+        # Calculate margin between top-1 and top-2 categories
+        # If margin is too small, use LLM to make final decision
+        
+        margin = None
+        second_category = None
+        
+        if len(sorted_categories) > 1:
+            second_category, second_score = sorted_categories[1]
+            margin = (top_score - second_score) / top_score  # Normalized margin
+            
+            # Convert to float for safe formatting (handles Decimal types)
+            margin = float(margin) if margin is not None else 0.0
+            top_score_float = float(top_score)
+            second_score_float = float(second_score)
+            
+            if logger:
+                logger.log(f"📊 [RAG Classifier] Top-1: {top_category} ({top_score_float:.3f}) | Top-2: {second_category} ({second_score_float:.3f}) | Margin: {margin:.3f}")
+            
+            # If margin is below threshold, use LLM to decide
+            if use_llm_fallback and margin < margin_threshold:
+                if logger:
+                    logger.log(f"🤖 [RAG Classifier] Low margin ({margin:.3f} < {margin_threshold}) - using LLM fallback")
+                
+                llm_result = await self._llm_classify(
+                    user_question,
+                    sorted_categories[:2],
+                    top_matches,
+                    logger
+                )
+                
+                return {
+                    "category": llm_result["category"],
+                    "confidence": llm_result["confidence"],
+                    "agent": get_category_agent(llm_result["category"]),
+                    "needs_clarification": False,
+                    "similar_examples": [m["question"] for m in top_matches[:3]],
+                    "margin": margin,
+                    "llm_decision": True,
+                    "llm_reasoning": llm_result.get("reasoning", ""),
+                    "alternative_category": second_category
+                }
+        
+        # Check for ambiguity requiring clarification (legacy behavior)
         if len(sorted_categories) > 1:
             second_score = sorted_categories[1][1]
             score_diff = top_score - second_score
             
             if score_diff < 0.3:
                 if logger:
-                    logger.log(f"⚠️ [RAG Classifier] Ambiguous: {top_category} ({top_score:.2f}) vs {sorted_categories[1][0]} ({second_score:.2f})")
+                    logger.log(f"⚠️ [RAG Classifier] Ambiguous: {top_category} ({float(top_score):.2f}) vs {sorted_categories[1][0]} ({float(second_score):.2f})")
                 
-                clarification = await self._generate_clarification(
+                clarification_data = await self._generate_clarification_choices(
                     user_question,
                     [sorted_categories[0][0], sorted_categories[1][0]],
                     top_matches
@@ -304,34 +359,49 @@ class RAGQuestionClassifier:
                     "confidence": confidence,
                     "agent": get_category_agent(top_category),
                     "needs_clarification": True,
-                    "clarification_question": clarification,
+                    "clarification_choices": clarification_data,
                     "similar_examples": [m["question"] for m in top_matches[:3]],
-                    "alternative_categories": [c[0] for c in sorted_categories[:2]]
+                    "alternative_categories": [c[0] for c in sorted_categories[:2]],
+                    "margin": margin,
+                    "llm_decision": False
                 }
         
         boundary_match = self._check_boundary_cases(user_question)
         if boundary_match:
             if logger:
                 logger.log(f"⚠️ [RAG Classifier] Boundary case detected")
+            
+            # Generate choices for boundary case
+            clarification_data = await self._generate_clarification_choices(
+                user_question,
+                boundary_match["possible_categories"],
+                top_matches
+            )
+            
             return {
                 "category": top_category,
                 "confidence": confidence,
                 "agent": get_category_agent(top_category),
                 "needs_clarification": True,
-                "clarification_question": boundary_match["clarification_needed"],
+                "clarification_choices": clarification_data,
                 "similar_examples": [m["question"] for m in top_matches[:3]],
-                "alternative_categories": boundary_match["possible_categories"]
+                "alternative_categories": boundary_match["possible_categories"],
+                "margin": margin,
+                "llm_decision": False
             }
         
         if logger:
-            logger.log(f"✅ [RAG Classifier] Classified as: {top_category} (confidence: {confidence:.2f})")
+            margin_str = f"{float(margin):.3f}" if margin is not None else "N/A"
+            logger.log(f"✅ [RAG Classifier] Classified as: {top_category} (confidence: {float(confidence):.2f}, margin: {margin_str})")
         
         return {
             "category": top_category,
             "confidence": confidence,
             "agent": get_category_agent(top_category),
             "needs_clarification": False,
-            "similar_examples": [m["question"] for m in top_matches[:3]]
+            "similar_examples": [m["question"] for m in top_matches[:3]],
+            "margin": margin,
+            "llm_decision": False
         }
     
     def _check_boundary_cases(self, user_question: str) -> Optional[Dict[str, Any]]:
@@ -360,50 +430,183 @@ class RAGQuestionClassifier:
         
         return similarity >= threshold
     
-    async def _generate_clarification(
+    async def _llm_classify(
         self,
         user_question: str,
-        possible_categories: List[str],
-        similar_examples: List[Dict]
-    ) -> str:
-        """Generate a clarification question using LLM."""
+        top_categories: List[Tuple[str, float]],
+        similar_examples: List[Dict],
+        logger = None
+    ) -> Dict[str, Any]:
+        """
+        Use LLM to classify when margin between top categories is too small.
         
-        category_descriptions = "\n".join([
-            f"- {cat}: {get_category_description(cat)}"
-            for cat in possible_categories
-        ])
+        Args:
+            user_question: The user's question
+            top_categories: List of (category_name, score) tuples for top 2 categories
+            similar_examples: Top matching examples from vector search
+            logger: Optional logger
+            
+        Returns:
+            Dict with category, confidence, and reasoning
+        """
+        category1, score1 = top_categories[0]
+        category2, score2 = top_categories[1]
         
-        examples_text = "\n".join([
-            f"- {ex['question']} (category: {ex['category']})"
-            for ex in similar_examples[:3]
-        ])
+        # Get descriptions and examples for both categories
+        desc1 = get_category_description(category1)
+        desc2 = get_category_description(category2)
         
-        prompt = f"""The user asked: "{user_question}"
+        # Get relevant examples for each category
+        examples1 = [ex["question"] for ex in similar_examples if ex["category"] == category1][:3]
+        examples2 = [ex["question"] for ex in similar_examples if ex["category"] == category2][:3]
+        
+        examples1_text = "\n".join([f"  - {ex}" for ex in examples1]) if examples1 else "  (no examples)"
+        examples2_text = "\n".join([f"  - {ex}" for ex in examples2]) if examples2 else "  (no examples)"
+        
+        prompt = f"""You are a question classifier for Miami University Libraries.
 
-This question is ambiguous and could belong to multiple categories:
-{category_descriptions}
+User's question: "{user_question}"
 
-Similar questions we've seen:
-{examples_text}
+The semantic search found two very similar categories:
 
-Generate a brief, friendly clarification question to help determine which category this belongs to.
-The clarification should offer 2-3 specific options for the user to choose from.
+**Category 1: {category1}**
+Description: {desc1}
+Score: {score1:.3f}
+Example questions:
+{examples1_text}
 
-Example format:
-"I can help with that! Just to clarify, are you asking about:
-1) [Option 1]
-2) [Option 2]"
+**Category 2: {category2}**
+Description: {desc2}
+Score: {score2:.3f}
+Example questions:
+{examples2_text}
 
-Generate the clarification question:"""
+Based on the user's question and the category descriptions, which category is the BEST fit?
+
+Respond in this exact format:
+CATEGORY: [category1 or category2]
+CONFIDENCE: [0.0-1.0]
+REASONING: [brief explanation of why this category is the best fit]
+
+Be decisive. Choose the category that best matches the user's intent."""
 
         messages = [
-            SystemMessage(content="You are a helpful assistant that generates clarification questions."),
+            SystemMessage(content="You are an expert question classifier for a university library system."),
             HumanMessage(content=prompt)
         ]
         
-        response = await self.llm.ainvoke(messages)
-        return response.content.strip()
-
+        try:
+            response = await self.llm.ainvoke(messages)
+            content = response.content.strip()
+            
+            # Parse the response
+            lines = content.split("\n")
+            result = {
+                "category": category1,  # Default to top category
+                "confidence": 0.7,
+                "reasoning": "LLM classification"
+            }
+            
+            for line in lines:
+                if line.startswith("CATEGORY:"):
+                    chosen = line.replace("CATEGORY:", "").strip()
+                    if category1.lower() in chosen.lower():
+                        result["category"] = category1
+                    elif category2.lower() in chosen.lower():
+                        result["category"] = category2
+                elif line.startswith("CONFIDENCE:"):
+                    try:
+                        conf = float(line.replace("CONFIDENCE:", "").strip())
+                        result["confidence"] = max(0.0, min(1.0, conf))
+                    except:
+                        pass
+                elif line.startswith("REASONING:"):
+                    result["reasoning"] = line.replace("REASONING:", "").strip()
+            
+            if logger:
+                logger.log(f"🤖 [LLM Classifier] Chose: {result['category']} (confidence: {float(result['confidence']):.2f})")
+                logger.log(f"   Reasoning: {result['reasoning']}")
+            
+            return result
+            
+        except Exception as e:
+            if logger:
+                logger.log(f"⚠️ [LLM Classifier] Error: {str(e)} - defaulting to top category")
+            return {
+                "category": category1,
+                "confidence": 0.7,
+                "reasoning": f"LLM error, defaulted to top category"
+            }
+    
+    async def _generate_clarification_choices(
+        self,
+        user_question: str,
+        ambiguous_categories: List[str],
+        similar_examples: List[Dict]
+    ) -> Dict[str, Any]:
+        """Generate structured clarification choices when categories are ambiguous.
+        
+        Returns:
+            Dict with:
+                - prompt: Brief question text
+                - choices: List of choice objects with id, label, description, category
+        """
+        # Get descriptions and examples for ambiguous categories
+        choices = []
+        
+        for i, cat in enumerate(ambiguous_categories[:3]):  # Max 3 choices + "None of the above"
+            desc = get_category_description(cat)
+            examples = [ex["question"] for ex in similar_examples if ex["category"] == cat][:2]
+            
+            # Generate a user-friendly label
+            label = self._generate_choice_label(cat, examples)
+            
+            choices.append({
+                "id": f"choice_{i}",
+                "label": label,
+                "description": desc[:100] + "..." if len(desc) > 100 else desc,
+                "category": cat,
+                "examples": examples
+            })
+        
+        # Add "None of the above" option
+        choices.append({
+            "id": "choice_none",
+            "label": "None of the above",
+            "description": "My question is about something else",
+            "category": "none_of_above",
+            "examples": []
+        })
+        
+        # Generate a brief prompt
+        prompt = "I want to make sure I understand your question correctly. Which of these best describes what you're looking for?"
+        
+        return {
+            "prompt": prompt,
+            "choices": choices,
+            "original_question": user_question
+        }
+    
+    def _generate_choice_label(self, category: str, examples: List[str]) -> str:
+        """Generate a user-friendly label for a category choice."""
+        # Map category names to user-friendly labels
+        label_map = {
+            "library_equipment_checkout": "Borrow equipment (laptops, chargers, etc.)",
+            "library_hours_rooms": "Library hours or room reservations",
+            "subject_librarian_guides": "Find a subject librarian or research guide",
+            "research_help_handoff": "Get research help from a librarian",
+            "library_policies_services": "Library policies or services",
+            "human_librarian_request": "Talk to a librarian",
+        }
+        
+        # Return mapped label or use first example as label
+        if category in label_map:
+            return label_map[category]
+        elif examples:
+            return examples[0]
+        else:
+            # Fallback: convert category name to readable format
+            return category.replace("_", " ").title()
 
 # Global classifier instance to reuse cloud Weaviate connection
 _classifier_instance = None

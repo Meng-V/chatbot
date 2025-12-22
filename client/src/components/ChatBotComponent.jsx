@@ -6,6 +6,7 @@ import { MessageContext } from '../context/MessageContextProvider';
 import MessageRatingComponent from './MessageRatingComponent';
 import HumanLibrarianWidget from './HumanLibrarianWidget';
 import OfflineTicketWidget from './TicketWidget';
+import ClarificationChoices from './ClarificationChoices';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Alert, AlertTitle, AlertDescription } from '@/components/ui/alert';
@@ -18,6 +19,9 @@ const ChatBotComponent = ({ askUsStatus = { isOpen: false, hoursToday: null } })
   const [widgetVisible, setWidgetVisible] = useState(false);
   const [showTicketForm, setShowTicketForm] = useState(false);
   const [elapsedTime, setElapsedTime] = useState(0);
+  const [showDetailsInput, setShowDetailsInput] = useState(false);
+  const [detailsInputValue, setDetailsInputValue] = useState('');
+  const [pendingOriginalQuestion, setPendingOriginalQuestion] = useState('');
 
   // Live timer effect - updates every second while thinking
   useEffect(() => {
@@ -54,6 +58,40 @@ const ChatBotComponent = ({ askUsStatus = { isOpen: false, hoursToday: null } })
     }
   };
 
+  // Handle clarification choice selection
+  const handleClarificationChoice = useCallback((choice, originalQuestion, clarificationData) => {
+    if (!socketContextValues.socket) return;
+    
+    // Start thinking animation
+    messageContextValues.startThinking();
+    
+    // Send choice to backend
+    socketContextValues.socket.emit('clarificationChoice', {
+      choiceId: choice.id,
+      originalQuestion: originalQuestion,
+      clarificationData: clarificationData,
+      conversationId: socketContextValues.conversationId
+    });
+  }, [socketContextValues.socket, socketContextValues.conversationId, messageContextValues]);
+
+  // Handle providing more details after "None of the above"
+  const handleProvideMoreDetails = useCallback((originalQuestion, additionalDetails) => {
+    if (!socketContextValues.socket || !additionalDetails.trim()) return;
+    
+    // Add user's additional details as a message
+    messageContextValues.addMessage(additionalDetails, 'user');
+    
+    // Start thinking animation
+    messageContextValues.startThinking();
+    
+    // Send to backend
+    socketContextValues.socket.emit('provideMoreDetails', {
+      originalQuestion: originalQuestion,
+      additionalDetails: additionalDetails,
+      conversationId: socketContextValues.conversationId
+    });
+  }, [socketContextValues.socket, socketContextValues.conversationId, messageContextValues]);
+
   // Format time for display
   const formatTime = useCallback((seconds) => {
     if (seconds < 60) {
@@ -83,6 +121,37 @@ const ChatBotComponent = ({ askUsStatus = { isOpen: false, hoursToday: null } })
       setWidgetVisible(true);
     }
   }, [socketContextValues.showLibrarianWidget, widgetVisible]);
+
+  // Listen for requestMoreDetails event from backend
+  useEffect(() => {
+    if (!socketContextValues.socket) return;
+    
+    const handleRequestMoreDetails = (data) => {
+      // Show input for additional details
+      setShowDetailsInput(true);
+      setPendingOriginalQuestion(data.originalQuestion || '');
+      // Add bot's request message
+      messageContextValues.addMessage(data.message, 'bot');
+      messageContextValues.stopThinking();
+    };
+    
+    socketContextValues.socket.on('requestMoreDetails', handleRequestMoreDetails);
+    
+    return () => {
+      socketContextValues.socket.off('requestMoreDetails', handleRequestMoreDetails);
+    };
+  }, [socketContextValues.socket, messageContextValues]);
+
+  // Handle submitting additional details
+  const handleSubmitDetails = useCallback((e) => {
+    e.preventDefault();
+    if (detailsInputValue.trim()) {
+      handleProvideMoreDetails(pendingOriginalQuestion, detailsInputValue);
+      setDetailsInputValue('');
+      setShowDetailsInput(false);
+      setPendingOriginalQuestion('');
+    }
+  }, [detailsInputValue, pendingOriginalQuestion, handleProvideMoreDetails]);
 
   return (
     <>
@@ -235,6 +304,18 @@ const ChatBotComponent = ({ askUsStatus = { isOpen: false, hoursToday: null } })
                     </ul>
                   </div>
                 )}
+                {/* Render clarification choices if present */}
+                {message.sender !== 'user' && message.clarificationChoices && (
+                  <ClarificationChoices
+                    clarificationData={message.clarificationChoices}
+                    onChoiceSelect={(choice) => handleClarificationChoice(
+                      choice,
+                      message.clarificationChoices.original_question,
+                      message.clarificationChoices
+                    )}
+                    disabled={messageContextValues.isTyping}
+                  />
+                )}
                 {/* Suggest human librarian or ticket when confidence appears low */}
                 {message.sender !== 'user' && lowConfidenceHint && (
                   <div className="mt-2">
@@ -293,26 +374,46 @@ const ChatBotComponent = ({ askUsStatus = { isOpen: false, hoursToday: null } })
         </div>
       </div>
 
-      <form onSubmit={handleFormSubmit}>
-        <div className="flex gap-3">
-          <Input
-            value={messageContextValues.inputMessage}
-            onChange={(e) =>
-              messageContextValues.setInputMessage(e.target.value)
-            }
-            placeholder="Type your message..."
-            disabled={!socketContextValues.isConnected}
-            className="flex-1"
-          />
-          <Button
-            variant="miami"
-            type="submit"
-            disabled={!socketContextValues.isConnected}
-          >
-            Send
-          </Button>
-        </div>
-      </form>
+      {/* Show additional details input when "None of the above" is selected */}
+      {showDetailsInput ? (
+        <form onSubmit={handleSubmitDetails}>
+          <div className="flex gap-3">
+            <Input
+              value={detailsInputValue}
+              onChange={(e) => setDetailsInputValue(e.target.value)}
+              placeholder="Please provide more details about your question..."
+              autoFocus
+              className="flex-1"
+            />
+            <Button
+              variant="miami"
+              type="submit"
+              disabled={!detailsInputValue.trim()}
+            >
+              Send Details
+            </Button>
+          </div>
+        </form>
+      ) : (
+        <form onSubmit={handleFormSubmit}>
+          <div className="flex gap-3">
+            <Input
+              value={messageContextValues.inputMessage}
+              onChange={(e) => messageContextValues.setInputMessage(e.target.value)}
+              placeholder="Type your message..."
+              disabled={!socketContextValues.isConnected}
+              className="flex-1"
+            />
+            <Button
+              variant="miami"
+              type="submit"
+              disabled={!socketContextValues.isConnected}
+            >
+              Send
+            </Button>
+          </div>
+        </form>
+      )}
       <p className="text-xs pt-2 text-gray-500">
         Chatbot can make mistakes. 
         {askUsStatus.isOpen 

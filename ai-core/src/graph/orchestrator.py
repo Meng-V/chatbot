@@ -895,10 +895,10 @@ Our librarians are experts at helping with research projects and can provide per
         logger.log("📍 [Synthesizer] Providing library address (early check)")
         from src.tools.libcal_comprehensive_tools import _extract_building_from_query
         
-        # Hardcoded fallback data (no DB needed)
+        # Hardcoded fallback data (matches database)
         LIBRARY_DATA = {
-            "king": {"displayName": "Edgar W. King Library", "address": "151 S. Campus Ave, Oxford, OH 45056", "phone": "(513) 529-4141", "website": "https://www.lib.miamioh.edu/"},
-            "art": {"displayName": "Art & Architecture Library", "address": "Alumni Hall, Oxford, OH 45056", "phone": "(513) 529-6638", "website": "https://www.lib.miamioh.edu/"},
+            "king": {"displayName": "Edgar W. King Library", "address": "351 S. Campus Ave, Oxford, OH 45056", "phone": "(513) 529-4141", "website": "https://www.lib.miamioh.edu/"},
+            "art": {"displayName": "Wertz Art & Architecture Library", "address": "Alumni Hall, Oxford, OH 45056", "phone": "(513) 529-6638", "website": "https://www.lib.miamioh.edu/"},
             "hamilton": {"displayName": "Rentschler Library", "address": "1601 University Blvd, Hamilton, OH 45011", "phone": "(513) 785-3235", "website": "https://www.ham.miamioh.edu/library/"},
             "middletown": {"displayName": "Gardner-Harvey Library", "address": "4200 N. University Blvd, Middletown, OH 45042", "phone": "(513) 727-3222", "website": "https://www.mid.miamioh.edu/library/"},
         }

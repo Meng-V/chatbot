@@ -19,7 +19,7 @@ sys.path.insert(0, str(root_dir))
 from src.classification.rag_classifier import classify_with_rag
 
 
-async def test_question(question: str):
+async def test_question(question: str, margin_threshold: float = 0.15):
     """Test a single question classification."""
     print("="*80)
     print(f"Testing: {question}")
@@ -31,6 +31,24 @@ async def test_question(question: str):
     print(f"   Category: {result['category']}")
     print(f"   Confidence: {result['confidence']:.2f}")
     print(f"   Agent: {result.get('agent', 'N/A')}")
+    
+    # Display margin information
+    if result.get('margin') is not None:
+        margin = result['margin']
+        margin_status = "✅ High" if margin >= margin_threshold else "⚠️ Low"
+        print(f"   Margin (Top-1 vs Top-2): {margin:.3f} {margin_status}")
+        
+        if result.get('alternative_category'):
+            print(f"   Alternative Category: {result['alternative_category']}")
+    
+    # Display LLM decision info
+    if result.get('llm_decision'):
+        print(f"   🤖 LLM Decision: YES")
+        if result.get('llm_reasoning'):
+            print(f"   LLM Reasoning: {result['llm_reasoning']}")
+    else:
+        print(f"   🤖 LLM Decision: NO (used RAG only)")
+    
     print(f"   Needs Clarification: {result.get('needs_clarification', False)}")
     
     if result.get('similar_examples'):
@@ -49,14 +67,24 @@ async def main():
         question = " ".join(sys.argv[1:])
         await test_question(question)
     else:
-        # Test a few default questions
+        # Test a few default questions including ambiguous ones
+        print("\n🎯 Testing Classification with Margin-Based LLM Fallback\n")
+        
         test_questions = [
-            "How do I get Adobe",
-            "How to checkout software",
-            "checkout Adobe",
-            "I want to use Adobe",
-            "Can I borrow a laptop?",
+            # Clear cases (should have high margin, no LLM needed)
             "What time does King Library close?",
+            "Can I borrow a laptop?",
+            "Who is the biology librarian?",
+            
+            # Potentially ambiguous cases (may trigger LLM fallback)
+            "How do I get Adobe",
+            "I need help with printing",
+            "Computer question",
+            "I need a computer",
+            
+            # Edge cases
+            "Library hours at Hamilton",
+            "Can I eat in the library?",
         ]
         
         for q in test_questions:

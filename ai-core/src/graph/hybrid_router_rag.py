@@ -118,6 +118,58 @@ async def route_query_rag(user_message: str, logger=None, conversation_history=N
     Route query to either function calling or LangGraph orchestrator.
     Uses RAG-based classification.
     """
+    import re
+    
+    # 🚨 PRE-CHECK: Catch library address queries BEFORE routing
+    address_patterns = [
+        r'\b(library|king|art|rentschler|hamilton|middletown|gardner)\s*(address|location|where\s*is)\b',
+        r'\b(address|location|where\s*is|where.*located)\b.*\b(library|king|art|rentschler|hamilton|middletown)\b',
+        r'\bwhat\s*is\s*the\b.*\b(library|king|art|rentschler|hamilton|middletown)\b.*\b(address|location)\b',
+        r'\bhow\s*(do\s*i|can\s*i)\s*get\s*to\b.*\b(library|king|art|rentschler|hamilton|middletown)\b',
+        r'\baddress\s*(of|for)\s*(the\s*)?(library|king|art)\b',
+        r'\bwhat\s*(is|are)\s*(the\s*)?.*\baddress\b.*\blibrary\b',
+        r'\blibrary\b.*\baddress\b',
+    ]
+    
+    user_msg_lower = user_message.lower()
+    for pattern in address_patterns:
+        if re.search(pattern, user_msg_lower, re.IGNORECASE):
+            if logger:
+                logger.log(f"📍 [Hybrid Router RAG] Detected library address query - routing to LangGraph with address flag")
+            # Force LangGraph mode with address flag
+            from src.graph.orchestrator import library_graph
+            result = await library_graph.ainvoke({
+                "user_message": user_message,
+                "messages": [],
+                "conversation_history": conversation_history or [],
+                "conversation_id": conversation_id,
+                "_library_address_query": True,  # Set flag directly
+                "_logger": logger
+            })
+            
+            if result is None or not isinstance(result, dict):
+                return {
+                    "success": False,
+                    "final_answer": "I encountered an issue. Please try again or contact a librarian.",
+                    "classified_intent": "error",
+                    "selected_agents": [],
+                    "needs_human": False,
+                    "mode": "langgraph"
+                }
+            
+            return {
+                "success": True,
+                "final_answer": result.get("final_answer", ""),
+                "classified_intent": result.get("classified_intent", "policy_or_service"),
+                "selected_agents": result.get("selected_agents", []),
+                "agent_responses": result.get("agent_responses", {}),
+                "needs_human": result.get("needs_human", False),
+                "token_usage": result.get("token_usage"),
+                "tool_executions": result.get("tool_executions", []),
+                "mode": "langgraph"
+            }
+    
+    # Continue with normal routing
     use_function_calling_mode = await should_use_function_calling_rag(user_message, logger)
     
     if use_function_calling_mode:
