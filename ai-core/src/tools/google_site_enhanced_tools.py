@@ -4,8 +4,12 @@ import httpx
 from typing import Dict, Any, Optional
 from src.tools.base import Tool
 
-GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY", "")
-GOOGLE_CSE_ID = os.getenv("GOOGLE_LIBRARY_SEARCH_CSE_ID", "")
+def _get_google_credentials():
+    """Get Google API credentials from environment at runtime."""
+    return {
+        "api_key": os.getenv("GOOGLE_API_KEY", ""),
+        "cse_id": os.getenv("GOOGLE_LIBRARY_SEARCH_CSE_ID", "")
+    }
 
 class GoogleSiteEnhancedSearchTool(Tool):
     """Enhanced Google Site Search with metadata extraction."""
@@ -29,6 +33,11 @@ class GoogleSiteEnhancedSearchTool(Tool):
         try:
             if log_callback:
                 log_callback(f"🔎 [Google Site Enhanced Search Tool] Searching lib.miamioh.edu", {"query": query})
+            
+            # Get credentials at runtime, not module load time
+            creds = _get_google_credentials()
+            GOOGLE_API_KEY = creds["api_key"]
+            GOOGLE_CSE_ID = creds["cse_id"]
             
             if not GOOGLE_API_KEY or not GOOGLE_CSE_ID:
                 if log_callback:
@@ -155,10 +164,24 @@ class BorrowingPolicySearchTool(Tool):
         log_callback=None,
         **kwargs
     ) -> Dict[str, Any]:
-        """Search for borrowing policies."""
+        """Execute borrowing policy search with filtering."""
         try:
             if log_callback:
-                log_callback("📚 [Borrowing Policy Search Tool] Searching policies")
+                log_callback(f"📚 [Borrowing Policy Search Tool] Searching borrowing policies", {"query": query})
+            
+            # Get credentials at runtime
+            creds = _get_google_credentials()
+            GOOGLE_API_KEY = creds["api_key"]
+            GOOGLE_CSE_ID = creds["cse_id"]
+            
+            if not GOOGLE_API_KEY or not GOOGLE_CSE_ID:
+                if log_callback:
+                    log_callback("❌ [Borrowing Policy Search Tool] API not configured")
+                return {
+                    "tool": self.name,
+                    "success": False,
+                    "text": "Site search not configured. Browse https://www.lib.miamioh.edu/"
+                }
             
             # Enhance query with policy-specific terms
             policy_keywords = {

@@ -324,7 +324,7 @@ def remove_invalid_urls_from_text(
     invalid_urls: List[Dict],
     url_replacements: Optional[Dict[str, str]] = None
 ) -> str:
-    """Remove invalid URLs from text, apply replacements, and add disclaimers.
+    """Mark invalid URLs with warning indicators, apply replacements, and add disclaimers.
     
     Args:
         text: Original text with URLs
@@ -333,7 +333,7 @@ def remove_invalid_urls_from_text(
         
     Returns:
         Text with:
-        - Invalid URLs removed or marked
+        - Invalid URLs marked with warning indicators (URL still visible)
         - Working fallback URLs substituted
         - Disclaimers added if needed
     """
@@ -343,23 +343,24 @@ def remove_invalid_urls_from_text(
     if url_replacements:
         modified_text = apply_url_replacements(modified_text, url_replacements)
     
-    # Then remove truly invalid URLs (no fallback found)
+    # Then mark truly invalid URLs (no fallback found) with warning indicators
     if not invalid_urls:
         return modified_text
     
-    # Remove each invalid URL and add a disclaimer
+    # Mark each invalid URL with a warning indicator (keep URL visible)
     for invalid in invalid_urls:
         url = invalid["url"]
         error = invalid["error"]
         
-        # Remove the URL from text
-        # Try to remove the whole sentence/line if it's primarily about the URL
-        modified_text = modified_text.replace(url, "[URL removed - not accessible]")
+        # Add warning indicator after the URL (keep URL visible for user verification)
+        # Format: URL ⚠️ (may not be accessible - please verify)
+        warning_marker = f"{url} ⚠️ (may not be accessible)"
+        modified_text = modified_text.replace(url, warning_marker)
     
-    # Add disclaimer at the end if any URLs were removed
+    # Add disclaimer at the end if any URLs were marked
     if len(invalid_urls) > 0:
-        disclaimer = "\n\n⚠️ Note: Some URLs were removed because they are not currently accessible. "
-        disclaimer += "I apologize for any inconvenience. Please contact a librarian for the most up-to-date information."
+        disclaimer = "\n\n⚠️ **Note**: Some URLs in this response could not be verified as accessible. "
+        disclaimer += "They are shown above with a ⚠️ warning. Please verify these links yourself or contact a librarian at (513) 529-4141 for assistance."
         modified_text += disclaimer
     
     return modified_text

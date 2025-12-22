@@ -13,7 +13,8 @@ from src.utils.logging_config import setup_logging
 from contextlib import asynccontextmanager
 
 from src.graph.orchestrator import library_graph
-from src.graph.hybrid_router import route_query
+# from src.graph.hybrid_router import route_query
+from src.graph.hybrid_router_rag import route_query_rag as route_query
 from src.state import AgentState
 from src.utils.logger import AgentLogger
 from src.memory.conversation_store import (

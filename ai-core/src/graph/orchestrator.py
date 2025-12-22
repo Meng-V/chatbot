@@ -63,6 +63,7 @@ from src.config.research_question_detection import (
     get_research_handoff_response,
     is_simple_guide_request
 )
+from src.graph.rag_router import rag_router_node
 
 # Use o4-mini as specified
 OPENAI_MODEL = os.getenv("OPENAI_MODEL", "o4-mini")
@@ -646,9 +647,10 @@ async def execute_agents_node(state: AgentState) -> AgentState:
     results = {}
     
     # Handle greeting or pre-answered queries (no agents to execute)
+    # CRITICAL: This includes out-of-scope responses set by RAG router
     if not agents:
         if state.get("final_answer"):
-            logger.log("✅ [Orchestrator] Query already answered (greeting/clarification)")
+            logger.log("✅ [Orchestrator] Query already answered (greeting/clarification/out-of-scope)")
             state["agent_responses"] = {}
             state["_logger"] = logger
             return state
@@ -1114,22 +1116,35 @@ Our librarians are experts at helping with research projects and can provide per
     # Handle out-of-scope questions
     if state.get("out_of_scope"):
         logger.log("🚫 [Synthesizer] Providing out-of-scope response")
-        out_of_scope_msg = f"""I appreciate your question, but that's outside the scope of library services. I can only help with library-related questions such as:
-
-• Library hours and study room reservations
-• Subject librarians and research guides
-• Library policies and services
-
-For questions about general university matters, admissions, courses, or campus services, please visit:
-• **Miami University Main Website**: https://miamioh.edu
-• **University Information**: (513) 529-0001
-
-For immediate library assistance, you can:
-• **Chat with a librarian or leave a ticket**: https://www.lib.miamioh.edu/research/research-support/ask/
-• **Call us**: (513) 529-4141
-• **Visit our website**: https://www.lib.miamioh.edu
-
-Is there anything library-related I can help you with?"""
+        
+        # Check if we have a specific category from RAG classification
+        classified_intent = state.get("classified_intent", "")
+        rag_category = state.get("rag_category", "")
+        
+        # Map RAG categories to scope_definition categories
+        category_mapping = {
+            "out_of_scope_tech_support": "technical_support",
+            "out_of_scope_factual_trivia": "university_general",
+            "out_of_scope_inappropriate": "university_general",
+            "out_of_scope_nonsensical": "university_general",
+        }
+        
+        # Determine topic category for proper redirect
+        topic_category = None
+        if rag_category and rag_category.startswith("out_of_scope_"):
+            topic_category = category_mapping.get(rag_category, "university_general")
+            logger.log(f"📋 [Synthesizer] Using RAG category: {rag_category} → {topic_category}")
+        elif classified_intent and classified_intent.startswith("out_of_scope_"):
+            topic_category = category_mapping.get(classified_intent, "university_general")
+            logger.log(f"📋 [Synthesizer] Using classified intent: {classified_intent} → {topic_category}")
+        
+        # Get category-specific redirect message
+        if topic_category:
+            out_of_scope_msg = get_out_of_scope_response(topic_category)
+        else:
+            # Fallback to generic message if no category specified
+            out_of_scope_msg = get_out_of_scope_response("university_general")
+        
         # Validate URLs before returning
         logger.log("🔍 [URL Validator] Checking URLs in out-of-scope message")
         validated_msg, had_invalid_urls = await validate_and_clean_response(
@@ -1464,13 +1479,13 @@ def should_end(state: AgentState) -> str:
 
 # Build the graph
 def create_library_graph():
-    """Create the LangGraph orchestrator with Query Understanding Layer."""
+    """Create the LangGraph orchestrator with Query Understanding Layer and RAG Router."""
     workflow = StateGraph(AgentState)
     
     # Add nodes - Query Understanding Layer is the entry point
     workflow.add_node("understand_query", query_understanding_node)
     workflow.add_node("clarify", clarification_node)
-    workflow.add_node("classify_intent", classify_intent_node)
+    workflow.add_node("classify_intent", rag_router_node)  # Using RAG router instead of pattern-based
     workflow.add_node("execute_agents", execute_agents_node)
     workflow.add_node("synthesize", synthesize_answer_node)
     
@@ -1483,14 +1498,14 @@ def create_library_graph():
         should_skip_to_clarification,
         {
             "clarify": "clarify",      # Ambiguous query → ask for clarification
-            "classify": "classify_intent"  # Clear query → proceed to classification
+            "classify": "classify_intent"  # Clear query → proceed to RAG classification
         }
     )
     
     # Clarification ends the flow (user needs to respond)
     workflow.add_edge("clarify", END)
     
-    # Normal flow: classify → execute → synthesize → end
+    # Normal flow: RAG classify → execute → synthesize → end
     workflow.add_edge("classify_intent", "execute_agents")
     workflow.add_edge("execute_agents", "synthesize")
     workflow.add_edge("synthesize", END)
