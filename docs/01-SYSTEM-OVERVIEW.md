@@ -115,7 +115,7 @@ The Miami University Libraries Chatbot is a **multi-agent AI system** built with
 | **LibGuides API** | SpringShare | Research guides |
 | **LibAnswers API** | SpringShare | Chat handoff, availability |
 | **Google Custom Search** | Google | Library website search |
-| **MuGuide API** | Miami University | Subject-to-librarian mapping |
+| **MyGuide API** | Miami University | Subject-to-librarian mapping |
 
 ---
 
@@ -210,7 +210,7 @@ All API integrations are in `/ai-core/src/api/`:
 **Google Custom Search** (`google_cse.py`):
 - `search_library_website()` - Search lib.miamioh.edu content
 
-**MuGuide Integration** (handled in `tools/subject_matcher.py`):
+**MyGuide Integration** (handled in `tools/subject_matcher.py`):
 - Database-driven matching using 710 pre-loaded subjects
 - Fuzzy matching for subject name variations
 
@@ -241,7 +241,7 @@ All API integrations are in `/ai-core/src/api/`:
 7. Each agent calls its external API:
    - LibCal Agent → LibCal API
    - LibGuides Agent → LibGuides API
-   - Subject Agent → PostgreSQL (MuGuide data)
+   - Subject Agent → PostgreSQL (MyGuide data)
    - Google Agent → Google CSE API
         ↓
 8. Synthesizer combines agent responses using OpenAI LLM
@@ -333,7 +333,7 @@ The Meta Router is the brain of the system. It:
 - Return librarian contact info from LibGuides API
 - Handle "show all librarians" requests
 
-**Data Source:** PostgreSQL database (pre-loaded from MuGuide API)
+**Data Source:** PostgreSQL database (pre-loaded from MyGuide API)
 
 #### 4. Google Site Search Agent
 **File:** `src/agents/google_site_comprehensive_agent.py`  

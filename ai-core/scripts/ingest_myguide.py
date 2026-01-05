@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
-Ingest MuGuide subject mapping data into database.
+Ingest MyGuide subject mapping data into database.
 
-This script fetches subject-to-libguide mappings from Miami University's MuGuide API
+This script fetches subject-to-libguide mappings from Miami University's MyGuide API
 and stores them in the database for efficient subject matching and librarian routing.
 """
 import os
@@ -16,31 +16,31 @@ from prisma import Prisma
 root_dir = Path(__file__).resolve().parent.parent.parent
 load_dotenv(dotenv_path=root_dir / ".env")
 
-# MuGuide API Configuration - Load from environment variables
-MUGUIDE_API_URL = os.getenv("MUGUIDE_API_URL", "https://myguidedev.lib.miamioh.edu/api/subjects")
-MUGUIDE_ID = os.getenv("MUGUIDE_ID")
-MUGUIDE_API_KEY = os.getenv("MUGUIDE_API_KEY")
+# MyGuide API Configuration - Load from environment variables
+MYGUIDE_API_URL = os.getenv("MYGUIDE_API_URL", "https://myguidedev.lib.miamioh.edu/api/subjects")
+MYGUIDE_ID = os.getenv("MYGUIDE_ID")
+MYGUIDE_API_KEY = os.getenv("MYGUIDE_API_KEY")
 
 # Validate required credentials
-if not MUGUIDE_ID or not MUGUIDE_API_KEY:
+if not MYGUIDE_ID or not MYGUIDE_API_KEY:
     raise ValueError(
-        "MuGuide API credentials not found. Please set MUGUIDE_ID and MUGUIDE_API_KEY "
+        "MyGuide API credentials not found. Please set MYGUIDE_ID and MYGUIDE_API_KEY "
         "in your .env file. See .env.example for details."
     )
 
 
-async def fetch_muguide_data():
-    """Fetch subject mapping data from MuGuide API."""
-    print("📡 Fetching MuGuide data from API...")
+async def fetch_myguide_data():
+    """Fetch subject mapping data from MyGuide API."""
+    print("📡 Fetching MyGuide data from API...")
     
     params = {
-        "id": MUGUIDE_ID,
-        "apiKey": MUGUIDE_API_KEY
+        "id": MYGUIDE_ID,
+        "apiKey": MYGUIDE_API_KEY
     }
     
     # Disable SSL verification for development server
     async with httpx.AsyncClient(timeout=30.0, verify=False) as client:
-        response = await client.get(MUGUIDE_API_URL, params=params)
+        response = await client.get(MYGUIDE_API_URL, params=params)
         response.raise_for_status()
         data = response.json()
     
@@ -49,8 +49,8 @@ async def fetch_muguide_data():
 
 
 async def clear_existing_data(db: Prisma):
-    """Clear existing MuGuide data from database."""
-    print("🗑️  Clearing existing MuGuide data...")
+    """Clear existing MyGuide data from database."""
+    print("🗑️  Clearing existing MyGuide data...")
     
     # Delete in reverse order due to foreign key constraints
     await db.subjectlibguide.delete_many()
@@ -183,7 +183,7 @@ async def print_statistics(db: Prisma):
 async def main():
     """Main ingestion workflow."""
     print("=" * 70)
-    print("MuGuide Subject Mapping Ingestion")
+    print("MyGuide Subject Mapping Ingestion")
     print("=" * 70)
     print()
     
@@ -193,7 +193,7 @@ async def main():
     
     try:
         # Fetch data
-        subjects_data = await fetch_muguide_data()
+        subjects_data = await fetch_myguide_data()
         
         # Clear existing data
         await clear_existing_data(db)
@@ -205,7 +205,7 @@ async def main():
         await print_statistics(db)
         
         print("\n" + "=" * 70)
-        print("✅ MuGuide ingestion completed successfully!")
+        print("✅ MyGuide ingestion completed successfully!")
         print("=" * 70)
     
     except Exception as e:

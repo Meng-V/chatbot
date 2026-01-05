@@ -64,7 +64,7 @@ model ConversationFeedback {
   conversation   Conversation @relation(fields: [conversationId], references: [id])
 }
 
-// MuGuide Subject Mapping Models
+// MyGuide Subject Mapping Models
 model Subject {
   id          String             @id @default(uuid())
   name        String             @unique

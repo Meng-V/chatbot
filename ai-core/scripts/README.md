@@ -115,9 +115,9 @@ python -m scripts.ingest_transcripts_optimized \
 - Progress tracking
 - Duplicate detection
 
-#### `ingest_muguide.py`
-**Purpose**: Ingest MU Guide data (library guides, tutorials) into Weaviate  
-**Usage**: `python -m scripts.ingest_muguide --json-file data/muguide.json`  
+#### `ingest_myguide.py`
+**Purpose**: Ingest MyGuide data (library guides, tutorials) into Weaviate  
+**Usage**: `python -m scripts.ingest_myguide --json-file data/myguide.json`  
 **When to use**: Adding new library guide content
 
 #### `optimize_for_vector_search.py`

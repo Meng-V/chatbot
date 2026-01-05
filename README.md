@@ -11,7 +11,7 @@ This chatbot serves as a **24/7 virtual library assistant** that helps students,
 
 **How This Helps Your Library:**
 - ✅ **24/7 Availability** - Answers questions even when library staff aren't available
-- ✅ **Instant Responses** - Patrons get immediate help (under 5 seconds)
+- ✅ **Instant Responses** - Patrons get immediate help (within seconds)
 - ✅ **Reduces Repetitive Questions** - Handles common queries about hours, policies, room booking
 - ✅ **Seamless Handoff** - Connects patrons to human librarians when needed
 - ✅ **Multi-Campus Support** - Serves Oxford, Hamilton, and Middletown campuses
@@ -52,7 +52,7 @@ Find subject-specific research guides and course-related library resources throu
 - "Guide for business students"
 
 ### 4. 👤 Subject Librarian Finder
-Connect users with the right subject librarian based on their academic major, department, or research topic. Covers 710 academic subjects mapped to librarians.
+Connect users with the right subject librarian based on their academic major, department, or research topic. Covers about 600 academic subjects mapped to librarians.
 
 **Example questions:**
 - "Who is the biology librarian?"
@@ -99,7 +99,7 @@ When questions are ambiguous, the bot presents interactive button choices to hel
 
 **Why These Limits Matter:** By focusing on library services, the bot provides accurate, reliable answers. When a question is outside its scope, it **automatically suggests contacting a human librarian** for help.
 
-**Patron Experience:** The bot will say something like: *"This question is outside my area of expertise. I recommend contacting the Student Services office at..."* or *"Let me connect you with a librarian who can better assist you."*
+**Patron Experience:** The bot will say something like: *"This question is outside my area of expertise."* or *"Let me connect you with a librarian who can better assist you."*
 
 ---
 
@@ -125,7 +125,7 @@ When questions are ambiguous, the bot presents interactive button choices to hel
 - **LibGuides API** - Research guides
 - **LibChat API** - Live chat handoff and availability
 - **Google Custom Search** - Library website search
-- **MuGuide API** - Subject-to-librarian mapping (710 subjects)
+- **MyGuide API** - Subject-to-librarian mapping (about 600 subjects)
 
 ### Architecture
 
@@ -139,7 +139,7 @@ The chatbot uses **RAG-based classification** with **5 specialized agents** orch
 **Specialized Agents:**
 1. **LibCal Agent** - Handles hours and room reservations
 2. **LibGuides Agent** - Finds research guides
-3. **Subject Librarian Agent** - Routes to appropriate librarian (710 subjects)
+3. **Subject Librarian Agent** - Routes to appropriate librarian (about 600 subjects)
 4. **Website Search Agent** - Searches library website
 5. **LibChat Agent** - Connects to human librarians
 
@@ -299,7 +299,7 @@ All API keys and configuration are stored in `.env` file. See `.env.example` for
 - Verify LibCal location IDs in database
 
 **Bot can't find subject librarian:**
-- MuGuide API may be down
+- MyGuide API may be down
 - Check subject mappings in PostgreSQL database
 - Verify LibGuides API credentials
 

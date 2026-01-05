@@ -134,7 +134,7 @@ python -m scripts.seed_library_locations
 Subject mappings should be pre-loaded in the database. If starting fresh:
 
 ```bash
-# Contact development team for MuGuide data dump
+# Contact development team for MyGuide data dump
 # Or use existing database backup
 ```
 

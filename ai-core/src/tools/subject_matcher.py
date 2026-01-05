@@ -2,7 +2,7 @@
 Subject Matcher Tool - Find LibGuides and Librarians for Academic Subjects
 
 This tool matches user queries about subjects, majors, or academic topics to the 
-appropriate LibGuides and subject librarians using the MuGuide mapping database.
+appropriate LibGuides and subject librarians using the MyGuide mapping database.
 """
 
 from typing import List, Dict, Any, Optional

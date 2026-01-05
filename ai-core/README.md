@@ -32,12 +32,12 @@ Last update: 12/22/2025 Afternoon
   - **LibCal** (Hours/Booking) - Multi-tool agent for hours and room reservations
   - **LibGuides** (Course Guides) - Multi-tool agent for research guides
   - **Google Site** (Website Search) - Multi-tool agent for library website content
-  - **Subject Librarian** - MuGuide integration for 710 subjects with fuzzy matching
+  - **Subject Librarian** - MyGuide integration for 710 subjects with fuzzy matching
   - **LibChat** - Human handoff agent with real-time availability
 - **Meta Router**: Intent classification with strict scope enforcement (libraries only)
 - **Clarification Handler**: Processes user choice selections and reclassifies with additional context
 - **Strict Scope Enforcement**: Automatically detects and redirects out-of-scope questions
-- **MuGuide Integration**: 710 subjects, 587 LibGuides, 586 majors mapped with fuzzy matching
+- **MyGuide Integration**: 710 subjects, 587 LibGuides, 586 majors mapped with fuzzy matching
 - **URL Validation**: Validates and filters URLs to prevent hallucination
 - **Contact Info Validation**: NEVER generates fake contact information - only uses verified API data
 - **Real-time Communication**: Socket.IO WebSocket at `/smartchatbot/socket.io`

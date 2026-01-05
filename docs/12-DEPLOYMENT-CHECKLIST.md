@@ -386,7 +386,7 @@ python -m scripts.seed_library_locations
 
 ### 3. Load Subject-Librarian Mappings
 
-If you have MuGuide API or similar:
+If you have MyGuide API or similar:
 ```bash
 # Contact development team for data import scripts
 # OR manually add to database via Prisma Studio
