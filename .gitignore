@@ -201,3 +201,4 @@ node_modules
 ai-core/logs/
 ai-core/data/
 ai-core/scripts/sync_liaisons_from_website.py
+staff-members - staff-members.csv

@@ -135,8 +135,10 @@ class EnhancedSubjectLibrarianAgent:
                 other_librarians = [l for l in librarians if not l.get("isPrimary")]
                 
                 if primary_librarians:
-                    response_text += "👤 **Subject Librarian**:\n"
-                    for lib in primary_librarians[:1]:  # Show primary only
+                    # Use plural if multiple librarians
+                    header = "👤 **Subject Librarian**:\n" if len(primary_librarians) == 1 else "👥 **Subject Librarians**:\n"
+                    response_text += header
+                    for lib in primary_librarians:  # Show ALL primary librarians
                         response_text += f"• **{lib['name']}**"
                         if lib.get('title'):
                             response_text += f" - {lib['title']}"
@@ -147,8 +149,9 @@ class EnhancedSubjectLibrarianAgent:
                             response_text += f"  📧 {lib['email']}\n"
                         if lib.get('phone'):
                             response_text += f"  📞 {lib['phone']}\n"
-                        if lib.get('profileUrl'):
-                            response_text += f"  🔗 [View Profile]({lib['profileUrl']})\n"
+                        # Always show LibGuide profile URL when available
+                        if lib.get('libguideProfileUrl'):
+                            response_text += f"  📖 [LibGuide Profile]({lib['libguideProfileUrl']})\n"
                     response_text += "\n"
                 
                 if other_librarians and not primary_librarians:

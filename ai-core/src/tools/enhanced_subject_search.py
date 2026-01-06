@@ -408,12 +408,17 @@ async def get_subject_librarians(subject_id: str, db: Prisma, campus: str = "Oxf
         if not ls.librarian.isActive:
             continue
         
+        # Construct LibGuide profile URL if libguideProfileId exists
+        libguide_profile_url = None
+        if ls.librarian.libguideProfileId:
+            libguide_profile_url = f"https://libguides.lib.miamioh.edu/prf.php?account_id={ls.librarian.libguideProfileId}"
+        
         librarian_data = {
             "name": ls.librarian.name,
             "email": ls.librarian.email,
             "title": ls.librarian.title,
             "phone": ls.librarian.phone,
-            "profileUrl": ls.librarian.profileUrl,
+            "libguideProfileUrl": libguide_profile_url,
             "campus": ls.librarian.campus,
             "isRegional": ls.librarian.isRegional,
             "isPrimary": ls.isPrimary
