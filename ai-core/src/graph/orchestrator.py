@@ -24,7 +24,7 @@ from src.agents.google_site_comprehensive_agent import GoogleSiteComprehensiveAg
 from src.agents.subject_librarian_agent import find_subject_librarian_query
 from src.agents.enhanced_subject_librarian_agent import EnhancedSubjectLibrarianAgent
 # Legacy single-tool agents
-from src.agents.libchat_agent import libchat_handoff
+from src.agents.libchat_agent import libchat_handoff, ticket_request_handler
 from src.agents.transcript_rag_agent import transcript_rag_query
 from src.utils.logger import AgentLogger
 from src.memory.conversation_store import (
@@ -515,6 +515,8 @@ async def classify_intent_node(state: AgentState) -> AgentState:
         r'\b(hours?|open|close)\b.*\b(art\s*(and|&)\s*architecture)\b',  # "hours for Art and Architecture"
         r'\bmakerspace\b',  # Any makerspace query likely wants hours/info
         r'\bspecial\s*collections?\b.*\b(hours?|open|close|when)\b',  # Special Collections hours
+        r'\bwhat\s+(are|is)\s+the\s+(library|libraries)\s+hours?\b',  # "What are the library hours"
+        r'\b(library|libraries)\s+hours?\b',  # "library hours" or "libraries hours"
     ]
     
     for pattern in hours_patterns:
@@ -611,6 +613,7 @@ async def classify_intent_node(state: AgentState) -> AgentState:
         "booking_or_hours": ["libcal"],  # Hours and room booking
         "policy_or_service": ["google_site"],  # Website search
         "human_help": ["libchat"],  # Live chat handoff
+        "ticket_request": ["ticket_handler"],  # Explicit ticket submission request
         "general_question": ["google_site"]  # Website search
     }
     
@@ -664,6 +667,7 @@ async def execute_agents_node(state: AgentState) -> AgentState:
         "google_site": google_site_agent,
         "subject_librarian": enhanced_subject_agent,  # Use enhanced agent
         "libchat": libchat_handoff,
+        "ticket_handler": ticket_request_handler,  # Explicit ticket request handler
         "transcript_rag": transcript_rag_query  # Correction pool only
     }
     
@@ -1331,11 +1335,14 @@ CRITICAL RULES - MUST FOLLOW:
    🚫 DO NOT invent ANY information not in the context above
    🚫 DO NOT recall facts from your training data (it may be outdated)
    🚫 DO NOT create URLs, emails, phone numbers, or names
-   🚫 DO NOT guess library hours, locations, or services
+   🚫 **NEVER GUESS OR GENERATE LIBRARY HOURS** - ONLY use hours from LibCal API data in context
+   🚫 **NEVER PROVIDE HARDCODED HOURS** - If no LibCal hours data in context, say hours are unavailable
    🚫 DO NOT provide book/article information (catalog search disabled)
 
 4. **IF CONTEXT IS EMPTY OR INSUFFICIENT:**
    - Be honest: "I don't have that information from our library systems."
+   - **CRITICAL FOR HOURS QUERIES**: If user asks about hours but no LibCal data in context, say:
+     "I'm unable to retrieve current hours. Please check: https://www.lib.miamioh.edu/hours or call (513) 529-4141"
    - Provide ONLY this general contact:
      • Phone: (513) 529-4141
      • Website: https://www.lib.miamioh.edu/research/research-support/ask/

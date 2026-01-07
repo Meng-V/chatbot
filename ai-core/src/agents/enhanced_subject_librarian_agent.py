@@ -59,6 +59,85 @@ class EnhancedSubjectLibrarianAgent:
             await db.connect()
         
         try:
+            # Check for Special Collections or Makerspace queries first
+            query_lower = query.lower()
+            is_special_collections = any(word in query_lower for word in ["special collections", "special collection", "university archives", "archives"])
+            is_makerspace = any(word in query_lower for word in ["makerspace", "maker space", "makespace"])
+            
+            if is_special_collections or is_makerspace:
+                space_name = "special collections" if is_special_collections else "makerspace"
+                if log_callback:
+                    log_callback(f"🏛️ [Enhanced Subject Librarian] Detected {space_name} query")
+                
+                # Get space info from database
+                from src.services.location_service import get_location_service
+                location_service = get_location_service()
+                
+                # Get website URL from database
+                website = await location_service.get_library_website(space_name)
+                
+                # Get space details including buildingLocation
+                space = await db.libraryspace.find_first(
+                    where={
+                        "OR": [
+                            {"shortName": {"contains": space_name, "mode": "insensitive"}},
+                            {"name": {"contains": space_name, "mode": "insensitive"}}
+                        ]
+                    },
+                    include={"library": True}
+                )
+                
+                # Search for subject to get librarian contact
+                result = await search_subject(space_name, db)
+                
+                display_name = space.displayName if space else ("Walter Havighurst Special Collections & University Archives" if is_special_collections else "Makerspace")
+                
+                response_text = f"**{display_name}**\n\n"
+                
+                # Add location if available
+                if space and space.buildingLocation:
+                    library_name = space.library.displayName if space.library else "King Library"
+                    response_text += f"📍 **Location**: {space.buildingLocation} of {library_name}\n\n"
+                
+                # Add librarian contact if found
+                if result:
+                    subject = result["subject"]
+                    librarians = await get_subject_librarians(subject.id, db, "Oxford")
+                    
+                    if librarians:
+                        lib = librarians[0]  # Get first librarian
+                        response_text += "👤 **Contact**:\n"
+                        response_text += f"• **{lib['name']}**"
+                        if lib.get('title'):
+                            response_text += f" - {lib['title']}"
+                        response_text += "\n"
+                        if lib.get('email'):
+                            response_text += f"  📧 {lib['email']}\n"
+                        if lib.get('phone'):
+                            response_text += f"  📞 {lib['phone']}\n"
+                        response_text += "\n"
+                
+                # Always add website
+                response_text += f"🌐 **Website**: {website}\n\n"
+                
+                # Add general contact info
+                response_text += "For general questions:\n"
+                response_text += "• Call: (513) 529-4141\n"
+                response_text += "• Visit: https://www.lib.miamioh.edu/research/research-support/ask/"
+                
+                if log_callback:
+                    log_callback(f"✅ [Enhanced Subject Librarian] Provided {space_name} info with website")
+                
+                return {
+                    "tool": "enhanced_subject_librarian",
+                    "success": True,
+                    "text": response_text,
+                    "data": {
+                        "space": space_name,
+                        "website": website
+                    }
+                }
+            
             # Search for subject using enhanced search
             result = await search_subject(query, db)
             

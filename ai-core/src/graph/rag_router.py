@@ -101,6 +101,7 @@ Please let me know which one applies to your situation."""
         "subject_librarian_guides": ("subject_librarian", ["subject_librarian"]),
         "research_help_handoff": ("human_help", ["libchat"]),
         "library_policies_services": ("policy_or_service", ["google_site"]),
+        "ticket_submission_request": ("ticket_request", ["ticket_handler"]),
         "human_librarian_request": ("human_help", ["libchat"]),
     }
     

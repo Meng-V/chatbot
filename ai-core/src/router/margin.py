@@ -15,16 +15,16 @@ from dataclasses import dataclass
 @dataclass
 class MarginConfig:
     """Configuration for margin thresholds"""
-    # Direct routing thresholds
-    direct_score_threshold: float = 0.75  # Minimum top-1 score for direct route
-    direct_margin_threshold: float = 0.20  # Minimum margin for direct route
+    # Direct routing thresholds (optimized to reduce over-clarification)
+    direct_score_threshold: float = 0.65  # Minimum top-1 score for direct route (lowered from 0.75)
+    direct_margin_threshold: float = 0.15  # Minimum margin for direct route (lowered from 0.20)
     
     # Low confidence thresholds (trigger triage)
-    lowconf_score_threshold: float = 0.60  # Below this = low confidence
-    lowconf_margin_threshold: float = 0.10  # Below this = low confidence
+    lowconf_score_threshold: float = 0.50  # Below this = low confidence (lowered from 0.60)
+    lowconf_margin_threshold: float = 0.08  # Below this = low confidence (lowered from 0.10)
     
-    # Clarification thresholds
-    clarify_margin_threshold: float = 0.05  # Very close = need clarification
+    # Clarification thresholds (only for truly ambiguous cases)
+    clarify_margin_threshold: float = 0.03  # Very close = need clarification (lowered from 0.05)
 
 
 @dataclass

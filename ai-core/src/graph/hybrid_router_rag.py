@@ -85,6 +85,12 @@ async def should_use_function_calling_rag(user_message: str, logger=None) -> boo
             logger.log(f"👤 [Hybrid Router RAG] Human help request → FORCING LangGraph")
         return False
     
+    # 🕐 HOURS QUERIES: Force LangGraph for proper LibCal routing and generic hours handling
+    if category == "library_hours_rooms":
+        if logger:
+            logger.log(f"🕐 [Hybrid Router RAG] Hours query → FORCING LangGraph for LibCal agent routing")
+        return False
+    
     if len(user_message.split()) <= 5:
         if logger:
             logger.log("🚀 [Hybrid Router RAG] Short query → Function calling")

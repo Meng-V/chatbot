@@ -202,3 +202,22 @@ ai-core/logs/
 ai-core/data/
 ai-core/scripts/sync_liaisons_from_website.py
 staff-members - staff-members.csv
+
+# /ai-core/test_results
+ai-core/FINAL_VALIDATION_REPORT.md
+ai-core/OPTIMIZATION_SUMMARY.md
+ai-core/PERFECT_CHATBOT_COMPLETE.md
+ai-core/test_results/comprehensive_user_test_20260106_154537.json
+ai-core/test_results/comprehensive_user_test_20260106_160835.json
+ai-core/test_results/COMPREHENSIVE_USER_TEST_REPORT_20260106_154537.md
+ai-core/test_results/COMPREHENSIVE_USER_TEST_REPORT_20260106_160835.md
+ai-core/test_results/FINAL_COMPREHENSIVE_REPORT.md
+ai-core/test_results/FINAL_PERFECT_BOT_REPORT.md
+ai-core/test_results/libcal_test_report_20260107_144415.json
+ai-core/test_results/libcal_test_report_20260107_145415.json
+ai-core/test_results/libcal_test_report_20260107_145848.json
+ai-core/test_results/libcal_test_report_20260107_151352.json
+ai-core/test_results/libcal_test_report_20260107_153137.json
+ai-core/test_results/libcal_test_report_20260107_154338.json
+ai-core/test_results/libcal_test_report_20260107_154851.json
+testquestion.json

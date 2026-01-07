@@ -18,10 +18,14 @@ import asyncio
 import sys
 import os
 from pathlib import Path
+from dotenv import load_dotenv
 
 # Add project root to path
 project_root = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(project_root / "ai-core"))
+
+# Load environment variables from .env file
+load_dotenv(dotenv_path=project_root / ".env")
 
 from src.router.weaviate_router import WeaviateRouter
 
@@ -56,22 +60,45 @@ PROTOTYPES = [
     },
     
     # ========================================================================
-    # LIBRARY HOURS & ROOMS
+    # LIBRARY HOURS
     # ========================================================================
     {
         "agent_id": "libcal_hours",
-        "category": "Library Hours & Rooms",
+        "category": "Library Hours",
         "prototypes": [
             {"text": "What time does King Library close today?", "is_action": False, "priority": 3},
             {"text": "When does the Art Library open?", "is_action": False, "priority": 3},
-            {"text": "Library hours for tomorrow", "is_action": False, "priority": 2},
+            {"text": "What are the hours for King Library today?", "is_action": False, "priority": 3},
+            {"text": "Library hours for tomorrow", "is_action": False, "priority": 3},
             {"text": "Is the library open on Sunday?", "is_action": False, "priority": 2},
-            {"text": "How do I book a study room?", "is_action": True, "priority": 3},
-            {"text": "Reserve a group study space", "is_action": True, "priority": 3},
+            {"text": "What time does King Library open today?", "is_action": False, "priority": 3},
+            {"text": "When does King Library close tonight?", "is_action": False, "priority": 3},
             {"text": "What are the Makerspace hours?", "is_action": False, "priority": 2},
             {"text": "When does Rentschler Library close?", "is_action": False, "priority": 2},
             {"text": "Library schedule for finals week", "is_action": False, "priority": 2},
-            {"text": "Can I reserve a room for a meeting?", "is_action": True, "priority": 2},
+            {"text": "Is King Library open on Martin Luther King Jr. Day?", "is_action": False, "priority": 2},
+            {"text": "What are the hours for live chat with librarians?", "is_action": False, "priority": 3},
+            {"text": "When is librarian chat available?", "is_action": False, "priority": 3},
+            {"text": "Is live chat open right now?", "is_action": False, "priority": 3},
+            {"text": "What time does online chat support close?", "is_action": False, "priority": 2},
+        ]
+    },
+    
+    # ========================================================================
+    # STUDY ROOM RESERVATIONS
+    # ========================================================================
+    {
+        "agent_id": "libcal_spaces",
+        "category": "Study Room Reservations",
+        "prototypes": [
+            {"text": "How do I book a study room?", "is_action": True, "priority": 3},
+            {"text": "Reserve a group study space", "is_action": True, "priority": 3},
+            {"text": "Can I reserve a room for a meeting?", "is_action": True, "priority": 3},
+            {"text": "Where do I reserve group study rooms?", "is_action": True, "priority": 3},
+            {"text": "Can I book a study room online?", "is_action": True, "priority": 3},
+            {"text": "How do I reserve a study room in Farmer?", "is_action": True, "priority": 2},
+            {"text": "Book a private study room", "is_action": True, "priority": 2},
+            {"text": "Study room reservation process", "is_action": True, "priority": 2},
         ]
     },
     
@@ -114,14 +141,23 @@ PROTOTYPES = [
     },
     
     # ========================================================================
-    # GOOGLE SITE - Policies & Services
+    # GOOGLE SITE - Policies, Services & Contact Info
     # ========================================================================
     {
         "agent_id": "google_site",
-        "category": "Library Policies & Services",
+        "category": "Library Policies, Services & Contact Info",
         "prototypes": [
             {"text": "How do I renew a book?", "is_action": False, "priority": 3},
             {"text": "What are the library's printing policies?", "is_action": False, "priority": 3},
+            {"text": "What is the address of King Library?", "is_action": False, "priority": 3},
+            {"text": "What is the phone number for King Library?", "is_action": False, "priority": 3},
+            {"text": "How do I contact King Library?", "is_action": False, "priority": 3},
+            {"text": "Where is King Library located?", "is_action": False, "priority": 3},
+            {"text": "What is the address of the Art and Architecture Library?", "is_action": False, "priority": 3},
+            {"text": "Where is the Wertz Art and Architecture Library?", "is_action": False, "priority": 3},
+            {"text": "What is the phone number for the Art and Architecture Library?", "is_action": False, "priority": 2},
+            {"text": "Where is the Makerspace located?", "is_action": False, "priority": 2},
+            {"text": "What is the address of the Makerspace?", "is_action": False, "priority": 2},
             {"text": "Can I bring food into the library?", "is_action": False, "priority": 2},
             {"text": "How much does it cost to print?", "is_action": False, "priority": 2},
             {"text": "What services does the library offer?", "is_action": False, "priority": 2},

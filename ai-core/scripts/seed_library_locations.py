@@ -152,11 +152,13 @@ async def seed_locations():
                 "name": "Makerspace",
                 "displayName": "Makerspace",
                 "shortName": "makerspace",
+                "buildingLocation": "Third floor",  # Real physical location in King Library
                 "libcalLocationId": "11904",  # For hours API only - no reservable rooms
+                "website": "https://www.lib.miamioh.edu/makerspace",
                 "spaceType": "service"
             }
         )
-        print(f"  ✓ {makerspace.displayName} (Hours: {makerspace.libcalLocationId}, No reservations) - inside {king.name}")
+        print(f"  ✓ {makerspace.displayName} (Third floor, Hours: {makerspace.libcalLocationId}, No reservations) - inside {king.name}")
         
         special_collections = await client.libraryspace.create(
             data={
@@ -164,11 +166,13 @@ async def seed_locations():
                 "name": "Special Collections & University Archives",
                 "displayName": "Walter Havighurst Special Collections & University Archives",
                 "shortName": "special collections",
+                "buildingLocation": "Third floor",  # Real physical location in King Library
                 "libcalLocationId": "8424",   # For hours API only - no reservable rooms
+                "website": "https://spec.lib.miamioh.edu",
                 "spaceType": "collection"
             }
         )
-        print(f"  ✓ {special_collections.displayName} (Hours: {special_collections.libcalLocationId}, No reservations) - inside {king.name}")
+        print(f"  ✓ {special_collections.displayName} (Third floor, Hours: {special_collections.libcalLocationId}, No reservations) - inside {king.name}")
         
         # ==================== SUMMARY ====================
         print("\n" + "="*60)

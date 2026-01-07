@@ -2,6 +2,7 @@
 import os
 import re
 import httpx
+import asyncio
 from typing import Dict, Any, Optional, List, Tuple
 from datetime import datetime, timedelta
 from dateutil import parser as date_parser
@@ -66,6 +67,75 @@ async def _get_oauth_token() -> str:
     """Get LibCal OAuth token using centralized service."""
     oauth_service = get_libcal_oauth_service()
     return await oauth_service.get_token()
+
+async def _make_libcal_request(
+    url: str,
+    method: str = "GET",
+    headers: Optional[Dict] = None,
+    params: Optional[Dict] = None,
+    data: Optional[Dict] = None,
+    max_retries: int = 3,
+    timeout: int = 15,
+    log_callback = None
+) -> httpx.Response:
+    """Make LibCal API request with retry logic and exponential backoff.
+    
+    Args:
+        url: API endpoint URL
+        method: HTTP method (GET, POST, etc.)
+        headers: Request headers
+        params: Query parameters
+        data: Request body data
+        max_retries: Maximum number of retry attempts
+        timeout: Request timeout in seconds
+        log_callback: Optional logging callback
+        
+    Returns:
+        httpx.Response object
+        
+    Raises:
+        Exception: If all retries fail
+    """
+    last_error = None
+    
+    for attempt in range(max_retries):
+        try:
+            async with httpx.AsyncClient(timeout=timeout) as client:
+                if method.upper() == "GET":
+                    response = await client.get(url, headers=headers, params=params)
+                elif method.upper() == "POST":
+                    response = await client.post(url, headers=headers, params=params, data=data)
+                else:
+                    raise ValueError(f"Unsupported HTTP method: {method}")
+                
+                response.raise_for_status()
+                return response
+                
+        except httpx.TimeoutException as e:
+            last_error = f"Timeout after {timeout}s"
+            if log_callback:
+                log_callback(f"⚠️ [LibCal Request] Attempt {attempt + 1}/{max_retries} timed out")
+        except httpx.HTTPStatusError as e:
+            last_error = f"HTTP {e.response.status_code}: {e.response.text[:200]}"
+            if log_callback:
+                log_callback(f"⚠️ [LibCal Request] Attempt {attempt + 1}/{max_retries} failed: HTTP {e.response.status_code}")
+            # Don't retry on 4xx errors (client errors)
+            if 400 <= e.response.status_code < 500:
+                raise
+        except Exception as e:
+            last_error = str(e)
+            if log_callback:
+                log_callback(f"⚠️ [LibCal Request] Attempt {attempt + 1}/{max_retries} failed: {str(e)}")
+        
+        # Exponential backoff: 1s, 2s, 4s
+        if attempt < max_retries - 1:
+            wait_time = 2 ** attempt
+            if log_callback:
+                log_callback(f"⏳ [LibCal Request] Retrying in {wait_time}s...")
+            await asyncio.sleep(wait_time)
+    
+    # All retries failed
+    raise Exception(f"LibCal API request failed after {max_retries} attempts: {last_error}")
 
 def _validate_email(email: str) -> bool:
     """Validate email is @miamioh.edu."""
@@ -579,25 +649,44 @@ class LibCalWeekHoursTool(Tool):
             date_obj = datetime.strptime(date, "%Y-%m-%d")
             day_of_week = date_obj.weekday()  # 0=Monday, 6=Sunday
             monday = date_obj - timedelta(days=day_of_week)
-            sunday = monday + timedelta(days=6)
-            
-            from_date = monday.strftime("%Y-%m-%d")
-            to_date = sunday.strftime("%Y-%m-%d")
-            
             token = await _get_oauth_token()
-            async with httpx.AsyncClient(timeout=10) as client:
-                response = await client.get(
-                    f"{LIBCAL_HOUR_URL}/{location_id}",
-                    headers={"Authorization": f"Bearer {token}"},
-                    params={"from": from_date, "to": to_date}
-                )
-                response.raise_for_status()
-                data = response.json()
+            
+            # Calculate date range (7 days)
+            from_date = date
+            to_date = (datetime.strptime(date, "%Y-%m-%d") + timedelta(days=6)).strftime("%Y-%m-%d")
+            
+            response = await _make_libcal_request(
+                url=f"{LIBCAL_HOUR_URL}/{location_id}",
+                method="GET",
+                headers={"Authorization": f"Bearer {token}"},
+                params={"from": from_date, "to": to_date},
+                log_callback=log_callback
+            )
+            data = response.json()
                 
-                if not data or len(data) == 0:
-                    return {"tool": self.name, "success": False, "text": f"No hours data available for {building}."}
+            if not data or len(data) == 0:
+                return {"tool": self.name, "success": False, "text": f"No hours data available for {building}."}
+            
+            # Extract hours by day
+            location = data[0]
+            dates = location.get("dates", {})
+            location_name = location.get('name', building.title())
+            
+            hours_text = f"**{location_name} Hours (Week of {from_date}):**\n\n"
+            
+            day_names = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+            current_date = monday
+            
+            for day_name in day_names:
+                date_str = current_date.strftime("%Y-%m-%d")
+                day_data = dates.get(date_str)
                 
-                # Extract hours by day
+                if day_data and day_data.get("hours"):
+                    hours_list = day_data["hours"]
+                    hours_str = " - ".join([f"{h['from']} to {h['to']}" for h in hours_list])
+                    hours_text += f"• **{day_name} ({date_str})**: {hours_str}\n"
+                else:
+                    hours_text += f"• **{day_name} ({date_str})**: Closed\n"
                 location = data[0]
                 dates = location.get("dates", {})
                 location_name = location.get('name', building.title())
@@ -619,6 +708,17 @@ class LibCalWeekHoursTool(Tool):
                         hours_text += f"• **{day_name} ({date_str})**: Closed\n"
                     
                     current_date += timedelta(days=1)
+                
+                # Add website URL for Makerspace and Special Collections
+                if building.lower() in ["makerspace", "maker space", "special collections", "special collection", "archives"]:
+                    hours_text += "\n"
+                    try:
+                        space_name = "makerspace" if "maker" in building.lower() else "special collections"
+                        website = await location_service.get_library_website(space_name)
+                        hours_text += f"🌐 **Website**: {website}\n"
+                    except Exception as e:
+                        if log_callback:
+                            log_callback(f"⚠️ [LibCal Week Hours Tool] Could not fetch website: {str(e)}")
                 
                 if log_callback:
                     log_callback(f"✅ [LibCal Week Hours Tool] Weekly hours retrieved for {location_name}")
@@ -726,25 +826,25 @@ class LibCalEnhancedAvailabilityTool(Tool):
             available_rooms = []
             
             for current_range in range(capacity_range, 4):  # Try up to range 3
-                async with httpx.AsyncClient(timeout=10) as client:
-                    response = await client.get(
-                        f"{LIBCAL_SEARCH_AVAILABLE_URL}/{building_id}",
-                        headers={"Authorization": f"Bearer {token}"},
-                        params={
-                            "date": date,
-                            "time_start": start_formatted,
-                            "time_end": end_formatted,
-                            "type": "space",
-                            "capacity": current_range
-                        }
-                    )
-                    response.raise_for_status()
-                    data = response.json()
+                response = await _make_libcal_request(
+                    url=LIBCAL_SEARCH_AVAILABLE_URL,
+                    method="GET",
+                    headers={"Authorization": f"Bearer {token}"},
+                    params={
+                        "lid": building_id,
+                        "date": date,
+                        "start": start_time,
+                        "end": end_time,
+                        "capacity": current_range
+                    },
+                    log_callback=log_callback
+                )
+                data = response.json()
                     
-                    exact_matches = data.get("exact_matches", [])
-                    if exact_matches:
-                        available_rooms = exact_matches
-                        break
+                exact_matches = data.get("exact_matches", [])
+                if exact_matches:
+                    available_rooms = exact_matches
+                    break
             
             if not available_rooms:
                 # Check if date might be too far in advance

@@ -71,12 +71,8 @@ def clean_response_for_frontend(text: str) -> str:
     
     # Patterns to remove (internal metadata that shouldn't be shown to users)
     patterns_to_remove = [
-        # Source attribution lines
-        r'\n*Source:\s*[^\n]+\[VERIFIED API DATA\][^\n]*\n*',
-        r'\n*Source:\s*[^\n]+\[CURATED KNOWLEDGE BASE[^\]]*\][^\n]*\n*',
-        r'\n*Source:\s*[^\n]+\[WEBSITE SEARCH[^\]]*\][^\n]*\n*',
-        r'\n*Source:\s*Subject Librarian Agent[^\n]*\n*',
-        r'\n*Source:\s*LibGuide[^\n]*\n*',
+        # Source attribution lines - remove ALL source lines
+        r'\n*Source:\s*[^\n]+\n*',
         # Standalone brackets with internal labels
         r'\s*\[VERIFIED API DATA\]',
         r'\s*\[CURATED KNOWLEDGE BASE[^\]]*\]',
@@ -237,13 +233,19 @@ async def ask_http(payload: dict):
         
         logger.log("✅ [API] Request completed successfully")
         
+        # Determine primary agent used
+        primary_agent = agents_used[0] if agents_used else result.get("classified_intent")
+        
         return {
             "success": True,
             "conversationId": conversation_id,
+            "response": final_answer,  # Primary field for response text
+            "final_answer": final_answer,  # Keep for backwards compatibility
+            "agent": primary_agent,  # Primary agent used
+            "agents_used": agents_used,  # Keep for backwards compatibility
+            "toolsUsed": agents_used,  # Frontend expects this field name
             "intent": result.get("classified_intent"),
-            "agents_used": agents_used,
             "agent_responses": result.get("agent_responses", {}),
-            "final_answer": final_answer,
             "needs_human": result.get("needs_human", False),
             "logs": logger.get_logs(),
             "history_count": len(history)

@@ -1,9 +1,63 @@
 """LibChat Agent for human librarian handoff with availability checking."""
 from typing import Dict, Any
+import re
 from src.api.askus_hours import get_askus_hours_for_date
 
 LIBCHAT_WIDGET_URL = "https://www.lib.miamioh.edu/research/research-support/ask/"
 TICKET_URL = "https://www.lib.miamioh.edu/research/research-support/ask/"
+
+async def ticket_request_handler(query: str, log_callback=None) -> Dict[str, Any]:
+    """Handle explicit ticket submission requests."""
+    if log_callback:
+        log_callback("🎫 [Ticket Handler] User explicitly requested to submit a ticket")
+    
+    try:
+        hours_data = await get_askus_hours_for_date()
+        is_open = hours_data.get("is_open", False)
+        current_period = hours_data.get("current_period")
+        
+        if is_open and current_period:
+            if log_callback:
+                log_callback("✅ [Ticket Handler] Librarians are available, but user wants to submit ticket")
+            return {
+                "source": "TicketRequest",
+                "success": True,
+                "needs_human": False,
+                "is_available": True,
+                "text": (
+                    f"For additional help, visit:\n"
+                    f"{TICKET_URL}\n\n"
+                    f"💡 **Note**: Librarians are currently available (until {current_period['close']})."
+                )
+            }
+        else:
+            if log_callback:
+                log_callback("⏰ [Ticket Handler] Librarians offline, guiding to ticket submission")
+            return {
+                "source": "TicketRequest",
+                "success": True,
+                "needs_human": False,
+                "is_available": False,
+                "text": (
+                    f"For additional help, visit:\n"
+                    f"{TICKET_URL}\n\n"
+                    f"A librarian will respond to your request."
+                )
+            }
+    
+    except Exception as e:
+        if log_callback:
+            log_callback(f"⚠️ [Ticket Handler] Error: {str(e)}")
+        return {
+            "source": "TicketRequest",
+            "success": True,
+            "needs_human": False,
+            "text": (
+                f"For additional help, visit:\n"
+                f"{TICKET_URL}"
+            )
+        }
+
 
 async def libchat_handoff(query: str, log_callback=None) -> Dict[str, Any]:
     """Escalate to human librarian via LibChat with real-time availability check."""
@@ -27,7 +81,7 @@ async def libchat_handoff(query: str, log_callback=None) -> Dict[str, Any]:
                 "text": (
                     f"I'll connect you with a librarian who can help better.\n\n"
                     f"✅ **Librarians are available NOW** (until {current_period['close']})\n\n"
-                    f"Click here to start a live chat: {LIBCHAT_WIDGET_URL}"
+                    f"For help, visit: {LIBCHAT_WIDGET_URL}"
                 )
             }
         
@@ -43,11 +97,9 @@ async def libchat_handoff(query: str, log_callback=None) -> Dict[str, Any]:
                 "is_available": False,
                 "text": (
                     f"I'll help you get assistance from a librarian.\n\n"
-                    f"⏰ **Live chat is currently closed**\n"
-                    f"Chat hours today: {next_open} - {next_close}\n\n"
-                    f"**Options:**\n"
-                    f"• **Submit a ticket** for off-hours help: {TICKET_URL}\n"
-                    f"• **Come back during chat hours** to talk to a librarian live"
+                    f"⏰ **Currently closed**\n"
+                    f"Hours today: {next_open} - {next_close}\n\n"
+                    f"For help, visit: {TICKET_URL}"
                 )
             }
         
@@ -61,10 +113,9 @@ async def libchat_handoff(query: str, log_callback=None) -> Dict[str, Any]:
                 "is_available": False,
                 "text": (
                     f"I'll help you get assistance from a librarian.\n\n"
-                    f"⏰ **Live chat is not available today**\n\n"
-                    f"**Please submit a ticket** and a librarian will respond:\n"
-                    f"{TICKET_URL}\n\n"
-                    f"You can also contact us at **(513) 529-4141**"
+                    f"⏰ **Not available today**\n\n"
+                    f"For help, visit: {TICKET_URL}\n\n"
+                    f"Or call: **(513) 529-4141**"
                 )
             }
     
@@ -78,7 +129,7 @@ async def libchat_handoff(query: str, log_callback=None) -> Dict[str, Any]:
             "is_available": None,
             "text": (
                 f"I'll connect you with a librarian who can help better.\n\n"
-                f"Visit our help page: {LIBCHAT_WIDGET_URL}\n"
-                f"Or call us at **(513) 529-4141**"
+                f"For help, visit: {LIBCHAT_WIDGET_URL}\n"
+                f"Or call: **(513) 529-4141**"
             )
         }

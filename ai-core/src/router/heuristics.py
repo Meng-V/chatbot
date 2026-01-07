@@ -239,6 +239,23 @@ class HeuristicGate:
                     reason="Clear subject librarian query"
                 )
         
+        # Ticket submission request (explicit - takes priority over general human help)
+        ticket_patterns = [
+            r'\b(put|submit|create|open|file|leave|send)\s+(in|a)?\s*ticket\b',
+            r'\bticket\s+(in|for)\s+(help|support)\b',
+            r'\b(leave|send)\s+(a\s+)?ticket\b',
+            r'\bhow\s+(do|can)\s+i\s+(submit|put|create|open|file|leave|send)\s+(a\s+)?ticket\b',
+            r'\bi\s+want\s+to\s+(put|submit|create|open|file|leave|send)\s+(a\s+)?ticket\b',
+        ]
+        for pattern in ticket_patterns:
+            if re.search(pattern, query_lower, re.IGNORECASE):
+                return HeuristicResult(
+                    matched=True,
+                    agent_id="ticket_request",
+                    confidence="high",
+                    reason="Explicit ticket submission request"
+                )
+        
         # Human help request (explicit)
         human_patterns = [
             r'\btalk\s+to\s+(a\s+)?(librarian|human|person|staff)\b',

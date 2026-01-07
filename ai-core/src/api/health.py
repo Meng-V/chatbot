@@ -2,10 +2,15 @@
 import os
 import psutil
 import time
+import httpx
+import weaviate
+import weaviate.classes as wvc
 from datetime import datetime
 from typing import Dict, Any, List
 from fastapi import APIRouter, HTTPException, status
 from src.database.prisma_client import get_prisma_client
+from src.services.libcal_oauth import get_libcal_oauth_service
+from src.services.libapps_oauth import get_libapps_oauth_service
 
 router = APIRouter()
 
@@ -73,26 +78,298 @@ def check_environment_health() -> Dict[str, Any]:
         "missingVariables": missing
     }
 
+async def check_openai_health() -> Dict[str, Any]:
+    """Check OpenAI API connectivity with actual API call."""
+    api_key = os.getenv("OPENAI_API_KEY")
+    if not api_key:
+        return {
+            "status": "unconfigured",
+            "error": "OPENAI_API_KEY not set"
+        }
+    
+    try:
+        start = time.time()
+        async with httpx.AsyncClient(timeout=10) as client:
+            response = await client.get(
+                "https://api.openai.com/v1/models",
+                headers={"Authorization": f"Bearer {api_key}"}
+            )
+            response_time = int((time.time() - start) * 1000)
+            
+            if response.status_code == 200:
+                return {
+                    "status": "healthy",
+                    "responseTime": response_time
+                }
+            else:
+                return {
+                    "status": "unhealthy",
+                    "error": f"HTTP {response.status_code}",
+                    "responseTime": response_time
+                }
+    except Exception as e:
+        return {
+            "status": "unhealthy",
+            "error": str(e)
+        }
+
+async def check_weaviate_health() -> Dict[str, Any]:
+    """Check Weaviate connectivity with actual connection test."""
+    scheme = os.getenv("WEAVIATE_SCHEME", "http")
+    api_key = os.getenv("WEAVIATE_API_KEY", "")
+    host = os.getenv("WEAVIATE_HOST", "")
+    
+    if not host:
+        return {
+            "status": "unconfigured",
+            "error": "WEAVIATE_HOST not set"
+        }
+    
+    client = None
+    try:
+        start = time.time()
+        
+        if scheme == "https" and api_key:
+            client = weaviate.connect_to_weaviate_cloud(
+                cluster_url=f"https://{host}",
+                auth_credentials=weaviate.auth.AuthApiKey(api_key)
+            )
+        else:
+            client = weaviate.connect_to_local()
+        
+        # Test connection by checking if ready
+        is_ready = client.is_ready()
+        response_time = int((time.time() - start) * 1000)
+        
+        if is_ready:
+            # Try to list collections as additional verification
+            collections = client.collections.list_all()
+            return {
+                "status": "healthy",
+                "responseTime": response_time,
+                "collections": len(collections)
+            }
+        else:
+            return {
+                "status": "unhealthy",
+                "error": "Weaviate not ready",
+                "responseTime": response_time
+            }
+    except Exception as e:
+        return {
+            "status": "unhealthy",
+            "error": str(e)
+        }
+    finally:
+        if client:
+            try:
+                client.close()
+            except:
+                pass
+
+async def check_libcal_health() -> Dict[str, Any]:
+    """Check LibCal API connectivity via OAuth token fetch."""
+    oauth_url = os.getenv("LIBCAL_OAUTH_URL", "")
+    client_id = os.getenv("LIBCAL_CLIENT_ID", "")
+    client_secret = os.getenv("LIBCAL_CLIENT_SECRET", "")
+    
+    if not all([oauth_url, client_id, client_secret]):
+        return {
+            "status": "unconfigured",
+            "error": "LibCal credentials not configured"
+        }
+    
+    try:
+        start = time.time()
+        oauth_service = get_libcal_oauth_service()
+        token = await oauth_service.get_token()
+        response_time = int((time.time() - start) * 1000)
+        
+        if token:
+            return {
+                "status": "healthy",
+                "responseTime": response_time
+            }
+        else:
+            return {
+                "status": "unhealthy",
+                "error": "Failed to obtain OAuth token"
+            }
+    except Exception as e:
+        return {
+            "status": "unhealthy",
+            "error": str(e)
+        }
+
+async def check_libguides_health() -> Dict[str, Any]:
+    """Check LibGuides API connectivity via OAuth token fetch."""
+    oauth_url = os.getenv("LIBGUIDE_OAUTH_URL", "")
+    client_id = os.getenv("LIBGUIDE_CLIENT_ID", "")
+    client_secret = os.getenv("LIBGUIDE_CLIENT_SECRET", "")
+    
+    if not all([oauth_url, client_id, client_secret]):
+        return {
+            "status": "unconfigured",
+            "error": "LibGuides credentials not configured"
+        }
+    
+    try:
+        start = time.time()
+        oauth_service = get_libapps_oauth_service()
+        token = await oauth_service.get_token()
+        response_time = int((time.time() - start) * 1000)
+        
+        if token:
+            return {
+                "status": "healthy",
+                "responseTime": response_time
+            }
+        else:
+            return {
+                "status": "unhealthy",
+                "error": "Failed to obtain OAuth token"
+            }
+    except Exception as e:
+        return {
+            "status": "unhealthy",
+            "error": str(e)
+        }
+
+async def check_google_cse_health() -> Dict[str, Any]:
+    """Check Google Custom Search Engine API connectivity."""
+    api_key = os.getenv("GOOGLE_API_KEY", "")
+    cse_id = os.getenv("GOOGLE_LIBRARY_SEARCH_CSE_ID", "")
+    
+    if not api_key or not cse_id:
+        return {
+            "status": "unconfigured",
+            "error": "Google CSE credentials not configured"
+        }
+    
+    try:
+        start = time.time()
+        async with httpx.AsyncClient(timeout=10) as client:
+            # Perform a minimal test search
+            response = await client.get(
+                "https://www.googleapis.com/customsearch/v1",
+                params={
+                    "key": api_key,
+                    "cx": cse_id,
+                    "q": "test",
+                    "num": 1
+                }
+            )
+            response_time = int((time.time() - start) * 1000)
+            
+            if response.status_code == 200:
+                return {
+                    "status": "healthy",
+                    "responseTime": response_time
+                }
+            else:
+                return {
+                    "status": "unhealthy",
+                    "error": f"HTTP {response.status_code}",
+                    "responseTime": response_time
+                }
+    except Exception as e:
+        return {
+            "status": "unhealthy",
+            "error": str(e)
+        }
+
+async def check_libanswers_health() -> Dict[str, Any]:
+    """Check LibAnswers API connectivity (for chat handoff)."""
+    client_id = os.getenv("LIBANSWERS_CLIENT_ID", "")
+    client_secret = os.getenv("LIBANSWERS_CLIENT_SECRET", "")
+    token_url = os.getenv("LIBANSWERS_TOKEN_URL", "")
+    
+    if not all([client_id, client_secret, token_url]):
+        return {
+            "status": "unconfigured",
+            "error": "LibAnswers credentials not configured"
+        }
+    
+    try:
+        start = time.time()
+        async with httpx.AsyncClient(timeout=10) as client:
+            response = await client.post(
+                token_url,
+                data={
+                    "client_id": client_id,
+                    "client_secret": client_secret,
+                    "grant_type": "client_credentials"
+                }
+            )
+            response_time = int((time.time() - start) * 1000)
+            
+            if response.status_code == 200:
+                data = response.json()
+                if data.get("access_token"):
+                    return {
+                        "status": "healthy",
+                        "responseTime": response_time
+                    }
+            
+            return {
+                "status": "unhealthy",
+                "error": f"HTTP {response.status_code}",
+                "responseTime": response_time
+            }
+    except Exception as e:
+        return {
+            "status": "unhealthy",
+            "error": str(e)
+        }
+
 @router.get("/health")
 async def health_check():
     """
-    Basic health check endpoint.
-    Returns overall application health status.
+    Comprehensive health check endpoint with external API status.
+    Returns overall application health status and connectivity to all external services.
     """
+    # Core checks
     db_health = await check_database_health()
     memory_health = check_memory_health()
     
     # CPU usage
     cpu_percent = psutil.cpu_percent(interval=0.1)
     
-    # Determine overall status
-    is_healthy = (
+    # External API checks (run in parallel for speed)
+    import asyncio
+    openai_health, weaviate_health, libcal_health, libguides_health, google_health, libanswers_health = await asyncio.gather(
+        check_openai_health(),
+        check_weaviate_health(),
+        check_libcal_health(),
+        check_libguides_health(),
+        check_google_cse_health(),
+        check_libanswers_health(),
+        return_exceptions=True
+    )
+    
+    # Handle any exceptions from parallel checks
+    def safe_result(result, service_name):
+        if isinstance(result, Exception):
+            return {"status": "unhealthy", "error": f"{service_name} check failed: {str(result)}"}
+        return result
+    
+    openai_health = safe_result(openai_health, "OpenAI")
+    weaviate_health = safe_result(weaviate_health, "Weaviate")
+    libcal_health = safe_result(libcal_health, "LibCal")
+    libguides_health = safe_result(libguides_health, "LibGuides")
+    google_health = safe_result(google_health, "Google CSE")
+    libanswers_health = safe_result(libanswers_health, "LibAnswers")
+    
+    # Determine overall status (critical services only)
+    critical_services_healthy = (
         db_health["status"] == "healthy" and
-        memory_health["status"] in ["healthy", "warning"]
+        memory_health["status"] in ["healthy", "warning"] and
+        openai_health["status"] == "healthy" and
+        weaviate_health["status"] == "healthy"
     )
     
     return {
-        "status": "healthy" if is_healthy else "unhealthy",
+        "status": "healthy" if critical_services_healthy else "unhealthy",
         "timestamp": datetime.now().strftime("%m/%d/%Y, %I:%M:%S %p EST"),
         "uptime": time.time() - START_TIME,
         "memory": memory_health,
@@ -105,12 +382,12 @@ async def health_check():
         },
         "services": {
             "database": db_health,
-            "openai": {
-                "status": "healthy" if os.getenv("OPENAI_API_KEY") else "unconfigured"
-            },
-            "weaviate": {
-                "status": "healthy" if os.getenv("WEAVIATE_API_KEY") else "unconfigured"
-            }
+            "openai": openai_health,
+            "weaviate": weaviate_health,
+            "libcal": libcal_health,
+            "libguides": libguides_health,
+            "googleCSE": google_health,
+            "libanswers": libanswers_health
         }
     }
 

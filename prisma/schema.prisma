@@ -1,9 +1,8 @@
 generator client {
-  provider        = "prisma-client-js"
+  provider = "prisma-client-py"
+  interface = "asyncio"
 }
 
-// Prisma v7: DATABASE_URL is passed via PrismaClient constructor or env
-// No longer specified in schema file
 datasource db {
   provider = "postgresql"
 }
@@ -168,6 +167,7 @@ model LibrarySpace {
   name            String   // "Maker Space", "Special Collections & University Archives"
   displayName     String   // Full display name
   shortName       String?  // "Makerspace", "Special Collections"
+  buildingLocation String? // Physical location within building (e.g., "Third floor", "Lower level")
   libcalLocationId String  @unique // LibCal location ID for hours API (e.g., "11904" for Makerspace)
   libcalBuildingId String? @unique // LibCal building ID for reservations (e.g., "8269" for Makerspace)
   website         String?  // Space website URL (e.g., "https://libguides.lib.miamioh.edu/create/makerspace")

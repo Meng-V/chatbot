@@ -2,6 +2,7 @@
 import os
 import time
 import httpx
+import asyncio
 from typing import Optional, Dict
 from datetime import datetime, timedelta
 
@@ -24,8 +25,18 @@ class LibCalOAuthService:
         # Consider token expired 5 minutes before actual expiry for safety
         return datetime.now() < (self._token_expiry - timedelta(minutes=5))
     
-    async def get_token(self) -> str:
-        """Get valid OAuth token, fetching new one if needed."""
+    async def get_token(self, max_retries: int = 3) -> str:
+        """Get valid OAuth token, fetching new one if needed with retry logic.
+        
+        Args:
+            max_retries: Maximum number of retry attempts
+            
+        Returns:
+            Valid OAuth token
+            
+        Raises:
+            Exception: If token fetch fails after all retries
+        """
         if self._is_token_valid():
             return self._token
         
@@ -33,26 +44,35 @@ class LibCalOAuthService:
         if not all([self.oauth_url, self.client_id, self.client_secret]):
             raise ValueError("LibCal OAuth credentials not configured")
         
-        try:
-            async with httpx.AsyncClient(timeout=10) as client:
-                response = await client.post(
-                    self.oauth_url,
-                    data={
-                        "client_id": self.client_id,
-                        "client_secret": self.client_secret,
-                        "grant_type": self.grant_type
-                    }
-                )
-                response.raise_for_status()
-                data = response.json()
-                
-                self._token = data.get("access_token")
-                expires_in = data.get("expires_in", 3600)  # Default 1 hour
-                self._token_expiry = datetime.now() + timedelta(seconds=expires_in)
-                
-                return self._token
-        except Exception as e:
-            raise Exception(f"Failed to fetch LibCal OAuth token: {str(e)}")
+        last_error = None
+        for attempt in range(max_retries):
+            try:
+                async with httpx.AsyncClient(timeout=15) as client:
+                    response = await client.post(
+                        self.oauth_url,
+                        data={
+                            "client_id": self.client_id,
+                            "client_secret": self.client_secret,
+                            "grant_type": self.grant_type
+                        }
+                    )
+                    response.raise_for_status()
+                    data = response.json()
+                    
+                    self._token = data.get("access_token")
+                    expires_in = data.get("expires_in", 3600)  # Default 1 hour
+                    self._token_expiry = datetime.now() + timedelta(seconds=expires_in)
+                    
+                    return self._token
+            except Exception as e:
+                last_error = e
+                if attempt < max_retries - 1:
+                    # Exponential backoff: 1s, 2s, 4s
+                    wait_time = 2 ** attempt
+                    await asyncio.sleep(wait_time)
+                    continue
+        
+        raise Exception(f"Failed to fetch LibCal OAuth token after {max_retries} attempts: {str(last_error)}")
     
     def clear_token(self):
         """Clear cached token (useful for testing or manual refresh)."""
