@@ -34,6 +34,7 @@ Last update: 12/22/2025 Afternoon
   - **Google Site** (Website Search) - Multi-tool agent for library website content
   - **Subject Librarian** - MyGuide integration for 710 subjects with fuzzy matching
   - **LibChat** - Human handoff agent with real-time availability
+- **Website Evidence RAG Fallback**: Jekyll-derived curated website content as semantic fallback when agents lack information
 - **Meta Router**: Intent classification with strict scope enforcement (libraries only)
 - **Clarification Handler**: Processes user choice selections and reclassifies with additional context
 - **Strict Scope Enforcement**: Automatically detects and redirects out-of-scope questions
@@ -253,6 +254,57 @@ All comprehensive documentation is organized in the `/docs/` folder at project r
 - **[Architecture](../docs/architecture/)** - System design, developer resources, project summary
 - **[Knowledge Management](../docs/knowledge-management/)** - Guide routing, scope enforcement, integrations
 
+## 🌐 Website Evidence Integration
+
+The chatbot uses curated Jekyll-derived website content as a RAG fallback when API agents don't have sufficient information.
+
+### Importing Website Evidence
+
+**Dry Run (Preview):**
+```bash
+python scripts/import_weaviate_jsonl.py --dry-run
+```
+
+**Real Import:**
+```bash
+# Import with auto-derived collection name (from first line's last_build_utc)
+python scripts/import_weaviate_jsonl.py
+
+# Import with custom collection name
+python scripts/import_weaviate_jsonl.py --collection WebsiteEvidence_2026_01
+
+# Reset and reimport
+python scripts/import_weaviate_jsonl.py --reset
+```
+
+### Configuration
+
+Set the collection name in your `.env`:
+```bash
+WEBSITE_EVIDENCE_COLLECTION=WebsiteEvidence_2026_01_12_22_36_49
+```
+
+If not set, defaults to `WebsiteEvidence`.
+
+### Testing
+
+Run smoke tests to verify the integration:
+```bash
+python scripts/smoke_test_website_evidence.py
+```
+
+This tests 5 queries and shows top 3 results with scores, titles, URLs, and text snippets.
+
+### How It Works
+
+1. **Priority**: API agents > Google site search > Website evidence RAG fallback
+2. **Triggering**: Only activates when no agents return results
+3. **Confidence**: Only uses results with score > 0.7
+4. **Citations**: Returns final URLs with redirect resolution applied
+5. **Chunking**: Searches through chunked website content with semantic similarity
+
+---
+
 ## 🔧 Troubleshooting
 
 **Port in use:**
@@ -274,6 +326,13 @@ prisma generate
 ```bash
 # Verify DATABASE_URL in root .env
 psql "postgresql://..."
+```
+
+**Website Evidence not working:**
+```bash
+# Check collection exists in Weaviate
+# Verify WEBSITE_EVIDENCE_COLLECTION is set
+# Run smoke test: python scripts/smoke_test_website_evidence.py
 ```
 
 ---

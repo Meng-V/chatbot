@@ -38,7 +38,7 @@ from src.router.weaviate_router import WeaviateRouter
 
 PROTOTYPES = [
     # ========================================================================
-    # EQUIPMENT CHECKOUT - Action-verb focused
+    # EQUIPMENT CHECKOUT - Physical equipment ONLY (laptops, cameras, etc.)
     # ========================================================================
     {
         "agent_id": "equipment_checkout",
@@ -53,9 +53,9 @@ PROTOTYPES = [
             {"text": "I want to borrow an iPad", "is_action": True, "priority": 3},
             {"text": "Are there headphones I can check out?", "is_action": True, "priority": 2},
             {"text": "Can I reserve a laptop for tomorrow?", "is_action": True, "priority": 3},
-            {"text": "How do I get Adobe Creative Cloud?", "is_action": True, "priority": 2},
             {"text": "Do you loan out tripods?", "is_action": True, "priority": 2},
             {"text": "Can I checkout a MacBook?", "is_action": True, "priority": 3},
+            {"text": "Can I borrow a microphone?", "is_action": True, "priority": 2},
         ]
     },
     
@@ -141,14 +141,45 @@ PROTOTYPES = [
     },
     
     # ========================================================================
-    # GOOGLE SITE - Policies, Services & Contact Info
+    # GOOGLE SITE - Policies, Services, Technology & Contact Info
     # ========================================================================
     {
         "agent_id": "google_site",
-        "category": "Library Policies, Services & Contact Info",
+        "category": "Library Policies, Services, Technology & Contact Info",
         "prototypes": [
-            {"text": "How do I renew a book?", "is_action": False, "priority": 3},
+            # Technology - Software
+            {"text": "How do I get Adobe Creative Cloud?", "is_action": False, "priority": 3},
+            {"text": "Can I checkout Adobe software from the library?", "is_action": False, "priority": 3},
+            {"text": "What software is available at the library?", "is_action": False, "priority": 3},
+            {"text": "Does the library have Adobe Acrobat?", "is_action": False, "priority": 3},
+            {"text": "Software checkout from library", "is_action": False, "priority": 3},
+            {"text": "How do I access software on library computers?", "is_action": False, "priority": 2},
+            
+            # Technology - Computers
+            {"text": "Do library computers have Adobe software?", "is_action": False, "priority": 3},
+            {"text": "What programs are on library computers?", "is_action": False, "priority": 2},
+            {"text": "Can I use Adobe Photoshop in the library?", "is_action": False, "priority": 3},
+            {"text": "Where are public computers with Adobe?", "is_action": False, "priority": 2},
+            
+            # Technology - Printing
+            {"text": "How do I print in the library?", "is_action": False, "priority": 3},
             {"text": "What are the library's printing policies?", "is_action": False, "priority": 3},
+            {"text": "How much does printing cost?", "is_action": False, "priority": 3},
+            {"text": "How do I use MUprint?", "is_action": False, "priority": 3},
+            {"text": "What is MUprint?", "is_action": False, "priority": 3},
+            {"text": "Where can I print on campus?", "is_action": False, "priority": 3},
+            {"text": "How do I print from my phone?", "is_action": False, "priority": 2},
+            {"text": "Color printing in the library", "is_action": False, "priority": 2},
+            {"text": "Does the library have 3D printing?", "is_action": False, "priority": 3},
+            {"text": "How do I use 3D printing at the library?", "is_action": False, "priority": 3},
+            {"text": "3D printing cost and policies", "is_action": False, "priority": 2},
+            
+            # Farmer Study Rooms (Non-LibCal)
+            {"text": "How do I reserve a study room at Farmer?", "is_action": False, "priority": 3},
+            {"text": "Farmer School of Business study rooms", "is_action": False, "priority": 3},
+            {"text": "Book a room at Farmer", "is_action": False, "priority": 2},
+            
+            # Library Info & Contact
             {"text": "What is the address of King Library?", "is_action": False, "priority": 3},
             {"text": "What is the phone number for King Library?", "is_action": False, "priority": 3},
             {"text": "How do I contact King Library?", "is_action": False, "priority": 3},
@@ -158,8 +189,10 @@ PROTOTYPES = [
             {"text": "What is the phone number for the Art and Architecture Library?", "is_action": False, "priority": 2},
             {"text": "Where is the Makerspace located?", "is_action": False, "priority": 2},
             {"text": "What is the address of the Makerspace?", "is_action": False, "priority": 2},
+            
+            # Policies & Services
+            {"text": "How do I renew a book?", "is_action": False, "priority": 3},
             {"text": "Can I bring food into the library?", "is_action": False, "priority": 2},
-            {"text": "How much does it cost to print?", "is_action": False, "priority": 2},
             {"text": "What services does the library offer?", "is_action": False, "priority": 2},
             {"text": "Where is the quiet study area?", "is_action": False, "priority": 2},
             {"text": "Library website URL", "is_action": False, "priority": 2},

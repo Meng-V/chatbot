@@ -6,6 +6,7 @@ from src.tools.google_site_enhanced_tools import (
     BorrowingPolicySearchTool
 )
 from src.tools.citation_tools import CitationAssistTool
+from src.tools.circulation_policy_tool import CirculationPolicyTool
 
 class GoogleSiteComprehensiveAgent(Agent):
     """Comprehensive Google Site agent with specialized tools."""
@@ -17,7 +18,7 @@ class GoogleSiteComprehensiveAgent(Agent):
     def _register_tools(self):
         """Register all Google Site Search tools."""
         self.register_tool(GoogleSiteEnhancedSearchTool())
-        self.register_tool(BorrowingPolicySearchTool())
+        self.register_tool(CirculationPolicyTool())  # Weaviate-based policy lookup (URL-only)
         self.register_tool(CitationAssistTool())
     
     async def route_to_tool(self, query: str) -> str:
@@ -28,18 +29,19 @@ class GoogleSiteComprehensiveAgent(Agent):
         if any(word in q_lower for word in ["cite", "citation", "apa", "mla", "chicago", "turabian", "ama", "bibliography", "reference"]):
             return "citation_assist"
         
-        # Borrowing policy keywords → Borrowing policy tool
+        # Circulation/ILL policy keywords → Circulation policy tool (Weaviate, URL-only)
+        # NOTE: Hours queries go to LibCal agent, not here
         if any(word in q_lower for word in [
             "renew", "renewal",
             "borrow", "checkout", "check out",
-            "loan", "loan period",
+            "loan period",
             "fine", "fee", "overdue",
             "delivery", "mail", "home delivery",
             "ill", "interlibrary", "inter-library",
             "reserve", "course reserve",
-            "recall"
+            "recall", "ohiolink", "affiliated patron"
         ]):
-            return "borrowing_policy_search"
+            return "circulation_policy_lookup"
         
         # Default to general site search
         return "google_site_enhanced_search"

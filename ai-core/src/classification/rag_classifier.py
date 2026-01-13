@@ -41,7 +41,10 @@ if not OPENAI_MODEL.startswith("o"):
     llm_kwargs["temperature"] = 0
 llm = ChatOpenAI(**llm_kwargs)
 
-embeddings = OpenAIEmbeddings(api_key=OPENAI_API_KEY)
+embeddings = OpenAIEmbeddings(
+    model="text-embedding-3-large",
+    api_key=OPENAI_API_KEY
+)
 
 
 class RAGQuestionClassifier:

@@ -710,6 +710,9 @@ async def execute_agents_node(state: AgentState) -> AgentState:
                 "execution_time": execution_time
             })
         else:
+            # Ensure response has 'source' field for synthesizer
+            if "source" not in response:
+                response["source"] = agent_name
             results[agent_name] = response
             if response.get("needs_human"):
                 state["needs_human"] = True
@@ -1164,6 +1167,11 @@ Our librarians are experts at helping with research projects and can provide per
     
     responses = state.get("agent_responses", {})
     
+    # DEBUG: Log what we actually received
+    logger.log(f"📋 [Synthesizer] Received responses from {len(responses)} agent(s): {list(responses.keys())}")
+    for agent_name, resp in responses.items():
+        logger.log(f"   - {agent_name}: success={resp.get('success')}, has_text={bool(resp.get('text'))}, source={resp.get('source')}")
+    
     if state.get("needs_human"):
         # If any agent requested human handoff, prioritize that
         for resp in responses.values():
@@ -1172,14 +1180,15 @@ Our librarians are experts at helping with research projects and can provide per
                 return state
     
     # Combine agent outputs with PRIORITY ORDER
-    # Priority: API functions > RAG > Google Site Search
+    # Priority: API functions > Verified RAG > Google Site Search > Unverified RAG
+    # NOTE: transcript_rag priority depends on verification status (checked in synthesis)
     priority_order = {
         "libcal": 1,          # API: Hours & reservations
         "libguide": 1,        # API: Research guides
         "subject_librarian": 1, # API: Subject librarian routing
         "libchat": 1,         # API: Chat handoff
-        "google_site": 2,      # Website search (LOWER PRIORITY - fallback only)
-        "transcript_rag": 3,  # RAG: Correction pool for fixing mistakes
+        "google_site": 2,      # Website search (use when no verified RAG)
+        "transcript_rag": 3,  # RAG: Verified items = priority 2, Unverified = priority 4
     }
     
     # Sort responses by priority
@@ -1191,17 +1200,68 @@ Our librarians are experts at helping with research projects and can provide per
     context_parts = []
     for agent_name, resp in sorted_responses:
         if resp.get("success"):
-            # Add priority label for RAG to emphasize it in synthesis
+            # Add priority label based on verification status
             priority_label = ""
             if agent_name == "transcript_rag":
-                priority_label = " [CURATED KNOWLEDGE BASE - HIGH PRIORITY]"
+                # CRITICAL: Check if RAG results are verified
+                has_verified = resp.get("has_verified_results", False)
+                if has_verified:
+                    priority_label = " [VERIFIED MEMORY - HIGH PRIORITY]"
+                else:
+                    priority_label = " [UNVERIFIED MEMORY - USE WITH CAUTION, PREFER WEBSITE SEARCH]"
             elif priority_order.get(agent_name, 99) == 1:
                 priority_label = " [VERIFIED API DATA]"
             elif agent_name == "google_site":
-                priority_label = " [WEBSITE SEARCH - USE ONLY IF NO BETTER SOURCE]"
+                priority_label = " [WEBSITE SEARCH]"
             
             context_parts.append(f"[{resp.get('source', agent_name)}{priority_label}]: {resp.get('text', '')}")
     
+    # 🌐 RAG FALLBACK: If no context from agents, try website evidence
+    if not context_parts:
+        logger.log("⚠️ [Synthesizer] No agent responses - trying website evidence RAG fallback")
+        from src.services.website_evidence_search import search_website_evidence
+        from src.utils.redirect_resolver import resolve_url
+        
+        try:
+            evidence_results = await search_website_evidence(
+                query=user_msg,
+                top_k=3,
+                log_callback=logger.log
+            )
+            
+            # Filter for high-confidence results with valid URLs
+            high_confidence = [
+                r for r in evidence_results 
+                if r.get("score", 0) > 0.7 and r.get("final_url")
+            ]
+            
+            if high_confidence:
+                logger.log(f"✅ [Website Evidence RAG] Found {len(high_confidence)} high-confidence results")
+                
+                # Format as context for synthesis
+                evidence_text_parts = []
+                for result in high_confidence[:2]:  # Top 2
+                    title = result.get("title", "Page")
+                    chunk_text = result.get("chunk_text", "")
+                    final_url = result.get("final_url", "")
+                    
+                    # Apply redirect resolution
+                    resolved_url = resolve_url(final_url)
+                    
+                    evidence_text_parts.append(
+                        f"**{title}**\n{chunk_text[:400]}\nSource: {resolved_url}"
+                    )
+                
+                evidence_context = "\n\n".join(evidence_text_parts)
+                context_parts.append(f"[WEBSITE EVIDENCE - RAG FALLBACK]: {evidence_context}")
+                logger.log("📚 [Website Evidence RAG] Added evidence to context for synthesis")
+            else:
+                logger.log("⚠️ [Website Evidence RAG] No high-confidence results, using error message")
+        
+        except Exception as e:
+            logger.log(f"❌ [Website Evidence RAG] Error: {str(e)}")
+    
+    # If still no context after RAG fallback, return error
     if not context_parts:
         error_msg = "I'm having trouble accessing our systems right now. Please visit https://www.lib.miamioh.edu/ or chat with a librarian at (513) 529-4141."
         # Validate URLs before returning
@@ -1229,22 +1289,31 @@ Our librarians are experts at helping with research projects and can provide per
     if use_strict_grounding:
         logger.log(f"🔒 [Fact Grounding] Detected factual query types: {', '.join(fact_types)}")
         
-        # 🚨 CRITICAL: Remove google_site from responses to prevent conflicting information
-        if "google_site" in responses:
-            logger.log("⚠️ [Fact Grounding] Removing Google Site Search - using RAG only for factual accuracy")
-            del responses["google_site"]
-            # Update context to exclude google_site
-            sorted_responses = [(k, v) for k, v in sorted_responses if k != "google_site"]
-            context_parts = []
-            for agent_name, resp in sorted_responses:
-                if resp.get("success"):
-                    priority_label = ""
-                    if agent_name == "transcript_rag":
-                        priority_label = " [CURATED KNOWLEDGE BASE - HIGH PRIORITY]"
-                    elif priority_order.get(agent_name, 99) == 1:
-                        priority_label = " [VERIFIED API DATA]"
-                    context_parts.append(f"[{resp.get('source', agent_name)}{priority_label}]: {resp.get('text', '')}")
-            context = "\n\n".join(context_parts)
+        # NEW BEHAVIOR: Only use verified RAG if available, otherwise keep google_site
+        has_verified_rag = rag_response.get("has_verified_results", False)
+        
+        if has_verified_rag:
+            logger.log("✅ [Fact Grounding] Found VERIFIED RAG results - using as primary evidence")
+            # Keep both verified RAG and google_site for synthesis
+            # The synthesis prompt will prioritize verified RAG but can cross-reference
+        else:
+            logger.log("⚠️ [Fact Grounding] No verified RAG results - relying on google_site and API data")
+            # Remove unverified RAG to prevent hallucinations
+            if "transcript_rag" in responses:
+                logger.log("🗑️ [Fact Grounding] Removing UNVERIFIED RAG results")
+                del responses["transcript_rag"]
+                # Rebuild context without unverified RAG
+                sorted_responses = [(k, v) for k, v in sorted_responses if k != "transcript_rag"]
+                context_parts = []
+                for agent_name, resp in sorted_responses:
+                    if resp.get("success"):
+                        priority_label = ""
+                        if priority_order.get(agent_name, 99) == 1:
+                            priority_label = " [VERIFIED API DATA]"
+                        elif agent_name == "google_site":
+                            priority_label = " [WEBSITE SEARCH]"
+                        context_parts.append(f"[{resp.get('source', agent_name)}{priority_label}]: {resp.get('text', '')}")
+                context = "\n\n".join(context_parts)
         
         # Check RAG confidence
         confidence_level, confidence_reason = await is_high_confidence_rag_match(rag_response)
@@ -1307,11 +1376,27 @@ Current user question: {user_msg}
 Information from library systems:
 {context}
 
-🚨 CRITICAL: AGENT-ONLY INFORMATION POLICY 🚨
-============================================
-You MUST ONLY use information provided by library agents above.
-DO NOT generate, guess, or recall ANY information from your training data.
-If the agents did not provide information to answer the question, say so honestly.
+🚨 CRITICAL: EVIDENCE-BASED RESPONSE POLICY 🚨
+===============================================
+1. ONLY answer factual claims if backed by evidence from:
+   - [VERIFIED API DATA] sources
+   - [VERIFIED MEMORY - HIGH PRIORITY] with source_url + evidence_quote
+   - [WEBSITE SEARCH] snippets that include relevant text + URL
+
+2. If you see [UNVERIFIED MEMORY] sources:
+   - DO NOT trust them as authoritative
+   - Prefer [WEBSITE SEARCH] or [VERIFIED API DATA] instead
+   - If no better source exists, say you cannot confirm the information
+
+3. If evidence is insufficient:
+   - Say: "I can't confirm that from official Miami University Libraries sources"
+   - Provide the best relevant official URLs from available evidence (not fabricated)
+   - Suggest contacting library staff: (513) 529-4141 or https://www.lib.miamioh.edu/research/research-support/ask/
+
+4. NEVER:
+   - Guess or invent policy details, hours, fees, or contact information
+   - Use your training data to supplement the context above
+   - Generate information not explicitly provided by agents
 
 ⚠️ TEMPORARILY UNAVAILABLE SERVICES:
 - Catalog search (books, articles, e-resources) is NOT available
@@ -1341,12 +1426,13 @@ CRITICAL RULES - MUST FOLLOW:
 
 4. **IF CONTEXT IS EMPTY OR INSUFFICIENT:**
    - Be honest: "I don't have that information from our library systems."
-   - **CRITICAL FOR HOURS QUERIES**: If user asks about hours but no LibCal data in context, say:
-     "I'm unable to retrieve current hours. Please check: https://www.lib.miamioh.edu/hours or call (513) 529-4141"
-   - Provide ONLY this general contact:
+   - **CRITICAL FOR HOURS QUERIES**: 
+     * If LibCal hours data IS in context → Present the hours ONLY, do NOT add extra URLs or suggestions to visit other sites
+     * If user asks about hours but NO LibCal data in context → say: "I'm unable to retrieve current hours. Please check: https://www.lib.miamioh.edu/hours or call (513) 529-4141"
+   - Provide ONLY this general contact when no data is available:
      • Phone: (513) 529-4141
      • Website: https://www.lib.miamioh.edu/research/research-support/ask/
-   - Suggest chatting with a human librarian
+   - Suggest chatting with a human librarian only when you lack information
 
 5. **SOURCE PRIORITY:**
     - TRUST: [VERIFIED API DATA] and agent responses
@@ -1411,7 +1497,7 @@ Provide a clear, helpful answer based ONLY on the information above. Be concise,
     logger.log("💬 [Synthesizer] Generating final response")
     
     messages = [
-        SystemMessage(content="You are a Miami University LIBRARIES assistant. KEY RULES: 1) TRUST and USE data marked as [VERIFIED API DATA] or from 'Subject Librarian Agent' - it's already validated, so answer confidently! 2) NEVER invent information if context is empty - provide library general contact instead. 3) For factual queries, ONLY use the provided context - NEVER supplement with your training data. Write in natural, conversational language. NEVER output JSON or code. Balance: Be helpful when you have verified data, be cautious only when context is missing."),
+        SystemMessage(content="You are a Miami University LIBRARIES assistant. CRITICAL RULES: 1) ONLY use information from the context provided above - NEVER use your training data or general knowledge. 2) If the context contains data marked as [VERIFIED API DATA] or from agents, USE IT EXACTLY as provided. 3) If context is empty or insufficient, say 'I don't have that information' and provide library contact: (513) 529-4141 or https://www.lib.miamioh.edu/research/research-support/ask/. 4) NEVER make up information about library services, software, locations, or contacts. 5) Write in natural, conversational language. NEVER output JSON or code."),
         HumanMessage(content=synthesis_prompt)
     ]
     

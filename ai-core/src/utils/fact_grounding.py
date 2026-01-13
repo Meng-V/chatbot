@@ -249,7 +249,7 @@ async def create_grounded_synthesis_prompt(
     rag_response: Dict[str, Any],
     fact_types: List[str],
     conversation_history: List[Dict] = None,
-    confidence_level: str = "high"
+    confidence_level: str = "unknown"
 ) -> str:
     """
     Create a synthesis prompt with strong grounding instructions.
@@ -267,10 +267,13 @@ async def create_grounded_synthesis_prompt(
     # Format fact types for display
     fact_types_str = ", ".join(fact_types) if fact_types else "general information"
     
-    # Get RAG context
+    # Get RAG context and verification status
     rag_text = rag_response.get("text", "")
     confidence = rag_response.get("confidence", "unknown")
     similarity = rag_response.get("similarity_score", 0)
+    has_verified = rag_response.get("has_verified_results", False)
+    source_url = rag_response.get("top_result_source_url", "")
+    evidence = rag_response.get("top_result_evidence", "")
     
     # Format conversation history
     history_context = ""
@@ -294,8 +297,27 @@ Your knowledge base search returned medium confidence results. You should:
 4. Be helpful and try to answer - don't refuse to respond just because confidence isn't perfect
 """
     
+    # Add verification status to prompt
+    verification_note = ""
+    if has_verified:
+        verification_note = f"""
+✅ VERIFIED INFORMATION:
+This answer comes from a VERIFIED source:
+- Source URL: {source_url}
+- Evidence: {evidence}
+
+You can trust this information and cite the source URL in your response.
+"""
+    else:
+        verification_note = """
+⚠️ UNVERIFIED INFORMATION:
+This answer is NOT verified against official sources.
+DO NOT present it as authoritative. If possible, suggest the user verify with library staff.
+"""
+    
     prompt = f"""
 {GROUNDED_SYNTHESIS_INSTRUCTIONS.format(fact_types=fact_types_str)}
+{verification_note}
 {uncertainty_instruction}
 {history_context}
 

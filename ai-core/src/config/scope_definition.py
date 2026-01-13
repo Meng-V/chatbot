@@ -151,7 +151,6 @@ CRITICAL SCOPE RULES - MUST FOLLOW STRICTLY:
    - General Miami University questions → "For general university questions, please visit miamioh.edu or contact the university at (513) 529-1809"
    - Academic advising → "Please contact your academic advisor"
    - Course content → "Please contact your professor or academic department"
-   - IT support → "Please contact IT Services at miamioh.edu/itchat"
    - Non-library facilities → Direct to appropriate department
 
 3. NEVER MAKE UP INFORMATION:
@@ -235,7 +234,6 @@ def get_out_of_scope_response(topic_category: str = None) -> str:
     redirects = {
         "university_general": "Miami University's main website at miamioh.edu or call (513) 529-1809",
         "academic_content": "your professor or academic advisor",
-        "technical_support": "IT Services at miamioh.edu/itchat or call (513) 529-7900",
         "non_library_facilities": "the appropriate university department at miamioh.edu",
     }
 

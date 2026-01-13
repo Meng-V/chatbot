@@ -39,6 +39,10 @@ class LocationService:
         if cache_key in self._cache:
             return self._cache[cache_key]
         
+        # Ensure database is connected
+        if not self._client.is_connected():
+            await self._client.connect()
+        
         # Search by short name or name
         library = await self._client.library.find_first(
             where={
@@ -83,6 +87,10 @@ class LocationService:
         cache_key = f"location_id:{location_lower}"
         if cache_key in self._cache:
             return self._cache[cache_key]
+        
+        # Ensure database is connected
+        if not self._client.is_connected():
+            await self._client.connect()
         
         # Special handling for known spaces (prevent ambiguous matches)
         space_mappings = {
@@ -164,6 +172,10 @@ class LocationService:
         if cache_key in self._cache:
             return self._cache[cache_key]
         
+        # Ensure database is connected
+        if not self._client.is_connected():
+            await self._client.connect()
+        
         library = await self._client.library.find_first(
             where={"libcalBuildingId": building_id}
         )
@@ -182,6 +194,10 @@ class LocationService:
         """
         if "all_buildings" in self._cache:
             return self._cache["all_buildings"]
+        
+        # Ensure database is connected
+        if not self._client.is_connected():
+            await self._client.connect()
         
         # Get all libraries from database
         campuses = await self._client.campus.find_many(
@@ -232,6 +248,10 @@ class LocationService:
         if cache_key in self._cache:
             return self._cache[cache_key]
         
+        # Ensure database is connected
+        if not self._client.is_connected():
+            await self._client.connect()
+        
         # Search for space
         space = await self._client.libraryspace.find_first(
             where={
@@ -257,6 +277,10 @@ class LocationService:
         if "building_to_location" in self._cache:
             return self._cache["building_to_location"]
         
+        # Ensure database is connected
+        if not self._client.is_connected():
+            await self._client.connect()
+        
         libraries = await self._client.library.find_many()
         
         mapping = {}
@@ -275,6 +299,10 @@ class LocationService:
         """
         if "default_building" in self._cache:
             return self._cache["default_building"]
+        
+        # Ensure database is connected
+        if not self._client.is_connected():
+            await self._client.connect()
         
         # Get main campus
         main_campus = await self._client.campus.find_first(
@@ -306,6 +334,10 @@ class LocationService:
         """
         if "campus_info" in self._cache:
             return self._cache["campus_info"]
+        
+        # Ensure database is connected
+        if not self._client.is_connected():
+            await self._client.connect()
         
         campuses = await self._client.campus.find_many(
             include={
@@ -340,6 +372,10 @@ class LocationService:
             library_name = "king"
         
         search_name = library_name.lower().strip()
+        
+        # Ensure database is connected
+        if not self._client.is_connected():
+            await self._client.connect()
         
         # Direct DB query - search by short name or display name
         library = await self._client.library.find_first(
@@ -393,6 +429,10 @@ class LocationService:
         cache_key = f"website:{library_name.lower()}"
         if cache_key in self._cache:
             return self._cache[cache_key]
+        
+        # Ensure database is connected
+        if not self._client.is_connected():
+            await self._client.connect()
         
         # First check if it's a space (Makerspace, Special Collections)
         space = await self._client.libraryspace.find_first(

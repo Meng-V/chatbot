@@ -24,7 +24,9 @@ dependencies = [
   "python-dateutil",
   "pytz",
   "holidays",
-  "dateparser"
+  "dateparser",
+  "aiohttp",
+  "beautifulsoup4"
 ]
 
 [tool.pyright]

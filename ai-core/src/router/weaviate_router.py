@@ -29,7 +29,10 @@ class WeaviateRouter:
         """Initialize Weaviate router"""
         self.client = None
         self.collection_name = "AgentPrototypes"
-        self.embeddings = OpenAIEmbeddings(api_key=os.getenv("OPENAI_API_KEY", ""))
+        self.embeddings = OpenAIEmbeddings(
+            model="text-embedding-3-large",
+            api_key=os.getenv("OPENAI_API_KEY", "")
+        )
     
     def _connect(self):
         """Connect to Weaviate if not already connected"""
@@ -145,7 +148,7 @@ class WeaviateRouter:
             self.client.collections.create(
                 name=self.collection_name,
                 description="High-quality prototypes for agent routing (8-12 per agent)",
-                vectorizer_config=wvc.config.Configure.Vectorizer.none(),
+                vector_config=wvc.config.Configure.Vectors.self_provided(),
                 properties=[
                     wvc.config.Property(
                         name="agent_id",

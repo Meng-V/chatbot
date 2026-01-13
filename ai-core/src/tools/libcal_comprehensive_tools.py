@@ -624,6 +624,9 @@ class LibCalWeekHoursTool(Tool):
             location_service = get_location_service()
             location_id = await location_service.get_location_id(building)
             
+            if log_callback:
+                log_callback(f"🔍 [LibCal Week Hours Tool] Retrieved location_id: '{location_id}' for building: '{building}'")
+            
             if not location_id:
                 # Fallback to default (King Library)
                 location_id = "8113"
@@ -687,47 +690,28 @@ class LibCalWeekHoursTool(Tool):
                     hours_text += f"• **{day_name} ({date_str})**: {hours_str}\n"
                 else:
                     hours_text += f"• **{day_name} ({date_str})**: Closed\n"
-                location = data[0]
-                dates = location.get("dates", {})
-                location_name = location.get('name', building.title())
                 
-                hours_text = f"**{location_name} Hours (Week of {from_date}):**\n\n"
-                
-                day_names = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
-                current_date = monday
-                
-                for day_name in day_names:
-                    date_str = current_date.strftime("%Y-%m-%d")
-                    day_data = dates.get(date_str)
-                    
-                    if day_data and day_data.get("hours"):
-                        hours_list = day_data["hours"]
-                        hours_str = " - ".join([f"{h['from']} to {h['to']}" for h in hours_list])
-                        hours_text += f"• **{day_name} ({date_str})**: {hours_str}\n"
-                    else:
-                        hours_text += f"• **{day_name} ({date_str})**: Closed\n"
-                    
-                    current_date += timedelta(days=1)
-                
-                # Add website URL for Makerspace and Special Collections
-                if building.lower() in ["makerspace", "maker space", "special collections", "special collection", "archives"]:
-                    hours_text += "\n"
-                    try:
-                        space_name = "makerspace" if "maker" in building.lower() else "special collections"
-                        website = await location_service.get_library_website(space_name)
-                        hours_text += f"🌐 **Website**: {website}\n"
-                    except Exception as e:
-                        if log_callback:
-                            log_callback(f"⚠️ [LibCal Week Hours Tool] Could not fetch website: {str(e)}")
-                
-                if log_callback:
-                    log_callback(f"✅ [LibCal Week Hours Tool] Weekly hours retrieved for {location_name}")
-                
-                return {
-                    "tool": self.name,
-                    "success": True,
-                    "text": hours_text
-                }
+                current_date += timedelta(days=1)
+            
+            # Add website URL for Makerspace and Special Collections
+            if building.lower() in ["makerspace", "maker space", "special collections", "special collection", "archives"]:
+                hours_text += "\n"
+                try:
+                    space_name = "makerspace" if "maker" in building.lower() else "special collections"
+                    website = await location_service.get_library_website(space_name)
+                    hours_text += f"🌐 **Website**: {website}\n"
+                except Exception as e:
+                    if log_callback:
+                        log_callback(f"⚠️ [LibCal Week Hours Tool] Could not fetch website: {str(e)}")
+            
+            if log_callback:
+                log_callback(f"✅ [LibCal Week Hours Tool] Weekly hours retrieved for {location_name}")
+            
+            return {
+                "tool": self.name,
+                "success": True,
+                "text": hours_text
+            }
         except Exception as e:
             if log_callback:
                 log_callback(f"❌ [LibCal Week Hours Tool] Error: {str(e)}")
