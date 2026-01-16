@@ -7,7 +7,7 @@ class AgentState(MessagesState):
     user_message: str
     conversation_id: Optional[str] = None  # Conversation ID for tracking
     classified_intent: Optional[str] = None
-    selected_agents: List[str] = []
+    selected_agents: List[str] = []  # Legacy field, kept for compatibility
     agent_responses: Dict[str, Any] = {}
     final_answer: str = ""
     needs_human: bool = False
@@ -21,8 +21,18 @@ class AgentState(MessagesState):
     processed_query: Optional[str] = None  # Translated/simplified query for system
     query_understanding: Optional[Dict[str, Any]] = None  # Full understanding result
     needs_clarification: bool = False  # Flag to request user clarification
-    clarifying_question: Optional[str] = None  # Question to ask user if ambiguous
+    clarifying_question: Optional[str] = None  # Question to ask user if ambiguous (legacy)
     query_type_hint: Optional[str] = None  # Hint for routing from understanding layer
+    
+    # NEW: Standardized routing contract fields (Intent-based routing)
+    normalized_intent: Optional[Any] = None  # NormalizedIntent object from intent normalization layer
+    category: Optional[str] = None  # Category from category classifier
+    category_confidence: Optional[float] = None  # Confidence score from category classifier
+    primary_agent_id: Optional[str] = None  # Primary agent to execute (e.g., "libcal_hours", "subject_librarian")
+    secondary_agent_ids: List[str] = []  # Optional secondary agents for multi-agent queries
+    clarification: Optional[Dict[str, Any]] = None  # Structured clarification data {"question": str, "options": [...]}
+    classification_confidence: Optional[float] = None  # Confidence score from classifier (legacy)
+    classification_result: Optional[Dict[str, Any]] = None  # Full classification result (legacy)
     
     # Special handling flags
     _library_address_query: bool = False  # Flag for address query handling

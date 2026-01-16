@@ -1,0 +1,31 @@
+question,expected_primary_agent_id,notes,category
+Can I borrow a laptop?,equipment_checkout,Equipment checkout,library_equipment_checkout
+Do you have chargers available?,equipment_checkout,Equipment checkout,library_equipment_checkout
+My laptop won't turn on,out_of_scope,Tech support - out of scope,out_of_scope_tech_support
+Computer is broken,out_of_scope,Tech support - out of scope,out_of_scope_tech_support
+What time does King Library close today?,libcal_hours,Library hours,library_hours_rooms
+When is the library open?,libcal_hours,Library hours,library_hours_rooms
+Book a study room for 2 hours,libcal_hours,Room booking,library_hours_rooms
+Reserve a room tomorrow,libcal_hours,Room reservation,library_hours_rooms
+Who is the biology librarian?,subject_librarian,Subject librarian lookup,subject_librarian_guides
+Find the chemistry librarian,subject_librarian,Subject librarian lookup,subject_librarian_guides
+What is the printing policy?,policy_search,Policy search,library_policies_services
+How do I renew books?,policy_search,Policy search,library_policies_services
+Connect me to a librarian,libchat_handoff,Human handoff,human_librarian_request
+I need to talk to someone,libchat_handoff,Human handoff,human_librarian_request
+Help me with my homework,out_of_scope,Homework - out of scope,out_of_scope_academics
+Where is the dining hall?,out_of_scope,Campus life - dining,out_of_scope_campus_life
+Dining hall hours,out_of_scope,Campus life - dining hours,out_of_scope_campus_life
+Where can I eat?,out_of_scope,Campus life - food,out_of_scope_campus_life
+Gym hours,out_of_scope,Campus life - rec center,out_of_scope_campus_life
+When does the rec center close?,out_of_scope,Campus life - rec center,out_of_scope_campus_life
+Bookstore hours,out_of_scope,Campus life - bookstore,out_of_scope_campus_life
+Where is the student center?,out_of_scope,Campus life - location,out_of_scope_campus_life
+How much is tuition?,out_of_scope,Financial - tuition,out_of_scope_financial
+Where can I park?,out_of_scope,Campus life - parking,out_of_scope_campus_life
+Can I get Adobe?,equipment_checkout,Software/equipment,library_equipment_checkout
+Does the library have cameras?,equipment_checkout,Equipment checkout,library_equipment_checkout
+I need a computer,equipment_checkout,Equipment checkout,library_equipment_checkout
+Library hours,libcal_hours,Library hours,library_hours_rooms
+Subject librarian for psychology,subject_librarian,Subject librarian,subject_librarian_guides
+Talk to a librarian,libchat_handoff,Human handoff,human_librarian_request

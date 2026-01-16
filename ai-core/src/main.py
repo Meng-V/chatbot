@@ -16,8 +16,6 @@ from src.utils.logging_config import setup_logging
 from contextlib import asynccontextmanager
 
 from src.graph.orchestrator import library_graph
-# from src.graph.hybrid_router import route_query
-from src.graph.hybrid_router_rag import route_query_rag as route_query
 from src.state import AgentState
 from src.utils.logger import AgentLogger
 from src.memory.conversation_store import (
@@ -179,18 +177,24 @@ async def ask_http(payload: dict):
         # Get conversation history for context
         history = await get_conversation_history(conversation_id, limit=10)
         
-        # Use hybrid router (smart selection between function calling and LangGraph)
+        # Call LangGraph workflow directly (production routing path)
         try:
-            result = await route_query(message, logger, history, conversation_id)
-        except Exception as router_error:
-            logger.log(f"❌ [API] Router error: {str(router_error)}")
+            result = await library_graph.ainvoke({
+                "user_message": message,
+                "messages": [],
+                "conversation_history": history,
+                "conversation_id": conversation_id,
+                "_logger": logger
+            })
+        except Exception as graph_error:
+            logger.log(f"❌ [API] LangGraph error: {str(graph_error)}")
             import traceback
             logger.log(f"❌ [API] Traceback: {traceback.format_exc()}")
             result = None
         
         # Safety check for None result
         if result is None:
-            logger.log("⚠️ [API] Router returned None, using fallback response")
+            logger.log("⚠️ [API] LangGraph returned None, using fallback response")
             result = {
                 "final_answer": "I encountered an error. Please try again or contact a librarian.",
                 "selected_agents": [],
@@ -311,12 +315,18 @@ async def message(sid, data):
             "history_count": len(history)
         })
         
-        # Use hybrid router (smart selection between function calling and LangGraph)
-        result = await route_query(text_input, logger, history, conversation_id)
+        # Call LangGraph workflow directly (production routing path)
+        result = await library_graph.ainvoke({
+            "user_message": text_input,
+            "messages": [],
+            "conversation_history": history,
+            "conversation_id": conversation_id,
+            "_logger": logger
+        })
         
         # Safety check for None result
         if result is None:
-            logger.log("⚠️ [Socket.IO] Router returned None, using fallback response")
+            logger.log("⚠️ [Socket.IO] LangGraph returned None, using fallback response")
             result = {
                 "final_answer": "I encountered an issue processing your request. Please try again or contact a librarian.",
                 "selected_agents": [],
@@ -445,6 +455,7 @@ async def userFeedback(sid, data):
 async def clarificationChoice(sid, data):
     """
     Handle user's clarification choice selection.
+    Uses unified library_graph.ainvoke() path for consistency.
     Expected data: {
         "choiceId": str,
         "originalQuestion": str,
@@ -453,11 +464,8 @@ async def clarificationChoice(sid, data):
     }
     """
     try:
-        from src.classification.clarification_handler import handle_clarification_choice, reclassify_with_additional_context
-        
         choice_id = data.get("choiceId")
         original_question = data.get("originalQuestion")
-        clarification_data = data.get("clarificationData")
         conversation_id = data.get("conversationId") or client_conversations.get(sid)
         
         print(f"🎯 [Clarification] User {sid} selected choice: {choice_id}")
@@ -470,71 +478,85 @@ async def clarificationChoice(sid, data):
             "originalQuestion": original_question
         })
         
-        # Handle the choice selection
-        result = await handle_clarification_choice(
-            choice_id=choice_id,
-            original_question=original_question,
-            clarification_data=clarification_data,
-            logger=logger
-        )
+        # Get conversation history
+        history = await get_conversation_history(conversation_id, limit=10)
         
-        if result.get("needs_more_info"):
+        # Check if user wants to talk to librarian
+        if choice_id in ["libchat", "librarian", "human_help"]:
+            logger.log("👤 [Clarification Choice] User chose to talk to librarian")
+            
+            # Save user's choice as a message
+            await add_message(conversation_id, "user", "I'd like to talk to a librarian")
+            
+            # Route directly to libchat_handoff by setting a clear message
+            result = await library_graph.ainvoke({
+                "user_message": "Connect me to a librarian",
+                "messages": [],
+                "conversation_history": history,
+                "conversation_id": conversation_id,
+                "_logger": logger
+            })
+        elif choice_id == "none":
             # User selected "None of the above" - ask for more details
             await sio.emit("requestMoreDetails", {
-                "message": result.get("response_message"),
+                "message": "Could you provide more details about what you're looking for? This will help me understand your question better.",
                 "originalQuestion": original_question
             }, to=sid)
             
             logger.log("💬 [Clarification Choice] Requesting more details from user")
+            return
         else:
-            # User selected a specific category - continue processing
-            confirmed_category = result.get("confirmed_category")
+            # User selected a specific category - re-run with context
+            logger.log(f"✅ [Clarification Choice] User selected option: {choice_id}")
             
-            logger.log(f"✅ [Clarification Choice] Category confirmed: {confirmed_category}")
+            # Save user's clarification choice as a message
+            await add_message(conversation_id, "user", f"Regarding: {original_question} (selected: {choice_id})")
             
-            # Get conversation history
-            history = await get_conversation_history(conversation_id, limit=10)
+            # Re-run library_graph with augmented context
+            enhanced_question = f"{original_question} [User clarified: {choice_id}]"
             
-            # Re-route with confirmed category
-            # Create a modified question context that includes the confirmed category
-            enhanced_question = f"{original_question} [User confirmed: {confirmed_category}]"
-            
-            # Process the question with the confirmed category
-            final_result = await route_query(enhanced_question, logger, history, conversation_id)
-            
-            if final_result is None:
-                final_result = {
-                    "final_answer": "I encountered an issue. Please try again or contact a librarian.",
-                    "selected_agents": [],
-                    "classified_intent": "error"
-                }
-            
-            final_answer = final_result.get("final_answer", "")
-            final_answer = clean_response_for_frontend(final_answer)
-            
-            # Save assistant message
-            message_id = await add_message(conversation_id, "assistant", final_answer)
-            
-            # Update tools used
-            agents_used = final_result.get("selected_agents", [])
-            if "tool_used" in final_result:
-                agents_used = [final_result["tool_used"]]
-            await update_conversation_tools(conversation_id, agents_used)
-            
-            # Send response
-            response_data = json_serializable({
-                "messageId": message_id,
-                "message": final_answer,
-                "conversationId": conversation_id,
-                "intent": final_result.get("classified_intent"),
-                "agents_used": agents_used,
-                "needs_human": final_result.get("needs_human", False),
-                "clarification_resolved": True
+            result = await library_graph.ainvoke({
+                "user_message": enhanced_question,
+                "messages": [],
+                "conversation_history": history,
+                "conversation_id": conversation_id,
+                "_logger": logger
             })
-            
-            await sio.emit("message", response_data, to=sid)
-            
-            logger.log("✅ [Clarification Choice] Response sent successfully")
+        
+        # Process result
+        if result is None:
+            result = {
+                "final_answer": "I encountered an issue. Please try again or contact a librarian.",
+                "selected_agents": [],
+                "classified_intent": "error"
+            }
+        
+        final_answer = result.get("final_answer", "")
+        final_answer = clean_response_for_frontend(final_answer)
+        
+        # Save assistant message
+        message_id = await add_message(conversation_id, "assistant", final_answer)
+        
+        # Update tools used
+        agents_used = result.get("selected_agents", [])
+        if "tool_used" in result:
+            agents_used = [result["tool_used"]]
+        await update_conversation_tools(conversation_id, agents_used)
+        
+        # Send response
+        response_data = json_serializable({
+            "messageId": message_id,
+            "message": final_answer,
+            "conversationId": conversation_id,
+            "intent": result.get("classified_intent"),
+            "agents_used": agents_used,
+            "needs_human": result.get("needs_human", False),
+            "clarification_resolved": True
+        })
+        
+        await sio.emit("message", response_data, to=sid)
+        
+        logger.log("✅ [Clarification Choice] Response sent successfully")
         
     except Exception as e:
         print(f"❌ [Clarification Choice] Error: {str(e)}")
@@ -551,6 +573,7 @@ async def clarificationChoice(sid, data):
 async def provideMoreDetails(sid, data):
     """
     Handle when user provides additional details after selecting "None of the above".
+    Uses unified library_graph.ainvoke() path for consistency.
     Expected data: {
         "originalQuestion": str,
         "additionalDetails": str,
@@ -558,8 +581,6 @@ async def provideMoreDetails(sid, data):
     }
     """
     try:
-        from src.classification.clarification_handler import reclassify_with_additional_context
-        
         original_question = data.get("originalQuestion")
         additional_details = data.get("additionalDetails")
         conversation_id = data.get("conversationId") or client_conversations.get(sid)
@@ -568,7 +589,7 @@ async def provideMoreDetails(sid, data):
         
         # Create logger
         logger = AgentLogger()
-        logger.log("💬 [More Details] Reclassifying with additional context", {
+        logger.log("💬 [More Details] Processing with additional context", {
             "sid": sid,
             "originalQuestion": original_question,
             "additionalDetails": additional_details
@@ -580,35 +601,35 @@ async def provideMoreDetails(sid, data):
         # Save user's additional details as a message
         await add_message(conversation_id, "user", additional_details)
         
-        # Reclassify with additional context
-        classification_result = await reclassify_with_additional_context(
-            original_question=original_question,
-            additional_details=additional_details,
-            conversation_history=history,
-            logger=logger
-        )
+        # Combine original question with additional details
+        combined_question = f"{original_question}. {additional_details}"
         
-        # Process with reclassified intent
-        enhanced_question = f"{original_question}. {additional_details}"
-        final_result = await route_query(enhanced_question, logger, history, conversation_id)
+        # Re-run library_graph with combined question and updated history
+        result = await library_graph.ainvoke({
+            "user_message": combined_question,
+            "messages": [],
+            "conversation_history": history,
+            "conversation_id": conversation_id,
+            "_logger": logger
+        })
         
-        if final_result is None:
-            final_result = {
+        if result is None:
+            result = {
                 "final_answer": "I encountered an issue. Please try again or contact a librarian.",
                 "selected_agents": [],
                 "classified_intent": "error"
             }
         
-        final_answer = final_result.get("final_answer", "")
+        final_answer = result.get("final_answer", "")
         final_answer = clean_response_for_frontend(final_answer)
         
         # Save assistant message
         message_id = await add_message(conversation_id, "assistant", final_answer)
         
         # Update tools used
-        agents_used = final_result.get("selected_agents", [])
-        if "tool_used" in final_result:
-            agents_used = [final_result["tool_used"]]
+        agents_used = result.get("selected_agents", [])
+        if "tool_used" in result:
+            agents_used = [result["tool_used"]]
         await update_conversation_tools(conversation_id, agents_used)
         
         # Send response
@@ -616,15 +637,15 @@ async def provideMoreDetails(sid, data):
             "messageId": message_id,
             "message": final_answer,
             "conversationId": conversation_id,
-            "intent": final_result.get("classified_intent"),
+            "intent": result.get("classified_intent"),
             "agents_used": agents_used,
-            "needs_human": final_result.get("needs_human", False),
+            "needs_human": result.get("needs_human", False),
             "reclassified": True
         })
         
         await sio.emit("message", response_data, to=sid)
         
-        logger.log("✅ [More Details] Reclassified and responded successfully")
+        logger.log("✅ [More Details] Responded successfully")
         
     except Exception as e:
         print(f"❌ [More Details] Error: {str(e)}")

@@ -1,36 +1,104 @@
 """
-RAG-Based Router Node
+Category Classifier (Pure RAG-based)
 
-Replaces pattern-based classification with semantic similarity search.
-Uses the RAG classifier to determine question category and routing.
+This module ONLY classifies NormalizedIntent into categories.
+It does NOT:
+- Choose agents (that's done by category_to_agent_map)
+- Answer questions (that's done by agents)
+- Handle clarifications (that's done by orchestrator)
+
+It ONLY:
+- Takes NormalizedIntent
+- Uses RAG embeddings against category_examples
+- Returns CategoryClassification
 """
 
 from typing import Dict, Any
 from src.state import AgentState
+from src.models.intent import NormalizedIntent, CategoryClassification
 from src.classification.rag_classifier import classify_with_rag
-from src.config.scope_definition import get_out_of_scope_response
+
+# Confidence thresholds
+CONFIDENCE_THRESHOLD_IN_SCOPE = 0.65  # For in-scope categories
+CONFIDENCE_THRESHOLD_OUT_OF_SCOPE = 0.45  # For out-of-scope categories (lower threshold)
+
+
+async def classify_category(
+    normalized_intent: NormalizedIntent,
+    logger=None
+) -> CategoryClassification:
+    """
+    Pure category classification function.
+    
+    Takes NormalizedIntent and returns CategoryClassification.
+    Does NOT choose agents or answer questions.
+    
+    Args:
+        normalized_intent: Normalized intent from intent normalization layer
+        logger: Optional AgentLogger instance
+        
+    Returns:
+        CategoryClassification: Category classification result
+    """
+    if logger and hasattr(logger, 'log'):
+        logger.log(f"🎯 [Category Classifier] Classifying intent: {normalized_intent.intent_summary}")
+    
+    # Use the intent summary for classification
+    classification = await classify_with_rag(
+        user_question=normalized_intent.intent_summary,
+        conversation_history=[],  # Intent already has context
+        logger=logger
+    )
+    
+    category = classification["category"]
+    confidence = float(classification["confidence"])
+    is_out_of_scope = category.startswith("out_of_scope_")
+    
+    # Determine if clarification is needed based on differentiated thresholds
+    threshold = CONFIDENCE_THRESHOLD_OUT_OF_SCOPE if is_out_of_scope else CONFIDENCE_THRESHOLD_IN_SCOPE
+    
+    needs_clarification = False
+    clarification_reason = None
+    
+    if normalized_intent.ambiguity:
+        # Intent normalizer flagged ambiguity
+        needs_clarification = True
+        clarification_reason = normalized_intent.ambiguity_reason
+    elif confidence < threshold:
+        # Low confidence for this category type
+        needs_clarification = True
+        clarification_reason = f"Low confidence ({confidence:.2f} < {threshold:.2f}) for category: {category}"
+    
+    if logger and hasattr(logger, 'log'):
+        logger.log(f"✅ [Category Classifier] Category: {category}, Confidence: {confidence:.2f}, Needs clarification: {needs_clarification}")
+    
+    return CategoryClassification(
+        category=category,
+        confidence=confidence,
+        is_out_of_scope=is_out_of_scope,
+        needs_clarification=needs_clarification,
+        clarification_reason=clarification_reason
+    )
 
 
 async def rag_router_node(state: AgentState) -> AgentState:
     """
-    Route questions using RAG-based semantic classification.
+    DEPRECATED: Legacy router node for backward compatibility.
     
-    This replaces the old pattern-based router with a more intelligent
-    system that understands context and nuance.
+    New code should use the two-step process:
+    1. normalize_intent() -> NormalizedIntent
+    2. classify_category() -> CategoryClassification
     
-    Args:
-        state: Current agent state
-        
-    Returns:
-        Updated state with classification results
+    This node is kept for gradual migration only.
     """
     user_msg = state.get("processed_query") or state["user_message"]
     logger = state.get("_logger")
     history = state.get("conversation_history", [])
     
     if logger:
-        logger.log("🎯 [RAG Router] Starting semantic classification")
+        logger.log("⚠️ [RAG Router] Using legacy router node - should migrate to two-step process")
     
+    # Run RAG classification
     classification = await classify_with_rag(
         user_question=user_msg,
         conversation_history=history,
@@ -38,95 +106,101 @@ async def rag_router_node(state: AgentState) -> AgentState:
     )
     
     category = classification["category"]
-    confidence = classification["confidence"]
-    agent = classification["agent"]
+    confidence = float(classification["confidence"])
     needs_clarification = classification.get("needs_clarification", False)
     
-    if logger:
-        logger.log(f"✅ [RAG Router] Category: {category} (confidence: {confidence:.2f})")
-    
-    if needs_clarification:
-        if logger:
-            logger.log(f"⚠️ [RAG Router] Ambiguous query detected, requesting clarification")
-        
-        state["needs_clarification"] = True
-        state["clarifying_question"] = classification.get("clarification_question", "")
-        state["classification_result"] = classification
-        state["classified_intent"] = category
-        state["selected_agents"] = []
-        
-        clarification_response = f"""I want to make sure I help you with the right thing! 
-
-{classification.get('clarification_question', '')}
-
-Please let me know which one applies to your situation."""
-        
-        state["final_answer"] = clarification_response
-        state["needs_human"] = False
-        
-        return state
-    
+    # Store classification metadata
     state["classified_intent"] = category
     state["classification_confidence"] = confidence
     state["classification_result"] = classification
     
-    if category.startswith("out_of_scope_"):
+    # DIFFERENTIATED THRESHOLD POLICY
+    is_out_of_scope_category = category.startswith("out_of_scope_")
+    threshold = CONFIDENCE_THRESHOLD_OUT_OF_SCOPE if is_out_of_scope_category else CONFIDENCE_THRESHOLD_IN_SCOPE
+    
+    if is_out_of_scope_category and confidence >= CONFIDENCE_THRESHOLD_OUT_OF_SCOPE:
+        # Out-of-scope with moderate confidence - route directly
         if logger:
-            logger.log(f"🚫 [RAG Router] Out-of-scope question: {category}")
-        
-        # Extract subcategory from "out_of_scope_X" format
-        # Map RAG categories to scope_definition categories
-        category_mapping = {
-            "out_of_scope_tech_support": "technical_support",
-            "out_of_scope_factual_trivia": "university_general",
-            "out_of_scope_inappropriate": "university_general",
-            "out_of_scope_nonsensical": "university_general",
-        }
-        
-        topic_category = category_mapping.get(category, "university_general")
-        
+            logger.log(f"🚫 [RAG Router] Out-of-scope with moderate confidence ({confidence:.2f}) - routing directly")
+    elif needs_clarification or confidence < threshold:
         if logger:
-            logger.log(f"📋 [RAG Router] Mapping {category} → {topic_category}")
+            reason = "RAG classifier flagged ambiguity" if needs_clarification else f"Low confidence ({confidence:.2f} < {CONFIDENCE_THRESHOLD})"
+            logger.log(f"⚠️ [RAG Router] Triggering clarification: {reason}")
         
-        out_of_scope_response = get_out_of_scope_response(topic_category)
-        state["final_answer"] = out_of_scope_response
-        state["needs_human"] = False
-        state["selected_agents"] = []
+        # Build clarification payload - NORMALIZE SCHEMA
+        raw_clarification = classification.get("clarification_choices", {})
+        
+        # Normalize: convert 'choices' to 'options' if present
+        if raw_clarification and raw_clarification.get("choices"):
+            clarification_data = {
+                "question": raw_clarification.get("question", "I want to make sure I understand your question correctly."),
+                "options": raw_clarification["choices"]  # Convert 'choices' to 'options'
+            }
+        elif raw_clarification and raw_clarification.get("options"):
+            # Already in correct format
+            clarification_data = raw_clarification
+        else:
+            # No structured clarification from RAG, create a simple one
+            clarification_data = {
+                "question": "I want to make sure I understand your question correctly. Could you provide more details about what you're looking for?",
+                "options": [
+                    {"id": "libchat", "label": "Talk to a librarian"},
+                    {"id": "none", "label": "Let me rephrase my question"}
+                ]
+            }
+        
+        # Set clarification state (do NOT set final_answer here)
+        state["needs_clarification"] = True
+        state["clarification"] = clarification_data
+        state["primary_agent_id"] = None
+        state["secondary_agent_ids"] = []
         
         return state
     
-    intent_to_agent_mapping = {
-        "library_equipment_checkout": ("policy_or_service", ["google_site"]),
-        "library_hours_rooms": ("booking_or_hours", ["libcal"]),
-        "subject_librarian_guides": ("subject_librarian", ["subject_librarian"]),
-        "research_help_handoff": ("human_help", ["libchat"]),
-        "library_policies_services": ("policy_or_service", ["google_site"]),
-        "ticket_submission_request": ("ticket_request", ["ticket_handler"]),
-        "human_librarian_request": ("human_help", ["libchat"]),
-    }
+    # Map category to agent_id
+    primary_agent_id = CATEGORY_TO_AGENT.get(category)
     
-    # Get intent and agents, fallback to defaults
-    if category in intent_to_agent_mapping:
-        mapped_intent, agents_list = intent_to_agent_mapping[category]
-    else:
-        mapped_intent = agent
-        agents_list = ["google_site"]  # Default agent
+    # Log category trace for evaluation
+    if logger:
+        logger.log(f"📊 [RAG Router] Category trace", {
+            "processed_query": user_msg,
+            "category": category,
+            "confidence": confidence,
+            "primary_agent_id": primary_agent_id,
+            "is_out_of_scope": category.startswith("out_of_scope_")
+        })
+    
+    # Handle unknown categories
+    if not primary_agent_id:
+        if logger:
+            logger.log(f"⚠️ [RAG Router] Unknown category '{category}' - triggering clarification")
+        
+        state["needs_clarification"] = True
+        state["clarification"] = {
+            "question": "I'm not sure how to help with that. Would you like to talk to a librarian?",
+            "options": [
+                {"id": "libchat", "label": "Yes, connect me to a librarian"},
+                {"id": "none", "label": "No, let me rephrase"}
+            ]
+        }
+        state["primary_agent_id"] = None
+        state["secondary_agent_ids"] = []
+        
+        return state
+    
+    # Set routing decision
+    state["primary_agent_id"] = primary_agent_id
+    state["secondary_agent_ids"] = []  # Can be extended for multi-agent queries
+    state["needs_clarification"] = False
+    
+    # CRITICAL: Set out_of_scope flag for correct termination path
+    if primary_agent_id == "out_of_scope":
+        state["out_of_scope"] = True
+        state["rag_category"] = category
+        if logger:
+            logger.log(f"🚫 [RAG Router] Out-of-scope detected: {category}")
     
     if logger:
-        logger.log(f"🎯 [RAG Router] Routing to: {mapped_intent} with agents: {agents_list}")
-    
-    state["classified_intent"] = mapped_intent
-    state["selected_agents"] = agents_list
-    state["rag_category"] = category
+        logger.log(f"✅ [RAG Router] Routed to primary_agent_id: {primary_agent_id}")
     
     return state
-
-
-def should_use_rag_router(state: AgentState) -> bool:
-    """
-    Determine if we should use RAG-based routing.
-    
-    For now, this is always True, but we keep this function
-    to allow for A/B testing or gradual rollout.
-    """
-    return True

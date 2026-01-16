@@ -216,16 +216,38 @@ async def clarification_node(state: AgentState) -> AgentState:
     """
     Handle ambiguous queries by asking for clarification.
     
-    This node generates a friendly response asking the user for more details.
+    Prioritizes clarifying_question from query understanding, then falls back
+    to structured clarification dict from router.
     """
     logger = state.get("_logger") or AgentLogger()
     
+    # PRIORITY 1: Check for clarifying_question from query understanding
     clarifying_q = state.get("clarifying_question")
     if clarifying_q:
-        logger.log(f"❓ [Clarification] Asking user: {clarifying_q}")
+        logger.log(f"❓ [Clarification] Using query understanding clarification")
         state["final_answer"] = clarifying_q
+        state["_logger"] = logger
+        return state
+    
+    # PRIORITY 2: Get clarification data from router
+    clarification_data = state.get("clarification", {})
+    
+    if clarification_data and clarification_data.get("question"):
+        question = clarification_data["question"]
+        options = clarification_data.get("options", [])
+        
+        # Format options as a numbered list
+        if options:
+            options_text = "\n".join([f"{i+1}. {opt['label']}" for i, opt in enumerate(options)])
+            final_response = f"{question}\n\n{options_text}"
+        else:
+            final_response = question
+        
+        logger.log(f"❓ [Clarification] Using router clarification with {len(options)} options")
+        state["final_answer"] = final_response
     else:
-        # Fallback
+        # Fallback if no clarification data
+        logger.log("⚠️ [Clarification] No clarification data, using fallback")
         state["final_answer"] = (
             "I want to make sure I understand your question correctly. "
             "Could you provide a bit more detail about what you're looking for?"
@@ -236,11 +258,16 @@ async def clarification_node(state: AgentState) -> AgentState:
 
 
 # ============================================================================
-# INTENT CLASSIFICATION NODE
+# DEPRECATED: NOT USED IN GRAPH
+# ============================================================================
+# This classify_intent_node is DEAD CODE and is NOT connected to the production graph.
+# The production system uses rag_router_node (from src/graph/rag_router.py) for all routing.
+# This code is preserved for reference only and should NOT be imported or called.
+# See create_library_graph() below - it only uses: rag_router, not classify_intent.
 # ============================================================================
 
 async def classify_intent_node(state: AgentState) -> AgentState:
-    """Meta Router: classify user intent using LLM."""
+    """DEPRECATED: This node is not used. Use rag_router_node instead."""
     import re
     
     # Use processed query if available, otherwise original
@@ -644,67 +671,101 @@ google_site_agent = GoogleSiteComprehensiveAgent()
 enhanced_subject_agent = EnhancedSubjectLibrarianAgent()
 
 async def execute_agents_node(state: AgentState) -> AgentState:
-    """Execute selected agents in parallel."""
-    agents = state["selected_agents"]
+    """Execute agents based on primary_agent_id and optional secondary_agent_ids."""
+    primary_agent_id = state.get("primary_agent_id")
+    secondary_agent_ids = state.get("secondary_agent_ids", [])
     logger = state.get("_logger") or AgentLogger()
     results = {}
     
-    # Handle greeting or pre-answered queries (no agents to execute)
-    # CRITICAL: This includes out-of-scope responses set by RAG router
-    if not agents:
+    # Handle cases where no agent execution is needed
+    if not primary_agent_id:
         if state.get("final_answer"):
-            logger.log("✅ [Orchestrator] Query already answered (greeting/clarification/out-of-scope)")
+            logger.log("✅ [Execute Agents] Query already answered (no agent needed)")
+            state["agent_responses"] = {}
+            state["_logger"] = logger
+            return state
+        else:
+            logger.log("⚠️ [Execute Agents] No primary_agent_id and no final_answer")
             state["agent_responses"] = {}
             state["_logger"] = logger
             return state
     
-    logger.log(f"⚡ [Orchestrator] Executing {len(agents)} agent(s) in parallel")
+    # Build list of agents to execute
+    agents_to_execute = [primary_agent_id] + secondary_agent_ids
+    logger.log(f"⚡ [Execute Agents] Executing {len(agents_to_execute)} agent(s): {', '.join(agents_to_execute)}")
     
-    # Map agent names to agent instances
+    # Map agent IDs to agent instances/functions
     agent_map = {
-        "libcal": libcal_agent,
-        "libguide": libguide_agent,
-        "google_site": google_site_agent,
-        "subject_librarian": enhanced_subject_agent,  # Use enhanced agent
-        "libchat": libchat_handoff,
-        "ticket_handler": ticket_request_handler,  # Explicit ticket request handler
-        "transcript_rag": transcript_rag_query  # Correction pool only
+        # LibCal agents
+        "libcal_hours": libcal_agent,
+        "libcal_rooms": libcal_agent,
+        "libcal": libcal_agent,  # Legacy
+        
+        # Research & guides
+        "subject_librarian": enhanced_subject_agent,
+        "libguides": libguide_agent,
+        "libguide": libguide_agent,  # Legacy
+        
+        # Policy & search
+        "policy_search": google_site_agent,
+        "equipment_checkout": google_site_agent,  # Equipment checkout uses website search
+        "google_site": google_site_agent,  # Legacy
+        
+        # Human handoff
+        "libchat_handoff": libchat_handoff,
+        "libchat": libchat_handoff,  # Legacy
+        "ticket_handler": ticket_request_handler,
+        
+        # Special handlers
+        "out_of_scope": None,  # Handled in router, no execution needed
+        "transcript_rag": transcript_rag_query  # Correction pool
     }
     
     import asyncio
     import time
     tasks = []
     agent_start_times = {}
+    agents_with_executors = []  # Track which agents actually have executors
     
-    for agent_name in agents:
-        agent_or_func = agent_map.get(agent_name)
-        if agent_or_func:
-            # Record start time for tracking
-            agent_start_times[agent_name] = time.time()
-            
-            # Check if it's a multi-tool agent (has execute method) or legacy function
-            if hasattr(agent_or_func, 'execute'):
-                # Multi-tool agent - call execute
-                tasks.append(agent_or_func.execute(state["user_message"], log_callback=logger.log))
-            else:
-                # Legacy function-based agent
-                tasks.append(agent_or_func(state["user_message"], log_callback=logger.log))
+    for agent_id in agents_to_execute:
+        agent_or_func = agent_map.get(agent_id)
+        
+        # Skip agents that don't need execution (like out_of_scope)
+        if agent_or_func is None:
+            logger.log(f"⏭️ [Execute Agents] Skipping {agent_id} (no executor needed)")
+            continue
+        
+        # Record start time for tracking
+        agent_start_times[agent_id] = time.time()
+        agents_with_executors.append(agent_id)
+        
+        # Check if it's a multi-tool agent (has execute method) or legacy function
+        if hasattr(agent_or_func, 'execute'):
+            # Multi-tool agent - call execute
+            tasks.append(agent_or_func.execute(state["user_message"], log_callback=logger.log))
+        else:
+            # Legacy function-based agent
+            tasks.append(agent_or_func(state["user_message"], log_callback=logger.log))
     
-    responses = await asyncio.gather(*tasks, return_exceptions=True)
+    # Execute all agents in parallel
+    if tasks:
+        responses = await asyncio.gather(*tasks, return_exceptions=True)
+    else:
+        responses = []
     
     # Track tool executions
     tool_executions = state.get("tool_executions", [])
     
-    for agent_name, response in zip(agents, responses):
+    for agent_id, response in zip(agents_with_executors, responses):
         # Calculate execution time
-        execution_time = int((time.time() - agent_start_times.get(agent_name, time.time())) * 1000)  # ms
+        execution_time = int((time.time() - agent_start_times.get(agent_id, time.time())) * 1000)  # ms
         
         if isinstance(response, Exception):
-            results[agent_name] = {"source": agent_name, "success": False, "error": str(response)}
+            results[agent_id] = {"source": agent_id, "success": False, "error": str(response)}
             # Log failed execution
             tool_executions.append({
-                "agent_name": agent_name,
-                "tool_name": "query" if agent_name != "transcript_rag" else "rag_search",
+                "agent_name": agent_id,
+                "tool_name": "query" if agent_id != "transcript_rag" else "rag_search",
                 "parameters": {"query": state["user_message"]},
                 "success": False,
                 "execution_time": execution_time
@@ -712,13 +773,13 @@ async def execute_agents_node(state: AgentState) -> AgentState:
         else:
             # Ensure response has 'source' field for synthesizer
             if "source" not in response:
-                response["source"] = agent_name
-            results[agent_name] = response
+                response["source"] = agent_id
+            results[agent_id] = response
             if response.get("needs_human"):
                 state["needs_human"] = True
             
-            # 🎯 Track RAG usage specifically
-            if agent_name == "transcript_rag" and response.get("success"):
+            # Track RAG usage specifically
+            if agent_id == "transcript_rag" and response.get("success"):
                 logger.log("📊 [RAG Tracking] Logging RAG query to database")
                 tool_executions.append({
                     "agent_name": "transcript_rag",
@@ -734,6 +795,9 @@ async def execute_agents_node(state: AgentState) -> AgentState:
                     "success": True,
                     "execution_time": execution_time
                 })
+    
+    # Also populate selected_agents for backward compatibility
+    state["selected_agents"] = agents_with_executors
     
     state["agent_responses"] = results
     state["tool_executions"] = tool_executions
@@ -1570,36 +1634,173 @@ def should_end(state: AgentState) -> str:
     """Decide if we should end or continue."""
     return END
 
-# Build the graph
+# ============================================================================
+# INTENT-BASED ROUTING NODES (PRODUCTION - SINGLE PATH)
+# ============================================================================
+
+async def intent_normalization_node(state: AgentState) -> AgentState:
+    """
+    Step 1: Intent Normalization
+    
+    Translates raw user input into standardized NormalizedIntent.
+    This is the REQUIRED first step - no routing happens before this.
+    """
+    from src.graph.intent_normalizer import normalize_intent
+    
+    user_msg = state["user_message"]
+    history = state.get("conversation_history", [])
+    logger = state.get("_logger") or AgentLogger()
+    
+    logger.log("🎯 [Intent Normalization] Starting intent normalization")
+    
+    # Normalize intent (LLM-based, structured output)
+    normalized_intent = await normalize_intent(
+        user_message=user_msg,
+        conversation_history=history,
+        log_callback=logger.log
+    )
+    
+    # Store in state
+    state["normalized_intent"] = normalized_intent
+    state["processed_query"] = normalized_intent.intent_summary  # For backward compatibility
+    
+    # Check if intent normalizer flagged ambiguity
+    if normalized_intent.ambiguity:
+        state["needs_clarification"] = True
+        state["clarifying_question"] = normalized_intent.ambiguity_reason or "Could you provide more details?"
+        logger.log(f"⚠️ [Intent Normalization] Ambiguous intent detected: {normalized_intent.ambiguity_reason}")
+    else:
+        state["needs_clarification"] = False
+    
+    logger.log(f"✅ [Intent Normalization] Intent: {normalized_intent.intent_summary}")
+    state["_logger"] = logger
+    
+    return state
+
+
+async def category_classification_node(state: AgentState) -> AgentState:
+    """
+    Step 2: Category Classification
+    
+    Maps NormalizedIntent to category using RAG.
+    Does NOT choose agents - that's done by category_to_agent_map.
+    """
+    from src.graph.rag_router import classify_category
+    from src.classification.category_examples import category_to_agent_map
+    
+    normalized_intent = state.get("normalized_intent")
+    logger = state.get("_logger") or AgentLogger()
+    
+    if not normalized_intent:
+        logger.log("❌ [Category Classification] ERROR: No normalized_intent in state")
+        raise ValueError("normalized_intent is required but missing from state")
+    
+    logger.log("🎯 [Category Classification] Classifying category")
+    
+    # Classify category (RAG-based)
+    category_result = await classify_category(
+        normalized_intent=normalized_intent,
+        logger=logger
+    )
+    
+    # Store classification result
+    state["category"] = category_result.category
+    state["category_confidence"] = category_result.confidence
+    state["classified_intent"] = category_result.category  # For backward compatibility
+    state["classification_confidence"] = category_result.confidence
+    
+    # Check if clarification needed (from classifier)
+    if category_result.needs_clarification:
+        state["needs_clarification"] = True
+        state["clarifying_question"] = category_result.clarification_reason or "I'm not sure how to help with that."
+        logger.log(f"⚠️ [Category Classification] Clarification needed: {category_result.clarification_reason}")
+    
+    # Agent selection using SINGLE SOURCE OF TRUTH
+    if not state.get("needs_clarification"):
+        agent_map = category_to_agent_map()
+        primary_agent_id = agent_map.get(category_result.category)
+        
+        if not primary_agent_id:
+            logger.log(f"❌ [Category Classification] ERROR: Category '{category_result.category}' not in agent map")
+            raise ValueError(f"Category '{category_result.category}' has no agent mapping")
+        
+        state["primary_agent_id"] = primary_agent_id
+        state["secondary_agent_ids"] = []
+        
+        # Set out_of_scope flag if needed
+        if category_result.is_out_of_scope:
+            state["out_of_scope"] = True
+            state["rag_category"] = category_result.category
+        
+        logger.log(f"✅ [Category Classification] Category: {category_result.category}, Agent: {primary_agent_id}")
+    
+    state["_logger"] = logger
+    return state
+
+
+# ============================================================================
+# GRAPH BUILDER (SINGLE PATH ONLY)
+# ============================================================================
+
 def create_library_graph():
-    """Create the LangGraph orchestrator with Query Understanding Layer and RAG Router."""
+    """
+    Create the LangGraph orchestrator with SINGLE-PATH intent-based routing.
+    
+    MANDATORY FLOW:
+    1. normalize_intent (always)
+    2. classify_category (always)
+    3. clarify OR execute_agents (based on needs_clarification)
+    4. synthesize (if executed)
+    
+    NO OTHER ROUTING PATHS ALLOWED.
+    """
     workflow = StateGraph(AgentState)
     
-    # Add nodes - Query Understanding Layer is the entry point
-    workflow.add_node("understand_query", query_understanding_node)
+    # Add nodes - SINGLE PATH ONLY
+    workflow.add_node("normalize_intent", intent_normalization_node)
+    workflow.add_node("classify_category", category_classification_node)
     workflow.add_node("clarify", clarification_node)
-    workflow.add_node("classify_intent", rag_router_node)  # Using RAG router instead of pattern-based
     workflow.add_node("execute_agents", execute_agents_node)
     workflow.add_node("synthesize", synthesize_answer_node)
     
-    # Set entry point to Query Understanding Layer
-    workflow.set_entry_point("understand_query")
+    # Set entry point - MUST be intent normalization
+    workflow.set_entry_point("normalize_intent")
     
-    # Conditional edge: after understanding, either clarify or proceed to classification
+    # Step 1 → Step 2: Always go from intent normalization to category classification
+    # Check if clarification needed after intent normalization
+    def check_clarification_after_intent(state: AgentState) -> str:
+        if state.get("needs_clarification"):
+            return "clarify"
+        return "classify"
+    
     workflow.add_conditional_edges(
-        "understand_query",
-        should_skip_to_clarification,
+        "normalize_intent",
+        check_clarification_after_intent,
         {
-            "clarify": "clarify",      # Ambiguous query → ask for clarification
-            "classify": "classify_intent"  # Clear query → proceed to RAG classification
+            "clarify": "clarify",
+            "classify": "classify_category"
+        }
+    )
+    
+    # Step 2 → Execution: Check if clarification needed after classification
+    def check_clarification_after_classification(state: AgentState) -> str:
+        if state.get("needs_clarification"):
+            return "clarify"
+        return "execute"
+    
+    workflow.add_conditional_edges(
+        "classify_category",
+        check_clarification_after_classification,
+        {
+            "clarify": "clarify",
+            "execute": "execute_agents"
         }
     )
     
     # Clarification ends the flow (user needs to respond)
     workflow.add_edge("clarify", END)
     
-    # Normal flow: RAG classify → execute → synthesize → end
-    workflow.add_edge("classify_intent", "execute_agents")
+    # Normal flow: execute → synthesize → end
     workflow.add_edge("execute_agents", "synthesize")
     workflow.add_edge("synthesize", END)
     

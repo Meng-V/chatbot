@@ -856,22 +856,99 @@ OUT_OF_SCOPE_CAMPUS_LIFE = {
     "description": "Questions about dining, housing, parking, sports, weather, campus events, or non-library campus locations.",
     "agent": "out_of_scope",
     "in_scope_examples": [
-        "What's the weather today?",
+        # Dining/Food
+        "Where is the dining hall?",
         "Where can I eat lunch?",
-        "When is the football game?",
-        "Where is the student center?",
-        "How do I get parking?",
         "What's for dinner?",
-        "When is homecoming?",
-        "Where is Armstrong Hall?",
+        "Where can I get food?",
+        "Dining hall hours",
+        "When does the dining hall open?",
+        "What time does the cafeteria close?",
+        "Where can I eat on campus?",
+        "What dining options are available?",
+        "Is the dining hall open?",
+        "Where is the food court?",
+        "Can I use my meal plan?",
+        "Where can I get breakfast?",
+        "What restaurants are on campus?",
+        "Where is Starbucks?",
+        "Where can I get coffee?",
+        "Food places near me",
+        "Dining locations",
+        
+        # Housing/Dorms
+        "Where is my dorm?",
+        "How do I get to my residence hall?",
+        "Where is the housing office?",
+        "Dorm room assignment",
+        "Where can I live on campus?",
+        "Housing information",
+        "Residence hall locations",
+        
+        # Parking
+        "How do I get parking?",
+        "Where can I park?",
+        "Parking permit",
+        "Where is visitor parking?",
+        "How much is parking?",
+        "Student parking locations",
+        "Where do I park on campus?",
+        
+        # Sports/Recreation
+        "When is the football game?",
+        "What time is the basketball game?",
         "Where is the gym?",
+        "Rec center hours",
+        "When does the gym open?",
+        "What time does the rec center close?",
+        "Fitness center hours",
+        "Where can I work out?",
+        "Sports tickets",
+        "How do I get game tickets?",
+        
+        # Campus Buildings/Locations (non-library)
+        "Where is the student center?",
+        "Where is Armstrong Hall?",
+        "Where is the bookstore?",
+        "Bookstore hours",
+        "When does the bookstore open?",
+        "What time does the bookstore close?",
+        "Where is Shriver Center?",
+        "Where is the union?",
+        "Student center hours",
+        "Where is Upham Hall?",
+        "Where is Bachelor Hall?",
+        "Where is the admissions office?",
+        
+        # Campus Events
+        "When is homecoming?",
+        "What events are happening?",
+        "Campus activities",
+        "What's happening on campus?",
+        "Student organization events",
+        
+        # Weather
+        "What's the weather today?",
+        "Is it going to rain?",
+        "What's the temperature?",
+        
+        # Transportation
+        "Where is the bus stop?",
+        "Bus schedule",
+        "Shuttle times",
+        "How do I get to Hamilton?",
+        "Transportation between campuses",
     ],
     "out_of_scope_examples": [
         "Where is King Library?",
         "What time does the library close?",
+        "Library hours",
+        "When is the library open?",
+        "Where is the Makerspace?",
+        "Special Collections hours",
     ],
     "boundary_cases": [],
-    "keywords": ["weather", "dining", "food", "lunch", "dinner", "sports", "football", "basketball", "parking", "housing", "student center", "campus event"],
+    "keywords": ["weather", "dining", "food", "lunch", "dinner", "cafeteria", "meal", "sports", "football", "basketball", "gym", "rec center", "parking", "housing", "dorm", "residence", "student center", "bookstore", "campus event", "bus", "shuttle", "transportation"],
 }
 
 OUT_OF_SCOPE_FINANCIAL = {
@@ -1116,3 +1193,46 @@ def get_category_agent(category: str) -> str:
         if cat_data["category"] == category:
             return cat_data["agent"]
     return "general_question"
+
+
+def list_all_categories() -> List[str]:
+    """List all category names."""
+    return [cat["category"] for cat in ALL_CATEGORIES]
+
+
+def category_to_agent_map() -> Dict[str, str]:
+    """
+    Get the authoritative mapping from category to agent ID.
+    
+    This is the SINGLE SOURCE OF TRUTH for category → agent routing.
+    
+    Returns:
+        Dict mapping category name to agent ID
+    """
+    return {
+        # In-scope library services
+        "library_equipment_checkout": "equipment_checkout",
+        "library_hours_rooms": "libcal_hours",
+        "subject_librarian_guides": "subject_librarian",
+        "research_help_handoff": "libchat_handoff",
+        "library_policies_services": "policy_search",
+        "ticket_submission_request": "libchat_handoff",
+        "human_librarian_request": "libchat_handoff",
+        
+        # Out-of-scope categories
+        "out_of_scope_tech_support": "out_of_scope",
+        "out_of_scope_academics": "out_of_scope",
+        "out_of_scope_campus_life": "out_of_scope",
+        "out_of_scope_financial": "out_of_scope",
+        "out_of_scope_factual_trivia": "out_of_scope",
+        "out_of_scope_inappropriate": "out_of_scope",
+        "out_of_scope_nonsensical": "out_of_scope",
+    }
+
+
+def get_category_metadata(category: str) -> Dict[str, Any]:
+    """Get full metadata for a category."""
+    for cat_data in ALL_CATEGORIES:
+        if cat_data["category"] == category:
+            return cat_data
+    return {}
