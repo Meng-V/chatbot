@@ -35,7 +35,9 @@ async def handle_clarification_choice(
         logger.log(f"🎯 [Clarification Handler] User selected: {choice_id}")
     
     # Find the selected choice
-    choices = clarification_data.get("choices", [])
+    # Support both "options" (new schema from orchestrator) and "choices" (legacy)
+    # Prioritize "options" over "choices"
+    choices = clarification_data.get("options", clarification_data.get("choices", []))
     selected_choice = None
     
     for choice in choices:

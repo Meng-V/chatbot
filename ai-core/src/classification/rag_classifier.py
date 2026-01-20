@@ -66,7 +66,8 @@ class RAGQuestionClassifier:
             host = os.getenv("WEAVIATE_HOST", "localhost")
             
             # Always prefer cloud if API key is present
-            if api_key and host != "localhost":
+            # if api_key and host != "localhost":
+            if api_key and scheme == "https":
                 # Connect to cloud Weaviate
                 cluster_url = f"https://{host}" if not host.startswith("http") else host
                 self.client = weaviate.connect_to_weaviate_cloud(
