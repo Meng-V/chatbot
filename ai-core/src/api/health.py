@@ -117,7 +117,9 @@ async def check_weaviate_health() -> Dict[str, Any]:
     scheme = os.getenv("WEAVIATE_SCHEME", "http")
     api_key = os.getenv("WEAVIATE_API_KEY", "")
     host = os.getenv("WEAVIATE_HOST", "")
-    
+    port = os.getenv("WEAVIATE_PORT", "8080")
+    grpc_port = os.getenv("WEAVIATE_GRPC_PORT", "50051")
+
     if not host:
         return {
             "status": "unconfigured",
@@ -134,8 +136,16 @@ async def check_weaviate_health() -> Dict[str, Any]:
                 auth_credentials=weaviate.auth.AuthApiKey(api_key)
             )
         else:
-            client = weaviate.connect_to_local()
-        
+            client = weaviate.connect_to_custom(
+                host,  # http_host
+                port,         # http_port
+                False,        # http_secure
+                host,  # grpc_host
+                grpc_port,        # grpc_port
+                False,        # grpc_secure
+            )
+
+
         # Test connection by checking if ready
         is_ready = client.is_ready()
         response_time = int((time.time() - start) * 1000)
