@@ -23,25 +23,32 @@ class GoogleSiteComprehensiveAgent(Agent):
     
     async def route_to_tool(self, query: str) -> str:
         """Route to appropriate tool based on query type."""
+        print(f"🔍 [DEBUG] GoogleSiteComprehensiveAgent.route_to_tool() called with query: {query[:50]}...")
+        print(f"🔍 [DEBUG] Available tools: {list(self.tools.keys())}")
+        
         q_lower = query.lower()
         
         # Citation keywords → Citation tool
         if any(word in q_lower for word in ["cite", "citation", "apa", "mla", "chicago", "turabian", "ama", "bibliography", "reference"]):
+            print(f"🔍 [DEBUG] Routing to citation_assist (citation keywords detected)")
             return "citation_assist"
         
-        # Circulation/ILL policy keywords → Circulation policy tool (Weaviate, URL-only)
+        # ALPHA TESTING: Use Google Site Search for all policy queries
+        # (Weaviate collections may not be available, and we want to test Google integration)
+        # Circulation/ILL policy keywords → Google site search
         # NOTE: Hours queries go to LibCal agent, not here
-        if any(word in q_lower for word in [
-            "renew", "renewal",
-            "borrow", "checkout", "check out",
-            "loan period",
-            "fine", "fee", "overdue",
-            "delivery", "mail", "home delivery",
-            "ill", "interlibrary", "inter-library",
-            "reserve", "course reserve",
-            "recall", "ohiolink", "affiliated patron"
-        ]):
-            return "circulation_policy_lookup"
+        # if any(word in q_lower for word in [
+        #     "renew", "renewal",
+        #     "borrow", "checkout", "check out",
+        #     "loan period",
+        #     "fine", "fee", "overdue",
+        #     "delivery", "mail", "home delivery",
+        #     "ill", "interlibrary", "inter-library",
+        #     "reserve", "course reserve",
+        #     "recall", "ohiolink", "affiliated patron"
+        # ]):
+        #     return "circulation_policy_lookup"
         
-        # Default to general site search
+        # Default to general site search (including policy queries for alpha testing)
+        print(f"🔍 [DEBUG] Routing to google_site_enhanced_search (default)")
         return "google_site_enhanced_search"

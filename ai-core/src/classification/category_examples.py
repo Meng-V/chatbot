@@ -84,7 +84,10 @@ LIBRARY_EQUIPMENT_CHECKOUT = {
         "Adobe Creative Cloud license",
         "Adobe software license checkout",
         "Check out an Adobe license",
+        "Checkout an Adobe license",
+        "Temporary Adobe license from the library",
         "Adobe license checkout program",
+        "Software license checkout",
         "Is Adobe installed on library computers?",
         "Can I use Adobe on library computers?",
         "Chargers available?",
@@ -946,6 +949,9 @@ OUT_OF_SCOPE_CAMPUS_LIFE = {
         
         # Campus Buildings/Locations (non-library)
         "Where is the student center?",
+        "Student center location",
+        "How do I get to the student center?",
+        "Student center hours",
         "Where is Armstrong Hall?",
         "Where is the bookstore?",
         "Bookstore hours",
@@ -1258,6 +1264,7 @@ def category_to_agent_map() -> Dict[str, str]:
         "human_librarian_request": "libchat_handoff",
         
         # Out-of-scope categories
+        "out_of_scope": "out_of_scope",  # Generic out_of_scope (used when negative examples block routing)
         "out_of_scope_tech_support": "out_of_scope",
         "out_of_scope_academics": "out_of_scope",
         "out_of_scope_campus_life": "out_of_scope",

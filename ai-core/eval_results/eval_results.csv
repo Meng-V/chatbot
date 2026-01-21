@@ -1,31 +1,31 @@
 question,expected_agent_id,predicted_agent_id,status,classification_confidence,classified_intent,rag_category,out_of_scope,needs_clarification,notes,category
-Can I borrow a laptop?,equipment_checkout,equipment_checkout,pass,0.8485563039779663,library_equipment_checkout,,False,False,Equipment checkout,library_equipment_checkout
-Do you have chargers available?,equipment_checkout,equipment_checkout,pass,0.805502188205719,library_equipment_checkout,,False,False,Equipment checkout,library_equipment_checkout
-My laptop won't turn on,out_of_scope,out_of_scope,pass,0.8238861322402954,out_of_scope_tech_support,,True,False,Tech support - out of scope,out_of_scope_tech_support
-Computer is broken,out_of_scope,,clarification,,,,False,True,Tech support - out of scope,out_of_scope_tech_support
-What time does King Library close today?,libcal_hours,libcal_hours,pass,0.6865374565124511,library_hours_rooms,,False,False,Library hours,library_hours_rooms
-When is the library open?,libcal_hours,,clarification,0.5011750817298889,library_hours_rooms,,False,True,Library hours,library_hours_rooms
-Book a study room for 2 hours,libcal_hours,libcal_hours,pass,0.8262524366378784,library_hours_rooms,,False,False,Room booking,library_hours_rooms
-Reserve a room tomorrow,libcal_hours,libcal_hours,pass,0.807868218421936,library_hours_rooms,,False,False,Room reservation,library_hours_rooms
-Who is the biology librarian?,subject_librarian,out_of_scope,fail,0.8699154257774353,out_of_scope_tech_support,,True,False,Subject librarian lookup,subject_librarian_guides
-Find the chemistry librarian,subject_librarian,,clarification,0.499018931388855,subject_librarian_guides,,False,True,Subject librarian lookup,subject_librarian_guides
-What is the printing policy?,policy_search,policy_search,pass,0.8226515769958496,library_policies_services,,False,False,Policy search,library_policies_services
-How do I renew books?,policy_search,policy_search,pass,0.8297437429428101,library_policies_services,,False,False,Policy search,library_policies_services
-Connect me to a librarian,libchat_handoff,libchat_handoff,pass,0.8526129603385926,human_librarian_request,,False,False,Human handoff,human_librarian_request
-I need to talk to someone,libchat_handoff,libchat_handoff,pass,0.6862428903579711,human_librarian_request,,False,False,Human handoff,human_librarian_request
-Help me with my homework,out_of_scope,,clarification,,,,False,True,Homework - out of scope,out_of_scope_academics
-Where is the dining hall?,out_of_scope,out_of_scope,pass,0.8281126856803894,out_of_scope_campus_life,,True,False,Campus life - dining,out_of_scope_campus_life
-Dining hall hours,out_of_scope,out_of_scope,pass,0.6720097541809082,out_of_scope_campus_life,,True,False,Campus life - dining hours,out_of_scope_campus_life
-Where can I eat?,out_of_scope,out_of_scope,pass,0.6590739130973816,out_of_scope_campus_life,,True,False,Campus life - food,out_of_scope_campus_life
-Gym hours,out_of_scope,out_of_scope,pass,0.4752158522605896,out_of_scope_campus_life,,True,False,Campus life - rec center,out_of_scope_campus_life
-When does the rec center close?,out_of_scope,out_of_scope,pass,0.8035549044609069,out_of_scope_campus_life,,True,False,Campus life - rec center,out_of_scope_campus_life
-Bookstore hours,out_of_scope,out_of_scope,pass,0.4991938352584839,out_of_scope_campus_life,,True,False,Campus life - bookstore,out_of_scope_campus_life
-Where is the student center?,out_of_scope,policy_search,fail,0.8886266946792603,library_policies_services,,False,False,Campus life - location,out_of_scope_campus_life
-How much is tuition?,out_of_scope,,clarification,0.3164206624031067,out_of_scope_financial,,False,True,Financial - tuition,out_of_scope_financial
-Where can I park?,out_of_scope,out_of_scope,pass,0.6359816789627075,out_of_scope_campus_life,,True,False,Campus life - parking,out_of_scope_campus_life
-Can I get Adobe?,equipment_checkout,,clarification,,,,False,True,Software/equipment,library_equipment_checkout
-Does the library have cameras?,equipment_checkout,,clarification,,,,False,True,Equipment checkout,library_equipment_checkout
-I need a computer,equipment_checkout,,clarification,,,,False,True,Equipment checkout,library_equipment_checkout
-Library hours,libcal_hours,,clarification,,,,False,True,Library hours,library_hours_rooms
-Subject librarian for psychology,subject_librarian,subject_librarian,pass,0.6567041039466858,subject_librarian_guides,,False,False,Subject librarian,subject_librarian_guides
-Talk to a librarian,libchat_handoff,libchat_handoff,pass,0.7208407163619995,human_librarian_request,,False,False,Human handoff,human_librarian_request
+Can I borrow a laptop?,equipment_checkout,equipment_checkout,pass,0.8485572457313537,library_equipment_checkout,library_equipment_checkout,False,False,Equipment checkout,library_equipment_checkout
+Do you have chargers available?,equipment_checkout,equipment_checkout,pass,0.8217369675636291,library_equipment_checkout,library_equipment_checkout,False,False,Equipment checkout,library_equipment_checkout
+My laptop won't turn on,out_of_scope,out_of_scope,pass,0.8206351637840271,out_of_scope_tech_support,out_of_scope_tech_support,True,False,Tech support - out of scope,out_of_scope_tech_support
+Computer is broken,out_of_scope,out_of_scope,pass,0.8105155825614929,out_of_scope_tech_support,out_of_scope_tech_support,True,False,Tech support - out of scope,out_of_scope_tech_support
+What time does King Library close today?,libcal_hours,libcal_hours,pass,0.6820270538330078,library_hours_rooms,library_hours_rooms,False,False,Library hours,library_hours_rooms
+When is the library open?,libcal_hours,,clarification,0.5011869072914124,library_hours_rooms,library_hours_rooms,False,True,Library hours,library_hours_rooms
+Book a study room for 2 hours,libcal_hours,libcal_hours,pass,0.8347154378890991,library_hours_rooms,library_hours_rooms,False,False,Room booking,library_hours_rooms
+Reserve a room tomorrow,libcal_hours,libcal_hours,pass,0.8131734251976013,library_hours_rooms,library_hours_rooms,False,False,Room reservation,library_hours_rooms
+Who is the biology librarian?,subject_librarian,subject_librarian,pass,0.6542914628982544,subject_librarian_guides,subject_librarian_guides,False,False,Subject librarian lookup,subject_librarian_guides
+Find the chemistry librarian,subject_librarian,subject_librarian,pass,0.6511814594268799,subject_librarian_guides,subject_librarian_guides,False,False,Subject librarian lookup,subject_librarian_guides
+What is the printing policy?,policy_search,policy_search,pass,0.6656936168670654,library_policies_services,library_policies_services,False,False,Policy search,library_policies_services
+How do I renew books?,policy_search,policy_search,pass,0.8226603865623474,library_policies_services,library_policies_services,False,False,Policy search,library_policies_services
+Connect me to a librarian,libchat_handoff,libchat_handoff,pass,0.8672768235206604,human_librarian_request,human_librarian_request,False,False,Human handoff,human_librarian_request
+I need to talk to someone,libchat_handoff,libchat_handoff,pass,0.704141902923584,human_librarian_request,human_librarian_request,False,False,Human handoff,human_librarian_request
+Help me with my homework,out_of_scope,,clarification,0.42488354444503784,research_help_handoff,research_help_handoff,False,True,Homework - out of scope,out_of_scope_academics
+Where is the dining hall?,out_of_scope,out_of_scope,pass,0.8281164169311523,out_of_scope_campus_life,out_of_scope_campus_life,True,False,Campus life - dining,out_of_scope_campus_life
+Dining hall hours,out_of_scope,out_of_scope,pass,0.672009003162384,out_of_scope_campus_life,out_of_scope_campus_life,True,False,Campus life - dining hours,out_of_scope_campus_life
+Where can I eat?,out_of_scope,policy_search,fail,0.8670917272567749,library_policies_services,library_policies_services,False,False,Campus life - food,out_of_scope_campus_life
+Gym hours,out_of_scope,out_of_scope,pass,0.47927987575531006,out_of_scope_campus_life,out_of_scope_campus_life,True,False,Campus life - rec center,out_of_scope_campus_life
+When does the rec center close?,out_of_scope,out_of_scope,pass,0.7806852698326111,out_of_scope_campus_life,out_of_scope_campus_life,True,False,Campus life - rec center,out_of_scope_campus_life
+Bookstore hours,out_of_scope,out_of_scope,pass,0.499191427230835,out_of_scope_campus_life,out_of_scope_campus_life,True,False,Campus life - bookstore,out_of_scope_campus_life
+Where is the student center?,out_of_scope,out_of_scope,pass,0.8885959386825562,out_of_scope,out_of_scope,True,False,Campus life - location,out_of_scope_campus_life
+How much is tuition?,out_of_scope,out_of_scope,pass,0.45277867317199705,out_of_scope_financial,out_of_scope_financial,True,False,Financial - tuition,out_of_scope_financial
+Where can I park?,out_of_scope,libcal_hours,fail,0.6385510087013244,library_hours_rooms,library_hours_rooms,False,False,Campus life - parking,out_of_scope_campus_life
+Can I get Adobe?,equipment_checkout,equipment_checkout,pass,0.8356806635856628,library_equipment_checkout,library_equipment_checkout,False,False,Software/equipment,library_equipment_checkout
+Does the library have cameras?,equipment_checkout,equipment_checkout,pass,0.8143400073051452,library_equipment_checkout,library_equipment_checkout,False,False,Equipment checkout,library_equipment_checkout
+I need a computer,equipment_checkout,equipment_checkout,pass,0.8254539251327515,library_equipment_checkout,library_equipment_checkout,False,False,Equipment checkout,library_equipment_checkout
+Library hours,libcal_hours,,clarification,0.5011843919754029,library_hours_rooms,library_hours_rooms,False,True,Library hours,library_hours_rooms
+Subject librarian for psychology,subject_librarian,subject_librarian,pass,0.6567040801048278,subject_librarian_guides,subject_librarian_guides,False,False,Subject librarian,subject_librarian_guides
+Talk to a librarian,libchat_handoff,libchat_handoff,pass,0.7208441376686097,human_librarian_request,human_librarian_request,False,False,Human handoff,human_librarian_request

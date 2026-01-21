@@ -1,0 +1,42 @@
+version: '3.4'
+
+# Weaviate as Vector Database Only
+# - Embeddings generated externally via OpenAI API (text-embedding-3-large)
+# - Weaviate stores vectors and performs similarity search
+# - No built-in vectorizers enabled (DEFAULT_VECTORIZER_MODULE: 'none')
+
+services:
+  weaviate:
+    # Official Weaviate image from Weaviate Container Registry
+    # Alternative: Use Docker Hub mirror: semitechnologies/weaviate:1.27.3
+    # image: cr.weaviate.io/semitechnologies/weaviate:1.27.3
+    image: semitechnologies/weaviate:1.27.3
+    container_name: weaviate
+    restart: on-failure:0
+    ports:
+      - "8080:8080"      # HTTP/REST API
+      - "50051:50051"    # gRPC (for batch operations)
+    environment:
+      # Query defaults
+      QUERY_DEFAULTS_LIMIT: 25
+      
+      # Authentication: Anonymous access for local development
+      # For production, use API key authentication
+      AUTHENTICATION_ANONYMOUS_ACCESS_ENABLED: 'true'
+      
+      # Data persistence location inside container
+      PERSISTENCE_DATA_PATH: '/var/lib/weaviate'
+      
+      # CRITICAL: Disable all vectorizers (embeddings handled by OpenAI API)
+      DEFAULT_VECTORIZER_MODULE: 'none'
+      ENABLE_MODULES: ''
+      
+      # Cluster configuration
+      CLUSTER_HOSTNAME: 'node1'
+    volumes:
+      - weaviate_data:/var/lib/weaviate
+
+volumes:
+  weaviate_data:
+    # Named volume for data persistence
+    # Data survives container restarts/removals

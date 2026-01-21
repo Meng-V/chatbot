@@ -65,13 +65,25 @@ async def evaluate_single_question(question: str, expected_agent_id: str) -> Dic
             "_logger": logger
         })
         
-        # Extract routing information
+        # Extract routing information - CANONICAL FIELDS ONLY
         predicted_agent_id = result.get("primary_agent_id")
         needs_clarification = result.get("needs_clarification", False)
+        
+        # Confidence: Try canonical field first, then legacy, default to 0.0 if missing
         classification_confidence = result.get("classification_confidence")
-        classified_intent = result.get("classified_intent")
+        if classification_confidence is None:
+            classification_confidence = result.get("category_confidence")
+        if classification_confidence is None:
+            classification_confidence = 0.0  # NEVER leave null
+        
+        # Category: canonical field is "category"
+        rag_category = result.get("category")
+        if not rag_category:
+            rag_category = result.get("rag_category")  # Fallback for out_of_scope cases
+        
+        classified_intent = rag_category  # Use category as classified_intent
+        
         out_of_scope = result.get("out_of_scope", False)
-        rag_category = result.get("rag_category")
         processed_query = result.get("processed_query", question)
         
         # Determine if this is a pass or fail
@@ -151,8 +163,10 @@ async def evaluate_batch(test_cases: List[Dict[str, Any]]) -> List[Dict[str, Any
         else:
             print(f"  {emoji} ERROR - {result.get('error', 'unknown')}")
         
-        if result.get('classification_confidence'):
-            print(f"     Confidence: {result['classification_confidence']:.2f}")
+        # Use resolved confidence value for display
+        confidence = result.get('classification_confidence')
+        if confidence is not None:
+            print(f"     Confidence: {confidence:.2f}")
         
         results.append(result)
     

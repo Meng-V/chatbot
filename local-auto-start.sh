@@ -215,6 +215,60 @@ asyncio.run(check_connection())
 }
 
 # ==============================================================================
+# Weaviate Docker Check and Start Function
+# ==============================================================================
+# Checks if Weaviate is running and starts it if needed
+# ==============================================================================
+check_and_start_weaviate() {
+  echo "🔍 Checking Weaviate status..."
+  
+  # Check if Docker is running
+  if ! docker info >/dev/null 2>&1; then
+    echo "⚠️  Docker is not running!"
+    echo "   Please start Docker Desktop and try again."
+    echo ""
+    echo "   On macOS: Open Docker Desktop application"
+    echo "   On Linux: sudo systemctl start docker"
+    exit 1
+  fi
+  
+  # Check if Weaviate container exists and is running
+  WEAVIATE_RUNNING=$(docker ps --filter "name=weaviate" --format "{{.Names}}" 2>/dev/null || echo "")
+  
+  if [[ -n "$WEAVIATE_RUNNING" ]]; then
+    echo "✅ Weaviate is already running"
+    return 0
+  fi
+  
+  # Check if container exists but is stopped
+  WEAVIATE_EXISTS=$(docker ps -a --filter "name=weaviate" --format "{{.Names}}" 2>/dev/null || echo "")
+  
+  if [[ -n "$WEAVIATE_EXISTS" ]]; then
+    echo "🔄 Starting existing Weaviate container..."
+    docker start weaviate >/dev/null 2>&1
+  else
+    echo "🚀 Starting Weaviate for the first time (this may take a moment)..."
+    (cd ai-core && docker compose -f docker-compose.weaviate.yml up -d) >/dev/null 2>&1
+  fi
+  
+  # Wait for Weaviate to be ready
+  echo "⏳ Waiting for Weaviate to be ready..."
+  ATTEMPTS=0
+  until curl -fsS http://localhost:8080/v1/.well-known/ready >/dev/null 2>&1; do
+    ATTEMPTS=$((ATTEMPTS+1))
+    if [[ $ATTEMPTS -ge 30 ]]; then
+      echo "⚠️  Weaviate not ready after 30 seconds, but continuing..."
+      break
+    fi
+    sleep 1
+  done
+  
+  if [[ $ATTEMPTS -lt 30 ]]; then
+    echo "✅ Weaviate is ready!"
+  fi
+}
+
+# ==============================================================================
 # Database Seed Check Function
 # ==============================================================================
 # Checks if the database has library location data seeded
@@ -345,6 +399,8 @@ trap cleanup EXIT INT TERM
 
 if [[ $FRONTEND_ONLY -eq 0 ]]; then
   ensure_backend_deps
+  # Start Weaviate Docker container if needed
+  check_and_start_weaviate
   # Verify database connection FIRST - will NOT proceed if DB is down
   check_database_connection
   # Check database and auto-seed if empty to prevent startup failures
