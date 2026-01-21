@@ -63,10 +63,10 @@ class RAGQuestionClassifier:
             # Read env vars at connection time, not module load time
             scheme = os.getenv("WEAVIATE_SCHEME", "http")
             api_key = os.getenv("WEAVIATE_API_KEY", "")
-            host = os.getenv("WEAVIATE_HOST", "localhost")
+            host = os.getenv("WEAVIATE_HOST", "127.0.0.1")
             
             # Always prefer cloud if API key is present
-            if api_key and host != "localhost":
+            if api_key and host not in ("127.0.0.1", "localhost"):
             # if api_key and scheme == "https":
                 # Connect to cloud Weaviate
                 cluster_url = f"https://{host}" if not host.startswith("http") else host
@@ -75,8 +75,20 @@ class RAGQuestionClassifier:
                     auth_credentials=weaviate.auth.AuthApiKey(api_key)
                 )
             else:
-                # Connect to local Weaviate
-                self.client = weaviate.connect_to_local()
+                # Connect to local/Docker Weaviate with explicit configuration
+                # Use 127.0.0.1 for better compatibility with Puppet-managed Docker servers
+                http_port = int(os.getenv("WEAVIATE_HTTP_PORT", "8080"))
+                grpc_port = int(os.getenv("WEAVIATE_GRPC_PORT", "50051"))
+                grpc_host = os.getenv("WEAVIATE_GRPC_HOST", host)
+                
+                self.client = weaviate.connect_to_custom(
+                    http_host=host,
+                    http_port=http_port,
+                    http_secure=scheme == "https",
+                    grpc_host=grpc_host,
+                    grpc_port=grpc_port,
+                    grpc_secure=scheme == "https"
+                )
     
     def _disconnect(self):
         """Disconnect from Weaviate."""
