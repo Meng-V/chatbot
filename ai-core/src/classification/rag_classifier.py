@@ -66,8 +66,8 @@ class RAGQuestionClassifier:
             host = os.getenv("WEAVIATE_HOST", "localhost")
             
             # Always prefer cloud if API key is present
-            # if api_key and host != "localhost":
-            if api_key and scheme == "https":
+            if api_key and host != "localhost":
+            # if api_key and scheme == "https":
                 # Connect to cloud Weaviate
                 cluster_url = f"https://{host}" if not host.startswith("http") else host
                 self.client = weaviate.connect_to_weaviate_cloud(
@@ -242,17 +242,20 @@ class RAGQuestionClassifier:
         if top_matches:
             top_match = top_matches[0]
             if not top_match["is_in_scope"]:
-                top_category = top_match["category"]
+                # This is a negative example - force out_of_scope routing
+                negative_example_category = top_match["category"]
                 confidence = top_match["_additional"]["certainty"]
                 
                 if logger:
-                    logger.log(f"🚫 [RAG Classifier] Top match is out-of-scope: {top_category} (confidence: {float(confidence):.2f})")
+                    logger.log(f"🚫 [RAG Classifier] Negative example match blocked routing - category: {negative_example_category} (confidence: {float(confidence):.2f})")
                 
                 return {
-                    "category": top_category,
+                    "category": "out_of_scope",  # FORCE out_of_scope
                     "confidence": confidence,
-                    "agent": get_category_agent(top_category),
+                    "agent": "out_of_scope",  # FORCE out_of_scope agent
                     "needs_clarification": False,
+                    "blocked_by_negative_example": True,
+                    "negative_example_category": negative_example_category,
                     "similar_examples": [m["question"] for m in top_matches[:3]],
                     "llm_decision": False
                 }
@@ -286,7 +289,7 @@ class RAGQuestionClassifier:
         
         # CRITICAL: Out-of-scope categories should NEVER trigger clarification
         # They should always be directly rejected with appropriate redirect
-        is_out_of_scope = top_category.startswith("out_of_scope_")
+        is_out_of_scope = (top_category == "out_of_scope") or top_category.startswith("out_of_scope_")
         
         if is_out_of_scope:
             if logger:

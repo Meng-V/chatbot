@@ -67,8 +67,7 @@ def check_environment_health() -> Dict[str, Any]:
     required_vars = [
         "OPENAI_API_KEY",
         "DATABASE_URL",
-        "WEAVIATE_HOST",
-        "WEAVIATE_API_KEY"
+        "WEAVIATE_HOST"
     ]
     
     missing = [var for var in required_vars if not os.getenv(var)]

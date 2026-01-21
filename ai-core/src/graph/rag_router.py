@@ -51,8 +51,12 @@ async def classify_category(
     )
     
     category = classification["category"]
-    confidence = float(classification["confidence"])
-    is_out_of_scope = category.startswith("out_of_scope_")
+    
+    # Robust confidence handling
+    raw_conf = classification.get("confidence")
+    confidence = float(raw_conf) if raw_conf is not None else 0.0
+    
+    is_out_of_scope = (category == "out_of_scope") or category.startswith("out_of_scope_")
     
     # Determine if clarification is needed based on differentiated thresholds
     threshold = CONFIDENCE_THRESHOLD_OUT_OF_SCOPE if is_out_of_scope else CONFIDENCE_THRESHOLD_IN_SCOPE
@@ -60,7 +64,11 @@ async def classify_category(
     needs_clarification = False
     clarification_reason = None
     
-    if normalized_intent.ambiguity:
+    if raw_conf is None:
+        # Missing confidence from classifier
+        needs_clarification = True
+        clarification_reason = "Missing confidence from classifier"
+    elif normalized_intent.ambiguity:
         # Intent normalizer flagged ambiguity
         needs_clarification = True
         clarification_reason = normalized_intent.ambiguity_reason
@@ -115,7 +123,7 @@ async def rag_router_node(state: AgentState) -> AgentState:
     state["classification_result"] = classification
     
     # DIFFERENTIATED THRESHOLD POLICY
-    is_out_of_scope_category = category.startswith("out_of_scope_")
+    is_out_of_scope_category = (category == "out_of_scope") or category.startswith("out_of_scope_")
     threshold = CONFIDENCE_THRESHOLD_OUT_OF_SCOPE if is_out_of_scope_category else CONFIDENCE_THRESHOLD_IN_SCOPE
     
     if is_out_of_scope_category and confidence >= CONFIDENCE_THRESHOLD_OUT_OF_SCOPE:
@@ -124,7 +132,7 @@ async def rag_router_node(state: AgentState) -> AgentState:
             logger.log(f"🚫 [RAG Router] Out-of-scope with moderate confidence ({confidence:.2f}) - routing directly")
     elif needs_clarification or confidence < threshold:
         if logger:
-            reason = "RAG classifier flagged ambiguity" if needs_clarification else f"Low confidence ({confidence:.2f} < {CONFIDENCE_THRESHOLD})"
+            reason = "RAG classifier flagged ambiguity" if needs_clarification else f"Low confidence ({confidence:.2f} < {threshold:.2f})"
             logger.log(f"⚠️ [RAG Router] Triggering clarification: {reason}")
         
         # Build clarification payload - NORMALIZE SCHEMA

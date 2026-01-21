@@ -1668,6 +1668,11 @@ async def intent_normalization_node(state: AgentState) -> AgentState:
     if normalized_intent.ambiguity:
         state["needs_clarification"] = True
         state["clarifying_question"] = normalized_intent.ambiguity_reason or "Could you provide more details?"
+        # CRITICAL: Set confidence to 0.0 when skipping classification
+        state["classification_confidence"] = 0.0
+        state["category_confidence"] = 0.0
+        state["category"] = None
+        state["primary_agent_id"] = None
         logger.log(f"⚠️ [Intent Normalization] Ambiguous intent detected: {normalized_intent.ambiguity_reason}")
     else:
         state["needs_clarification"] = False
@@ -1712,7 +1717,9 @@ async def category_classification_node(state: AgentState) -> AgentState:
     # Check if clarification needed (from classifier)
     if category_result.needs_clarification:
         state["needs_clarification"] = True
-        state["clarifying_question"] = category_result.clarification_reason or "I'm not sure how to help with that."
+        state["clarifying_question"] = "I want to make sure I understand your question correctly. Could you provide more details about what you're looking for?"
+        # Set primary_agent_id to None when clarification needed
+        state["primary_agent_id"] = None
         logger.log(f"⚠️ [Category Classification] Clarification needed: {category_result.clarification_reason}")
     
     # Agent selection using SINGLE SOURCE OF TRUTH
@@ -1732,6 +1739,15 @@ async def category_classification_node(state: AgentState) -> AgentState:
             state["out_of_scope"] = True
             state["rag_category"] = category_result.category
         
+        # INSTRUMENTATION: Log routing decision with all critical fields
+        logger.log(
+            f"🎯 [ROUTING DECISION] "
+            f"intent='{normalized_intent.intent_summary[:50]}...' | "
+            f"category={category_result.category} | "
+            f"confidence={category_result.confidence:.3f} | "
+            f"agent={primary_agent_id} | "
+            f"clarification={state.get('needs_clarification', False)}"
+        )
         logger.log(f"✅ [Category Classification] Category: {category_result.category}, Agent: {primary_agent_id}")
     
     state["_logger"] = logger
