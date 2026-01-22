@@ -8,17 +8,17 @@ version: '3.4'
 services:
   weaviate:
     # Official Weaviate image from Weaviate Container Registry
-    # Alternative: Use Docker Hub mirror: semitechnologies/weaviate:1.27.3
-    # image: cr.weaviate.io/semitechnologies/weaviate:1.27.3
-    image: semitechnologies/weaviate:1.27.3
+    # Using 1.28.6 - compatible with weaviate-client v3.26.7
+    # image: cr.weaviate.io/semitechnologies/weaviate:1.28.6
+    image: semitechnologies/weaviate:1.28.6
     container_name: weaviate
     restart: on-failure:0
-    # ports:
-    #   - "8080:8080"      # HTTP/REST API
-    #   - "50051:50051"    # gRPC (for batch operations)
-    expose:
-      - "8080"
-      - "50051"
+    ports:
+      - "8080:8080"      # HTTP/REST API  
+      - "50051:50051"    # gRPC (for batch operations)
+    # expose:
+    #   - "8080"
+    #   - "50051"
     environment:
       # Query defaults
       QUERY_DEFAULTS_LIMIT: 25

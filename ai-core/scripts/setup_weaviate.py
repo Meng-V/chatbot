@@ -11,8 +11,12 @@ Usage:
     python scripts/setup_weaviate.py
 """
 
-import weaviate
-import weaviate.classes as wvc
+import sys
+from pathlib import Path
+
+# Add parent directory to path
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from src.utils.weaviate_client import get_weaviate_client
 from pathlib import Path
 from dotenv import load_dotenv
 import os
@@ -26,9 +30,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 root_dir = Path(__file__).resolve().parent.parent.parent  # Go up to chatbot/ directory
 load_dotenv(dotenv_path=root_dir / ".env")
 
-WEAVIATE_HOST = os.getenv("WEAVIATE_HOST")
-WEAVIATE_API_KEY = os.getenv("WEAVIATE_API_KEY")
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+# No API keys needed for local Docker
 
 
 def print_header(text):
@@ -49,9 +51,8 @@ def check_env_variables():
     print_step(1, "Checking Environment Variables")
     
     required_vars = {
-        "WEAVIATE_HOST": WEAVIATE_HOST,
-        "WEAVIATE_API_KEY": WEAVIATE_API_KEY,
-        "OPENAI_API_KEY": OPENAI_API_KEY
+        "WEAVIATE_HOST": os.getenv("WEAVIATE_HOST"),
+        "OPENAI_API_KEY": os.getenv("OPENAI_API_KEY")
     }
     
     all_set = True
@@ -65,18 +66,18 @@ def check_env_variables():
             print(f"✅ {var_name}: {masked}")
     
     if not all_set:
-        print("\n⚠️  ERROR: Please update your .env file with Weaviate credentials")
-        print("\nTo get your credentials:")
-        print("1. Go to: https://console.weaviate.cloud/")
-        print("2. Select your cluster")
-        print("3. Click 'Details' tab")
-        print("4. Copy:")
-        print("   - API Key → WEAVIATE_API_KEY")
-        print("   - Cluster URL → WEAVIATE_HOST (without https://)")
+        print("\n⚠️  ERROR: Please update your .env file with local Docker configuration")
+        print("\nFor local Docker setup:")
+        print("1. Start Weaviate Docker container on ports 8081/50052")
+        print("2. Set in .env:")
+        print("   WEAVIATE_HOST=127.0.0.1")
+        print("   WEAVIATE_SCHEME=http")
+        print("   WEAVIATE_HTTP_PORT=8081")
+        print("   WEAVIATE_GRPC_PORT=50052")
         print("\nExample .env configuration:")
-        print("  WEAVIATE_API_KEY=abcd1234efgh5678ijkl9012...")
-        print("  WEAVIATE_HOST=xyz123.c0.us-east1.gcp.weaviate.cloud")
-        print("  WEAVIATE_SCHEME=https")
+        print("  WEAVIATE_HOST=127.0.0.1")
+        print("  WEAVIATE_SCHEME=http")
+        print("  WEAVIATE_HTTP_PORT=8081")
         return False
     
     return True
@@ -87,28 +88,26 @@ def test_connection():
     print_step(2, "Testing Connection to Weaviate")
     
     try:
-        client = weaviate.connect_to_weaviate_cloud(
-            cluster_url=WEAVIATE_HOST,
-            auth_credentials=wvc.init.Auth.api_key(WEAVIATE_API_KEY),
-            headers={"X-OpenAI-Api-Key": OPENAI_API_KEY} if OPENAI_API_KEY else None
-        )
+        client = get_weaviate_client()
+        if not client:
+            raise ValueError("Could not connect to Weaviate local Docker instance")
         
         # Test if connection works
         meta = client.get_meta()
         
         print(f"✅ Connected successfully!")
         print(f"   Weaviate Version: {meta.get('version', 'Unknown')}")
-        print(f"   Host: {WEAVIATE_HOST}")
+        print(f"   Host: {os.getenv('WEAVIATE_HOST', 'localhost')}")
         
         return client
     
     except Exception as e:
         print(f"❌ Connection failed: {str(e)}")
         print("\nTroubleshooting:")
-        print("1. Verify WEAVIATE_HOST is correct (without https://)")
-        print("2. Verify WEAVIATE_API_KEY is correct")
-        print("3. Check if cluster is running in Weaviate Cloud Console")
-        print("4. Verify your IP is allowed (if using IP whitelist)")
+        print("1. Verify Weaviate Docker container is running")
+        print("2. Check ports: docker ps | grep weaviate")
+        print("3. Verify WEAVIATE_HOST=127.0.0.1 in .env")
+        print("4. Verify WEAVIATE_HTTP_PORT=8081 in .env")
         return None
 
 

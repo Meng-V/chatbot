@@ -10,6 +10,10 @@ from pathlib import Path
 from dotenv import load_dotenv
 
 # Add parent directory to path
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from src.utils.weaviate_client import get_weaviate_client
+
+# Add parent directory to path
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
@@ -19,7 +23,6 @@ if env_path.exists():
     load_dotenv(env_path)
     print(f"✅ Loaded .env from {env_path}")
     print(f"   WEAVIATE_HOST: {os.getenv('WEAVIATE_HOST', 'NOT SET')}")
-    print(f"   WEAVIATE_API_KEY: {'SET' if os.getenv('WEAVIATE_API_KEY') else 'NOT SET'}")
 else:
     print(f"⚠️ .env file not found at {env_path}")
 

@@ -8,8 +8,7 @@ This agent queries the optimized TranscriptQA collection with:
 """
 
 import os
-import weaviate
-import weaviate.classes as wvc
+import sys
 import asyncio
 from typing import Dict, Any, Optional
 from pathlib import Path
@@ -17,37 +16,16 @@ from dotenv import load_dotenv
 from datetime import datetime
 from urllib.parse import urlparse
 
+# Add src to path for utils import
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from utils.weaviate_client import get_weaviate_client
+
 # Load .env file from project root
 root_dir = Path(__file__).resolve().parent.parent.parent.parent
 load_dotenv(dotenv_path=root_dir / ".env")
 
-WEAVIATE_HOST = os.getenv("WEAVIATE_HOST", "")
-WEAVIATE_API_KEY = os.getenv("WEAVIATE_API_KEY", "")
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
-# Flag to temporarily disable Weaviate (set WEAVIATE_ENABLED=true in .env to re-enable)
-WEAVIATE_ENABLED = os.getenv("WEAVIATE_ENABLED", "true").lower() == "true"
-
-def _make_client():
-    """Create Weaviate v4 client with cloud auth."""
-    # Check if Weaviate is disabled via flag
-    if not WEAVIATE_ENABLED:
-        print("ℹ️  Weaviate disabled via WEAVIATE_ENABLED=false")
-        return None
-    if not WEAVIATE_HOST or not WEAVIATE_API_KEY:
-        return None
-    
-    try:
-        client = weaviate.connect_to_weaviate_cloud(
-            cluster_url=WEAVIATE_HOST,
-            auth_credentials=wvc.init.Auth.api_key(WEAVIATE_API_KEY),
-            headers={"X-OpenAI-Api-Key": OPENAI_API_KEY} if OPENAI_API_KEY else None
-        )
-        return client
-    except Exception as e:
-        print(f"Weaviate connection error: {e}")
-        return None
-
-client = _make_client()
+# Use centralized client factory
+client = get_weaviate_client()
 
 # ALLOWLIST: Only trust these domains for verified content
 ALLOWED_SOURCE_DOMAINS = {

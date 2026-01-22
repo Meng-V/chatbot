@@ -248,7 +248,7 @@ check_and_start_weaviate() {
     docker start weaviate >/dev/null 2>&1
   else
     echo "🚀 Starting Weaviate for the first time (this may take a moment)..."
-    (cd ai-core && docker compose -f docker-compose.weaviate.yml up -d) >/dev/null 2>&1
+    (cd ai-core && docker compose -f docker-compose.weaviate.local.yml up -d) >/dev/null 2>&1
   fi
   
   # Wait for Weaviate to be ready
