@@ -47,7 +47,7 @@ OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
 
 DATA_DIR = Path(__file__).resolve().parent.parent / "data"
 
-ALL_COLLECTIONS = ["TranscriptQA", "WebsiteEvidence", "CirculationPolicies", "CirculationPolicyFacts"]
+ALL_COLLECTIONS = ["TranscriptQA", "WebsiteEvidence", "CirculationPolicies", "CirculationPolicyFacts", "QuestionCategory", "AgentPrototypes"]
 
 
 def print_header(text: str):
@@ -265,6 +265,67 @@ def create_circulation_policy_facts_collection(client, reset: bool = False):
             wvc.config.Property(name="source_url", data_type=wvc.config.DataType.TEXT),
             wvc.config.Property(name="anchor_hint", data_type=wvc.config.DataType.TEXT),
             wvc.config.Property(name="tags", data_type=wvc.config.DataType.TEXT_ARRAY),
+        ]
+    )
+    
+    print(f"✅ {collection_name} collection created")
+    return True
+
+
+def create_question_category_collection(client, reset: bool = False):
+    """Create QuestionCategory collection."""
+    collection_name = "QuestionCategory"
+    
+    if reset and client.collections.exists(collection_name):
+        print(f"🗑️  Deleting existing {collection_name} collection")
+        client.collections.delete(collection_name)
+    
+    if client.collections.exists(collection_name):
+        print(f"✅ {collection_name} collection already exists")
+        return True
+    
+    print(f"📦 Creating {collection_name} collection...")
+    
+    client.collections.create(
+        name=collection_name,
+        description="Question category examples for classification",
+        properties=[
+            wvc.config.Property(name="category", data_type=wvc.config.DataType.TEXT, description="Category name"),
+            wvc.config.Property(name="question", data_type=wvc.config.DataType.TEXT, description="Example question"),
+            wvc.config.Property(name="is_in_scope", data_type=wvc.config.DataType.BOOL, description="Whether this is an in-scope example"),
+            wvc.config.Property(name="description", data_type=wvc.config.DataType.TEXT, description="Category description"),
+            wvc.config.Property(name="agent", data_type=wvc.config.DataType.TEXT, description="Agent to handle this category"),
+            wvc.config.Property(name="keywords", data_type=wvc.config.DataType.TEXT_ARRAY, description="Keywords for hybrid search"),
+        ]
+    )
+    
+    print(f"✅ {collection_name} collection created")
+    return True
+
+
+def create_agent_prototypes_collection(client, reset: bool = False):
+    """Create AgentPrototypes collection."""
+    collection_name = "AgentPrototypes"
+    
+    if reset and client.collections.exists(collection_name):
+        print(f"🗑️  Deleting existing {collection_name} collection")
+        client.collections.delete(collection_name)
+    
+    if client.collections.exists(collection_name):
+        print(f"✅ {collection_name} collection already exists")
+        return True
+    
+    print(f"📦 Creating {collection_name} collection...")
+    
+    client.collections.create(
+        name=collection_name,
+        description="High-quality prototypes for agent routing (8-12 per agent)",
+        properties=[
+            wvc.config.Property(name="agent_id", data_type=wvc.config.DataType.TEXT, description="Agent identifier"),
+            wvc.config.Property(name="prototype_text", data_type=wvc.config.DataType.TEXT, description="Prototype question/phrase"),
+            wvc.config.Property(name="category", data_type=wvc.config.DataType.TEXT, description="Category name"),
+            wvc.config.Property(name="is_action_based", data_type=wvc.config.DataType.BOOL, description="Whether this prototype emphasizes action verbs"),
+            wvc.config.Property(name="priority", data_type=wvc.config.DataType.INT, description="Priority level (higher = more important)"),
         ]
     )
     
@@ -527,6 +588,100 @@ def import_circulation_policy_facts(client, embeddings, dry_run: bool = False) -
     return stats
 
 
+def import_question_category(client, embeddings, dry_run: bool = False) -> Dict[str, int]:
+    """Import QuestionCategory data from exported JSONL."""
+    stats = {"total": 0, "success": 0, "failed": 0}
+    
+    data_file = DATA_DIR / "weaviate_export" / "QuestionCategory.jsonl"
+    
+    if not data_file.exists():
+        print(f"⚠️  {data_file} not found, skipping...")
+        return stats
+    
+    print(f"📖 Reading from: {data_file}")
+    
+    collection = client.collections.get("QuestionCategory")
+    
+    with open(data_file, 'r', encoding='utf-8') as f:
+        lines = f.readlines()
+        stats["total"] = len(lines)
+        
+        if dry_run:
+            print(f"🔍 DRY RUN: Would import {stats['total']} records")
+            return stats
+        
+        print(f"🚀 Importing {stats['total']} records...")
+        
+        with collection.batch.dynamic() as batch:
+            for idx, line in enumerate(lines, 1):
+                try:
+                    data = json.loads(line)
+                    
+                    batch.add_object(
+                        properties=data["properties"],
+                        uuid=data["id"],
+                        vector=data.get("vector")
+                    )
+                    
+                    stats["success"] += 1
+                    
+                    if idx % 100 == 0:
+                        print(f"  Progress: {idx}/{stats['total']} ({idx/stats['total']*100:.1f}%)")
+                
+                except Exception as e:
+                    stats["failed"] += 1
+                    print(f"  ❌ Line {idx}: {str(e)}")
+    
+    return stats
+
+
+def import_agent_prototypes(client, embeddings, dry_run: bool = False) -> Dict[str, int]:
+    """Import AgentPrototypes data from exported JSONL."""
+    stats = {"total": 0, "success": 0, "failed": 0}
+    
+    data_file = DATA_DIR / "weaviate_export" / "AgentPrototypes.jsonl"
+    
+    if not data_file.exists():
+        print(f"⚠️  {data_file} not found, skipping...")
+        return stats
+    
+    print(f"📖 Reading from: {data_file}")
+    
+    collection = client.collections.get("AgentPrototypes")
+    
+    with open(data_file, 'r', encoding='utf-8') as f:
+        lines = f.readlines()
+        stats["total"] = len(lines)
+        
+        if dry_run:
+            print(f"🔍 DRY RUN: Would import {stats['total']} records")
+            return stats
+        
+        print(f"🚀 Importing {stats['total']} records...")
+        
+        with collection.batch.dynamic() as batch:
+            for idx, line in enumerate(lines, 1):
+                try:
+                    data = json.loads(line)
+                    
+                    batch.add_object(
+                        properties=data["properties"],
+                        uuid=data["id"],
+                        vector=data.get("vector")
+                    )
+                    
+                    stats["success"] += 1
+                    
+                    if idx % 100 == 0:
+                        print(f"  Progress: {idx}/{stats['total']} ({idx/stats['total']*100:.1f}%)")
+                
+                except Exception as e:
+                    stats["failed"] += 1
+                    print(f"  ❌ Line {idx}: {str(e)}")
+    
+    return stats
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Deploy all data collections to Weaviate (local or server)",
@@ -593,6 +748,12 @@ def main():
         if "CirculationPolicyFacts" in args.collections:
             create_circulation_policy_facts_collection(client, reset=args.reset)
         
+        if "QuestionCategory" in args.collections:
+            create_question_category_collection(client, reset=args.reset)
+        
+        if "AgentPrototypes" in args.collections:
+            create_agent_prototypes_collection(client, reset=args.reset)
+        
         # Import data
         print_step(4, "Importing Data")
         
@@ -613,6 +774,14 @@ def main():
         if "CirculationPolicyFacts" in args.collections:
             print("\n📦 CirculationPolicyFacts Collection")
             all_stats["CirculationPolicyFacts"] = import_circulation_policy_facts(client, embeddings, dry_run=args.dry_run)
+        
+        if "QuestionCategory" in args.collections:
+            print("\n📦 QuestionCategory Collection")
+            all_stats["QuestionCategory"] = import_question_category(client, embeddings, dry_run=args.dry_run)
+        
+        if "AgentPrototypes" in args.collections:
+            print("\n📦 AgentPrototypes Collection")
+            all_stats["AgentPrototypes"] = import_agent_prototypes(client, embeddings, dry_run=args.dry_run)
         
         # Print summary
         print_header("Deployment Summary")
