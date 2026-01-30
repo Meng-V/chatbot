@@ -245,10 +245,12 @@ check_and_start_weaviate() {
   
   if [[ -n "$WEAVIATE_EXISTS" ]]; then
     echo "🔄 Starting existing Weaviate container..."
-    docker start weaviate >/dev/null 2>&1
+    docker start weaviate
   else
     echo "🚀 Starting Weaviate for the first time (this may take a moment)..."
-    (cd ai-core && docker compose -f docker-compose.weaviate.local.yml up -d) >/dev/null 2>&1
+    cd "$SCRIPT_DIR/ai-core"
+    docker compose -f docker-compose.weaviate.local.yml up -d
+    cd "$SCRIPT_DIR"
   fi
   
   # Wait for Weaviate to be ready

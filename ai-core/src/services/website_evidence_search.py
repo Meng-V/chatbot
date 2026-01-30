@@ -27,7 +27,11 @@ def _get_weaviate_client():
 
 
 async def search_website_evidence(
-    query: str, top_k: int = 5, collection: Optional[str] = None, log_callback=None
+    query: str, 
+    top_k: int = 5, 
+    collection: Optional[str] = None, 
+    campus_scope: Optional[str] = None,
+    log_callback=None
 ) -> List[Dict[str, Any]]:
     """
     Search website evidence using semantic similarity.
@@ -36,6 +40,7 @@ async def search_website_evidence(
         query: Search query
         top_k: Number of results to return (default: 5)
         collection: Collection name (default: from env or "WebsiteEvidence")
+        campus_scope: Filter by campus (e.g., "oxford", "hamilton", "middletown")
         log_callback: Optional logging callback
 
     Returns:
@@ -51,8 +56,9 @@ async def search_website_evidence(
     collection_name = collection or get_collection_name()
 
     if log_callback:
+        filter_info = f", campus_scope={campus_scope}" if campus_scope else ""
         log_callback(
-            f"🔍 [Website Evidence Search] Querying collection: {collection_name}",
+            f"🔍 [Website Evidence Search] Querying collection: {collection_name}{filter_info}",
             {"query": query, "top_k": top_k},
         )
 
@@ -85,13 +91,23 @@ async def search_website_evidence(
         # Generate query embedding
         query_vector = await embeddings.aembed_query(query)
 
-        # V4 API: Query with near vector
+        # V4 API: Query with near vector and optional campus filter
         collection = client.collections.get(collection_name)
-        response = collection.query.near_vector(
-            near_vector=query_vector,
-            limit=top_k,
-            return_metadata=['distance']
-        )
+        
+        # Build filter if campus_scope specified
+        query_kwargs = {
+            "near_vector": query_vector,
+            "limit": top_k,
+            "return_metadata": ['distance']
+        }
+        
+        if campus_scope:
+            import weaviate.classes as wvc
+            query_kwargs["filters"] = wvc.query.Filter.by_property("campus_scope").equal(campus_scope)
+            if log_callback:
+                log_callback(f"   🔍 Filtering by campus_scope: {campus_scope}")
+        
+        response = collection.query.near_vector(**query_kwargs)
 
         results = []
         for obj in response.objects:

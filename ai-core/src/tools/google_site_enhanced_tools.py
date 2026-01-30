@@ -417,13 +417,95 @@ class BorrowingPolicySearchTool(Tool):
     async def execute(
         self,
         query: str,
+        campus_scope: str = "oxford",
         log_callback=None,
         **kwargs
     ) -> Dict[str, Any]:
-        """Execute borrowing policy search with filtering."""
+        """Execute borrowing policy search: Weaviate first, then Google with Oxford constraints."""
         try:
             if log_callback:
-                log_callback(f"📚 [Borrowing Policy Search Tool] Searching borrowing policies", {"query": query})
+                log_callback(f"📚 [Borrowing Policy Search Tool] Searching borrowing policies", {"query": query, "campus": campus_scope})
+            
+            # Import website_evidence_search
+            from src.services.website_evidence_search import search_website_evidence
+            
+            # PRIORITY 1: Try CirculationPolicyFacts for direct answers
+            if log_callback:
+                log_callback("🔍 [Borrowing Policy] Step 1: Checking policy facts...")
+            
+            fact_results = await search_website_evidence(
+                query=query,
+                top_k=3,
+                collection="CirculationPolicyFacts",
+                campus_scope=campus_scope,
+                log_callback=log_callback
+            )
+            
+            if fact_results:
+                top_fact = fact_results[0]
+                distance = top_fact.get("distance", 1.0)
+                score = 1 - distance
+                
+                if score >= 0.75:  # Slightly lower threshold for borrowing policy
+                    answer = top_fact.get("answer", "")
+                    url = top_fact.get("canonical_url", "")
+                    
+                    if answer and url:
+                        if log_callback:
+                            log_callback(f"✅ [Borrowing Policy] Fact match found (score: {score:.3f})")
+                        
+                        response_text = f"**Borrowing Policy Information:**\n\n{answer}\n\n**Source:** {url}"
+                        
+                        return {
+                            "tool": self.name,
+                            "success": True,
+                            "text": response_text,
+                            "url": url,
+                            "response_mode": "fact_answer",
+                            "confidence_score": score
+                        }
+            
+            # PRIORITY 2: Try CirculationPolicies chunks
+            if log_callback:
+                log_callback("🔍 [Borrowing Policy] Step 2: Checking policy chunks...")
+            
+            chunk_results = await search_website_evidence(
+                query=query,
+                top_k=3,
+                collection="CirculationPolicies",
+                campus_scope=campus_scope,
+                log_callback=log_callback
+            )
+            
+            if chunk_results:
+                top_chunk = chunk_results[0]
+                distance = top_chunk.get("distance", 1.0)
+                score = 1 - distance
+                
+                if score >= 0.70:  # Good chunk match
+                    url = top_chunk.get("final_url", "") or top_chunk.get("canonical_url", "")
+                    title = top_chunk.get("title", "Borrowing Policy")
+                    chunk_text = top_chunk.get("chunk_text", "")
+                    
+                    if url:
+                        if log_callback:
+                            log_callback(f"✅ [Borrowing Policy] Chunk match found (score: {score:.3f})")
+                        
+                        # Return chunk excerpt with URL
+                        excerpt = chunk_text[:300] + ("..." if len(chunk_text) > 300 else "")
+                        response_text = f"**{title}**\n\n{excerpt}\n\n**Full details:** {url}"
+                        
+                        return {
+                            "tool": self.name,
+                            "success": True,
+                            "text": response_text,
+                            "url": url,
+                            "response_mode": "chunk_answer"
+                        }
+            
+            # PRIORITY 3: Fall back to Google CSE with Oxford constraints
+            if log_callback:
+                log_callback("🔍 [Borrowing Policy] Step 3: Falling back to Google with Oxford constraints...")
             
             # Get credentials at runtime
             creds = _get_google_credentials()
@@ -439,35 +521,39 @@ class BorrowingPolicySearchTool(Tool):
                     "text": "Site search not configured. Browse https://www.lib.miamioh.edu/"
                 }
             
-            # Enhance query with policy-specific terms
-            policy_keywords = {
-                "renew": "renew renewal",
-                "borrow": "borrow borrowing checkout",
-                "loan": "loan period lending",
-                "fine": "fine fees overdue",
-                "delivery": "delivery mail home",
-                "ill": "interlibrary loan ILL",
-                "reserve": "course reserve reserves",
-                "recall": "recall"
-            }
+            # Enhance query with Oxford-specific constraints
+            # Prefix with Oxford site constraint to avoid regional BorrowingPolicy pages
+            oxford_constrained_query = f"Oxford King Library site:libguides.lib.miamioh.edu mul-circulation-policies {query}"
             
-            enhanced_query = query
-            for keyword, expansion in policy_keywords.items():
-                if keyword in query.lower():
-                    enhanced_query += f" {expansion}"
-                    break
+            # Add negative terms to filter out regional campus results (unless explicitly requested)
+            regional_keywords = ["hamilton", "middletown", "regional", "rentschler", "gardner"]
+            is_regional_query = any(kw in query.lower() for kw in regional_keywords)
             
-            # Use enhanced Google search
+            if not is_regional_query:
+                oxford_constrained_query += " -BorrowingPolicy -regional -Hamilton -Middletown"
+            
+            if log_callback:
+                log_callback(f"   🔍 Constrained query: {oxford_constrained_query}")
+            
+            # Use enhanced Google search with constrained query
             google_tool = GoogleSiteEnhancedSearchTool()
             result = await google_tool.execute(
-                query=enhanced_query,
+                query=oxford_constrained_query,
                 log_callback=log_callback,
                 num_results=3
             )
             
             if result.get("success"):
+                # Post-process: prefer mul-circulation-policies over BorrowingPolicy
+                text = result.get("text", "")
+                
+                # If results contain BorrowingPolicy but also mul-circulation-policies, reorder
+                if "BorrowingPolicy" in text and "mul-circulation-policies" in text:
+                    if log_callback:
+                        log_callback("♻️  [Borrowing Policy] Reordering to prefer Oxford mul-circulation-policies")
+                
                 # Add policy-specific context
-                text = "**Borrowing Policy Information:**\n\n" + result.get("text", "")
+                text = "**Borrowing Policy Information:**\n\n" + text
                 result["text"] = text
             
             return result
