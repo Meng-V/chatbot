@@ -22,6 +22,7 @@ from dotenv import load_dotenv
 import os
 import sys
 import json
+import weaviate.classes as wvc
 
 # Add parent directory to path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
