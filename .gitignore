@@ -202,3 +202,4 @@ staff-members - staff-members.csv
 /ai-core/eval_results/*
 ChatBot Testing Results.pptx
 Test Questions for Chatbot - Answer Log.docx
+.env.server

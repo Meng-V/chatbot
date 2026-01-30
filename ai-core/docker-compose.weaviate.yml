@@ -13,12 +13,12 @@ services:
     image: semitechnologies/weaviate:1.28.6
     container_name: weaviate
     restart: on-failure:0
-    ports:
-      - "8080:8080"      # HTTP/REST API  
-      - "50051:50051"    # gRPC (for batch operations)
-    # expose:
-    #   - "8080"
-    #   - "50051"
+    # ports:
+    #   - "8080:8080"      # HTTP/REST API  
+    #   - "50051:50051"    # gRPC (for batch operations)
+    expose:
+      - "8080"
+      - "50051"
     environment:
       # Query defaults
       QUERY_DEFAULTS_LIMIT: 25
