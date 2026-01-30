@@ -1,0 +1,27 @@
+[
+  {
+    "question": "Where is the Makerspace located?",
+    "answer": "The Makerspace is located on the 3rd floor of King Library.\n\nFor more information about Makerspace services, visit:\n\nhttps://libguides.lib.miamioh.edu/create/makerspace",
+    "keywords": [
+      "Makerspace",
+      "location",
+      "3rd floor",
+      "third floor",
+      "King Library",
+      "where is makerspace"
+    ],
+    "topic": "policy_or_service"
+  },
+  {
+    "question": "What floor is the Makerspace on?",
+    "answer": "The Makerspace is on the 3rd floor of King Library.\n\nFor more information about Makerspace services, visit:\n\nhttps://libguides.lib.miamioh.edu/create/makerspace",
+    "keywords": [
+      "Makerspace",
+      "floor",
+      "3rd floor",
+      "third floor",
+      "King Library"
+    ],
+    "topic": "policy_or_service"
+  }
+]

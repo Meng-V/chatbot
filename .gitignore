@@ -197,7 +197,6 @@ ai-core/scripts/sync_liaisons_from_website.py
 staff-members - staff-members.csv
 
 /test
-/ai-core/data/*
 /ai-core/test_data/*
 /ai-core/eval_results/*
 ChatBot Testing Results.pptx
