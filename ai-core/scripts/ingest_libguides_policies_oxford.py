@@ -82,22 +82,22 @@ def parse_libguides_content(html: str, url: str) -> Dict[str, Any]:
     soup = BeautifulSoup(html, 'html.parser')
     
     # Get page title
-    title_elem = soup.find('h1') or soup.find('title')
+    title_elem = soup.find('h1', class_='s-lib-page-title') or soup.find('h1') or soup.find('title')
     title = title_elem.get_text(strip=True) if title_elem else "Policy Page"
     
-    # Remove navigation, sidebars, footers
-    for element in soup.find_all(['nav', 'footer', 'aside', 'script', 'style']):
+    # Remove navigation, sidebars, footers, scripts, styles
+    for element in soup.find_all(['nav', 'footer', 'script', 'style', 'noscript']):
         element.decompose()
     
-    # Remove SpringShare elements
-    for cls in ['s-lib-header', 's-lib-footer', 's-lib-side-borders', 's-lib-box-std']:
+    # Remove SpringShare chrome (NOT content boxes or side-borders which wrap content)
+    for cls in ['s-lib-header', 's-lib-footer']:
         for element in soup.find_all(class_=cls):
             element.decompose()
     
     # Extract main content area
     content_area = (
-        soup.find('div', class_='s-lib-main') or
         soup.find('div', id='s-lg-guide-main') or
+        soup.find('div', class_='s-lib-main') or
         soup.find('main') or
         soup.find('article') or
         soup.body
@@ -106,41 +106,87 @@ def parse_libguides_content(html: str, url: str) -> Dict[str, Any]:
     if not content_area:
         return {"title": title, "sections": [], "tables": []}
     
-    # Extract sections by headings
     sections = []
-    current_section = {"heading": title, "level": 1, "content": ""}
-    
-    for element in content_area.find_all(['h1', 'h2', 'h3', 'h4', 'p', 'ul', 'ol', 'table']):
-        if element.name in ['h1', 'h2', 'h3', 'h4']:
-            if current_section["content"].strip():
-                sections.append(current_section.copy())
-            level = int(element.name[1])
-            current_section = {
-                "heading": element.get_text(strip=True),
-                "level": level,
-                "content": ""
-            }
-        elif element.name == 'table':
-            # Store table separately for fact extraction
-            continue
-        else:
-            text = element.get_text(separator=' ', strip=True)
-            if text:
-                current_section["content"] += text + "\n\n"
-    
-    if current_section["content"].strip():
-        sections.append(current_section)
-    
-    # Extract tables for structured data
     tables = []
-    for table in content_area.find_all('table'):
-        rows = []
-        for tr in table.find_all('tr'):
-            cells = [td.get_text(strip=True) for td in tr.find_all(['th', 'td'])]
-            if cells and any(cells):
-                rows.append(cells)
-        if rows:
-            tables.append(rows)
+    
+    # LibGuides uses s-lib-box for content sections
+    boxes = content_area.find_all('div', class_='s-lib-box')
+    
+    if boxes:
+        # Parse LibGuides box structure
+        for box in boxes:
+            # Box heading
+            heading_elem = box.find(['h2', 'h3', 'h4'], class_='s-lib-box-title')
+            if not heading_elem:
+                heading_elem = box.find(['h2', 'h3', 'h4'])
+            heading = heading_elem.get_text(strip=True) if heading_elem else title
+            
+            # Box body content (LibGuides uses s-lib-box-content)
+            body = box.find('div', class_='s-lib-box-content') or box.find('div', class_='s-lib-box-body') or box
+            
+            # Collect text from all child elements
+            content_parts = []
+            for elem in body.find_all(['p', 'div', 'ul', 'ol', 'li', 'span', 'a', 'strong', 'em'], recursive=True):
+                # Skip if this is a nested container with children we'll process
+                if elem.name in ['div', 'ul', 'ol'] and elem.find(['p', 'li']):
+                    continue
+                text = elem.get_text(separator=' ', strip=True)
+                if text and len(text) > 5 and text not in content_parts:
+                    content_parts.append(text)
+            
+            # Fallback: get all text from the body
+            if not content_parts:
+                body_text = body.get_text(separator='\n', strip=True)
+                if body_text and len(body_text) > 10:
+                    content_parts = [body_text]
+            
+            content = '\n\n'.join(content_parts)
+            
+            if content.strip():
+                sections.append({
+                    "heading": heading,
+                    "level": 2,
+                    "content": content
+                })
+            
+            # Extract tables from this box
+            for table in body.find_all('table'):
+                rows = []
+                for tr in table.find_all('tr'):
+                    cells = [td.get_text(strip=True) for td in tr.find_all(['th', 'td'])]
+                    if cells and any(cells):
+                        rows.append(cells)
+                if rows:
+                    tables.append(rows)
+    else:
+        # Fallback: standard heading-based parsing
+        current_section = {"heading": title, "level": 1, "content": ""}
+        
+        for element in content_area.find_all(['h1', 'h2', 'h3', 'h4', 'p', 'ul', 'ol', 'div', 'table']):
+            if element.name in ['h1', 'h2', 'h3', 'h4']:
+                if current_section["content"].strip():
+                    sections.append(current_section.copy())
+                level = int(element.name[1])
+                current_section = {
+                    "heading": element.get_text(strip=True),
+                    "level": level,
+                    "content": ""
+                }
+            elif element.name == 'table':
+                rows = []
+                for tr in element.find_all('tr'):
+                    cells = [td.get_text(strip=True) for td in tr.find_all(['th', 'td'])]
+                    if cells and any(cells):
+                        rows.append(cells)
+                if rows:
+                    tables.append(rows)
+            else:
+                text = element.get_text(separator=' ', strip=True)
+                if text and len(text) > 5:
+                    current_section["content"] += text + "\n\n"
+        
+        if current_section["content"].strip():
+            sections.append(current_section)
     
     return {
         "title": title,
