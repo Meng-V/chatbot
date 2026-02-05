@@ -512,11 +512,18 @@ def import_circulation_policies(client, embeddings, dry_run: bool = False) -> Di
                     vector = embeddings.embed_query(chunk_text)
                     
                     chunk_id = data.get("id", "")
+                    # Convert non-UUID IDs to valid UUIDs
+                    try:
+                        uuid.UUID(chunk_id)
+                        valid_uuid = chunk_id
+                    except (ValueError, AttributeError):
+                        valid_uuid = generate_deterministic_uuid(chunk_id)
+                    
                     properties = {k: v for k, v in data.items() if k != "id"}
                     
                     batch.add_object(
                         properties=properties,
-                        uuid=chunk_id,
+                        uuid=valid_uuid,
                         vector=vector
                     )
                     
@@ -568,11 +575,18 @@ def import_circulation_policy_facts(client, embeddings, dry_run: bool = False) -
                     vector = embeddings.embed_query(text_to_embed)
                     
                     fact_id = data.get("id", "")
+                    # Convert non-UUID IDs to valid UUIDs
+                    try:
+                        uuid.UUID(fact_id)
+                        valid_uuid = fact_id
+                    except (ValueError, AttributeError):
+                        valid_uuid = generate_deterministic_uuid(fact_id)
+                    
                     properties = {k: v for k, v in data.items() if k != "id"}
                     
                     batch.add_object(
                         properties=properties,
-                        uuid=fact_id,
+                        uuid=valid_uuid,
                         vector=vector
                     )
                     
