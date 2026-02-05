@@ -569,9 +569,14 @@ def import_circulation_policy_facts(client, embeddings, dry_run: bool = False) -
                     data = json.loads(line)
                     
                     # Generate embedding from question + answer
-                    question = data.get("question_patterns", [""])[0]
+                    patterns = data.get("question_patterns", [])
+                    question = patterns[0] if patterns else ""
                     answer = data.get("answer", "")
-                    text_to_embed = f"{question} {answer}"
+                    text_to_embed = f"{question} {answer}".strip()
+                    if not text_to_embed:
+                        stats["failed"] += 1
+                        print(f"  ⚠️  Line {idx}: Empty content, skipping")
+                        continue
                     vector = embeddings.embed_query(text_to_embed)
                     
                     fact_id = data.get("id", "")
