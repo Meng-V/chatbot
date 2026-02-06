@@ -31,31 +31,26 @@ from pathlib import Path
 from datetime import datetime
 from typing import Dict, Any, List, Optional
 
-import weaviate
-import weaviate.classes as wvc
+import sys
+from pathlib import Path
+
+# Add parent directory to path
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from src.utils.weaviate_client import get_weaviate_client
 from dotenv import load_dotenv
-from langchain_openai import OpenAIEmbeddings
 
 root_dir = Path(__file__).resolve().parent.parent.parent
 load_dotenv(dotenv_path=root_dir / ".env")
-
-WEAVIATE_HOST = os.getenv("WEAVIATE_HOST", "")
-WEAVIATE_API_KEY = os.getenv("WEAVIATE_API_KEY", "")
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
 
 DEFAULT_INPUT = "ai-core/data/weaviate_import.jsonl"
 
 
 def get_client():
     """Create Weaviate v4 client."""
-    if not WEAVIATE_HOST or not WEAVIATE_API_KEY:
-        raise ValueError("Missing WEAVIATE_HOST or WEAVIATE_API_KEY in .env file")
-    
-    client = weaviate.connect_to_weaviate_cloud(
-        cluster_url=WEAVIATE_HOST,
-        auth_credentials=wvc.init.Auth.api_key(WEAVIATE_API_KEY),
-        headers={"X-OpenAI-Api-Key": OPENAI_API_KEY} if OPENAI_API_KEY else None
-    )
+    # Use centralized client for local Docker
+    client = get_weaviate_client()
+    if not client:
+        raise ValueError("Could not connect to Weaviate local Docker instance")
     return client
 
 

@@ -142,6 +142,151 @@ OUT-OF-SCOPE (respond with: out_of_scope):
 Respond with ONLY the category name (e.g., subject_librarian or out_of_scope). No explanation."""
 
 # ============================================================================
+# FACT FAST LANE HELPERS
+# ============================================================================
+
+def detect_fact_fast_lane(normalized_intent, user_message: str) -> dict:
+    """
+    Detect if query qualifies for Fact Fast Lane (deterministic routing).
+    
+    Only triggers for high-confidence, unambiguous, factual queries.
+    Returns routing decision or None if fast lane doesn't apply.
+    
+    Args:
+        normalized_intent: NormalizedIntent object from intent normalization
+        user_message: Original user message
+        
+    Returns:
+        dict with {"type": "agent", "primary_agent_id": str} or
+        dict with {"type": "synth_flag", "flag": str} or
+        None if fast lane doesn't apply
+    """
+    # Only trigger for high-confidence, unambiguous intents
+    if normalized_intent.ambiguity or normalized_intent.confidence < 0.75:
+        return None
+    
+    msg_lower = user_message.lower()
+    
+    # Known library names for pattern matching
+    library_names = [
+        "library", "libraries", "king", "wertz", "rentschler", 
+        "gardner", "art", "architecture", "art & architecture",
+        "hamilton", "middletown"
+    ]
+    
+    # A) Library HOURS - route to libcal_hours
+    hours_keywords = ["hours", "open", "close", "closing", "opening", "schedule"]
+    has_hours_keyword = any(kw in msg_lower for kw in hours_keywords)
+    has_library_name = any(lib in msg_lower for lib in library_names)
+    
+    # Check for very short forms like "library hours", "king hours"
+    is_short_hours_form = (
+        ("library hours" in msg_lower) or
+        ("king hours" in msg_lower) or
+        ("hours" in msg_lower and len(user_message.split()) <= 5)
+    )
+    
+    if has_hours_keyword and (has_library_name or is_short_hours_form):
+        return {"type": "agent", "primary_agent_id": "libcal_hours"}
+    
+    # B) STUDY ROOMS - route to libcal_rooms
+    study_room_keywords = [
+        "study room", "room reservation", "book a room", "reserve a room",
+        "reserve room", "book room"
+    ]
+    if any(kw in msg_lower for kw in study_room_keywords):
+        return {"type": "agent", "primary_agent_id": "libcal_rooms"}
+    
+    # C) ADDRESS - set synthesizer flag
+    address_keywords = ["address", "where is", "where's", "location", "where located"]
+    if any(kw in msg_lower for kw in address_keywords) and has_library_name:
+        return {"type": "synth_flag", "flag": "_library_address_query"}
+    
+    # D) WEBSITE - set synthesizer flag
+    website_keywords = ["website", "url", "link", "webpage", "web page"]
+    if any(kw in msg_lower for kw in website_keywords) and has_library_name:
+        return {"type": "synth_flag", "flag": "_library_website_query"}
+    
+    # E) LIVE CHAT HOURS - set synthesizer flag
+    live_chat_keywords = ["live chat", "ask us", "chat with librarian"]
+    chat_time_keywords = ["hours", "available", "when", "open"]
+    has_chat = any(kw in msg_lower for kw in live_chat_keywords)
+    has_time = any(kw in msg_lower for kw in chat_time_keywords)
+    
+    if has_chat and (has_time or "available" in msg_lower):
+        return {"type": "synth_flag", "flag": "_live_chat_hours_query"}
+    
+    # F) SUBJECT LIBRARIAN - route to subject_librarian agent
+    # High-precision patterns for subject/liaison librarian queries
+    if "librarian" in msg_lower:
+        subject_librarian_patterns = [
+            "subject librarian", "liaison librarian", "librarian for",
+            "my librarian", "contact librarian", "find librarian",
+            "who is the librarian", "who's the librarian", "whos the librarian",
+            "librarian contact", "librarians for", "subject liaison"
+        ]
+        
+        # Also match common subjects when paired with librarian
+        common_subjects = [
+            "math", "biology", "chemistry", "physics", "psychology", "english",
+            "history", "business", "nursing", "engineering", "art", "music",
+            "computer science", "accounting", "finance", "economics", "sociology"
+        ]
+        
+        # Check for high-precision patterns
+        has_librarian_pattern = any(pattern in msg_lower for pattern in subject_librarian_patterns)
+        has_subject_mention = any(subject in msg_lower for subject in common_subjects)
+        
+        if has_librarian_pattern or (has_subject_mention and "librarian" in msg_lower):
+            return {"type": "agent", "primary_agent_id": "subject_librarian"}
+    
+    return None
+
+
+def emit_route_trace(state: dict, logger, path_label: str):
+    """
+    Emit a single-line routing trace for developers.
+    Only logs once per request using guard flag.
+    
+    Args:
+        state: AgentState dict
+        logger: Logger instance
+        path_label: Path taken (fast_lane|classify_category|clarify|execute_agents)
+    """
+    # Guard: only log once per request
+    if state.get("_route_trace_logged"):
+        return
+    
+    state["_route_trace_logged"] = True
+    
+    # Build trace components
+    agent = state.get("primary_agent_id") or "none"
+    
+    # Check for synth flags
+    synth_flag_keys = ["_library_address_query", "_library_website_query", "_live_chat_hours_query"]
+    active_flags = [key for key in synth_flag_keys if state.get(key)]
+    synth_flags = ",".join(active_flags) if active_flags else "none"
+    
+    # Get confidence values
+    normalized_intent = state.get("normalized_intent")
+    intent_conf = f"{normalized_intent.confidence:.2f}" if normalized_intent else "N/A"
+    category_conf = state.get("category_confidence")
+    category_conf_str = f"{category_conf:.2f}" if category_conf is not None else "N/A"
+    
+    # Build trace line
+    trace = (
+        f"🛤️  [ROUTING TRACE] path={path_label} | "
+        f"agent={agent} | "
+        f"synth_flags={synth_flags} | "
+        f"intent_conf={intent_conf} | "
+        f"category_conf={category_conf_str}"
+    )
+    
+    if logger and hasattr(logger, 'log'):
+        logger.log(trace)
+
+
+# ============================================================================
 # QUERY UNDERSTANDING NODE (NEW - Pre-processing layer)
 # ============================================================================
 
@@ -1674,8 +1819,39 @@ async def intent_normalization_node(state: AgentState) -> AgentState:
         state["category"] = None
         state["primary_agent_id"] = None
         logger.log(f"⚠️ [Intent Normalization] Ambiguous intent detected: {normalized_intent.ambiguity_reason}")
+        # Emit routing trace for clarification path
+        emit_route_trace(state, logger, "clarify")
     else:
         state["needs_clarification"] = False
+        
+        # 🚀 FACT FAST LANE: Check if query qualifies for deterministic routing
+        fast_lane_route = detect_fact_fast_lane(normalized_intent, user_msg)
+        
+        if fast_lane_route:
+            # Fast lane activated - bypass RAG classification
+            logger.log(f"⚡ [Fast Lane] Activated for {fast_lane_route.get('type')}")
+            
+            state["needs_clarification"] = False
+            state["classification_confidence"] = 1.0
+            state["category_confidence"] = 1.0
+            state["category"] = "fact_fast_lane"
+            
+            if fast_lane_route["type"] == "agent":
+                # Direct agent routing
+                state["primary_agent_id"] = fast_lane_route["primary_agent_id"]
+                state["secondary_agent_ids"] = []
+                logger.log(f"⚡ [Fast Lane] Routing directly to agent: {fast_lane_route['primary_agent_id']}")
+            
+            elif fast_lane_route["type"] == "synth_flag":
+                # Synthesizer flag routing
+                flag_name = fast_lane_route["flag"]
+                state[flag_name] = True
+                state["primary_agent_id"] = None
+                state["secondary_agent_ids"] = []
+                logger.log(f"⚡ [Fast Lane] Setting synthesizer flag: {flag_name}")
+            
+            # Emit routing trace for fast lane path
+            emit_route_trace(state, logger, "fast_lane")
     
     logger.log(f"✅ [Intent Normalization] Intent: {normalized_intent.intent_summary}")
     state["_logger"] = logger
@@ -1721,6 +1897,8 @@ async def category_classification_node(state: AgentState) -> AgentState:
         # Set primary_agent_id to None when clarification needed
         state["primary_agent_id"] = None
         logger.log(f"⚠️ [Category Classification] Clarification needed: {category_result.clarification_reason}")
+        # Emit routing trace for clarification path
+        emit_route_trace(state, logger, "clarify")
     
     # Agent selection using SINGLE SOURCE OF TRUTH
     if not state.get("needs_clarification"):
@@ -1749,6 +1927,8 @@ async def category_classification_node(state: AgentState) -> AgentState:
             f"clarification={state.get('needs_clarification', False)}"
         )
         logger.log(f"✅ [Category Classification] Category: {category_result.category}, Agent: {primary_agent_id}")
+        # Emit routing trace for normal classification path
+        emit_route_trace(state, logger, "classify_category")
     
     state["_logger"] = logger
     return state
@@ -1782,19 +1962,33 @@ def create_library_graph():
     # Set entry point - MUST be intent normalization
     workflow.set_entry_point("normalize_intent")
     
-    # Step 1 → Step 2: Always go from intent normalization to category classification
-    # Check if clarification needed after intent normalization
-    def check_clarification_after_intent(state: AgentState) -> str:
+    # Step 1 → Step 2 or Execute: Check for fast lane or clarification after intent normalization
+    def check_after_intent(state: AgentState) -> str:
+        # Priority 1: Clarification needed
         if state.get("needs_clarification"):
             return "clarify"
+        
+        # Priority 2: Fast lane activated (primary_agent_id set or synth flag set)
+        primary_agent = state.get("primary_agent_id")
+        fast_lane_flags = [
+            state.get("_library_address_query"),
+            state.get("_library_website_query"),
+            state.get("_live_chat_hours_query")
+        ]
+        
+        if primary_agent or any(fast_lane_flags):
+            return "execute"
+        
+        # Default: Classify category
         return "classify"
     
     workflow.add_conditional_edges(
         "normalize_intent",
-        check_clarification_after_intent,
+        check_after_intent,
         {
             "clarify": "clarify",
-            "classify": "classify_category"
+            "classify": "classify_category",
+            "execute": "execute_agents"
         }
     )
     

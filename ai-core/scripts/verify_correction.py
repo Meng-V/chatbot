@@ -11,34 +11,32 @@ Usage:
     python scripts/verify_correction.py
 """
 
-import weaviate
-import weaviate.classes as wvc
-from pathlib import Path
-from dotenv import load_dotenv
 import os
 import sys
+from pathlib import Path
+from dotenv import load_dotenv
+
+# Add parent directory to path
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from src.utils.weaviate_client import get_weaviate_client
 
 # Load environment variables
 env_path = Path(__file__).parent.parent.parent / '.env'
 load_dotenv(dotenv_path=env_path)
 
-WEAVIATE_URL = os.getenv("WEAVIATE_HOST")
-WEAVIATE_API_KEY = os.getenv("WEAVIATE_API_KEY")
 COLLECTION_NAME = "TranscriptQA"
 
 def connect_to_weaviate():
-    """Connect to Weaviate Cloud."""
-    print(f"🔌 Connecting to Weaviate...")
+    """Connect to Weaviate LOCAL DOCKER."""
+    print(f"🔌 Connecting to Weaviate (local Docker)...")
     
     try:
-        client = weaviate.connect_to_weaviate_cloud(
-            cluster_url=WEAVIATE_URL,
-            auth_credentials=wvc.init.Auth.api_key(WEAVIATE_API_KEY)
-        )
-        print("✅ Connected successfully\n")
+        client = get_weaviate_client()
+        if client:
+            print("✅ Connected successfully")
         return client
     except Exception as e:
-        print(f"❌ Failed to connect: {e}")
+        print(f"❌ Connection failed: {e}")
         sys.exit(1)
 
 def search_correction(client, question):

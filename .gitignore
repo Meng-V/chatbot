@@ -193,12 +193,11 @@ cython_debug/
 node_modules
 
 ai-core/logs/
+/test
+/ai-core/test_data/*
+ai-core/data/*
+/ai-core/eval_results/*
+.env.server
 ai-core/scripts/sync_liaisons_from_website.py
 staff-members - staff-members.csv
-
-/test
-/ai-core/data/*
-/ai-core/test_data/*
-/ai-core/eval_results/*
-ChatBot Testing Results.pptx
-Test Questions for Chatbot - Answer Log.docx
+ai-core/docker-compose.weaviate.local.yml

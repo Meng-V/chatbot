@@ -49,6 +49,10 @@ class JSONFormatter(logging.Formatter):
         return json.dumps(log_data)
 
 
+# Access log file (for HTTP request logs from uvicorn)
+ACCESS_LOG_FILE = LOG_DIR / "access.log"
+
+
 def setup_logging():
     """Configure logging for the entire application."""
     
@@ -59,9 +63,11 @@ def setup_logging():
     # Remove existing handlers
     root_logger.handlers = []
     
-    # Console handler (human-readable)
+    # Console handler - WARNING+ only
+    # (stdout/stderr is captured by systemd into /var/log/smartchatbot_backend/,
+    #  so only warnings and errors should appear there)
     console_handler = logging.StreamHandler()
-    console_handler.setLevel(logging.INFO)
+    console_handler.setLevel(logging.WARNING)
     console_formatter = logging.Formatter(
         '%(asctime)s - %(levelname)s - %(message)s',
         datefmt='%Y-%m-%d %H:%M:%S'
@@ -69,7 +75,7 @@ def setup_logging():
     console_handler.setFormatter(console_formatter)
     root_logger.addHandler(console_handler)
     
-    # App log file (rotating, JSON format)
+    # App log file (rotating, JSON format) - all INFO+ app logs
     app_handler = RotatingFileHandler(
         APP_LOG_FILE,
         maxBytes=10*1024*1024,  # 10MB
@@ -79,7 +85,7 @@ def setup_logging():
     app_handler.setFormatter(JSONFormatter())
     root_logger.addHandler(app_handler)
     
-    # Error log file (rotating, JSON format)
+    # Error log file (rotating, JSON format) - ERROR+ only
     error_handler = RotatingFileHandler(
         ERROR_LOG_FILE,
         maxBytes=10*1024*1024,  # 10MB
@@ -111,9 +117,47 @@ def setup_logging():
     api_handler.setFormatter(JSONFormatter())
     api_logger.addHandler(api_handler)
     
+    # --- Uvicorn logger routing ---
+    # Route uvicorn access logs (HTTP requests) to access.log file
+    # instead of letting them flood stdout/stderr -> /var/log/
+    access_handler = RotatingFileHandler(
+        ACCESS_LOG_FILE,
+        maxBytes=10*1024*1024,  # 10MB
+        backupCount=3
+    )
+    access_formatter = logging.Formatter(
+        '%(asctime)s - %(message)s',
+        datefmt='%Y-%m-%d %H:%M:%S'
+    )
+    access_handler.setLevel(logging.INFO)
+    access_handler.setFormatter(access_formatter)
+    
+    uvicorn_access = logging.getLogger("uvicorn.access")
+    uvicorn_access.handlers = []  # Remove default handlers
+    uvicorn_access.addHandler(access_handler)
+    uvicorn_access.propagate = False  # Don't send to root (prevents console + app.log spam)
+    
+    # Route uvicorn error logger: errors to file, warnings+ to console
+    uvicorn_error = logging.getLogger("uvicorn.error")
+    uvicorn_error.handlers = []
+    uvicorn_error.addHandler(app_handler)    # INFO+ to app.log
+    uvicorn_error.addHandler(error_handler)  # ERROR+ to errors.log
+    uvicorn_error.addHandler(console_handler)  # WARNING+ to console/systemd
+    uvicorn_error.propagate = False
+    
+    # Route noisy third-party logs to access.log instead of console.
+    # httpx/httpcore = HTTP client requests to OpenAI, Weaviate, Google, etc.
+    # engineio/socketio = WebSocket PING/PONG heartbeat messages
+    for noisy_logger_name in ["httpx", "httpcore", "urllib3", "engineio", "socketio", "websockets"]:
+        noisy_logger = logging.getLogger(noisy_logger_name)
+        noisy_logger.handlers = []
+        noisy_logger.addHandler(access_handler)
+        noisy_logger.propagate = False
+    
     logging.info("✅ Logging system initialized")
     logging.info(f"   App log: {APP_LOG_FILE}")
     logging.info(f"   Error log: {ERROR_LOG_FILE}")
+    logging.info(f"   Access log: {ACCESS_LOG_FILE}")
     logging.info(f"   Agent log: {AGENT_LOG_FILE}")
     logging.info(f"   API log: {API_LOG_FILE}")
 

@@ -22,8 +22,6 @@ Usage:
 import sys
 from pathlib import Path
 import argparse
-import weaviate
-import weaviate.classes as wvc
 
 # Add parent directory to path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -35,24 +33,16 @@ import os
 root_dir = Path(__file__).resolve().parent.parent.parent
 load_dotenv(dotenv_path=root_dir / ".env")
 
-WEAVIATE_HOST = os.getenv("WEAVIATE_HOST")
-WEAVIATE_API_KEY = os.getenv("WEAVIATE_API_KEY")
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+# Import centralized Weaviate client
+from src.utils.weaviate_client import get_weaviate_client
 
 
 def connect_to_weaviate():
-    """Connect to Weaviate cloud instance."""
-    if not WEAVIATE_HOST or not WEAVIATE_API_KEY:
-        print("❌ Error: WEAVIATE_HOST or WEAVIATE_API_KEY not set in .env")
-        return None
-    
+    """Connect to Weaviate LOCAL DOCKER instance."""
     try:
-        client = weaviate.connect_to_weaviate_cloud(
-            cluster_url=WEAVIATE_HOST,
-            auth_credentials=wvc.init.Auth.api_key(WEAVIATE_API_KEY),
-            headers={"X-OpenAI-Api-Key": OPENAI_API_KEY} if OPENAI_API_KEY else None
-        )
-        print(f"✅ Connected to Weaviate: {WEAVIATE_HOST}")
+        client = get_weaviate_client()
+        if client:
+            print(f"✅ Connected to Weaviate (local Docker)")
         return client
     except Exception as e:
         print(f"❌ Connection failed: {e}")

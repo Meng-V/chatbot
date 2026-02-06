@@ -1,10 +1,13 @@
 """Health, Readiness, and Metrics endpoints for monitoring."""
+
 import os
 import psutil
 import time
 import httpx
-import weaviate
-import weaviate.classes as wvc
+import sys
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from utils.weaviate_client import get_weaviate_client, get_weaviate_url
 from datetime import datetime
 from typing import Dict, Any, List
 from fastapi import APIRouter, HTTPException, status
@@ -17,147 +20,117 @@ router = APIRouter()
 # Application start time
 START_TIME = time.time()
 
+
 async def check_database_health() -> Dict[str, Any]:
     """Check database connectivity and response time."""
     try:
         start = time.time()
         prisma = get_prisma_client()
-        
+
         if not prisma.is_connected():
             await prisma.connect()
-        
+
         # Simple query to test connection
         await prisma.conversation.count()
-        
+
         response_time = int((time.time() - start) * 1000)  # ms
-        
-        return {
-            "status": "healthy",
-            "responseTime": response_time
-        }
+
+        return {"status": "healthy", "responseTime": response_time}
     except Exception as e:
-        return {
-            "status": "unhealthy",
-            "error": str(e)
-        }
+        return {"status": "unhealthy", "error": str(e)}
+
 
 def check_memory_health() -> Dict[str, Any]:
     """Check memory usage."""
     memory = psutil.virtual_memory()
     process = psutil.Process()
     process_memory = process.memory_info()
-    
+
     # Memory usage in MB
     used_mb = process_memory.rss / 1024 / 1024
     total_mb = memory.total / 1024 / 1024
-    
+
     # Consider unhealthy if using > 80% of available memory or > 1GB
     threshold_mb = min(total_mb * 0.8, 1024)
     is_healthy = used_mb < threshold_mb
-    
+
     return {
         "status": "healthy" if is_healthy else "warning",
         "used": int(used_mb),
         "total": int(total_mb),
-        "external": int(process_memory.vms / 1024 / 1024)  # Virtual memory
+        "external": int(process_memory.vms / 1024 / 1024),  # Virtual memory
     }
+
 
 def check_environment_health() -> Dict[str, Any]:
     """Check required environment variables."""
-    required_vars = [
-        "OPENAI_API_KEY",
-        "DATABASE_URL",
-        "WEAVIATE_HOST"
-    ]
-    
+    required_vars = ["OPENAI_API_KEY", "DATABASE_URL", "WEAVIATE_HOST"]
+
     missing = [var for var in required_vars if not os.getenv(var)]
-    
+
     return {
         "status": "healthy" if not missing else "unhealthy",
-        "missingVariables": missing
+        "missingVariables": missing,
     }
+
 
 async def check_openai_health() -> Dict[str, Any]:
     """Check OpenAI API connectivity with actual API call."""
     api_key = os.getenv("OPENAI_API_KEY")
     if not api_key:
-        return {
-            "status": "unconfigured",
-            "error": "OPENAI_API_KEY not set"
-        }
-    
+        return {"status": "unconfigured", "error": "OPENAI_API_KEY not set"}
+
     try:
         start = time.time()
         async with httpx.AsyncClient(timeout=10) as client:
             response = await client.get(
                 "https://api.openai.com/v1/models",
-                headers={"Authorization": f"Bearer {api_key}"}
+                headers={"Authorization": f"Bearer {api_key}"},
             )
             response_time = int((time.time() - start) * 1000)
-            
+
             if response.status_code == 200:
-                return {
-                    "status": "healthy",
-                    "responseTime": response_time
-                }
+                return {"status": "healthy", "responseTime": response_time}
             else:
                 return {
                     "status": "unhealthy",
                     "error": f"HTTP {response.status_code}",
-                    "responseTime": response_time
+                    "responseTime": response_time,
                 }
     except Exception as e:
-        return {
-            "status": "unhealthy",
-            "error": str(e)
-        }
+        return {"status": "unhealthy", "error": str(e)}
+
 
 async def check_weaviate_health() -> Dict[str, Any]:
-    """Check Weaviate connectivity with actual connection test."""
-    scheme = os.getenv("WEAVIATE_SCHEME", "http")
-    api_key = os.getenv("WEAVIATE_API_KEY", "")
+    """Check Weaviate connectivity using centralized client factory (v4 API)."""
     host = os.getenv("WEAVIATE_HOST", "")
-    port = os.getenv("WEAVIATE_PORT", "8080")
-    grpc_port = os.getenv("WEAVIATE_GRPC_PORT", "50051")
-
     if not host:
-        return {
-            "status": "unconfigured",
-            "error": "WEAVIATE_HOST not set"
-        }
-    
-    client = None
+        return {"status": "unconfigured", "error": "WEAVIATE_HOST not set"}
+
     try:
         start = time.time()
         
-        if scheme == "https" and api_key:
-            client = weaviate.connect_to_weaviate_cloud(
-                cluster_url=f"https://{host}",
-                auth_credentials=weaviate.auth.AuthApiKey(api_key)
-            )
-        else:
-            client = weaviate.connect_to_custom(
-                host,  # http_host
-                port,         # http_port
-                False,        # http_secure
-                host,  # grpc_host
-                grpc_port,        # grpc_port
-                False,        # grpc_secure
-            )
-
-
-        # Test connection by checking if ready
-        is_ready = client.is_ready()
+        # Use centralized client factory
+        client = get_weaviate_client()
+        if not client:
+            return {"status": "unhealthy", "error": "Could not create Weaviate client"}
+        
         response_time = int((time.time() - start) * 1000)
         
+        # Test connection
+        is_ready = client.is_ready()
         if is_ready:
-            # Try to list collections as additional verification
+            # V4 API: Get collections count
             collections = client.collections.list_all()
-            return {
+            meta = client.get_meta()
+            result = {
                 "status": "healthy",
                 "responseTime": response_time,
-                "collections": len(collections)
+                "collections": len(collections),
+                "version": meta.get("version", "unknown"),
+                "url": get_weaviate_url()
             }
+            return result
         else:
             return {
                 "status": "unhealthy",
@@ -165,140 +138,103 @@ async def check_weaviate_health() -> Dict[str, Any]:
                 "responseTime": response_time
             }
     except Exception as e:
-        return {
-            "status": "unhealthy",
-            "error": str(e)
-        }
-    finally:
-        if client:
-            try:
-                client.close()
-            except:
-                pass
+        return {"status": "unhealthy", "error": str(e)}
+
 
 async def check_libcal_health() -> Dict[str, Any]:
     """Check LibCal API connectivity via OAuth token fetch."""
     oauth_url = os.getenv("LIBCAL_OAUTH_URL", "")
     client_id = os.getenv("LIBCAL_CLIENT_ID", "")
     client_secret = os.getenv("LIBCAL_CLIENT_SECRET", "")
-    
+
     if not all([oauth_url, client_id, client_secret]):
-        return {
-            "status": "unconfigured",
-            "error": "LibCal credentials not configured"
-        }
-    
+        return {"status": "unconfigured", "error": "LibCal credentials not configured"}
+
     try:
         start = time.time()
         oauth_service = get_libcal_oauth_service()
         token = await oauth_service.get_token()
         response_time = int((time.time() - start) * 1000)
-        
+
         if token:
-            return {
-                "status": "healthy",
-                "responseTime": response_time
-            }
+            return {"status": "healthy", "responseTime": response_time}
         else:
-            return {
-                "status": "unhealthy",
-                "error": "Failed to obtain OAuth token"
-            }
+            return {"status": "unhealthy", "error": "Failed to obtain OAuth token"}
     except Exception as e:
-        return {
-            "status": "unhealthy",
-            "error": str(e)
-        }
+        return {"status": "unhealthy", "error": str(e)}
+
 
 async def check_libguides_health() -> Dict[str, Any]:
     """Check LibGuides API connectivity via OAuth token fetch."""
     oauth_url = os.getenv("LIBGUIDE_OAUTH_URL", "")
     client_id = os.getenv("LIBGUIDE_CLIENT_ID", "")
     client_secret = os.getenv("LIBGUIDE_CLIENT_SECRET", "")
-    
+
     if not all([oauth_url, client_id, client_secret]):
         return {
             "status": "unconfigured",
-            "error": "LibGuides credentials not configured"
+            "error": "LibGuides credentials not configured",
         }
-    
+
     try:
         start = time.time()
         oauth_service = get_libapps_oauth_service()
         token = await oauth_service.get_token()
         response_time = int((time.time() - start) * 1000)
-        
+
         if token:
-            return {
-                "status": "healthy",
-                "responseTime": response_time
-            }
+            return {"status": "healthy", "responseTime": response_time}
         else:
-            return {
-                "status": "unhealthy",
-                "error": "Failed to obtain OAuth token"
-            }
+            return {"status": "unhealthy", "error": "Failed to obtain OAuth token"}
     except Exception as e:
-        return {
-            "status": "unhealthy",
-            "error": str(e)
-        }
+        return {"status": "unhealthy", "error": str(e)}
+
 
 async def check_google_cse_health() -> Dict[str, Any]:
     """Check Google Custom Search Engine API connectivity."""
     api_key = os.getenv("GOOGLE_API_KEY", "")
     cse_id = os.getenv("GOOGLE_LIBRARY_SEARCH_CSE_ID", "")
-    
+
     if not api_key or not cse_id:
         return {
             "status": "unconfigured",
-            "error": "Google CSE credentials not configured"
+            "error": "Google CSE credentials not configured",
         }
-    
+
     try:
         start = time.time()
         async with httpx.AsyncClient(timeout=10) as client:
             # Perform a minimal test search
             response = await client.get(
                 "https://www.googleapis.com/customsearch/v1",
-                params={
-                    "key": api_key,
-                    "cx": cse_id,
-                    "q": "test",
-                    "num": 1
-                }
+                params={"key": api_key, "cx": cse_id, "q": "test", "num": 1},
             )
             response_time = int((time.time() - start) * 1000)
-            
+
             if response.status_code == 200:
-                return {
-                    "status": "healthy",
-                    "responseTime": response_time
-                }
+                return {"status": "healthy", "responseTime": response_time}
             else:
                 return {
                     "status": "unhealthy",
                     "error": f"HTTP {response.status_code}",
-                    "responseTime": response_time
+                    "responseTime": response_time,
                 }
     except Exception as e:
-        return {
-            "status": "unhealthy",
-            "error": str(e)
-        }
+        return {"status": "unhealthy", "error": str(e)}
+
 
 async def check_libanswers_health() -> Dict[str, Any]:
     """Check LibAnswers API connectivity (for chat handoff)."""
     client_id = os.getenv("LIBANSWERS_CLIENT_ID", "")
     client_secret = os.getenv("LIBANSWERS_CLIENT_SECRET", "")
     token_url = os.getenv("LIBANSWERS_TOKEN_URL", "")
-    
+
     if not all([client_id, client_secret, token_url]):
         return {
             "status": "unconfigured",
-            "error": "LibAnswers credentials not configured"
+            "error": "LibAnswers credentials not configured",
         }
-    
+
     try:
         start = time.time()
         async with httpx.AsyncClient(timeout=10) as client:
@@ -307,29 +243,24 @@ async def check_libanswers_health() -> Dict[str, Any]:
                 data={
                     "client_id": client_id,
                     "client_secret": client_secret,
-                    "grant_type": "client_credentials"
-                }
+                    "grant_type": "client_credentials",
+                },
             )
             response_time = int((time.time() - start) * 1000)
-            
+
             if response.status_code == 200:
                 data = response.json()
                 if data.get("access_token"):
-                    return {
-                        "status": "healthy",
-                        "responseTime": response_time
-                    }
-            
+                    return {"status": "healthy", "responseTime": response_time}
+
             return {
                 "status": "unhealthy",
                 "error": f"HTTP {response.status_code}",
-                "responseTime": response_time
+                "responseTime": response_time,
             }
     except Exception as e:
-        return {
-            "status": "unhealthy",
-            "error": str(e)
-        }
+        return {"status": "unhealthy", "error": str(e)}
+
 
 @router.get("/health")
 async def health_check():
@@ -340,43 +271,54 @@ async def health_check():
     # Core checks
     db_health = await check_database_health()
     memory_health = check_memory_health()
-    
+
     # CPU usage
     cpu_percent = psutil.cpu_percent(interval=0.1)
-    
+
     # External API checks (run in parallel for speed)
     import asyncio
-    openai_health, weaviate_health, libcal_health, libguides_health, google_health, libanswers_health = await asyncio.gather(
+
+    (
+        openai_health,
+        weaviate_health,
+        libcal_health,
+        libguides_health,
+        google_health,
+        libanswers_health,
+    ) = await asyncio.gather(
         check_openai_health(),
         check_weaviate_health(),
         check_libcal_health(),
         check_libguides_health(),
         check_google_cse_health(),
         check_libanswers_health(),
-        return_exceptions=True
+        return_exceptions=True,
     )
-    
+
     # Handle any exceptions from parallel checks
     def safe_result(result, service_name):
         if isinstance(result, Exception):
-            return {"status": "unhealthy", "error": f"{service_name} check failed: {str(result)}"}
+            return {
+                "status": "unhealthy",
+                "error": f"{service_name} check failed: {str(result)}",
+            }
         return result
-    
+
     openai_health = safe_result(openai_health, "OpenAI")
     weaviate_health = safe_result(weaviate_health, "Weaviate")
     libcal_health = safe_result(libcal_health, "LibCal")
     libguides_health = safe_result(libguides_health, "LibGuides")
     google_health = safe_result(google_health, "Google CSE")
     libanswers_health = safe_result(libanswers_health, "LibAnswers")
-    
+
     # Determine overall status (critical services only)
     critical_services_healthy = (
-        db_health["status"] == "healthy" and
-        memory_health["status"] in ["healthy", "warning"] and
-        openai_health["status"] == "healthy" and
-        weaviate_health["status"] == "healthy"
+        db_health["status"] == "healthy"
+        and memory_health["status"] in ["healthy", "warning"]
+        and openai_health["status"] == "healthy"
+        and weaviate_health["status"] == "healthy"
     )
-    
+
     return {
         "status": "healthy" if critical_services_healthy else "unhealthy",
         "timestamp": datetime.now().strftime("%m/%d/%Y, %I:%M:%S %p EST"),
@@ -385,9 +327,7 @@ async def health_check():
         "system": {
             "platform": os.sys.platform,
             "pythonVersion": f"{os.sys.version_info.major}.{os.sys.version_info.minor}.{os.sys.version_info.micro}",
-            "cpuUsage": {
-                "percent": cpu_percent
-            }
+            "cpuUsage": {"percent": cpu_percent},
         },
         "services": {
             "database": db_health,
@@ -396,9 +336,10 @@ async def health_check():
             "libcal": libcal_health,
             "libguides": libguides_health,
             "googleCSE": google_health,
-            "libanswers": libanswers_health
-        }
+            "libanswers": libanswers_health,
+        },
     }
+
 
 @router.get("/readiness")
 async def readiness_check():
@@ -408,47 +349,38 @@ async def readiness_check():
     """
     checks = []
     all_ready = True
-    
+
     # Database connectivity check
     db_health = await check_database_health()
-    checks.append({
-        "name": "database",
-        **db_health
-    })
+    checks.append({"name": "database", **db_health})
     if db_health["status"] != "healthy":
         all_ready = False
-    
+
     # Memory check
     memory_health = check_memory_health()
-    checks.append({
-        "name": "memory",
-        **memory_health
-    })
+    checks.append({"name": "memory", **memory_health})
     if memory_health["status"] not in ["healthy", "warning"]:
         all_ready = False
-    
+
     # Environment variables check
     env_health = check_environment_health()
-    checks.append({
-        "name": "environment",
-        **env_health
-    })
+    checks.append({"name": "environment", **env_health})
     if env_health["status"] != "healthy":
         all_ready = False
-    
+
     result = {
         "status": "ready" if all_ready else "not_ready",
         "timestamp": datetime.now().isoformat(),
-        "checks": checks
+        "checks": checks,
     }
-    
+
     if not all_ready:
         raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail=result
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=result
         )
-    
+
     return result
+
 
 @router.get("/metrics")
 async def metrics_endpoint():
@@ -460,9 +392,9 @@ async def metrics_endpoint():
     memory_health = check_memory_health()
     process = psutil.Process()
     memory_info = process.memory_info()
-    
+
     uptime = time.time() - START_TIME
-    
+
     return {
         "uptime_seconds": uptime,
         "memory_used_mb": memory_health["used"],
@@ -472,8 +404,9 @@ async def metrics_endpoint():
         "database_healthy": 1 if db_health["status"] == "healthy" else 0,
         "database_response_time_ms": db_health.get("responseTime", -1),
         "cpu_percent": psutil.cpu_percent(interval=0.1),
-        "timestamp": datetime.now().isoformat()
+        "timestamp": datetime.now().isoformat(),
     }
+
 
 @router.get("/metrics/prometheus")
 async def prometheus_metrics():
@@ -482,7 +415,7 @@ async def prometheus_metrics():
     Returns metrics in Prometheus text format.
     """
     metrics_data = await metrics_endpoint()
-    
+
     # Convert to Prometheus format
     prometheus_output = [
         "# HELP smartchatbot_uptime_seconds Application uptime in seconds",
@@ -508,11 +441,13 @@ async def prometheus_metrics():
         "# HELP smartchatbot_cpu_percent CPU usage percentage",
         "# TYPE smartchatbot_cpu_percent gauge",
         f"smartchatbot_cpu_percent {metrics_data['cpu_percent']}",
-        ""
+        "",
     ]
-    
+
     from fastapi.responses import PlainTextResponse
+
     return PlainTextResponse("\n".join(prometheus_output))
+
 
 @router.post("/health/restart")
 async def health_restart():
@@ -524,13 +459,15 @@ async def health_restart():
         "message": "Restart acknowledged",
         "status": "healthy",
         "timestamp": datetime.now().isoformat(),
-        "note": "Application restart should be managed by process manager (PM2, systemd, etc.)"
+        "note": "Application restart should be managed by process manager (PM2, systemd, etc.)",
     }
+
 
 @router.get("/health/status")
 async def detailed_health_status():
     """Detailed health status with all checks."""
     return await health_check()
+
 
 @router.get("/health/restart-status")
 async def restart_status():
@@ -538,5 +475,5 @@ async def restart_status():
     return {
         "status": "no_restart_pending",
         "uptime": time.time() - START_TIME,
-        "timestamp": datetime.now().isoformat()
+        "timestamp": datetime.now().isoformat(),
     }

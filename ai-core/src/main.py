@@ -38,8 +38,11 @@ from src.api.route import router as route_router
 # Path calculation: main.py -> src -> ai-core -> root
 root_dir = Path(__file__).resolve().parent.parent.parent
 env_path = root_dir / ".env"
-print(f"Loading .env from: {env_path}")
 load_dotenv(dotenv_path=env_path)
+
+# Initialize logging EARLY (module level) so it takes effect before uvicorn
+# configures its own loggers. This prevents INFO spam in systemd journal.
+setup_logging()
 
 
 def json_serializable(obj):
@@ -94,14 +97,12 @@ def clean_response_for_frontend(text: str) -> str:
 async def lifespan(app: FastAPI):
     """Handle application startup and shutdown."""
     # Startup
-    print("🚀 Starting Miami Libraries AI-Core...")
-    setup_logging()  # Initialize logging system
+    setup_logging()  # Re-apply logging config (overrides uvicorn's defaults)
     logging.info("🚀 Application starting...")
     await connect_database()
     logging.info("✅ Database connected")
     yield
     # Shutdown
-    print("� Shutting down Miami Libraries AI-Core...")
     logging.info("🛑 Application shutting down...")
     await disconnect_database()
     logging.info("✅ Database disconnected")
@@ -268,7 +269,7 @@ async def ask_http(payload: dict):
 @sio.event
 async def connect(sid, environ):
     """Handle client connection."""
-    print(f"🔌 Client connected: {sid}")
+    logging.info(f"🔌 Client connected: {sid}")
     # Create new conversation for this client
     conversation_id = await create_conversation()
     client_conversations[sid] = conversation_id
@@ -280,7 +281,7 @@ async def connect(sid, environ):
 @sio.event
 async def disconnect(sid):
     """Handle client disconnection."""
-    print(f"🔌 Client disconnected: {sid}")
+    logging.info(f"🔌 Client disconnected: {sid}")
     if sid in client_conversations:
         del client_conversations[sid]
 
@@ -388,9 +389,7 @@ async def message(sid, data):
         logger.log("✅ [Socket.IO] Response sent successfully")
         
     except Exception as e:
-        print(f"❌ [Socket.IO] Error: {str(e)}")
-        import traceback
-        print(f"❌ [Socket.IO] Traceback: {traceback.format_exc()}")
+        logging.error(f"❌ [Socket.IO] Error: {str(e)}", exc_info=True)
         
         error_data = {
             "messageId": None,
@@ -412,14 +411,14 @@ async def messageRating(sid, data):
         
         if message_id:
             await update_message_rating(message_id, is_positive)
-            print(f"👍 Message {message_id} rated: {'positive' if is_positive else 'negative'}")
+            logging.info(f"👍 Message {message_id} rated: {'positive' if is_positive else 'negative'}")
             
             await sio.emit("ratingAck", {
                 "messageId": message_id,
                 "success": True
             }, to=sid)
     except Exception as e:
-        print(f"❌ Error updating message rating: {str(e)}")
+        logging.error(f"❌ Error updating message rating: {str(e)}")
         await sio.emit("ratingAck", {
             "success": False,
             "error": str(e)
@@ -438,14 +437,14 @@ async def userFeedback(sid, data):
         
         if conversation_id:
             await save_conversation_feedback(conversation_id, user_rating, user_comment)
-            print(f"💬 Feedback saved for conversation {conversation_id}: {user_rating}/5")
+            logging.info(f"💬 Feedback saved for conversation {conversation_id}: {user_rating}/5")
             
             await sio.emit("feedbackAck", {
                 "conversationId": conversation_id,
                 "success": True
             }, to=sid)
     except Exception as e:
-        print(f"❌ Error saving feedback: {str(e)}")
+        logging.error(f"❌ Error saving feedback: {str(e)}")
         await sio.emit("feedbackAck", {
             "success": False,
             "error": str(e)
@@ -468,7 +467,7 @@ async def clarificationChoice(sid, data):
         original_question = data.get("originalQuestion")
         conversation_id = data.get("conversationId") or client_conversations.get(sid)
         
-        print(f"🎯 [Clarification] User {sid} selected choice: {choice_id}")
+        logging.info(f"🎯 [Clarification] User {sid} selected choice: {choice_id}")
         
         # Create logger
         logger = AgentLogger()
@@ -559,9 +558,7 @@ async def clarificationChoice(sid, data):
         logger.log("✅ [Clarification Choice] Response sent successfully")
         
     except Exception as e:
-        print(f"❌ [Clarification Choice] Error: {str(e)}")
-        import traceback
-        traceback.print_exc()
+        logging.error(f"❌ [Clarification Choice] Error: {str(e)}", exc_info=True)
         
         await sio.emit("message", json_serializable({
             "messageId": None,
@@ -585,7 +582,7 @@ async def provideMoreDetails(sid, data):
         additional_details = data.get("additionalDetails")
         conversation_id = data.get("conversationId") or client_conversations.get(sid)
         
-        print(f"💬 [More Details] User {sid} provided: {additional_details}")
+        logging.info(f"💬 [More Details] User {sid} provided: {additional_details}")
         
         # Create logger
         logger = AgentLogger()
@@ -648,9 +645,7 @@ async def provideMoreDetails(sid, data):
         logger.log("✅ [More Details] Responded successfully")
         
     except Exception as e:
-        print(f"❌ [More Details] Error: {str(e)}")
-        import traceback
-        traceback.print_exc()
+        logging.error(f"❌ [More Details] Error: {str(e)}", exc_info=True)
         
         await sio.emit("message", json_serializable({
             "messageId": None,

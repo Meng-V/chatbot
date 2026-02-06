@@ -6,10 +6,14 @@ This service is used for RAG fallback when API agents don't have sufficient info
 """
 
 import os
-import weaviate
-import weaviate.classes as wvc
+import sys
 from typing import List, Dict, Any, Optional
+from pathlib import Path
 from langchain_openai import OpenAIEmbeddings
+
+# Import centralized Weaviate client
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from utils.weaviate_client import get_weaviate_client
 
 
 def get_collection_name() -> str:
@@ -18,51 +22,27 @@ def get_collection_name() -> str:
 
 
 def _get_weaviate_client():
-    """Create Weaviate client connection."""
-    scheme = os.getenv("WEAVIATE_SCHEME", "http")
-    api_key = os.getenv("WEAVIATE_API_KEY", "")
-    host = os.getenv("WEAVIATE_HOST", "127.0.0.1")
-    
-    if api_key and host not in ("127.0.0.1", "localhost"):
-        cluster_url = f"https://{host}" if not host.startswith("http") else host
-        client = weaviate.connect_to_weaviate_cloud(
-            cluster_url=cluster_url,
-            auth_credentials=weaviate.auth.AuthApiKey(api_key)
-        )
-    else:
-        # Connect to local/Docker Weaviate with explicit configuration
-        # Use 127.0.0.1 for better compatibility with Puppet-managed Docker servers
-        http_port = int(os.getenv("WEAVIATE_HTTP_PORT", "8080"))
-        grpc_port = int(os.getenv("WEAVIATE_GRPC_PORT", "50051"))
-        grpc_host = os.getenv("WEAVIATE_GRPC_HOST", host)
-        
-        client = weaviate.connect_to_custom(
-            http_host=host,
-            http_port=http_port,
-            http_secure=scheme == "https",
-            grpc_host=grpc_host,
-            grpc_port=grpc_port,
-            grpc_secure=scheme == "https"
-        )
-    
-    return client
+    """Get Weaviate client using centralized factory."""
+    return get_weaviate_client()
 
 
 async def search_website_evidence(
-    query: str,
-    top_k: int = 5,
-    collection: Optional[str] = None,
+    query: str, 
+    top_k: int = 5, 
+    collection: Optional[str] = None, 
+    campus_scope: Optional[str] = None,
     log_callback=None
 ) -> List[Dict[str, Any]]:
     """
     Search website evidence using semantic similarity.
-    
+
     Args:
         query: Search query
         top_k: Number of results to return (default: 5)
         collection: Collection name (default: from env or "WebsiteEvidence")
+        campus_scope: Filter by campus (e.g., "oxford", "hamilton", "middletown")
         log_callback: Optional logging callback
-        
+
     Returns:
         List of results with:
             - final_url: URL to cite
@@ -74,10 +54,14 @@ async def search_website_evidence(
             - summary: Page summary
     """
     collection_name = collection or get_collection_name()
-    
+
     if log_callback:
-        log_callback(f"🔍 [Website Evidence Search] Querying collection: {collection_name}", {"query": query, "top_k": top_k})
-    
+        filter_info = f", campus_scope={campus_scope}" if campus_scope else ""
+        log_callback(
+            f"🔍 [Website Evidence Search] Querying collection: {collection_name}{filter_info}",
+            {"query": query, "top_k": top_k},
+        )
+
     client = None
     try:
         # Get OpenAI API key for embeddings
@@ -86,143 +70,139 @@ async def search_website_evidence(
             if log_callback:
                 log_callback("❌ [Website Evidence Search] OPENAI_API_KEY not set")
             return []
-        
+
         # Create embeddings
         embeddings = OpenAIEmbeddings(
-            model="text-embedding-3-large",
-            api_key=openai_api_key
+            model="text-embedding-3-large", api_key=openai_api_key
         )
-        
+
         # Connect to Weaviate
         client = _get_weaviate_client()
-        
-        # Check if collection exists
-        if not client.collections.exists(collection_name):
+
+        # V4 API: Check if collection exists
+        exists = client.collections.exists(collection_name)
+        if not exists:
             if log_callback:
-                log_callback(f"⚠️ [Website Evidence Search] Collection not found: {collection_name}")
+                log_callback(
+                    f"⚠️ [Website Evidence Search] Collection not found: {collection_name}"
+                )
             return []
-        
+
         # Generate query embedding
         query_vector = await embeddings.aembed_query(query)
+
+        # V4 API: Query with near vector and optional campus filter
+        collection = client.collections.get(collection_name)
         
-        # Get collection
-        collection_obj = client.collections.get(collection_name)
+        # Build filter if campus_scope specified
+        query_kwargs = {
+            "near_vector": query_vector,
+            "limit": top_k,
+            "return_metadata": ['distance']
+        }
         
-        # Perform hybrid search (vector + keyword)
-        # Use near_vector for semantic search
-        response = collection_obj.query.near_vector(
-            near_vector=query_vector,
-            limit=top_k,
-            return_metadata=wvc.query.MetadataQuery(distance=True, certainty=True)
-        )
+        if campus_scope:
+            import weaviate.classes as wvc
+            query_kwargs["filters"] = wvc.query.Filter.by_property("campus_scope").equal(campus_scope)
+            if log_callback:
+                log_callback(f"   🔍 Filtering by campus_scope: {campus_scope}")
         
+        response = collection.query.near_vector(**query_kwargs)
+
         results = []
         for obj in response.objects:
-            props = obj.properties
-            metadata = obj.metadata
-            
-            # Calculate score from certainty (0-1, higher is better)
-            score = metadata.certainty if metadata.certainty else 0.0
-            
+            distance = obj.metadata.distance if obj.metadata else 1.0
             results.append({
-                "final_url": props.get("final_url", ""),
-                "title": props.get("title", ""),
-                "chunk_text": props.get("chunk_text", ""),
-                "chunk_index": props.get("chunk_index", 0),
-                "score": float(score),
-                "tags": props.get("tags", []),
-                "summary": props.get("summary", ""),
-                "canonical_url": props.get("canonical_url", ""),
-                "aliases": props.get("aliases", []),
+                "final_url": obj.properties.get("final_url", ""),
+                "title": obj.properties.get("title", ""),
+                "chunk_text": obj.properties.get("chunk_text", ""),
+                "chunk_index": obj.properties.get("chunk_index", 0),
+                "tags": obj.properties.get("tags", []),
+                "summary": obj.properties.get("summary", ""),
+                "canonical_url": obj.properties.get("canonical_url", ""),
+                "aliases": obj.properties.get("aliases", []),
+                "distance": distance
             })
-        
+
         if log_callback:
             log_callback(f"✅ [Website Evidence Search] Found {len(results)} results")
             if results:
                 top_result = results[0]
-                log_callback(f"   Top result: {top_result['title']} (score: {top_result['score']:.3f})")
-        
+                log_callback(
+                    f"   Top result: {top_result['title']} (distance: {top_result['distance']:.3f})"
+                )
+
         return results
-    
+
     except Exception as e:
         if log_callback:
             log_callback(f"❌ [Website Evidence Search] Error: {str(e)}")
         return []
-    
-    finally:
-        if client:
-            try:
-                client.close()
-            except:
-                pass
 
 
 async def get_evidence_for_url(
-    url: str,
-    collection: Optional[str] = None,
-    log_callback=None
+    url: str, collection: Optional[str] = None, log_callback=None
 ) -> List[Dict[str, Any]]:
     """
     Get all evidence chunks for a specific URL.
-    
+
     Args:
         url: URL to search for
         collection: Collection name (default: from env or "WebsiteEvidence")
         log_callback: Optional logging callback
-        
+
     Returns:
         List of all chunks for the URL, ordered by chunk_index
     """
     collection_name = collection or get_collection_name()
-    
+
     if log_callback:
         log_callback(f"🔍 [Website Evidence Search] Getting chunks for URL: {url}")
-    
+
     client = None
     try:
         client = _get_weaviate_client()
-        
+
         if not client.collections.exists(collection_name):
             if log_callback:
-                log_callback(f"⚠️ [Website Evidence Search] Collection not found: {collection_name}")
+                log_callback(
+                    f"⚠️ [Website Evidence Search] Collection not found: {collection_name}"
+                )
             return []
-        
+
         collection_obj = client.collections.get(collection_name)
-        
+
         # Query by URL
         response = collection_obj.query.fetch_objects(
             filters=wvc.query.Filter.by_property("final_url").equal(url),
-            limit=100  # Should be enough for most pages
+            limit=100,  # Should be enough for most pages
         )
-        
+
         results = []
         for obj in response.objects:
             props = obj.properties
-            results.append({
-                "final_url": props.get("final_url", ""),
-                "title": props.get("title", ""),
-                "chunk_text": props.get("chunk_text", ""),
-                "chunk_index": props.get("chunk_index", 0),
-                "tags": props.get("tags", []),
-                "summary": props.get("summary", ""),
-            })
-        
+            results.append(
+                {
+                    "final_url": props.get("final_url", ""),
+                    "title": props.get("title", ""),
+                    "chunk_text": props.get("chunk_text", ""),
+                    "chunk_index": props.get("chunk_index", 0),
+                    "tags": props.get("tags", []),
+                    "summary": props.get("summary", ""),
+                }
+            )
+
         # Sort by chunk_index
         results.sort(key=lambda x: x["chunk_index"])
-        
+
         if log_callback:
-            log_callback(f"✅ [Website Evidence Search] Found {len(results)} chunks for URL")
-        
+            log_callback(
+                f"✅ [Website Evidence Search] Found {len(results)} chunks for URL"
+            )
+
         return results
-    
+
     except Exception as e:
         if log_callback:
             log_callback(f"❌ [Website Evidence Search] Error: {str(e)}")
         return []
-    
-    finally:
-        if client:
-            try:
-                client.close()
-            except:
-                pass

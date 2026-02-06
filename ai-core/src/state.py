@@ -48,6 +48,7 @@ class AgentState(MessagesState):
     _policy_url: Optional[str] = None  # Authoritative URL for policy question
     _research_handoff_response: Optional[str] = None  # Pre-built research handoff response
     _research_pattern_type: Optional[str] = None  # Type of research question pattern
+    _route_trace_logged: bool = False  # Guard flag to ensure routing trace is only logged once per request
 
 # Intent types based on screenshot
 IntentType = Literal[
