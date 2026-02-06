@@ -209,3 +209,4 @@ deployment/DEPLOYMENT_GUIDE.md
 deployment/README.md
 deployment/rollback.sh
 deployment/verify-deployment.sh
+ai-core/docker-compose.weaviate.local.yml

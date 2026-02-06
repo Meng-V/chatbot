@@ -19,6 +19,7 @@ from urllib.parse import urlparse
 # Add src to path for utils import
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from utils.weaviate_client import get_weaviate_client
+import weaviate.classes as wvc
 
 # Load .env file from project root
 root_dir = Path(__file__).resolve().parent.parent.parent.parent
@@ -131,6 +132,21 @@ def make_transcript_rag_item(
         "created_at": datetime.utcnow().isoformat() + "Z"
     }
 
+# Embeddings instance for transcript RAG queries (BYOV - Bring Your Own Vectors)
+_transcript_embeddings = None
+
+def _get_transcript_embeddings():
+    """Lazy-init embeddings for transcript RAG."""
+    global _transcript_embeddings
+    if _transcript_embeddings is None:
+        from langchain_openai import OpenAIEmbeddings
+        _transcript_embeddings = OpenAIEmbeddings(
+            model="text-embedding-3-large",
+            api_key=os.getenv("OPENAI_API_KEY", "")
+        )
+    return _transcript_embeddings
+
+
 async def transcript_rag_query(query: str, log_callback=None, topic_filter: str = None) -> Dict[str, Any]:
     """
     Query optimized Weaviate collection for generalized Q&A pairs.
@@ -143,6 +159,18 @@ async def transcript_rag_query(query: str, log_callback=None, topic_filter: str 
     Returns:
         Dict with success, text, confidence, and metadata
     """
+    # Pre-compute embedding async (Weaviate has no built-in vectorizer)
+    try:
+        emb = _get_transcript_embeddings()
+        query_vector = await emb.aembed_query(query)
+    except Exception as e:
+        return {
+            "source": "TranscriptRAG",
+            "success": False,
+            "error": f"Embedding error: {str(e)}",
+            "text": "Knowledge base is not available. Please contact a librarian for assistance."
+        }
+
     def _search():
         if log_callback:
             log_callback("🔮 [Transcript RAG Agent] Querying optimized knowledge base")
@@ -159,19 +187,19 @@ async def transcript_rag_query(query: str, log_callback=None, topic_filter: str 
             # Get collection
             collection = client.collections.get("TranscriptQA")
             
-            # Build query parameters
+            # Build query parameters using near_vector (BYOV - no Weaviate vectorizer)
             query_params = {
-                "query": query,
+                "near_vector": query_vector,
                 "limit": 5,  # Get top 5 results for better selection
-                "return_metadata": wvc.query.MetadataQuery(distance=True)
+                "return_metadata": ['distance']
             }
             
             # Add topic filter if specified
             if topic_filter:
-                query_params["where"] = wvc.query.Filter.by_property("topic").equal(topic_filter)
+                query_params["filters"] = wvc.query.Filter.by_property("topic").equal(topic_filter)
             
             # Execute semantic search
-            response = collection.query.near_text(**query_params)
+            response = collection.query.near_vector(**query_params)
             
             if not response.objects:
                 return {

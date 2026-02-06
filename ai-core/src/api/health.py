@@ -130,10 +130,8 @@ async def check_weaviate_health() -> Dict[str, Any]:
                 "version": meta.get("version", "unknown"),
                 "url": get_weaviate_url()
             }
-            client.close()
             return result
         else:
-            client.close()
             return {
                 "status": "unhealthy",
                 "error": "Weaviate not ready",

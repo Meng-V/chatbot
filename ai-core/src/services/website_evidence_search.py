@@ -139,13 +139,6 @@ async def search_website_evidence(
             log_callback(f"❌ [Website Evidence Search] Error: {str(e)}")
         return []
 
-    finally:
-        if client:
-            try:
-                client.close()
-            except:
-                pass
-
 
 async def get_evidence_for_url(
     url: str, collection: Optional[str] = None, log_callback=None
@@ -213,10 +206,3 @@ async def get_evidence_for_url(
         if log_callback:
             log_callback(f"❌ [Website Evidence Search] Error: {str(e)}")
         return []
-
-    finally:
-        if client:
-            try:
-                client.close()
-            except:
-                pass
