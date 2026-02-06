@@ -201,3 +201,10 @@ ai-core/data/*
 ai-core/scripts/sync_liaisons_from_website.py
 staff-members - staff-members.csv
 ai-core/docker-compose.weaviate.local.yml
+/test
+/ai-core/data/*
+/ai-core/test_data/*
+/ai-core/eval_results/*
+ChatBot Testing Results.pptx
+Test Questions for Chatbot - Answer Log.docx
+.env.server
