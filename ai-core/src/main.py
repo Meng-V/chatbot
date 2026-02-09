@@ -34,15 +34,36 @@ from src.api.summarize import router as summarize_router
 from src.api.askus_hours import router as askus_router
 from src.api.route import router as route_router
 
-# Load .env from project root (parent of ai-core)
-# Path calculation: main.py -> src -> ai-core -> root
-root_dir = Path(__file__).resolve().parent.parent.parent
-env_path = root_dir / ".env"
-load_dotenv(dotenv_path=env_path)
+# ---------------------------------------------------------------------------
+# .env loading — MUST NOT follow symlinks on production
+# ---------------------------------------------------------------------------
+# On production the deploy layout is:
+#   /opt/chatbot/current  →  /opt/chatbot/releases/<timestamp>  (symlink)
+#   /opt/chatbot/shared/.env                                      (canonical)
+#   /opt/chatbot/releases/<timestamp>/.env → shared/.env          (symlink)
+#
+# Path(__file__).resolve() follows ALL symlinks, locking us to a stale
+# release directory.  os.path.abspath() makes the path absolute WITHOUT
+# resolving symlinks, so we always read through the 'current' symlink.
+# ---------------------------------------------------------------------------
+_this_file = os.path.abspath(__file__)          # …/current/ai-core/src/main.py
+root_dir = Path(os.path.dirname(os.path.dirname(os.path.dirname(_this_file))))
+
+# Prefer the canonical shared .env on production; fall back to project root
+_shared_env = Path("/opt/chatbot/shared/.env")
+if _shared_env.exists():
+    env_path = _shared_env
+else:
+    env_path = root_dir / ".env"
+
+load_dotenv(dotenv_path=env_path, override=True)
+print(f"Loading .env from: {env_path}")
 
 # Initialize logging EARLY (module level) so it takes effect before uvicorn
 # configures its own loggers. This prevents INFO spam in systemd journal.
 setup_logging()
+logging.info(f"📂 .env loaded from: {env_path}  (root_dir={root_dir})")
+logging.info(f"📂 __file__ resolved WITHOUT symlinks: {_this_file}")
 
 
 def json_serializable(obj):
@@ -703,4 +724,19 @@ async def provideMoreDetails(sid, data):
             "error": str(e)
         }), to=sid)
 
-# uvicorn entry: uvicorn src.main:app_sio --host 0.0.0.0 --port 8000 --reload
+# ---------------------------------------------------------------------------
+# Programmatic uvicorn entry point  (preferred on production)
+# Usage:  python -m src.main
+# This passes UVICORN_LOG_CONFIG so every log line has a timestamp.
+# Falls back to: uvicorn src.main:app_sio --host 0.0.0.0 --port 8000
+#   but the CLI approach will NOT have timestamps unless you also pass
+#   --log-config ai-core/uvicorn_log_config.json
+# ---------------------------------------------------------------------------
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(
+        "src.main:app_sio",
+        host="0.0.0.0",
+        port=int(os.getenv("AI_CORE_PORT", "8000")),
+        log_config=UVICORN_LOG_CONFIG,
+    )

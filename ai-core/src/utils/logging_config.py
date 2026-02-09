@@ -25,6 +25,37 @@ from datetime import datetime, timezone
 from logging.handlers import RotatingFileHandler
 
 
+# ---------------------------------------------------------------------------
+# CRITICAL: Monkey-patch uvicorn's built-in LOGGING_CONFIG at import time.
+#
+# Uvicorn's CLI applies its own dictConfig MULTIPLE times during startup,
+# which overwrites any handler changes we make in setup_logging().
+# By patching the source dict here (at import time), every subsequent
+# dictConfig application by uvicorn will use OUR formatters with timestamps.
+#
+# This is the ONLY reliable way to guarantee timestamps in uvicorn output
+# when started via CLI (e.g. systemd calling `uvicorn src.main:app_sio`).
+# ---------------------------------------------------------------------------
+try:
+    import uvicorn.config as _uvi_cfg
+
+    _uvi_cfg.LOGGING_CONFIG["formatters"]["default"]["fmt"] = \
+        "%(asctime)s - %(levelprefix)s %(message)s"
+    _uvi_cfg.LOGGING_CONFIG["formatters"]["default"]["datefmt"] = "%Y-%m-%d %H:%M:%S"
+
+    _uvi_cfg.LOGGING_CONFIG["formatters"]["access"]["fmt"] = \
+        '%(asctime)s - %(levelprefix)s %(client_addr)s - "%(request_line)s" %(status_code)s'
+    _uvi_cfg.LOGGING_CONFIG["formatters"]["access"]["datefmt"] = "%Y-%m-%d %H:%M:%S"
+
+    # Only WARNING+ from uvicorn.error → stderr  (no INFO lifecycle spam)
+    _uvi_cfg.LOGGING_CONFIG["loggers"]["uvicorn.error"]["level"] = "WARNING"
+    _uvi_cfg.LOGGING_CONFIG["handlers"]["default"]["level"] = "WARNING"
+
+except (ImportError, KeyError, AttributeError):
+    # uvicorn not installed (e.g. in a test runner) — skip gracefully
+    pass
+
+
 # Log directory
 LOG_DIR = Path(__file__).resolve().parent.parent.parent / "logs"
 LOG_DIR.mkdir(exist_ok=True)

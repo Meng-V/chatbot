@@ -370,7 +370,7 @@ kill_existing_processes() {
 
 start_backend() {
   echo "🚀 Starting Python backend (Uvicorn) on http://localhost:8000..."
-  (cd ai-core && .venv/bin/uvicorn src.main:app_sio --host 0.0.0.0 --port 8000 --reload) &
+  (cd ai-core && .venv/bin/uvicorn src.main:app_sio --host 0.0.0.0 --port 8000 --reload --log-config uvicorn_log_config.json) &
   BACK_PID=$!
   echo "   Backend PID: $BACK_PID"
 }
