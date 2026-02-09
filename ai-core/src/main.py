@@ -11,7 +11,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from dotenv import load_dotenv
 from pathlib import Path
-from src.utils.logging_config import setup_logging
+from src.utils.logging_config import setup_logging, UVICORN_LOG_CONFIG
 from contextlib import asynccontextmanager
 
 from src.graph.orchestrator import library_graph
@@ -28,6 +28,7 @@ from src.memory.conversation_store import (
     log_tool_execution
 )
 from src.database.prisma_client import connect_database, disconnect_database
+from src.utils.weaviate_client import get_weaviate_client, close_weaviate_client, get_weaviate_url
 from src.api.health import router as health_router
 from src.api.summarize import router as summarize_router
 from src.api.askus_hours import router as askus_router
@@ -98,11 +99,49 @@ async def lifespan(app: FastAPI):
     # Startup
     setup_logging()  # Re-apply logging config (overrides uvicorn's defaults)
     logging.info("🚀 Application starting...")
-    await connect_database()
-    logging.info("✅ Database connected")
+
+    # --- Database connection ---
+    try:
+        await connect_database()
+        logging.info("✅ Database (Prisma) connected successfully")
+    except Exception as e:
+        logging.error(f"❌ Database connection FAILED: {e}", exc_info=True)
+
+    # --- Weaviate connection check ---
+    weaviate_url = get_weaviate_url()
+    logging.info(f"🔗 [Weaviate] Attempting connection to {weaviate_url}")
+    try:
+        wv_client = get_weaviate_client()
+        if wv_client is not None:
+            is_ready = wv_client.is_ready()
+            if is_ready:
+                meta = wv_client.get_meta()
+                version = meta.get("version", "unknown") if isinstance(meta, dict) else "unknown"
+                collections = wv_client.collections.list_all()
+                col_names = list(collections.keys()) if isinstance(collections, dict) else [str(c) for c in collections]
+                logging.info(
+                    f"✅ [Weaviate] Connected successfully | "
+                    f"url={weaviate_url} | version={version} | "
+                    f"collections={len(col_names)} ({', '.join(col_names[:10])})"
+                )
+            else:
+                logging.warning(f"⚠️ [Weaviate] Client created but NOT READY at {weaviate_url}")
+        else:
+            logging.warning(
+                f"⚠️ [Weaviate] Client is None — connection failed or disabled | url={weaviate_url} | "
+                f"WEAVIATE_ENABLED={os.getenv('WEAVIATE_ENABLED', 'true')} | "
+                f"WEAVIATE_HOST={os.getenv('WEAVIATE_HOST', '(not set)')}"
+            )
+    except Exception as e:
+        logging.error(f"❌ [Weaviate] Connection FAILED at {weaviate_url}: {e}", exc_info=True)
+
+    logging.info("🚀 Application startup complete")
     yield
+
     # Shutdown
     logging.info("🛑 Application shutting down...")
+    close_weaviate_client()
+    logging.info("🔌 [Weaviate] Client closed")
     await disconnect_database()
     logging.info("✅ Database disconnected")
 
@@ -146,8 +185,8 @@ socketio_cors = "*" if node_env == "development" else cors_origins
 sio = socketio.AsyncServer(
     async_mode="asgi",
     cors_allowed_origins=socketio_cors,
-    logger=True,
-    engineio_logger=True
+    logger=False,
+    engineio_logger=False
 )
 
 app_sio = socketio.ASGIApp(sio, other_asgi_app=app, socketio_path="/smartchatbot/socket.io")

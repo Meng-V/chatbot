@@ -1,6 +1,9 @@
 """Prisma client initialization and management."""
+import logging
 from prisma import Prisma
 from typing import Optional
+
+logger = logging.getLogger(__name__)
 
 _prisma_client: Optional[Prisma] = None
 
@@ -20,11 +23,11 @@ async def connect_database():
     client = get_prisma_client()
     if not client.is_connected():
         await client.connect()
-        print("✅ Database connected successfully")
+        logger.info("✅ Database connected successfully")
 
 async def disconnect_database():
     """Disconnect from database on application shutdown."""
     client = get_prisma_client()
     if client.is_connected():
         await client.disconnect()
-        print("🔌 Database disconnected")
+        logger.info("🔌 Database disconnected")

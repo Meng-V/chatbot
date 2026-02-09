@@ -8,9 +8,12 @@ A single Weaviate v4 client is thread-safe and should be reused.
 """
 
 import os
+import logging
 import threading
 import weaviate
 from typing import Optional
+
+logger = logging.getLogger(__name__)
 
 # Singleton state
 _client: Optional[weaviate.WeaviateClient] = None
@@ -52,7 +55,7 @@ def get_weaviate_client() -> Optional[weaviate.WeaviateClient]:
         
         # Check if Weaviate is enabled
         if os.getenv("WEAVIATE_ENABLED", "true").lower() != "true":
-            print("ℹ️  Weaviate disabled via WEAVIATE_ENABLED=false")
+            logger.info("ℹ️  Weaviate disabled via WEAVIATE_ENABLED=false")
             return None
         
         # Read environment variables
@@ -71,11 +74,11 @@ def get_weaviate_client() -> Optional[weaviate.WeaviateClient]:
         grpc_port = int(os.getenv("WEAVIATE_GRPC_PORT", "50051"))
         
         if not _initialized:
-            print(f"🔗 [Weaviate] Connecting to {scheme}://{host}:{http_port} (gRPC: {grpc_port})")
+            logger.info(f"🔗 [Weaviate] Connecting to {scheme}://{host}:{http_port} (gRPC: {grpc_port})")
             _initialized = True
         
         if not host:
-            print("❌ WEAVIATE_HOST not set in .env")
+            logger.error("❌ [Weaviate] WEAVIATE_HOST not set in .env")
             return None
         
         try:
@@ -92,7 +95,7 @@ def get_weaviate_client() -> Optional[weaviate.WeaviateClient]:
             
             # V4 client connects automatically, verify it's ready
             if not _client.is_ready():
-                print(f"❌ Weaviate not ready at {scheme}://{host}:{http_port}")
+                logger.warning(f"⚠️ [Weaviate] Not ready at {scheme}://{host}:{http_port} — client created but is_ready()=False")
                 _client.close()
                 _client = None
                 return None
@@ -100,7 +103,7 @@ def get_weaviate_client() -> Optional[weaviate.WeaviateClient]:
             return _client
             
         except Exception as e:
-            print(f"❌ Weaviate connection error at {scheme}://{host}:{http_port}: {e}")
+            logger.error(f"❌ [Weaviate] Connection error at {scheme}://{host}:{http_port}: {e}", exc_info=True)
             _client = None
             return None
 
