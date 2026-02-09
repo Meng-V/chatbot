@@ -31,13 +31,15 @@ class JSONFormatter(logging.Formatter):
     
     def format(self, record):
         log_data = {
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": datetime.now(tz=__import__('datetime').timezone.utc).strftime("%Y-%m-%d %H:%M:%S.%f")[:-3],
             "level": record.levelname,
             "logger": record.name,
             "message": record.getMessage(),
             "module": record.module,
             "function": record.funcName,
-            "line": record.lineno
+            "line": record.lineno,
+            "process": record.process,
+            "thread": record.thread
         }
         
         if record.exc_info:
@@ -46,7 +48,14 @@ class JSONFormatter(logging.Formatter):
         if hasattr(record, "extra_data"):
             log_data["extra"] = record.extra_data
         
-        return json.dumps(log_data)
+        # Extract request_id from message if present (AgentLogger format)
+        msg = record.getMessage()
+        if msg.startswith("[req_") or msg.startswith("[http_") or msg.startswith("[ws_"):
+            bracket_end = msg.find("]")
+            if bracket_end > 0:
+                log_data["request_id"] = msg[1:bracket_end]
+        
+        return json.dumps(log_data, default=str)
 
 
 # Access log file (for HTTP request logs from uvicorn)

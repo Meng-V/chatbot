@@ -171,7 +171,8 @@ def detect_fact_fast_lane(normalized_intent, user_message: str) -> dict:
     library_names = [
         "library", "libraries", "king", "wertz", "rentschler", 
         "gardner", "art", "architecture", "art & architecture",
-        "hamilton", "middletown"
+        "hamilton", "middletown", "makerspace", "maker space",
+        "special collections", "havighurst"
     ]
     
     # A) Library HOURS - route to libcal_hours
@@ -183,11 +184,22 @@ def detect_fact_fast_lane(normalized_intent, user_message: str) -> dict:
     is_short_hours_form = (
         ("library hours" in msg_lower) or
         ("king hours" in msg_lower) or
+        ("makerspace hours" in msg_lower) or
         ("hours" in msg_lower and len(user_message.split()) <= 5)
     )
     
+    # Also catch standalone "makerspace" queries (usually about hours/info)
+    is_makerspace_query = "makerspace" in msg_lower or "maker space" in msg_lower
+    
     if has_hours_keyword and (has_library_name or is_short_hours_form):
         return {"type": "agent", "primary_agent_id": "libcal_hours"}
+    
+    # Standalone makerspace query (no specific keyword) → route to libcal_hours
+    if is_makerspace_query and not has_hours_keyword:
+        # Check if it's asking about hours/info (most common makerspace queries)
+        makerspace_info_keywords = ["when", "time", "today", "tomorrow", "week", "weekend", "schedule"]
+        if any(kw in msg_lower for kw in makerspace_info_keywords):
+            return {"type": "agent", "primary_agent_id": "libcal_hours"}
     
     # B) STUDY ROOMS - route to libcal_rooms
     study_room_keywords = [
@@ -837,7 +849,10 @@ async def execute_agents_node(state: AgentState) -> AgentState:
     
     # Build list of agents to execute
     agents_to_execute = [primary_agent_id] + secondary_agent_ids
-    logger.log(f"⚡ [Execute Agents] Executing {len(agents_to_execute)} agent(s): {', '.join(agents_to_execute)}")
+    logger.log(f"⚡ [Execute Agents] Executing {len(agents_to_execute)} agent(s): {', '.join(agents_to_execute)}", {
+        "agents": agents_to_execute, "user_message": state["user_message"][:80]
+    })
+    logger.start_timer("execute_agents_total")
     
     # Map agent IDs to agent instances/functions
     agent_map = {
@@ -907,6 +922,7 @@ async def execute_agents_node(state: AgentState) -> AgentState:
         
         if isinstance(response, Exception):
             results[agent_id] = {"source": agent_id, "success": False, "error": str(response)}
+            logger.log_error(f"Agent:{agent_id}", response, context=f"query='{state['user_message'][:60]}'")
             # Log failed execution
             tool_executions.append({
                 "agent_name": agent_id,
@@ -948,7 +964,14 @@ async def execute_agents_node(state: AgentState) -> AgentState:
     state["tool_executions"] = tool_executions
     state["_logger"] = logger
     
-    logger.log(f"✅ [Orchestrator] All agents completed")
+    logger.stop_timer("execute_agents_total")
+    # Summarize agent results
+    success_agents = [aid for aid, r in results.items() if r.get("success")]
+    failed_agents = [aid for aid, r in results.items() if not r.get("success")]
+    logger.log(f"✅ [Orchestrator] All agents completed", {
+        "success": success_agents, "failed": failed_agents,
+        "total_agents": len(agents_with_executors)
+    })
     
     return state
 
@@ -1796,7 +1819,8 @@ async def intent_normalization_node(state: AgentState) -> AgentState:
     history = state.get("conversation_history", [])
     logger = state.get("_logger") or AgentLogger()
     
-    logger.log("🎯 [Intent Normalization] Starting intent normalization")
+    logger.log("🎯 [Intent Normalization] Starting intent normalization", {"user_message": user_msg[:100]})
+    logger.start_timer("intent_normalization")
     
     # Normalize intent (LLM-based, structured output)
     normalized_intent = await normalize_intent(
@@ -1853,7 +1877,12 @@ async def intent_normalization_node(state: AgentState) -> AgentState:
             # Emit routing trace for fast lane path
             emit_route_trace(state, logger, "fast_lane")
     
-    logger.log(f"✅ [Intent Normalization] Intent: {normalized_intent.intent_summary}")
+    logger.stop_timer("intent_normalization")
+    logger.log(f"✅ [Intent Normalization] Intent: {normalized_intent.intent_summary}", {
+        "confidence": normalized_intent.confidence,
+        "ambiguity": normalized_intent.ambiguity,
+        "key_entities": normalized_intent.key_entities
+    })
     state["_logger"] = logger
     
     return state
@@ -1876,13 +1905,18 @@ async def category_classification_node(state: AgentState) -> AgentState:
         logger.log("❌ [Category Classification] ERROR: No normalized_intent in state")
         raise ValueError("normalized_intent is required but missing from state")
     
-    logger.log("🎯 [Category Classification] Classifying category")
+    logger.log("🎯 [Category Classification] Classifying category", {
+        "intent_summary": normalized_intent.intent_summary[:80]
+    })
+    logger.start_timer("category_classification")
     
     # Classify category (RAG-based)
     category_result = await classify_category(
         normalized_intent=normalized_intent,
         logger=logger
     )
+    
+    logger.stop_timer("category_classification")
     
     # Store classification result
     state["category"] = category_result.category

@@ -1,15 +1,14 @@
 import os
 import re
 import json
+import time
+import logging
 from decimal import Decimal
 from datetime import datetime, date
 import socketio
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-import socketio
-import os
-import logging
 from dotenv import load_dotenv
 from pathlib import Path
 from src.utils.logging_config import setup_logging
@@ -162,9 +161,10 @@ async def ask_http(payload: dict):
     message = payload.get("message", "")
     conversation_id = payload.get("conversationId")
     
-    # Create logger
-    logger = AgentLogger()
-    logger.log("📥 [API] Received request", {"message": message, "conversationId": conversation_id})
+    # Create logger with unique request ID
+    logger = AgentLogger(request_id=f"http_{int(time.time()*1000)}")
+    logger.log("📥 [API] Received request", {"message": message[:100], "conversationId": conversation_id})
+    logger.start_timer("total_request")
     
     try:
         # Create or get conversation
@@ -236,7 +236,12 @@ async def ask_http(payload: dict):
                     execution.get("execution_time", 0)
                 )
         
-        logger.log("✅ [API] Request completed successfully")
+        total_ms = logger.stop_timer("total_request")
+        logger.log("✅ [API] Request completed successfully", {
+            "agents_used": agents_used,
+            "intent": result.get("classified_intent"),
+            "total_ms": total_ms
+        })
         
         # Determine primary agent used
         primary_agent = agents_used[0] if agents_used else result.get("classified_intent")
@@ -256,7 +261,7 @@ async def ask_http(payload: dict):
             "history_count": len(history)
         }
     except Exception as e:
-        logger.log(f"❌ [API] Error: {str(e)}")
+        logger.log_error("API", e, context=f"message='{message[:60]}'")
         return {
             "success": False,
             "conversationId": conversation_id,
@@ -307,14 +312,15 @@ async def message(sid, data):
         # Get conversation history for context
         history = await get_conversation_history(conversation_id, limit=10)
         
-        # Create logger
-        logger = AgentLogger()
+        # Create logger with unique request ID
+        logger = AgentLogger(request_id=f"ws_{sid[:8]}_{int(time.time()*1000)}")
         logger.log("📥 [Socket.IO] Received message", {
             "sid": sid,
             "conversationId": conversation_id,
-            "message": text_input,
+            "message": text_input[:100],
             "history_count": len(history)
         })
+        logger.start_timer("total_request")
         
         # Call LangGraph workflow directly (production routing path)
         result = await library_graph.ainvoke({
@@ -386,7 +392,12 @@ async def message(sid, data):
         
         await sio.emit("message", response_data, to=sid)
         
-        logger.log("✅ [Socket.IO] Response sent successfully")
+        total_ms = logger.stop_timer("total_request")
+        logger.log("✅ [Socket.IO] Response sent successfully", {
+            "total_ms": total_ms,
+            "agents_used": agents_used,
+            "intent": result.get("classified_intent")
+        })
         
     except Exception as e:
         logging.error(f"❌ [Socket.IO] Error: {str(e)}", exc_info=True)

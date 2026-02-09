@@ -198,6 +198,5 @@ node_modules
 /ai-core/eval_results/*
 /ai-core/scripts/sync_liaisons_from_website.py
 /ai-core/docker-compose.weaviate.local.yml
-.env.server
 /test
 staff-members - staff-members.csv

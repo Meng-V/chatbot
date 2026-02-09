@@ -211,9 +211,12 @@ class HeuristicGate:
         """
         # Library hours patterns
         hours_patterns = [
-            r'\b(library|king|art|rentschler)\s+(hours?|open|close|closing|opening)\b',
+            r'\b(library|king|art|rentschler|wertz|makerspace|maker\s*space|special\s*collections?|havighurst|hamilton|middletown|gardner)\s+(hours?|open|close|closing|opening)\b',
+            r'\b(hours?|open|close|closing|opening)\b.*\b(library|king|art|rentschler|wertz|makerspace|maker\s*space|special\s*collections?|havighurst|hamilton|middletown|gardner)\b',
             r'\bwhat\s+time\s+does\s+.+\s+(open|close)\b',
             r'\blibrary\s+schedule\b',
+            r'\bmakerspace\b.*\b(hours?|open|close|when|schedule)\b',
+            r'\b(hours?|open|close|when|schedule)\b.*\bmakerspace\b',
         ]
         for pattern in hours_patterns:
             if re.search(pattern, query_lower, re.IGNORECASE):
