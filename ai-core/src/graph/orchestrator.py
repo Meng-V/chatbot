@@ -172,7 +172,9 @@ def detect_fact_fast_lane(normalized_intent, user_message: str) -> dict:
         "library", "libraries", "king", "wertz", "rentschler", 
         "gardner", "art", "architecture", "art & architecture",
         "hamilton", "middletown", "makerspace", "maker space",
-        "special collections", "havighurst"
+        "special collections", "havighurst",
+        "archives", "university archives",
+        "digital collections"
     ]
     
     # A) Library HOURS - route to libcal_hours
@@ -1146,9 +1148,9 @@ Our librarians are experts at helping with research projects and can provide per
         logger.log(f"📍 [Synthesizer] Looking up: {library_name}")
         
         # Known space names that are LibrarySpace records, not Library records
-        SPACE_NAMES = ["makerspace", "special collections"]
+        SPACE_NAMES = ["makerspace", "special collections", "archives", "digital collections"]
         
-        # Check if this is a library space (Makerspace, Special Collections, etc.)
+        # Check if this is a library space (Makerspace, Special Collections, Archives, etc.)
         if library_name and library_name.lower() in SPACE_NAMES:
             try:
                 from src.services.location_service import get_location_service
@@ -1159,11 +1161,17 @@ Our librarians are experts at helping with research projects and can provide per
                     display_name = space_info.get("displayName", library_name.title())
                     location = space_info.get("location", "")
                     address = space_info.get("address", "N/A")
+                    phone = space_info.get("phone", "")
+                    email = space_info.get("email", "")
                     website = space_info.get("website", "https://www.lib.miamioh.edu/")
                     
                     address_msg = f"**{display_name}**\n\n"
                     address_msg += f"📍 **Location:** {location}\n\n"
                     address_msg += f"📍 **Building Address:** {address}\n\n"
+                    if phone:
+                        address_msg += f"📞 **Phone:** {phone}\n\n"
+                    if email:
+                        address_msg += f"📧 **Email:** {email}\n\n"
                     address_msg += f"🌐 **Website:** {website}"
                     
                     state["final_answer"] = address_msg
@@ -1421,6 +1429,19 @@ Our librarians are experts at helping with research projects and can provide per
             logger.log("⚠️ [URL Validator] Removed invalid URLs from out-of-scope message")
         
         state["final_answer"] = validated_msg
+        return state
+    
+    # Handle "no answer available" - intent was clear but no handler exists
+    if state.get("_no_answer_available"):
+        logger.log("💡 [Synthesizer] Providing 'I don't have that information' response")
+        no_answer_msg = (
+            "I'm sorry, I don't have that specific information. "
+            "For help with this, you can:\n\n"
+            "• **Chat with a librarian** during business hours\n"
+            "• **Call the library**: (513) 529-4141\n"
+            "• **Submit a question**: https://www.lib.miamioh.edu/research/research-support/ask/"
+        )
+        state["final_answer"] = no_answer_msg
         return state
     
     responses = state.get("agent_responses", {})
@@ -1952,16 +1973,37 @@ async def category_classification_node(state: AgentState) -> AgentState:
     
     # Check if clarification needed (from classifier)
     if category_result.needs_clarification:
-        state["needs_clarification"] = True
-        state["clarifying_question"] = "I want to make sure I understand your question correctly. Could you provide more details about what you're looking for?"
-        # Set primary_agent_id to None when clarification needed
-        state["primary_agent_id"] = None
-        logger.log(f"⚠️ [Category Classification] Clarification needed: {category_result.clarification_reason}")
-        # Emit routing trace for clarification path
-        emit_route_trace(state, logger, "clarify")
+        # KEY INSIGHT: If the intent is clear (high confidence, no ambiguity) but category
+        # confidence is very low, the bot understood the question but has no handler for it.
+        # In that case, say "I don't have that information" instead of asking for clarification
+        # which wastes the user's time.
+        intent_is_clear = (
+            normalized_intent.confidence >= 0.85
+            and not normalized_intent.ambiguity
+        )
+        category_is_unknown = category_result.confidence < 0.20
+        
+        if intent_is_clear and category_is_unknown:
+            logger.log(
+                f"💡 [Category Classification] Intent clear (conf={normalized_intent.confidence:.2f}) "
+                f"but no matching category (conf={category_result.confidence:.2f}) → "
+                f"responding with 'I don't have that information' instead of clarification"
+            )
+            state["needs_clarification"] = False
+            state["_no_answer_available"] = True
+            state["primary_agent_id"] = None
+            emit_route_trace(state, logger, "no_answer")
+        else:
+            state["needs_clarification"] = True
+            state["clarifying_question"] = "I want to make sure I understand your question correctly. Could you provide more details about what you're looking for?"
+            # Set primary_agent_id to None when clarification needed
+            state["primary_agent_id"] = None
+            logger.log(f"⚠️ [Category Classification] Clarification needed: {category_result.clarification_reason}")
+            # Emit routing trace for clarification path
+            emit_route_trace(state, logger, "clarify")
     
     # Agent selection using SINGLE SOURCE OF TRUTH
-    if not state.get("needs_clarification"):
+    if not state.get("needs_clarification") and not state.get("_no_answer_available"):
         agent_map = category_to_agent_map()
         primary_agent_id = agent_map.get(category_result.category)
         

@@ -1,9 +1,8 @@
-import { useEffect, useState, useContext } from 'react';
-import { Copy, Sparkles } from 'lucide-react';
+import { useState, useContext } from 'react';
+import { Copy, Sparkles, ClipboardCheck } from 'lucide-react';
 import { MessageContext } from '../context/MessageContextProvider';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { Spinner } from '@/components/ui/spinner';
@@ -14,14 +13,14 @@ import { Spinner } from '@/components/ui/spinner';
 const UserInfoForm = ({ onFormSubmit, chatHistory }) => {
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
-  const [question, setQuestion] = useState('');
   const [copied, setCopied] = useState(false);
   const [summaryCopied, setSummaryCopied] = useState(false);
   const [generatingSummary, setGeneratingSummary] = useState(false);
+  const [previewText, setPreviewText] = useState(null);
+  const [copySource, setCopySource] = useState(null);
 
-  // Handle copy full chat history
-  const handleCopyHistory = () => {
-    // Format chat history as readable text
+  // Copy full chat transcript to clipboard
+  const handleCopyHistory = async () => {
     const historyText = chatHistory
       .map((msg) => {
         const sender = msg.sender === 'user' ? 'You' : 'Chatbot';
@@ -29,18 +28,22 @@ const UserInfoForm = ({ onFormSubmit, chatHistory }) => {
         return `${sender}: ${text}`;
       })
       .join('\n\n');
-    
-    const fullQuestion = question ? `${question}\n\n--- Previous Chat History ---\n${historyText}` : historyText;
-    setQuestion(fullQuestion);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+
+    try {
+      await navigator.clipboard.writeText(historyText);
+      setPreviewText(historyText);
+      setCopySource('transcript');
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      console.error('Failed to copy to clipboard');
+    }
   };
 
-  // Handle copy AI-generated summary
+  // Generate AI summary and copy to clipboard
   const handleCopySummary = async () => {
     setGeneratingSummary(true);
     try {
-      // Format chat history for API
       const historyText = chatHistory
         .map((msg) => {
           const sender = msg.sender === 'user' ? 'User' : 'Chatbot';
@@ -49,42 +52,34 @@ const UserInfoForm = ({ onFormSubmit, chatHistory }) => {
         })
         .join('\n\n');
 
-      // Call backend API to generate summary
       const response = await fetch('/api/summarize-chat', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ chatHistory: historyText }),
       });
 
-      if (!response.ok) {
-        throw new Error('Failed to generate summary');
-      }
+      if (!response.ok) throw new Error('Failed to generate summary');
 
       const data = await response.json();
-      const summary = data.summary;
-
-      // Add summary to question field
-      const questionWithSummary = question 
-        ? `${question}\n\n--- AI-Generated Chat Summary ---\n${summary}` 
-        : summary;
-      setQuestion(questionWithSummary);
+      await navigator.clipboard.writeText(data.summary);
+      setPreviewText(data.summary);
+      setCopySource('summary');
       setSummaryCopied(true);
       setTimeout(() => setSummaryCopied(false), 2000);
     } catch (error) {
       console.error('Error generating summary:', error);
-      alert('Failed to generate summary. Please try copying the full history instead.');
+      alert('Failed to generate summary. Please try Copy Transcript instead.');
     } finally {
       setGeneratingSummary(false);
     }
   };
 
-  // Handle form submission
   const handleSubmit = (e) => {
     e.preventDefault();
-    onFormSubmit(name, email, question);
+    onFormSubmit(name, email);
   };
+
+  const hasChatHistory = chatHistory && chatHistory.length > 0;
 
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
@@ -109,59 +104,49 @@ const UserInfoForm = ({ onFormSubmit, chatHistory }) => {
           className="mt-1"
         />
       </div>
-      <div>
-        <div className="flex justify-between items-center mb-1">
-          <Label>Initial Question (optional)</Label>
-          {chatHistory && chatHistory.length > 0 && (
-            <div className="flex gap-2">
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button
-                    type="button"
-                    size="xs"
-                    variant="outline"
-                    onClick={handleCopyHistory}
-                  >
-                    <Copy className="h-3 w-3 mr-1" />
-                    {copied ? 'Copied!' : 'Copy Transcript'}
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent className="bg-gray-900/80 text-white text-xs">Copy full chat history</TooltipContent>
-              </Tooltip>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button
-                    type="button"
-                    size="xs"
-                    variant="outline"
-                    onClick={handleCopySummary}
-                    disabled={generatingSummary}
-                  >
-                    {generatingSummary ? (
-                      <>
-                        <Spinner className="h-3 w-3 mr-1" />
-                        Generating...
-                      </>
-                    ) : (
-                      <>
-                        <Sparkles className="h-3 w-3 mr-1" />
-                        {summaryCopied ? 'Copied!' : 'AI Summary'}
-                      </>
-                    )}
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent className="bg-gray-900/80 text-white text-xs">Generate AI summary of chat history</TooltipContent>
-              </Tooltip>
-            </div>
-          )}
+
+      {hasChatHistory && (
+        <div className="rounded-md border border-blue-200 bg-blue-50 p-3 text-sm text-gray-700 space-y-2">
+          <p className="font-medium text-blue-800">(Optional) Copy your bot conversation before connecting:</p>
+          <div className="flex gap-2">
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button type="button" size="xs" variant="outline" onClick={handleCopyHistory}>
+                  {copied ? <ClipboardCheck className="h-3 w-3 mr-1 text-green-600" /> : <Copy className="h-3 w-3 mr-1" />}
+                  {copied ? 'Copied to clipboard!' : 'Copy Transcript'}
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent className="bg-gray-900/80 text-white text-xs">Copy full chat history to clipboard</TooltipContent>
+            </Tooltip>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button type="button" size="xs" variant="outline" onClick={handleCopySummary} disabled={generatingSummary}>
+                  {generatingSummary ? (
+                    <><Spinner className="h-3 w-3 mr-1" />Generating...</>
+                  ) : (
+                    <>{summaryCopied ? <ClipboardCheck className="h-3 w-3 mr-1 text-green-600" /> : <Sparkles className="h-3 w-3 mr-1" />}
+                    {summaryCopied ? 'Copied to clipboard!' : 'AI Summary'}</>
+                  )}
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent className="bg-gray-900/80 text-white text-xs">Generate AI summary and copy to clipboard</TooltipContent>
+            </Tooltip>
+          </div>
+          <div className="rounded-md border border-gray-200 bg-gray-100 p-2 max-h-40 overflow-y-auto">
+            <p className="text-xs text-gray-500 mb-1 font-medium">
+              {copySource === 'transcript' ? '✅ Transcript copied to clipboard:' : copySource === 'summary' ? '✅ AI Summary copied to clipboard:' : 'Preview — click a button above to copy:'}
+            </p>
+            <pre className="text-xs text-gray-600 whitespace-pre-wrap break-words font-sans">
+              {previewText || chatHistory.map((msg) => {
+                const sender = msg.sender === 'user' ? 'You' : 'Chatbot';
+                const text = typeof msg.text === 'object' ? msg.text.response?.join('') || '' : msg.text;
+                return `${sender}: ${text}`;
+              }).join('\n\n')}
+            </pre>
+          </div>
         </div>
-        <Textarea
-          placeholder="Enter your question..."
-          value={question}
-          onChange={(e) => setQuestion(e.target.value)}
-          rows={4}
-        />
-      </div>
+      )}
+
       <Button type="submit" variant="default" className="w-full">
         Start Chat with Librarian
       </Button>
@@ -171,57 +156,53 @@ const UserInfoForm = ({ onFormSubmit, chatHistory }) => {
 
 /**
  * Functional component that renders the LibAnswers chat widget
- * @returns
  */
 const HumanLibrarianWidget = () => {
-  // Access message context for chat history
   const { messageContextValues } = useContext(MessageContext);
-  
-  // State to determine whether to show the form or the widget
+
   const [showForm, setShowForm] = useState(true);
-  // User info
-  const [name, setName] = useState('');
-  const [email, setEmail] = useState('');
-  const [question, setQuestion] = useState('');
-  const [formURL, setFormURL] = useState('');
+  const [widgetURL, setWidgetURL] = useState('');
 
-  // Handle form submission
-  const handleFormSubmit = (name, email, question) => {
-    setName(name);
-    setEmail(email);
-    setQuestion(question);
-    setShowForm(false); // Hide the form
-  };
+  const handleFormSubmit = (name, email) => {
+    const baseURL = process.env.TEST_LIBANSWERS_WIDGET_URL;
 
-  useEffect(() => {
-    const baseURL = import.meta.env.VITE_LIBANSWERS_WIDGET_URL;
-    // Build URL with query parameters
+    if (!baseURL) {
+      console.error('TEST_LIBANSWERS_WIDGET_URL is not configured in .env');
+      return;
+    }
+
     const params = new URLSearchParams();
-    
     if (name) params.append('patron_name', name);
     if (email) params.append('patron_email', email);
-    if (question) params.append('question', question);
-    
+
     const queryString = params.toString();
-    setFormURL(queryString ? `${baseURL}?${queryString}` : baseURL);
-  }, [showForm, name, email, question]);
+    const finalURL = queryString ? `${baseURL}?${queryString}` : baseURL;
+    setWidgetURL(finalURL);
+    setShowForm(false);
+  };
 
   return (
     <div>
       {showForm ? (
-        <UserInfoForm 
-          onFormSubmit={handleFormSubmit} 
+        <UserInfoForm
+          onFormSubmit={handleFormSubmit}
           chatHistory={messageContextValues.message}
         />
       ) : (
-        <div className="h-[60vh] overflow-y-auto">
-          <iframe
-            src={formURL}
-            title="Chat Widget"
-            width="100%"
-            height="100%"
-            style={{ border: 'none' }}
-          />
+        <div>
+          <div className="rounded-md border border-amber-200 bg-amber-50 p-3 mb-2 text-sm text-gray-700">
+            <p><strong>Say "hi"</strong> to start the chat. Once a librarian joins, <strong>paste</strong> your copied transcript (Ctrl+V / Cmd+V) to share your previous conversation.</p>
+          </div>
+          <div className="h-[55vh]">
+            <iframe
+              src={widgetURL}
+              title="Chat with a Librarian"
+              width="100%"
+              height="100%"
+              style={{ border: 'none' }}
+              allow="microphone; camera"
+            />
+          </div>
         </div>
       )}
     </div>

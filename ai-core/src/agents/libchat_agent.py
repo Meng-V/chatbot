@@ -81,7 +81,8 @@ async def libchat_handoff(query: str, log_callback=None) -> Dict[str, Any]:
                 "text": (
                     f"I'll connect you with a librarian who can help better.\n\n"
                     f"✅ **Librarians are available NOW** (until {current_period['close']})\n\n"
-                    f"For help, visit: {LIBCHAT_WIDGET_URL}"
+                    f"💡 **Tip:** Use the **Copy Transcript** or **AI Summary** button on the next screen to save our conversation to your clipboard. "
+                    f"You can then paste it to the librarian so they have full context."
                 )
             }
         

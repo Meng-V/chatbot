@@ -267,13 +267,6 @@ def setup_logging():
         noisy.addHandler(access_handler)
         noisy.propagate = False
 
-    logging.info("✅ Logging system initialized")
-    logging.info(f"   App log: {APP_LOG_FILE}")
-    logging.info(f"   Error log: {ERROR_LOG_FILE}")
-    logging.info(f"   Access log: {ACCESS_LOG_FILE}")
-    logging.info(f"   Agent log: {AGENT_LOG_FILE}")
-    logging.info(f"   API log: {API_LOG_FILE}")
-
 
 class _MaxLevelFilter(logging.Filter):
     """Only allow records at or below the given level.

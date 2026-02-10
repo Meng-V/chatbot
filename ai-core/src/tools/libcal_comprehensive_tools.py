@@ -179,11 +179,15 @@ def _extract_building_from_query(query: str) -> str:
         ("art", "art"),
     ]
     
-    # Space keywords (Makerspace, Special Collections, etc.)
+    # Space keywords (Makerspace, Special Collections, Archives, Digital Collections)
+    # NOTE: Special Collections and University Archives share the same office
+    # (3rd floor King Library) but are DISTINCT entities with separate contacts.
     space_keywords = [
+        ("digital collections", "digital collections"),
         ("special collections", "special collections"),
         ("special collection", "special collections"),
-        ("university archives", "special collections"),
+        ("university archives", "archives"),
+        ("archives", "archives"),
         ("makerspace", "makerspace"),
         ("maker space", "makerspace"),
         ("makespace", "makerspace"),

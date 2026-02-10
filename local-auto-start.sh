@@ -455,16 +455,6 @@ if [[ $NO_OPEN -eq 0 ]]; then
   (sleep 6 && open "http://localhost:5173") >/dev/null 2>&1 &
 fi
 
-echo ""
-echo "=========================================="
-echo "✨ Development servers are running!"
-echo "=========================================="
-echo "Backend:  http://localhost:8000"
-echo "Frontend: http://localhost:5173"
-echo "=========================================="
-echo "Press Ctrl+C to stop both servers"
-echo ""
-
 while true; do
   BACK_ALIVE=1
   FRONT_ALIVE=1

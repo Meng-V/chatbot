@@ -449,9 +449,18 @@ class LocationService:
         building_location = space.buildingLocation or ""
         parent_name = parent_library.displayName if parent_library else "King Library"
         parent_address = parent_library.address if parent_library else "351 S. Campus Ave, Oxford, OH 45056"
-        parent_phone = parent_library.phone if parent_library else "(513) 529-4141"
         
-        # Compose location string: e.g., "Third floor of King Library (room 303)"
+        # Use space-level phone/email if available
+        # Only fall back to parent library phone for physical spaces (those with a buildingLocation)
+        if space.phone:
+            phone = space.phone
+        elif building_location:
+            phone = parent_library.phone if parent_library else "(513) 529-4141"
+        else:
+            phone = None
+        email = space.email or None
+        
+        # Compose location string: e.g., "Third floor, King Library"
         if building_location:
             location = f"{building_location}, {parent_name}"
         else:
@@ -461,7 +470,8 @@ class LocationService:
             "displayName": space.displayName or space.name,
             "location": location,
             "address": parent_address,
-            "phone": parent_phone,
+            "phone": phone,
+            "email": email,
             "website": space.website or parent_library.website if parent_library else "https://www.lib.miamioh.edu/"
         }
     

@@ -176,6 +176,8 @@ model LibrarySpace {
   buildingLocation String? // Physical location within building (e.g., "Third floor", "Lower level")
   libcalLocationId String  @unique // LibCal location ID for hours API (e.g., "11904" for Makerspace)
   libcalBuildingId String? @unique // LibCal building ID for reservations (e.g., "8269" for Makerspace)
+  phone           String?  // Contact phone number (e.g., "(513) 529-2871")
+  email           String?  // Contact email (e.g., "create@miamioh.edu")
   website         String?  // Space website URL (e.g., "https://libguides.lib.miamioh.edu/create/makerspace")
   spaceType       String   @default("service") // "service", "collection", "study_area"
   library         Library  @relation(fields: [libraryId], references: [id], onDelete: Cascade)

@@ -27,17 +27,13 @@ async def seed_locations():
     
     try:
         await client.connect()
-        print("🔌 Connected to database")
         
         # Clear existing data (in reverse order of dependencies)
-        print("\n🧹 Clearing existing location data...")
         await client.libraryspace.delete_many()
         await client.library.delete_many()
         await client.campus.delete_many()
-        print("✅ Existing data cleared")
         
         # ==================== CREATE CAMPUSES ====================
-        print("\n🏫 Creating campuses...")
         
         oxford = await client.campus.create(
             data={
@@ -46,7 +42,6 @@ async def seed_locations():
                 "isMain": True
             }
         )
-        print(f"  ✓ {oxford.displayName}")
         
         hamilton = await client.campus.create(
             data={
@@ -55,7 +50,6 @@ async def seed_locations():
                 "isMain": False
             }
         )
-        print(f"  ✓ {hamilton.displayName}")
         
         middletown = await client.campus.create(
             data={
@@ -64,10 +58,8 @@ async def seed_locations():
                 "isMain": False
             }
         )
-        print(f"  ✓ {middletown.displayName}")
         
         # ==================== CREATE LIBRARIES ====================
-        print("\n📚 Creating libraries...")
         
         # Oxford Campus Libraries
         king = await client.library.create(
@@ -84,8 +76,6 @@ async def seed_locations():
                 "isMain": True
             }
         )
-        print(f"  ✓ {king.displayName} (Reservations: {king.libcalBuildingId}, Hours: {king.libcalLocationId})")
-        print(f"     📞 {king.phone} | 📍 {king.address} | 🌐 {king.website}")
         
         art = await client.library.create(
             data={
@@ -101,8 +91,6 @@ async def seed_locations():
                 "isMain": False
             }
         )
-        print(f"  ✓ {art.displayName} (Reservations: {art.libcalBuildingId}, Hours: {art.libcalLocationId})")
-        print(f"     📞 {art.phone} | 📍 {art.address} | 🌐 {art.website}")
         
         # Hamilton Campus Library
         rentschler = await client.library.create(
@@ -119,8 +107,6 @@ async def seed_locations():
                 "isMain": True
             }
         )
-        print(f"  ✓ {rentschler.displayName} (Reservations: {rentschler.libcalBuildingId}, Hours: {rentschler.libcalLocationId})")
-        print(f"     📞 {rentschler.phone} | 📍 {rentschler.address} | 🌐 {rentschler.website}")
         
         # Middletown Campus Library
         gardner_harvey = await client.library.create(
@@ -137,11 +123,8 @@ async def seed_locations():
                 "isMain": True
             }
         )
-        print(f"  ✓ {gardner_harvey.displayName} (Reservations: {gardner_harvey.libcalBuildingId}, Hours: {gardner_harvey.libcalLocationId})")
-        print(f"     📞 {gardner_harvey.phone} | 📍 {gardner_harvey.address} | 🌐 {gardner_harvey.website}")
         
         # ==================== CREATE LIBRARY SPACES ====================
-        print("\n🏛️  Creating library spaces...")
         
         # Spaces inside King Library
         # NOTE: These spaces have hours but NO RESERVABLE ROOMS
@@ -154,64 +137,62 @@ async def seed_locations():
                 "shortName": "makerspace",
                 "buildingLocation": "Third floor, room 303",  # Real physical location in King Library
                 "libcalLocationId": "11904",  # For hours API only - no reservable rooms
+                "phone": "(513) 529-2871",
+                "email": "create@miamioh.edu",
                 "website": "https://libguides.lib.miamioh.edu/create/makerspace",
                 "spaceType": "service"
             }
         )
-        print(f"  ✓ {makerspace.displayName} (Third floor, Hours: {makerspace.libcalLocationId}, No reservations) - inside {king.name}")
         
         special_collections = await client.libraryspace.create(
             data={
                 "libraryId": king.id,
-                "name": "Special Collections & University Archives",
-                "displayName": "Walter Havighurst Special Collections & University Archives",
+                "name": "Special Collections",
+                "displayName": "Walter Havighurst Special Collections",
                 "shortName": "special collections",
                 "buildingLocation": "Third floor",  # Real physical location in King Library
                 "libcalLocationId": "8424",   # For hours API only - no reservable rooms
-                "website": "https://spec.lib.miamioh.edu",
+                "phone": "(513) 529-3323",
+                "email": "SpecColl@MiamiOH.edu",
+                "website": "https://spec.lib.miamioh.edu/home/",
                 "spaceType": "collection"
             }
         )
-        print(f"  ✓ {special_collections.displayName} (Third floor, Hours: {special_collections.libcalLocationId}, No reservations) - inside {king.name}")
         
-        # ==================== SUMMARY ====================
-        print("\n" + "="*60)
-        print("📊 LOCATION HIERARCHY SUMMARY")
-        print("="*60)
-        
-        campuses = await client.campus.find_many(
-            include={
-                "libraries": {
-                    "include": {
-                        "spaces": True
-                    }
-                }
+        archives = await client.libraryspace.create(
+            data={
+                "libraryId": king.id,
+                "name": "University Archives",
+                "displayName": "University Archives & Preservation",
+                "shortName": "archives",
+                "buildingLocation": "Third floor",  # Shares office with Special Collections
+                "libcalLocationId": "8424_archives",  # Shares hours with Special Collections
+                "phone": "(513) 529-6720",
+                "email": "Archives@MiamiOH.edu",
+                "website": "https://spec.lib.miamioh.edu/home/",
+                "spaceType": "collection"
             }
         )
         
-        for campus in campuses:
-            main_indicator = " (FLAGSHIP)" if campus.isMain else ""
-            print(f"\n🏫 {campus.displayName}{main_indicator}")
-            for library in campus.libraries:
-                lib_main = " (Main)" if library.isMain else ""
-                print(f"  📚 {library.displayName}{lib_main}")
-                print(f"     Building ID: {library.libcalBuildingId}, Location ID: {library.libcalLocationId}")
-                if library.spaces:
-                    for space in library.spaces:
-                        print(f"       🏛️  {space.displayName} (ID: {space.libcalLocationId})")
+        digital_collections = await client.libraryspace.create(
+            data={
+                "libraryId": king.id,
+                "name": "Digital Collections",
+                "displayName": "Digital Collections",
+                "shortName": "digital collections",
+                "libcalLocationId": "digital_collections",  # No LibCal hours - online resource
+                "website": "https://www.lib.miamioh.edu/digital-collections/",
+                "spaceType": "collection"
+            }
+        )
         
-        print("\n✅ Library location hierarchy seeded successfully!")
-        print("\n📝 Next steps:")
-        print("   1. Run: prisma generate (to update Python client)")
-        print("   2. Update code to use database instead of .env variables")
-        print("   3. Remove LibCal location IDs from .env file")
+        print("✅ Library location hierarchy seeded successfully.")
         
     except Exception as e:
-        print(f"\n❌ Error seeding locations: {str(e)}")
+        print(f"❌ Error seeding locations: {str(e)}")
         raise
     finally:
         await client.disconnect()
-        print("\n🔌 Disconnected from database")
 
 
 if __name__ == "__main__":

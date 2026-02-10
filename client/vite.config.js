@@ -66,7 +66,9 @@ export default defineConfig(({ mode }) => {
       },
     },
     define: {
-      'process.env.SOME_KEY': JSON.stringify(env.SOME_KEY)
+      'process.env.SOME_KEY': JSON.stringify(env.SOME_KEY),
+      'process.env.TEST_LIBANSWERS_WIDGET_URL': JSON.stringify(env.TEST_LIBANSWERS_WIDGET_URL || ''),
+      'process.env.PRODUCTION_LIBANSWERS_WIDGET_URL': JSON.stringify(env.PRODUCTION_LIBANSWERS_WIDGET_URL || ''),
     },
     plugins: [tailwindcss(), react()],
   }
