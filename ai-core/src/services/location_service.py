@@ -410,6 +410,61 @@ class LocationService:
         
         return None
     
+    async def get_space_location_info(self, space_name: str) -> Optional[Dict[str, str]]:
+        """Get location info for a library space (Makerspace, Special Collections, etc.).
+        
+        Queries LibrarySpace table and joins with parent Library to compose
+        a complete location description including building location within the library.
+        
+        Args:
+            space_name: Space name (e.g., "makerspace", "special collections")
+            
+        Returns:
+            Dict with displayName, location, address, phone, website, or None if not a space
+        """
+        if not space_name:
+            return None
+        
+        search_name = space_name.lower().strip()
+        
+        # Ensure database is connected
+        if not self._client.is_connected():
+            await self._client.connect()
+        
+        # Query LibrarySpace with parent Library included
+        space = await self._client.libraryspace.find_first(
+            where={
+                "OR": [
+                    {"shortName": {"contains": search_name, "mode": "insensitive"}},
+                    {"name": {"contains": search_name, "mode": "insensitive"}}
+                ]
+            },
+            include={"library": True}
+        )
+        
+        if not space:
+            return None
+        
+        parent_library = space.library
+        building_location = space.buildingLocation or ""
+        parent_name = parent_library.displayName if parent_library else "King Library"
+        parent_address = parent_library.address if parent_library else "351 S. Campus Ave, Oxford, OH 45056"
+        parent_phone = parent_library.phone if parent_library else "(513) 529-4141"
+        
+        # Compose location string: e.g., "Third floor of King Library (room 303)"
+        if building_location:
+            location = f"{building_location}, {parent_name}"
+        else:
+            location = parent_name
+        
+        return {
+            "displayName": space.displayName or space.name,
+            "location": location,
+            "address": parent_address,
+            "phone": parent_phone,
+            "website": space.website or parent_library.website if parent_library else "https://www.lib.miamioh.edu/"
+        }
+    
     async def get_library_website(self, library_name: str = None) -> str:
         """Get website URL for a library or space.
         

@@ -1145,6 +1145,32 @@ Our librarians are experts at helping with research projects and can provide per
         library_name = _extract_building_from_query(user_msg)
         logger.log(f"📍 [Synthesizer] Looking up: {library_name}")
         
+        # Known space names that are LibrarySpace records, not Library records
+        SPACE_NAMES = ["makerspace", "special collections"]
+        
+        # Check if this is a library space (Makerspace, Special Collections, etc.)
+        if library_name and library_name.lower() in SPACE_NAMES:
+            try:
+                from src.services.location_service import get_location_service
+                location_service = get_location_service()
+                space_info = await location_service.get_space_location_info(library_name)
+                if space_info:
+                    logger.log(f"✅ [Synthesizer] Got space location info from database")
+                    display_name = space_info.get("displayName", library_name.title())
+                    location = space_info.get("location", "")
+                    address = space_info.get("address", "N/A")
+                    website = space_info.get("website", "https://www.lib.miamioh.edu/")
+                    
+                    address_msg = f"**{display_name}**\n\n"
+                    address_msg += f"📍 **Location:** {location}\n\n"
+                    address_msg += f"📍 **Building Address:** {address}\n\n"
+                    address_msg += f"🌐 **Website:** {website}"
+                    
+                    state["final_answer"] = address_msg
+                    return state
+            except Exception as e:
+                logger.log(f"⚠️ [Synthesizer] Space lookup error: {type(e).__name__}, falling through to library lookup")
+        
         # Try database first, fall back to hardcoded data
         contact_info = None
         try:

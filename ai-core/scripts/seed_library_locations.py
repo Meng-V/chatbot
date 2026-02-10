@@ -152,9 +152,9 @@ async def seed_locations():
                 "name": "Makerspace",
                 "displayName": "Makerspace",
                 "shortName": "makerspace",
-                "buildingLocation": "Third floor",  # Real physical location in King Library
+                "buildingLocation": "Third floor, room 303",  # Real physical location in King Library
                 "libcalLocationId": "11904",  # For hours API only - no reservable rooms
-                "website": "https://www.lib.miamioh.edu/makerspace",
+                "website": "https://libguides.lib.miamioh.edu/create/makerspace",
                 "spaceType": "service"
             }
         )
