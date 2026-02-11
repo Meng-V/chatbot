@@ -20,6 +20,7 @@ Rules enforced:
 import logging
 import json
 import sys
+import warnings
 from pathlib import Path
 from datetime import datetime, timezone
 from logging.handlers import RotatingFileHandler
@@ -174,11 +175,22 @@ def setup_logging():
     """
 
     # ------------------------------------------------------------------
+    # 0.  Capture Python warnings (ResourceWarning, DeprecationWarning, etc.)
+    #      into the logging system so they get timestamps in error logs.
+    # ------------------------------------------------------------------
+    logging.captureWarnings(True)
+    warnings.filterwarnings("default")  # Ensure warnings are not silenced
+
+    # ------------------------------------------------------------------
     # 1.  Root logger
     # ------------------------------------------------------------------
     root_logger = logging.getLogger()
     root_logger.setLevel(logging.INFO)
-    root_logger.handlers = []  # Remove any existing handlers
+    # Properly close existing file handlers before removing them
+    for h in root_logger.handlers[:]:
+        if isinstance(h, logging.FileHandler):
+            h.close()
+    root_logger.handlers = []
 
     # Timestamped console formatter (used for stdout AND stderr)
     console_formatter = logging.Formatter(_CONSOLE_FMT, datefmt=_CONSOLE_DATEFMT)
@@ -237,6 +249,9 @@ def setup_logging():
     # ------------------------------------------------------------------
     # uvicorn.access → access.log file + stdout with timestamp
     uvicorn_access = logging.getLogger("uvicorn.access")
+    for h in uvicorn_access.handlers[:]:
+        if isinstance(h, logging.FileHandler):
+            h.close()
     uvicorn_access.handlers = []
     uvicorn_access.addHandler(access_handler)   # Rotating file
     uvicorn_access.addHandler(stdout_handler)   # stdout with timestamp
@@ -244,6 +259,9 @@ def setup_logging():
 
     # uvicorn.error → app.log file + stderr (WARNING+ only with timestamp)
     uvicorn_error = logging.getLogger("uvicorn.error")
+    for h in uvicorn_error.handlers[:]:
+        if isinstance(h, logging.FileHandler):
+            h.close()
     uvicorn_error.handlers = []
     uvicorn_error.setLevel(logging.WARNING)     # Block INFO lifecycle msgs from stderr
     uvicorn_error.addHandler(app_handler)       # All levels to app.log
@@ -252,6 +270,9 @@ def setup_logging():
 
     # uvicorn root logger
     uvicorn_root = logging.getLogger("uvicorn")
+    for h in uvicorn_root.handlers[:]:
+        if isinstance(h, logging.FileHandler):
+            h.close()
     uvicorn_root.handlers = []
     uvicorn_root.addHandler(app_handler)
     uvicorn_root.propagate = False
@@ -263,9 +284,24 @@ def setup_logging():
                        "socketio", "websockets", "engineio.server",
                        "socketio.server"]:
         noisy = logging.getLogger(noisy_name)
+        for h in noisy.handlers[:]:
+            if isinstance(h, logging.FileHandler):
+                h.close()
         noisy.handlers = []
         noisy.addHandler(access_handler)
         noisy.propagate = False
+
+    # ------------------------------------------------------------------
+    # 6.  Python warnings logger (py.warnings)
+    #      logging.captureWarnings(True) routes warnings here.
+    #      Send to stderr (with timestamp) + error log file.
+    # ------------------------------------------------------------------
+    py_warnings_logger = logging.getLogger("py.warnings")
+    py_warnings_logger.handlers = []
+    py_warnings_logger.setLevel(logging.WARNING)
+    py_warnings_logger.addHandler(stderr_handler)   # stderr with timestamp
+    py_warnings_logger.addHandler(error_handler)     # errors.log with JSON timestamp
+    py_warnings_logger.propagate = False
 
 
 class _MaxLevelFilter(logging.Filter):

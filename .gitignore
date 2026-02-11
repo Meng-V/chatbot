@@ -200,3 +200,4 @@ node_modules
 /ai-core/docker-compose.weaviate.local.yml
 /test
 staff-members - staff-members.csv
+ai-core/docs/WEAVIATE_SERVER_DEPLOYMENT.md
