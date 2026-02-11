@@ -383,6 +383,21 @@ async def clarification_node(state: AgentState) -> AgentState:
     # PRIORITY 1: Check for clarifying_question from query understanding
     clarifying_q = state.get("clarifying_question")
     if clarifying_q:
+        # Sanitize: detect analytical/non-conversational text that leaked from LLM analysis
+        # These start with "User" or contain raw classification language
+        is_analytical = (
+            clarifying_q.strip().startswith("User ") or
+            clarifying_q.strip().startswith("The user ") or
+            "did not specify" in clarifying_q.lower() or
+            "requested multiple" in clarifying_q.lower()
+        )
+        if is_analytical:
+            logger.log(f"⚠️ [Clarification] Detected analytical text, converting to user-friendly response")
+            clarifying_q = (
+                "I'd like to help, but I want to make sure I understand your question correctly. "
+                "Could you provide a bit more detail about what you're looking for? "
+                "I can assist with library hours, study room reservations, research guides, equipment checkout, and more."
+            )
         logger.log(f"❓ [Clarification] Using query understanding clarification")
         state["final_answer"] = clarifying_q
         state["_logger"] = logger
@@ -1138,13 +1153,16 @@ Our librarians are experts at helping with research projects and can provide per
         
         # Hardcoded fallback data (matches database)
         LIBRARY_DATA = {
-            "king": {"displayName": "Edgar W. King Library", "address": "351 S. Campus Ave, Oxford, OH 45056", "phone": "(513) 529-4141", "website": "https://www.lib.miamioh.edu/"},
+            "king": {"displayName": "Edgar W. King Library", "address": "151 S. Campus Ave, Oxford, OH 45056", "phone": "(513) 529-4141", "website": "https://www.lib.miamioh.edu/"},
             "art": {"displayName": "Wertz Art & Architecture Library", "address": "Alumni Hall, Oxford, OH 45056", "phone": "(513) 529-6638", "website": "https://www.lib.miamioh.edu/"},
             "hamilton": {"displayName": "Rentschler Library", "address": "1601 University Blvd, Hamilton, OH 45011", "phone": "(513) 785-3235", "website": "https://www.ham.miamioh.edu/library/"},
             "middletown": {"displayName": "Gardner-Harvey Library", "address": "4200 N. University Blvd, Middletown, OH 45042", "phone": "(513) 727-3222", "website": "https://www.mid.miamioh.edu/library/"},
         }
         
         library_name = _extract_building_from_query(user_msg)
+        # Strip UNKNOWN: prefix for address lookups (default to king)
+        if library_name.startswith("UNKNOWN:"):
+            library_name = "king"
         logger.log(f"📍 [Synthesizer] Looking up: {library_name}")
         
         # Known space names that are LibrarySpace records, not Library records
@@ -1358,6 +1376,9 @@ Our librarians are experts at helping with research projects and can provide per
         
         # Extract library/space name using centralized function (handles all variations)
         library_name = _extract_building_from_query(user_msg)
+        # Strip UNKNOWN: prefix for website lookups (default to king)
+        if library_name.startswith("UNKNOWN:"):
+            library_name = "king"
         logger.log(f"🌐 [Synthesizer] Extracted library/space name: {library_name}")
         
         try:

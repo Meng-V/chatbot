@@ -20,6 +20,19 @@ import asyncio
 # URL pattern (basic)
 URL_PATTERN = r'https?://[^\s<>"{}|\\^`\[\]]+'
 
+# Internal/API URL patterns that should NEVER appear in user-facing responses
+# These are backend endpoints, health checks, and monitoring URLs
+INTERNAL_URL_PATTERNS = [
+    r'https?://localhost[:/]',
+    r'https?://127\.0\.0\.1[:/]',
+    r'https?://0\.0\.0\.0[:/]',
+    r'https?://[^/]+/health\b',
+    r'https?://[^/]+/metrics\b',
+    r'https?://[^/]+/smartchatbot/(?:health|socket\.io|metrics)',
+    r'https?://[^/]+:\d{4,5}/(?:health|ask|metrics)',  # API port endpoints
+    r'https?://[^/]+/api/(?:health|status|restart)',
+]
+
 # ILL URL corrections - Regional campus URLs should default to main campus
 # unless the user specifically mentions a regional campus
 ILL_URL_CORRECTIONS = {
@@ -234,7 +247,25 @@ async def validate_urls_in_text(text: str, log_callback=None, use_fallback: bool
             "all_urls_valid": True
         }
     
+    # Filter out internal/API URLs that should never appear in responses
+    internal_urls = []
+    external_urls = []
+    for url in urls:
+        is_internal = False
+        for pattern in INTERNAL_URL_PATTERNS:
+            if re.search(pattern, url, re.IGNORECASE):
+                is_internal = True
+                if log_callback:
+                    log_callback(f"🚫 [URL Validator] Blocked internal URL: {url}")
+                internal_urls.append(url)
+                break
+        if not is_internal:
+            external_urls.append(url)
+    urls = external_urls
+    
     if log_callback:
+        if internal_urls:
+            log_callback(f"🚫 [URL Validator] Blocked {len(internal_urls)} internal URL(s)")
         log_callback(f"🔍 [URL Validator] Found {len(urls)} URL(s) - validating ALL (with fallback: {use_fallback})")
     
     valid_urls = []
@@ -547,7 +578,24 @@ async def validate_and_clean_response(response_text: str, log_callback=None, age
     had_issues = False
     cleaned_text = response_text
     
-    # Step 0: Correct ILL URLs to default to main campus
+    # Step 0a: Remove any internal/API URLs that should never appear in responses
+    for pattern in INTERNAL_URL_PATTERNS:
+        internal_matches = re.findall(pattern, cleaned_text, re.IGNORECASE)
+        if internal_matches:
+            # Remove the entire URL (find full URL containing the match)
+            for url in extract_urls_from_text(cleaned_text):
+                if re.search(pattern, url, re.IGNORECASE):
+                    cleaned_text = cleaned_text.replace(url, '')
+                    had_issues = True
+                    if log_callback:
+                        log_callback(f"🚫 [URL Validator] Stripped internal URL from response: {url}")
+    
+    # Clean up artifacts from URL removal (double spaces, empty markdown links, etc.)
+    cleaned_text = re.sub(r'\[([^\]]*)\]\(\s*\)', r'\1', cleaned_text)  # [text]() -> text
+    cleaned_text = re.sub(r'  +', ' ', cleaned_text)
+    cleaned_text = re.sub(r'\n\s*\n\s*\n+', '\n\n', cleaned_text)
+    
+    # Step 0b: Correct ILL URLs to default to main campus
     cleaned_text = correct_ill_urls(cleaned_text, user_message, log_callback)
     
     # Step 1: Validate all URLs (with fallback to parent URLs on 4xx errors)

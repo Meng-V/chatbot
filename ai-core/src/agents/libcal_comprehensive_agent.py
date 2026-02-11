@@ -159,54 +159,56 @@ class LibCalComprehensiveAgent(Agent):
     def _extract_building_from_query(self, query: str) -> str:
         """Extract building/library/space name from query.
         
-        Supports: King, Art, Rentschler, Gardner-Harvey, Hamilton, Middletown,
-                  Makerspace, Special Collections, and more
+        Delegates to the shared function in libcal_comprehensive_tools
+        which handles all library names, spaces, and unknown building detection.
         """
-        q_lower = query.lower()
-        
-        # Space keywords (check first - more specific)
-        if any(word in q_lower for word in ["special collections", "special collection", "university archives"]):
-            return "special collections"
-        if any(word in q_lower for word in ["makerspace", "maker space", "makespace"]):
-            return "makerspace"
-        
-        # Library keywords
-        if "art & architecture" in q_lower or "art and architecture" in q_lower or "art library" in q_lower:
-            return "art"
-        if "gardner-harvey" in q_lower or "gardner harvey" in q_lower:
-            return "gardner-harvey"
-        if "rentschler" in q_lower or "hamilton" in q_lower:
-            return "hamilton"
-        if "middletown" in q_lower:
-            return "middletown"
-        if "art" in q_lower:
-            return "art"
-        if "king" in q_lower:
-            return "king"
-        
-        # Default to King Library
-        return "king"
+        from src.tools.libcal_comprehensive_tools import _extract_building_from_query as _shared_extract
+        return _shared_extract(query)
     
     async def execute(self, query: str, log_callback=None, **kwargs) -> Dict[str, Any]:
-        """Execute the agent with date and building extraction for hours queries."""
+        """Execute the agent with date and building extraction for all tool types."""
         # Route to specific tool
         tool_name = await self.route_to_tool(query)
         
-        # For hours queries, extract date and building if present
+        # Extract building/space for ALL LibCal tools (hours, availability, reservation)
+        if "building" not in kwargs:
+            building = self._extract_building_from_query(query)
+            if log_callback:
+                log_callback(f"🏛️ [LibCal Agent] Extracted building from query: {building}")
+            
+            # Handle unknown building names for reservation/availability tools
+            if building.startswith("UNKNOWN:") and tool_name in ("libcal_comprehensive_reservation", "libcal_enhanced_availability"):
+                unknown_name = building.replace("UNKNOWN:", "").strip()
+                if log_callback:
+                    log_callback(f"⚠️ [LibCal Agent] Unknown building '{unknown_name}' - listing valid options")
+                result = {
+                    "agent": self.name,
+                    "tool": tool_name,
+                    "success": False,
+                    "text": (
+                        f"'{unknown_name.title()}' is not a recognized Miami University library for room reservations. "
+                        f"Study rooms are available at:\n"
+                        f"• **King Library** (Oxford main campus)\n"
+                        f"• **Rentschler Library** (Hamilton campus)\n"
+                        f"• **Gardner-Harvey Library** (Middletown campus)\n"
+                        f"• **Wertz Art & Architecture Library** (Oxford)\n\n"
+                        f"Which library would you like to reserve a room at?"
+                    ),
+                }
+                return result
+            
+            # For unknown buildings on hours queries, default to king
+            if building.startswith("UNKNOWN:"):
+                building = "king"
+            kwargs["building"] = building
+        
+        # For hours queries, also extract date
         if tool_name == "libcal_week_hours":
-            # Extract date
             extracted_date = self._extract_date_from_query(query)
             if extracted_date and "date" not in kwargs:
                 kwargs["date"] = extracted_date
                 if log_callback:
                     log_callback(f"📅 [LibCal Agent] Extracted date from query: {extracted_date}")
-            
-            # Extract building/space
-            if "building" not in kwargs:
-                building = self._extract_building_from_query(query)
-                kwargs["building"] = building
-                if log_callback:
-                    log_callback(f"🏛️ [LibCal Agent] Extracted building from query: {building}")
         
         # Call parent execute method
         tool = self.tools.get(tool_name)
@@ -218,7 +220,17 @@ class LibCalComprehensiveAgent(Agent):
                 "error": f"Tool '{tool_name}' not registered"
             }
         
-        # Execute the tool
-        result = await tool.execute(query, log_callback=log_callback, **kwargs)
+        # Execute the tool with error handling
+        try:
+            result = await tool.execute(query, log_callback=log_callback, **kwargs)
+        except Exception as e:
+            if log_callback:
+                log_callback(f"❌ [LibCal Agent] Tool '{tool_name}' threw exception: {str(e)}")
+            result = {
+                "tool": tool_name,
+                "success": False,
+                "text": f"I'm having trouble with the {tool_name.replace('_', ' ')} service right now. Please visit https://www.lib.miamioh.edu/ or call (513) 529-4141 for assistance.",
+                "error": str(e)
+            }
         result["agent"] = self.name
         return result

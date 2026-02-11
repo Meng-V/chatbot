@@ -160,23 +160,32 @@ def _extract_building_from_query(query: str) -> str:
     - Variations: "Art Library", "Art & Architecture", "Hamilton campus"
     
     Returns:
-        Extracted building name (lowercase) or "king" as default
+        Extracted building name (lowercase), "king" as default,
+        or "UNKNOWN:<name>" if user specified an unrecognized building
     """
     q_lower = query.lower()
     
     # Library keywords in priority order (more specific first)
+    # NOTE: Short keywords like "art" and "king" use word boundary check
+    # to avoid false matches (e.g., "Hogwarts" matching "art")
     library_keywords = [
         ("art & architecture", "art"),
         ("art and architecture", "art"),
         ("art library", "art"),
+        ("wertz", "art"),
         ("gardner-harvey", "gardner-harvey"),
         ("gardner harvey", "gardner-harvey"),
         ("rentschler", "rentschler"),
         ("hamilton", "hamilton"),  # Rentschler Library at Hamilton campus
         ("middletown", "middletown"),  # Gardner-Harvey at Middletown campus
         ("king library", "king"),
-        ("king", "king"),
-        ("art", "art"),
+    ]
+    
+    # Word-boundary keywords (avoid substring matches like "hogwarts" → "art")
+    import re
+    word_boundary_keywords = [
+        (r'\bart\b', "art"),
+        (r'\bking\b', "king"),
     ]
     
     # Space keywords (Makerspace, Special Collections, Archives, Digital Collections)
@@ -198,12 +207,32 @@ def _extract_building_from_query(query: str) -> str:
         if keyword in q_lower:
             return normalized
     
-    # Then check for libraries
+    # Then check for libraries (exact substring match)
     for keyword, normalized in library_keywords:
         if keyword in q_lower:
             return normalized
     
-    # Default to King Library
+    # Check word-boundary keywords (avoids "hogwarts" matching "art")
+    for pattern, normalized in word_boundary_keywords:
+        if re.search(pattern, q_lower):
+            return normalized
+    
+    # Check if user mentioned a specific building/library by name that we don't recognize
+    # Patterns: "at X Library", "in X Library", "at the X Library", "at X campus"
+    unknown_patterns = [
+        r'(?:at|in|from)\s+(?:the\s+)?(\w[\w\s-]*?)\s+(?:library|lib)\b',
+        r'(?:at|in|from)\s+(?:the\s+)?(\w[\w\s-]*?)\s+campus\b',
+        r'(?:at|in|from)\s+(?:the\s+)?(\w[\w\s-]*?)\s+(?:center|building)\b',
+    ]
+    for pattern in unknown_patterns:
+        match = re.search(pattern, q_lower)
+        if match:
+            unknown_name = match.group(1).strip()
+            # Exclude common false positives
+            if unknown_name not in ("the", "a", "my", "our", "this", "that", "your"):
+                return f"UNKNOWN:{unknown_name}"
+    
+    # Default to King Library (no specific building mentioned)
     return "king"
 
 def _parse_date_intelligent(date_input: str) -> Tuple[bool, Optional[str], Optional[str]]:

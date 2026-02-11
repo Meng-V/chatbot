@@ -448,7 +448,7 @@ class LocationService:
         parent_library = space.library
         building_location = space.buildingLocation or ""
         parent_name = parent_library.displayName if parent_library else "King Library"
-        parent_address = parent_library.address if parent_library else "351 S. Campus Ave, Oxford, OH 45056"
+        parent_address = parent_library.address if parent_library else "151 S. Campus Ave, Oxford, OH 45056"
         
         # Use space-level phone/email if available
         # Only fall back to parent library phone for physical spaces (those with a buildingLocation)
