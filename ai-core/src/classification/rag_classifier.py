@@ -79,12 +79,16 @@ class RAGQuestionClassifier:
         exists = self.client.collections.exists(self.collection_name)
         
         if not exists:
-            # V4 API: Create collection with proper schema
+            # V4 API: Create collection with proper schema and vector index
             import weaviate.classes.config as wvc
             
             self.client.collections.create(
                 name=self.collection_name,
                 description="Question category examples for classification",
+                vectorizer_config=wvc.Configure.Vectorizer.none(),
+                vector_index_config=wvc.Configure.VectorIndex.hnsw(
+                    distance_metric=wvc.VectorDistances.COSINE
+                ),
                 properties=[
                     wvc.Property(name="category", data_type=wvc.DataType.TEXT, description="Category name"),
                     wvc.Property(name="question", data_type=wvc.DataType.TEXT, description="Example question"),

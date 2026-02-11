@@ -1477,6 +1477,7 @@ Our librarians are experts at helping with research projects and can provide per
     )
     
     context_parts = []
+    failed_with_text = []
     for agent_name, resp in sorted_responses:
         if resp.get("success"):
             # Add priority label based on verification status
@@ -1494,6 +1495,9 @@ Our librarians are experts at helping with research projects and can provide per
                 priority_label = " [WEBSITE SEARCH]"
             
             context_parts.append(f"[{resp.get('source', agent_name)}{priority_label}]: {resp.get('text', '')}")
+        elif resp.get("text") and not isinstance(resp.get("text"), Exception):
+            # Agent failed but returned useful text (e.g., missing params, validation errors)
+            failed_with_text.append((agent_name, resp))
     
     # 🌐 RAG FALLBACK: If no context from agents, try website evidence
     if not context_parts:
@@ -1540,21 +1544,29 @@ Our librarians are experts at helping with research projects and can provide per
         except Exception as e:
             logger.log(f"❌ [Website Evidence RAG] Error: {str(e)}")
     
-    # If still no context after RAG fallback, return error
+    # If still no context after RAG fallback, check for agent error text before generic error
     if not context_parts:
-        error_msg = "I'm having trouble accessing our systems right now. Please visit https://www.lib.miamioh.edu/ or chat with a librarian at (513) 529-4141."
-        # Validate URLs before returning
-        logger.log("🔍 [URL Validator] Checking URLs in error message")
-        validated_msg, had_invalid_urls = await validate_and_clean_response(
-            error_msg, 
-            log_callback=logger.log,
-            user_message=user_msg
-        )
-        if had_invalid_urls:
-            logger.log("⚠️ [URL Validator] Removed invalid URLs from error message")
-        
-        state["final_answer"] = validated_msg
-        return state
+        if failed_with_text:
+            # Agents failed but returned useful text (e.g., missing booking params)
+            # Use the first failed agent's text as context for LLM synthesis
+            agent_name, resp = failed_with_text[0]
+            agent_error_text = resp.get("text", "")
+            logger.log(f"📋 [Synthesizer] Using failed agent text from {agent_name}: {agent_error_text[:100]}")
+            context_parts.append(f"[{resp.get('source', agent_name)} - NEEDS MORE INFO]: {agent_error_text}")
+        else:
+            error_msg = "I'm having trouble accessing our systems right now. Please visit https://www.lib.miamioh.edu/ or chat with a librarian at (513) 529-4141."
+            # Validate URLs before returning
+            logger.log("🔍 [URL Validator] Checking URLs in error message")
+            validated_msg, had_invalid_urls = await validate_and_clean_response(
+                error_msg, 
+                log_callback=logger.log,
+                user_message=user_msg
+            )
+            if had_invalid_urls:
+                logger.log("⚠️ [URL Validator] Removed invalid URLs from error message")
+            
+            state["final_answer"] = validated_msg
+            return state
     
     context = "\n\n".join(context_parts)
     
@@ -1973,33 +1985,38 @@ async def category_classification_node(state: AgentState) -> AgentState:
     
     # Check if clarification needed (from classifier)
     if category_result.needs_clarification:
-        # KEY INSIGHT: If the intent is clear (high confidence, no ambiguity) but category
-        # confidence is very low, the bot understood the question but has no handler for it.
-        # In that case, say "I don't have that information" instead of asking for clarification
-        # which wastes the user's time.
         intent_is_clear = (
-            normalized_intent.confidence >= 0.85
+            normalized_intent.confidence >= 0.80
             and not normalized_intent.ambiguity
         )
-        category_is_unknown = category_result.confidence < 0.20
         
-        if intent_is_clear and category_is_unknown:
-            logger.log(
-                f"💡 [Category Classification] Intent clear (conf={normalized_intent.confidence:.2f}) "
-                f"but no matching category (conf={category_result.confidence:.2f}) → "
-                f"responding with 'I don't have that information' instead of clarification"
-            )
-            state["needs_clarification"] = False
-            state["_no_answer_available"] = True
-            state["primary_agent_id"] = None
-            emit_route_trace(state, logger, "no_answer")
+        if intent_is_clear:
+            # Intent is clear — try the best-matching agent instead of asking for clarification
+            # or giving up. Even low-confidence categories are worth trying.
+            if category_result.confidence < 0.10:
+                # Truly no match — give up gracefully
+                logger.log(
+                    f"💡 [Category Classification] Intent clear (conf={normalized_intent.confidence:.2f}) "
+                    f"but no matching category (conf={category_result.confidence:.2f}) → "
+                    f"responding with 'I don't have that information'"
+                )
+                state["needs_clarification"] = False
+                state["_no_answer_available"] = True
+                state["primary_agent_id"] = None
+                emit_route_trace(state, logger, "no_answer")
+            else:
+                # Low but non-zero confidence — still route to best agent
+                logger.log(
+                    f"🔄 [Category Classification] Intent clear, low confidence ({category_result.confidence:.2f}) "
+                    f"but routing to best-match agent anyway: {category_result.category}"
+                )
+                state["needs_clarification"] = False
+                emit_route_trace(state, logger, "low_confidence_route")
         else:
             state["needs_clarification"] = True
             state["clarifying_question"] = "I want to make sure I understand your question correctly. Could you provide more details about what you're looking for?"
-            # Set primary_agent_id to None when clarification needed
             state["primary_agent_id"] = None
             logger.log(f"⚠️ [Category Classification] Clarification needed: {category_result.clarification_reason}")
-            # Emit routing trace for clarification path
             emit_route_trace(state, logger, "clarify")
     
     # Agent selection using SINGLE SOURCE OF TRUTH

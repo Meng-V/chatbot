@@ -19,7 +19,7 @@ from src.models.intent import NormalizedIntent, CategoryClassification
 from src.classification.rag_classifier import classify_with_rag
 
 # Confidence thresholds
-CONFIDENCE_THRESHOLD_IN_SCOPE = 0.60  # For in-scope categories
+CONFIDENCE_THRESHOLD_IN_SCOPE = 0.45  # For in-scope categories
 CONFIDENCE_THRESHOLD_OUT_OF_SCOPE = 0.45  # For out-of-scope categories (lower threshold)
 
 
