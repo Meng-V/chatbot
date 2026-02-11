@@ -201,3 +201,4 @@ node_modules
 /test
 staff-members - staff-members.csv
 ai-core/docs/WEAVIATE_SERVER_DEPLOYMENT.md
+log/deploy.sh

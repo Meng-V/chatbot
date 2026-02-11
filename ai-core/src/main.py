@@ -160,7 +160,7 @@ async def lifespan(app: FastAPI):
     try:
         from src.classification.rag_classifier import RAGQuestionClassifier
         classifier = RAGQuestionClassifier()
-        await classifier.initialize_vector_store(force_refresh=False)
+        await classifier.initialize_vector_store(force_refresh=True)
         logging.info("✅ [RAG Classifier] Vector store initialized")
     except Exception as e:
         logging.error(f"⚠️ [RAG Classifier] Vector store init failed: {e}", exc_info=True)
