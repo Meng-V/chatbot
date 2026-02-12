@@ -619,9 +619,17 @@ async def _check_building_hours(building_id: str, date: str, start_time: str, en
                     building_open = time_to_minutes(from_time)
                     building_close = time_to_minutes(to_time)
                     
-                    # Check if booking fits within this hours block
-                    if booking_start >= building_open and booking_end <= building_close:
-                        return True, None
+                    # Handle overnight hours (e.g., 7:00am to 1:00am next day)
+                    if building_close < building_open:
+                        # Overnight: valid if booking is after open OR before close
+                        if booking_start >= building_open and booking_end > booking_start:
+                            return True, None
+                        if booking_start < building_close and booking_end <= building_close:
+                            return True, None
+                    else:
+                        # Normal hours: booking must fit within open-close
+                        if booking_start >= building_open and booking_end <= building_close:
+                            return True, None
             
             # If we get here, booking time is outside all operating hours
             hours_str = ", ".join([f"{h['from']} to {h['to']}" for h in hours_list])
@@ -918,6 +926,17 @@ class LibCalEnhancedAvailabilityTool(Tool):
                 "text": "Couldn't search rooms. Visit https://libcal.miamioh.edu/"
             }
 
+async def _get_library_phone(building: str) -> str:
+    """Look up the correct phone number for a library from the database."""
+    try:
+        location_service = get_location_service()
+        contact_info = await location_service.get_library_contact_info(building)
+        if contact_info and contact_info.get("phone"):
+            return contact_info["phone"]
+    except Exception:
+        pass
+    return "(513) 529-4141"
+
 class LibCalComprehensiveReservationTool(Tool):
     """Comprehensive room booking with full validation and multi-building support."""
     
@@ -946,6 +965,9 @@ class LibCalComprehensiveReservationTool(Tool):
     ) -> Dict[str, Any]:
         """Book a room with comprehensive validation."""
         try:
+            # Look up library-specific phone number from DB
+            library_phone = await _get_library_phone(building)
+            
             # Validate library name FIRST before collecting other details
             is_valid, result, display_name = await _validate_library_for_rooms(building)
             if not is_valid:
@@ -974,10 +996,20 @@ class LibCalComprehensiveReservationTool(Tool):
                 missing_params.append("endTime")
             
             if missing_params:
+                # Build user-friendly list of what's needed (no format requirements - the system handles parsing)
+                friendly_names = {
+                    "firstName": "first name",
+                    "lastName": "last name", 
+                    "email": "@miamioh.edu email address",
+                    "date": "date (e.g., 'tomorrow', 'next Monday', 'March 5')",
+                    "startTime": "start time (e.g., '2pm', '2 in the afternoon')",
+                    "endTime": "end time (e.g., '4pm', '4 in the afternoon')",
+                }
+                friendly_list = [friendly_names.get(p, p) for p in missing_params]
                 return {
                     "tool": self.name,
                     "success": False,
-                    "text": f"Missing required parameters: {', '.join(missing_params)}. Please ask the customer to provide these."
+                    "text": f"To complete your room reservation, I still need: {', '.join(friendly_list)}. You can use natural language - no special formatting needed!"
                 }
             
             # Validate email
@@ -1046,13 +1078,9 @@ class LibCalComprehensiveReservationTool(Tool):
                         "text": hours_message
                     }
             
-            # Validate room selection
+            # Validate room selection - default to 2 if not specified
             if not room_capacity and not room_code_name:
-                return {
-                    "tool": self.name,
-                    "success": False,
-                    "text": "Please specify either roomCapacity (number of people) or roomCodeName (e.g., '145', '211')."
-                }
+                room_capacity = 2  # Default to smallest room
             
             if log_callback:
                 log_callback(f"📝 [LibCal Comprehensive Reservation Tool] Booking for {first_name} {last_name}")
@@ -1107,7 +1135,7 @@ class LibCalComprehensiveReservationTool(Tool):
                             return {
                                 "tool": self.name,
                                 "success": False,
-                                "text": f"No rooms are available for {booking_date.strftime('%B %d, %Y')}. Note: Room reservations typically open 2 weeks in advance. Please try a closer date, or contact the library at (513) 529-4141 for further assistance."
+                                "text": f"No rooms are available for {booking_date.strftime('%B %d, %Y')}. Note: Room reservations typically open 2 weeks in advance. Please try a closer date, or contact the library at {library_phone} for further assistance."
                             }
                     except:
                         pass
@@ -1115,7 +1143,7 @@ class LibCalComprehensiveReservationTool(Tool):
                     return {
                         "tool": self.name,
                         "success": False,
-                        "text": "No rooms available at any library building for the requested time. You might try a different time slot or date, or feel free to contact us at (513) 529-4141 for further assistance."
+                        "text": f"No rooms available at any library building for the requested time. You might try a different time slot or date, or feel free to contact us at {library_phone} for further assistance."
                     }
             
             rooms_data = availability_result.get("rooms_data", [])
@@ -1218,7 +1246,7 @@ class LibCalComprehensiveReservationTool(Tool):
                         return {
                             "tool": self.name,
                             "success": False,
-                            "text": f"Your booking request has failed. Please try again or contact us at (513) 529-4141 for further assistance."
+                            "text": f"Your booking request has failed. Please try again or contact us at {library_phone} for further assistance."
                         }
                 else:
                     error_data = response.text
@@ -1298,7 +1326,7 @@ class LibCalCancelReservationTool(Tool):
                 return {
                     "tool": self.name,
                     "success": False,
-                    "text": "Cancellation service is not configured. Please contact the library at (513) 529-4141 to cancel your reservation."
+                    "text": "Cancellation service is not configured. Please contact the library at (513) 529-4141 to cancel your reservation."  # Cancel tool - generic fallback OK
                 }
             
             if log_callback:
@@ -1409,7 +1437,7 @@ class LibCalCancelReservationTool(Tool):
                 return {
                     "tool": self.name,
                     "success": False,
-                    "text": f"Could not cancel booking. Please visit https://www.lib.miamioh.edu/use/spaces/room-reservations/ or contact the library at (513) 529-4141."
+                    "text": "Could not cancel booking. Please visit https://www.lib.miamioh.edu/use/spaces/room-reservations/ or contact the library at (513) 529-4141."
                 }
         
         except Exception as e:

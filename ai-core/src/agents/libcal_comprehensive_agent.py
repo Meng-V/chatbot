@@ -1,6 +1,8 @@
 """Comprehensive LibCal Agent with all tools."""
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 import re
+import os
+import json
 from datetime import datetime, timedelta
 import pytz
 try:
@@ -13,6 +15,8 @@ try:
     DATEPARSER_AVAILABLE = True
 except ImportError:
     DATEPARSER_AVAILABLE = False
+from langchain_openai import ChatOpenAI
+from langchain_core.messages import HumanMessage, SystemMessage
 from src.agents.base_agent import Agent
 from src.tools.libcal_comprehensive_tools import (
     LibCalWeekHoursTool,
@@ -165,6 +169,112 @@ class LibCalComprehensiveAgent(Agent):
         from src.tools.libcal_comprehensive_tools import _extract_building_from_query as _shared_extract
         return _shared_extract(query)
     
+    async def _extract_booking_params(self, query: str, log_callback=None) -> Dict[str, Any]:
+        """Use LLM to extract booking parameters from natural language.
+        
+        Parses free-form text like 'Meng Qu, qum@miamioh.edu, tomorrow, 5-6 afternoon, party for 2'
+        into structured params: first_name, last_name, email, date, start_time, end_time, room_capacity.
+        Also handles US holidays and relative dates.
+        """
+        ny_tz = pytz.timezone('America/New_York')
+        now = datetime.now(ny_tz)
+        
+        system_prompt = f"""You are a booking parameter extractor for Miami University Libraries.
+Extract booking details from the user's message into structured JSON.
+
+TODAY'S DATE: {now.strftime('%A, %B %d, %Y')} (Eastern Time)
+TOMORROW: {(now + timedelta(days=1)).strftime('%A, %B %d, %Y')}
+
+Rules:
+- "tomorrow" = {(now + timedelta(days=1)).strftime('%Y-%m-%d')}
+- "today" = {now.strftime('%Y-%m-%d')}
+- For relative days ("next Monday", "this Friday"), calculate from today
+- US holidays: resolve to their actual date for the current/next year
+  (e.g., "Thanksgiving" = 4th Thursday of November, "MLK Day" = 3rd Monday of January)
+- Convert ALL times to 24-hour HH:MM format:
+  - "5 afternoon" / "5pm" / "5 in the afternoon" = "17:00"
+  - "5-6 afternoon" = start "17:00", end "18:00"
+  - "2-4pm" = start "14:00", end "16:00" 
+  - "10am to noon" = start "10:00", end "12:00"
+  - "morning" without specific time = don't guess, leave null
+- Extract name parts: first_name and last_name separately
+- Email must contain @miamioh.edu to be valid
+- room_capacity = number of people ("party of 2" = 2, "4 people" = 4, "for 2" = 2)
+
+Respond with ONLY valid JSON:
+{{
+  "first_name": "string or null",
+  "last_name": "string or null",
+  "email": "string or null",
+  "date": "YYYY-MM-DD or null",
+  "start_time": "HH:MM (24h) or null",
+  "end_time": "HH:MM (24h) or null",
+  "room_capacity": integer or null
+}}"""
+        
+        try:
+            model_name = os.getenv("OPENAI_MODEL", "o4-mini")
+            api_key = os.getenv("OPENAI_API_KEY", "")
+            llm_kwargs = {"model": model_name, "api_key": api_key}
+            if not model_name.startswith("o"):
+                llm_kwargs["temperature"] = 0
+            llm = ChatOpenAI(**llm_kwargs)
+            
+            messages = [
+                SystemMessage(content=system_prompt),
+                HumanMessage(content=f'Extract booking params from: "{query}"')
+            ]
+            
+            response = await llm.ainvoke(messages)
+            text = response.content.strip()
+            
+            # Handle markdown code blocks
+            if text.startswith("```"):
+                lines = text.split("\n")
+                json_lines = [l for l in lines if not l.startswith("```")]
+                text = "\n".join(json_lines)
+            
+            params = json.loads(text)
+            
+            if log_callback:
+                extracted = {k: v for k, v in params.items() if v is not None}
+                log_callback(f"📋 [LibCal Agent] LLM extracted booking params: {extracted}")
+            
+            return params
+            
+        except Exception as e:
+            if log_callback:
+                log_callback(f"⚠️ [LibCal Agent] LLM param extraction failed: {e}, falling back to regex")
+            return self._extract_booking_params_regex(query)
+    
+    def _extract_booking_params_regex(self, query: str) -> Dict[str, Any]:
+        """Regex fallback for booking parameter extraction."""
+        params = {
+            "first_name": None, "last_name": None, "email": None,
+            "date": None, "start_time": None, "end_time": None, "room_capacity": None
+        }
+        
+        # Extract email
+        email_match = re.search(r'[\w.+-]+@miamioh\.edu', query, re.IGNORECASE)
+        if email_match:
+            params["email"] = email_match.group(0)
+        
+        # Extract date using existing method
+        extracted_date = self._extract_date_from_query(query)
+        if extracted_date:
+            params["date"] = extracted_date
+        
+        # Extract capacity
+        cap_match = re.search(r'(?:party\s+(?:of|for)|for|group\s+of)\s+(\d+)', query, re.IGNORECASE)
+        if cap_match:
+            params["room_capacity"] = int(cap_match.group(1))
+        else:
+            cap_match = re.search(r'(\d+)\s*(?:people|persons|ppl)', query, re.IGNORECASE)
+            if cap_match:
+                params["room_capacity"] = int(cap_match.group(1))
+        
+        return params
+
     async def execute(self, query: str, log_callback=None, **kwargs) -> Dict[str, Any]:
         """Execute the agent with date and building extraction for all tool types."""
         # Route to specific tool
@@ -202,8 +312,31 @@ class LibCalComprehensiveAgent(Agent):
                 building = "king"
             kwargs["building"] = building
         
+        # For reservation/availability tools, extract ALL booking params via LLM
+        if tool_name in ("libcal_comprehensive_reservation", "libcal_enhanced_availability"):
+            booking_params = await self._extract_booking_params(query, log_callback)
+            
+            # Merge extracted params into kwargs (don't overwrite already-provided ones)
+            param_mapping = {
+                "first_name": "first_name",
+                "last_name": "last_name",
+                "email": "email",
+                "date": "date",
+                "start_time": "start_time",
+                "end_time": "end_time",
+                "room_capacity": "room_capacity",
+            }
+            for src_key, dst_key in param_mapping.items():
+                val = booking_params.get(src_key)
+                if val is not None and dst_key not in kwargs:
+                    kwargs[dst_key] = val
+            
+            if log_callback:
+                filled = [k for k in param_mapping.values() if k in kwargs and kwargs[k] is not None]
+                log_callback(f"📝 [LibCal Agent] Booking params ready: {filled}")
+        
         # For hours queries, also extract date
-        if tool_name == "libcal_week_hours":
+        elif tool_name == "libcal_week_hours":
             extracted_date = self._extract_date_from_query(query)
             if extracted_date and "date" not in kwargs:
                 kwargs["date"] = extracted_date
@@ -226,11 +359,26 @@ class LibCalComprehensiveAgent(Agent):
         except Exception as e:
             if log_callback:
                 log_callback(f"❌ [LibCal Agent] Tool '{tool_name}' threw exception: {str(e)}")
+            # Look up library-specific phone from DB
+            phone = await self._get_library_phone(kwargs.get("building", "king"))
             result = {
                 "tool": tool_name,
                 "success": False,
-                "text": f"I'm having trouble with the {tool_name.replace('_', ' ')} service right now. Please visit https://www.lib.miamioh.edu/ or call (513) 529-4141 for assistance.",
+                "text": f"I'm having trouble with the {tool_name.replace('_', ' ')} service right now. Please visit https://www.lib.miamioh.edu/ or call {phone} for assistance.",
                 "error": str(e)
             }
         result["agent"] = self.name
         return result
+    
+    async def _get_library_phone(self, building: str) -> str:
+        """Look up the correct phone number for a library from the database."""
+        try:
+            from src.services.location_service import get_location_service
+            location_service = get_location_service()
+            contact_info = await location_service.get_library_contact_info(building)
+            if contact_info and contact_info.get("phone"):
+                return contact_info["phone"]
+        except Exception:
+            pass
+        # Fallback to King Library main number
+        return "(513) 529-4141"
