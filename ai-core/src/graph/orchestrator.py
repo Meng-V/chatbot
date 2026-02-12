@@ -168,7 +168,7 @@ def detect_fact_fast_lane(normalized_intent, user_message: str, conversation_his
     # to libcal_rooms regardless of current message content or confidence.
     if conversation_history:
         booking_context_phrases = [
-            "book", "reserve", "reservation", "room booking",
+            "reserve", "reservation", "room booking",
             "confirmation number", "room reserved",
             "i still need", "complete your room reservation",
             "finalize your", "confirm which date",

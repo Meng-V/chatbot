@@ -151,7 +151,7 @@ class LibCalComprehensiveAgent(Agent):
             return "libcal_cancel_reservation"
         
         # Booking keywords (must come before room search)
-        if any(word in q_lower for word in ["book", "reserve", "make a reservation", "schedule a room"]):
+        if any(word in q_lower for word in ["reserve", "make a reservation", "schedule a room"]):
             return "libcal_comprehensive_reservation"
         
         # Check intent summary for booking context (from intent normalizer)
@@ -163,7 +163,7 @@ class LibCalComprehensiveAgent(Agent):
             for msg in conversation_history[-6:]:
                 content = (msg.get("content", "") or "").lower()
                 if any(phrase in content for phrase in [
-                    "book", "reserve", "reservation", "room booking",
+                    "reserve", "reservation", "room booking",
                     "confirmation number", "room reserved",
                     "i still need", "complete your room reservation",
                     "finalize your", "confirm which date",
