@@ -210,10 +210,6 @@ app.include_router(ticket_router)
 app.include_router(askus_router)
 app.include_router(route_router)
 
-# Production Nginx proxies /smartchatbot/api/* with full path preserved,
-# so mount API routers at that prefix too for production compatibility.
-app.include_router(summarize_router, prefix="/smartchatbot/api")
-app.include_router(ticket_router, prefix="/smartchatbot/api")
 
 # Socket.IO server for real-time communication
 # Allow all origins in development for easier debugging

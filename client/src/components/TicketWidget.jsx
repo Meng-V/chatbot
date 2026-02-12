@@ -58,7 +58,7 @@ const TicketWidget = () => {
       const historyText = formatChatHistory();
 
       const isDev = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
-      const summarizeUrl = isDev ? '/api/summarize-chat' : '/smartchatbot/api/summarize-chat';
+      const summarizeUrl = isDev ? '/api/summarize-chat' : '/summarize-chat';
 
       const response = await fetch(summarizeUrl, {
         method: 'POST',
@@ -78,7 +78,7 @@ const TicketWidget = () => {
 );
     } catch (error) {
       console.error('Error generating summary:', error);
-      alert('Failed to generate summary. Please enter your question manually.');
+      alert('Failed to generate summary. Please enter your question manually. ERROR: ' + error);
     } finally {
       setGeneratingSummary(false);
     }
@@ -95,7 +95,7 @@ const TicketWidget = () => {
 
     try {
       const isDev = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
-      const ticketUrl = isDev ? '/api/ticket/create' : '/smartchatbot/api/ticket/create';
+      const ticketUrl = isDev ? '/api/ticket/create' : '/ticket/create';
 
       const response = await fetch(ticketUrl, {
         method: 'POST',

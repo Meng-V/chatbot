@@ -53,7 +53,7 @@ const UserInfoForm = ({ onFormSubmit, chatHistory }) => {
         .join('\n\n');
 
       const isDev = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
-      const summarizeUrl = isDev ? '/api/summarize-chat' : '/smartchatbot/api/summarize-chat';
+      const summarizeUrl = isDev ? '/api/summarize-chat' : '/summarize-chat';
 
       const response = await fetch(summarizeUrl, {
         method: 'POST',
@@ -71,7 +71,7 @@ const UserInfoForm = ({ onFormSubmit, chatHistory }) => {
       setTimeout(() => setSummaryCopied(false), 2000);
     } catch (error) {
       console.error('Error generating summary:', error);
-      alert('Failed to generate summary. Please try Copy Transcript instead.');
+      alert('Failed to generate summary. Please try Copy Transcript instead. ERROR: ' + error);
     } finally {
       setGeneratingSummary(false);
     }
