@@ -596,7 +596,10 @@ async def validate_and_clean_response(response_text: str, log_callback=None, age
     cleaned_text = re.sub(r'\n\s*\n\s*\n+', '\n\n', cleaned_text)
     
     # Step 0b: Correct ILL URLs to default to main campus
-    cleaned_text = correct_ill_urls(cleaned_text, user_message, log_callback)
+    # SKIP if the response is from the dedicated ILL handler (contains "Regional Campus ILL" section)
+    # The ILL handler already provides correct campus-specific URLs
+    if "Regional Campus ILL" not in cleaned_text:
+        cleaned_text = correct_ill_urls(cleaned_text, user_message, log_callback)
     
     # Step 1: Validate all URLs (with fallback to parent URLs on 4xx errors)
     validation_results = await validate_urls_in_text(cleaned_text, log_callback, use_fallback=True)

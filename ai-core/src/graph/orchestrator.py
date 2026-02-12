@@ -1928,6 +1928,31 @@ async def intent_normalization_node(state: AgentState) -> AgentState:
     else:
         state["needs_clarification"] = False
         
+        # 🚫 CAPABILITY LIMITATION CHECK: Detect requests the bot cannot do (ILL, renewals, etc.)
+        from src.config.capability_scope import detect_limitation_request
+        limitation = detect_limitation_request(user_msg)
+        if limitation.get("is_limitation"):
+            limitation_type = limitation.get("limitation_type")
+            logger.log(f"🚫 [Intent Normalization] Capability limitation detected: {limitation_type}")
+            state["classified_intent"] = "capability_limitation"
+            state["_limitation_type"] = limitation_type
+            state["_limitation_response"] = limitation.get("response")
+            state["_capability_limitation"] = True
+            state["primary_agent_id"] = None
+            state["secondary_agent_ids"] = []
+            state["needs_clarification"] = False
+            state["classification_confidence"] = 1.0
+            state["category_confidence"] = 1.0
+            emit_route_trace(state, logger, "capability_limitation")
+            logger.stop_timer("intent_normalization")
+            logger.log(f"✅ [Intent Normalization] Intent: {normalized_intent.intent_summary}", {
+                "confidence": normalized_intent.confidence,
+                "ambiguity": normalized_intent.ambiguity,
+                "key_entities": normalized_intent.key_entities
+            })
+            state["_logger"] = logger
+            return state
+        
         # 🚀 FACT FAST LANE: Check if query qualifies for deterministic routing
         fast_lane_route = detect_fact_fast_lane(normalized_intent, user_msg)
         
@@ -2113,7 +2138,8 @@ def create_library_graph():
         fast_lane_flags = [
             state.get("_library_address_query"),
             state.get("_library_website_query"),
-            state.get("_live_chat_hours_query")
+            state.get("_live_chat_hours_query"),
+            state.get("_capability_limitation")
         ]
         
         if primary_agent or any(fast_lane_flags):
