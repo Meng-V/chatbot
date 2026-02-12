@@ -38,7 +38,7 @@ DELAY_BETWEEN_CATEGORIES = 5.0
 # File paths
 SCRIPT_DIR = Path(__file__).parent
 PROJECT_ROOT = SCRIPT_DIR.parent.parent
-TEST_QUESTIONS_FILE = PROJECT_ROOT / "testquestion.json"
+TEST_QUESTIONS_FILE = PROJECT_ROOT / "test" / "testquestion.json"
 RESULTS_DIR = SCRIPT_DIR.parent / "test_results"
 RESULTS_DIR.mkdir(exist_ok=True)
 

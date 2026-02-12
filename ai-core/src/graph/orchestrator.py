@@ -145,22 +145,40 @@ Respond with ONLY the category name (e.g., subject_librarian or out_of_scope). N
 # FACT FAST LANE HELPERS
 # ============================================================================
 
-def detect_fact_fast_lane(normalized_intent, user_message: str) -> dict:
+def detect_fact_fast_lane(normalized_intent, user_message: str, conversation_history: list = None) -> dict:
     """
     Detect if query qualifies for Fact Fast Lane (deterministic routing).
     
     Only triggers for high-confidence, unambiguous, factual queries.
+    Also detects ongoing booking conversations from history.
     Returns routing decision or None if fast lane doesn't apply.
     
     Args:
         normalized_intent: NormalizedIntent object from intent normalization
         user_message: Original user message
+        conversation_history: Previous conversation messages for context
         
     Returns:
         dict with {"type": "agent", "primary_agent_id": str} or
         dict with {"type": "synth_flag", "flag": str} or
         None if fast lane doesn't apply
     """
+    # PRIORITY CHECK: Ongoing booking conversation in history
+    # If recent messages indicate a booking flow is in progress, route directly
+    # to libcal_rooms regardless of current message content or confidence.
+    if conversation_history:
+        booking_context_phrases = [
+            "book", "reserve", "reservation", "room booking",
+            "confirmation number", "room reserved",
+            "i still need", "complete your room reservation",
+            "finalize your", "confirm which date",
+            "@miamioh.edu", "study room",
+        ]
+        for msg in conversation_history[-6:]:
+            content = (msg.get("content", "") or "").lower()
+            if any(phrase in content for phrase in booking_context_phrases):
+                return {"type": "agent", "primary_agent_id": "libcal_rooms"}
+    
     # Only trigger for high-confidence, unambiguous intents
     if normalized_intent.ambiguity or normalized_intent.confidence < 0.75:
         return None
@@ -918,8 +936,13 @@ async def execute_agents_node(state: AgentState) -> AgentState:
         
         # Check if it's a multi-tool agent (has execute method) or legacy function
         if hasattr(agent_or_func, 'execute'):
-            # Multi-tool agent - call execute
-            tasks.append(agent_or_func.execute(state["user_message"], log_callback=logger.log))
+            # Multi-tool agent - call execute with conversation context
+            tasks.append(agent_or_func.execute(
+                state["user_message"],
+                log_callback=logger.log,
+                conversation_history=state.get("conversation_history", []),
+                intent_summary=state.get("processed_query", "")
+            ))
         else:
             # Legacy function-based agent
             tasks.append(agent_or_func(state["user_message"], log_callback=logger.log))
@@ -1771,20 +1794,21 @@ CRITICAL RULES - MUST FOLLOW:
 
 STUDY ROOM BOOKING RULES - EXTREMELY IMPORTANT:
 - NEVER say "checking availability", "let me check", "I'll look for", or similar status updates
-- The backend handles all availability checking automatically
+- The backend handles all availability checking and date/time parsing automatically
 - Room bookings require ALL of the following information:
   * First name
   * Last name
   * @miamioh.edu email address
-  * Date (YYYY-MM-DD format)
-  * Start time and end time (HH:MM 24-hour format)
-  * Number of people
-  * Building preference
+  * Date (users can say "today", "tomorrow", "next Monday", "March 5" — the system converts automatically, DO NOT ask for a specific date format)
+  * Start time and end time (users can say "2pm", "2-4pm", "2 in the afternoon" — the system converts automatically, DO NOT ask for a specific time format)
+  * Number of people / group size (optional but recommended)
+  * Building preference (optional — defaults to King Library)
 - ONLY present the FINAL result from the context:
-  1. If missing information: Ask for the specific missing details (especially first name, last name, email)
+  1. If missing information: Ask for the specific missing details. NEVER ask users to provide dates in YYYY-MM-DD format or times in HH:MM format — natural language is fine.
   2. If no rooms are available: State directly that no rooms are available
   3. If booking confirmed: Present the confirmation number and mention the confirmation email
 - DO NOT provide intermediate status messages about what you're doing
+- DO NOT re-confirm or re-ask for information the user already provided (e.g., if user said "today", do NOT ask "which date is today?")
 
 WARNING - ABSOLUTELY FORBIDDEN - NEVER DO THIS:
 - NEVER output JSON, code, or programming syntax
@@ -1954,7 +1978,7 @@ async def intent_normalization_node(state: AgentState) -> AgentState:
             return state
         
         # 🚀 FACT FAST LANE: Check if query qualifies for deterministic routing
-        fast_lane_route = detect_fact_fast_lane(normalized_intent, user_msg)
+        fast_lane_route = detect_fact_fast_lane(normalized_intent, user_msg, history)
         
         if fast_lane_route:
             # Fast lane activated - bypass RAG classification

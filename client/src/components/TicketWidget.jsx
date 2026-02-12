@@ -209,10 +209,10 @@ const TicketWidget = () => {
         />
       </div>
       {submitError && (
-        <p className="text-sm text-red-600">Failed to submit ticket. Please contact us at 
+        <div className="text-sm text-red-600">Failed to submit ticket. Please contact us at{' '}
         <a href="https://www.lib.miamioh.edu/about/organization/contact-us/">https://www.lib.miamioh.edu/about/organization/contact-us/</a>
-        <p className="text-xs text-gray-600">Error message: {submitError}</p>
-        </p>
+        <span className="block text-xs text-gray-600 mt-1">Error message: {submitError}</span>
+        </div>
       )}
       {submitted ? (
         <div className="rounded-md border border-green-200 bg-green-50 p-3 text-sm text-green-800">

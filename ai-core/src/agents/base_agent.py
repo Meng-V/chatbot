@@ -28,6 +28,10 @@ class Agent(ABC):
     
     async def execute(self, query: str, log_callback=None, **kwargs) -> Dict[str, Any]:
         """Execute the agent by routing to the appropriate tool."""
+        # Strip orchestrator-level kwargs that shouldn't leak to tools
+        kwargs.pop("conversation_history", None)
+        kwargs.pop("intent_summary", None)
+        
         if log_callback:
             log_callback(f"🎯 [{self.name} Agent] Routing query to appropriate tool")
         

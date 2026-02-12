@@ -24,6 +24,28 @@ LIBCAL_BOOKING_INFO_URL = os.getenv("LIBCAL_BOOKING_INFO_URL", "")  # GET /space
 LIBCAL_CANCEL_URL = os.getenv("LIBCAL_CANCEL_URL", "")
 NODE_ENV = os.getenv("NODE_ENV", "development")
 
+# Reservation webpage URLs for when online booking fails
+RESERVATION_URL_HAMILTON = "https://muohio.libcal.com/reserve/hamilton"
+RESERVATION_URL_DEFAULT = "https://muohio.libcal.com/allspaces"
+
+# --- URL sanitization & fallback derivation ---
+# Derive API base from OAuth URL (e.g. https://muohio.libcal.com/api/1.1/oauth/token → .../api/1.1)
+_LIBCAL_API_BASE = ""
+if LIBCAL_OAUTH_URL and "/oauth/token" in LIBCAL_OAUTH_URL:
+    _LIBCAL_API_BASE = LIBCAL_OAUTH_URL.split("/oauth/token")[0]
+
+# Fix known env-var typo: '/hour/ly' should be '/hourly'
+if LIBCAL_SEARCH_AVAILABLE_URL and "/hour/ly" in LIBCAL_SEARCH_AVAILABLE_URL:
+    LIBCAL_SEARCH_AVAILABLE_URL = LIBCAL_SEARCH_AVAILABLE_URL.replace("/hour/ly", "/hourly")
+
+# Derive search URL from base if not set
+if not LIBCAL_SEARCH_AVAILABLE_URL and _LIBCAL_API_BASE:
+    LIBCAL_SEARCH_AVAILABLE_URL = f"{_LIBCAL_API_BASE}/space/search/hourly"
+
+# Derive reservation URL from base if not set
+if not LIBCAL_RESERVATION_URL and _LIBCAL_API_BASE:
+    LIBCAL_RESERVATION_URL = f"{_LIBCAL_API_BASE}/space/reserve"
+
 # DEPRECATED: Building mappings now retrieved from database via location_service
 # Legacy constants kept for backward compatibility during migration
 DEFAULT_BUILDING = "2047"  # King Library - hardcoded fallback
@@ -67,6 +89,50 @@ async def _get_oauth_token() -> str:
     """Get LibCal OAuth token using centralized service."""
     oauth_service = get_libcal_oauth_service()
     return await oauth_service.get_token()
+
+def _get_reservation_url(building: str) -> str:
+    """Get the correct reservation webpage URL based on building/campus.
+    
+    Hamilton (Rentschler) uses its own page; Oxford and Middletown share one.
+    """
+    if building and building.lower() in ("hamilton", "rentschler"):
+        return RESERVATION_URL_HAMILTON
+    return RESERVATION_URL_DEFAULT
+
+def _is_room_available_for_slot(availability_slots: list, start_time: str, end_time: str, date: str) -> bool:
+    """Check if a room's availability slots cover the entire requested time range.
+    
+    LibCal returns availability as a list of 30-minute slot dicts:
+      [{"from": "2026-02-13T14:00:00-05:00", "to": "2026-02-13T14:30:00-05:00"}, ...]
+    
+    We need every 30-min slot between start_time and end_time to be present.
+    """
+    if not availability_slots:
+        return False
+    
+    # Build set of available slot start times (just HH:MM for comparison)
+    available_starts = set()
+    for slot in availability_slots:
+        slot_from = slot.get("from", "")
+        # Extract time portion: "2026-02-13T14:00:00-05:00" → "14:00"
+        if "T" in slot_from:
+            time_part = slot_from.split("T")[1][:5]  # "14:00"
+            available_starts.add(time_part)
+    
+    # Generate required 30-min slot start times
+    start_h, start_m = int(start_time.split(":")[0]), int(start_time.split(":")[1])
+    end_h, end_m = int(end_time.split(":")[0]), int(end_time.split(":")[1])
+    
+    current_minutes = start_h * 60 + start_m
+    end_minutes = end_h * 60 + end_m
+    
+    while current_minutes < end_minutes:
+        slot_time = f"{current_minutes // 60:02d}:{current_minutes % 60:02d}"
+        if slot_time not in available_starts:
+            return False
+        current_minutes += 30
+    
+    return True
 
 async def _make_libcal_request(
     url: str,
@@ -785,8 +851,10 @@ class LibCalEnhancedAvailabilityTool(Tool):
         building: str = "king",
         **kwargs
     ) -> Dict[str, Any]:
-        """Check availability with capacity range fallback."""
+        """Check availability using /space/items/{lid} + /space/item/{ids}?availability={date}."""
         try:
+            reservation_url = _get_reservation_url(building)
+            
             # Validate library name FIRST
             is_valid, result, display_name = await _validate_library_for_rooms(building)
             if not is_valid:
@@ -837,50 +905,94 @@ class LibCalEnhancedAvailabilityTool(Tool):
                 }
             end_time = parsed_end_time
             
-            # Convert time format HH-MM to HH:MM (already in HH:MM from parser)
-            start_formatted = start_time.replace("-", ":")
-            end_formatted = end_time.replace("-", ":")
-            
             # Resolve building ID from database
             building_id = await _get_building_id_from_db(building)
             
             token = await _get_oauth_token()
             
-            # Try capacity ranges with smart fallback
-            capacity_range = _get_capacity_range(capacity)
+            # Derive API base from OAuth URL
+            api_base = LIBCAL_OAUTH_URL.replace("/oauth/token", "") if LIBCAL_OAUTH_URL else ""
+            
+            # Step 1: Get all rooms for this building via /space/items/{lid}
+            items_url = f"{api_base}/space/items/{building_id}"
+            if log_callback:
+                log_callback(f"📡 [Availability] GET {items_url}")
+            
+            items_response = await _make_libcal_request(
+                url=items_url,
+                method="GET",
+                headers={"Authorization": f"Bearer {token}"},
+                log_callback=log_callback
+            )
+            all_rooms = items_response.json()
+            
+            if not isinstance(all_rooms, list) or len(all_rooms) == 0:
+                if log_callback:
+                    log_callback(f"⚠️ [Availability] No rooms found for building {building_id}")
+                return {
+                    "tool": self.name,
+                    "success": True,
+                    "text": f"No study rooms found at {display_name}. You can book directly at: {reservation_url}"
+                }
+            
+            # Filter by capacity if specified
+            if capacity and capacity > 0:
+                candidate_rooms = [r for r in all_rooms if r.get("capacity", 0) >= capacity]
+                if not candidate_rooms:
+                    # Fallback: include all rooms
+                    candidate_rooms = all_rooms
+            else:
+                candidate_rooms = all_rooms
+            
+            if log_callback:
+                log_callback(f"📋 [Availability] {len(candidate_rooms)} candidate rooms (of {len(all_rooms)} total)")
+            
+            # Step 2: Check availability in batches via /space/item/{id1},{id2},...?availability={date}
+            # LibCal allows comma-separated IDs (batch up to 10 at a time)
+            BATCH_SIZE = 10
             available_rooms = []
             
-            for current_range in range(capacity_range, 4):  # Try up to range 3
-                response = await _make_libcal_request(
-                    url=LIBCAL_SEARCH_AVAILABLE_URL,
+            for i in range(0, len(candidate_rooms), BATCH_SIZE):
+                batch = candidate_rooms[i:i + BATCH_SIZE]
+                ids_str = ",".join(str(r["id"]) for r in batch)
+                avail_url = f"{api_base}/space/item/{ids_str}"
+                
+                avail_response = await _make_libcal_request(
+                    url=avail_url,
                     method="GET",
                     headers={"Authorization": f"Bearer {token}"},
-                    params={
-                        "lid": building_id,
-                        "date": date,
-                        "start": start_time,
-                        "end": end_time,
-                        "capacity": current_range
-                    },
+                    params={"availability": date},
                     log_callback=log_callback
                 )
-                data = response.json()
-                    
-                exact_matches = data.get("exact_matches", [])
-                if exact_matches:
-                    available_rooms = exact_matches
+                avail_data = avail_response.json()
+                
+                if not isinstance(avail_data, list):
+                    continue
+                
+                for room_info in avail_data:
+                    slots = room_info.get("availability", [])
+                    if _is_room_available_for_slot(slots, start_time, end_time, date):
+                        available_rooms.append({
+                            "id": room_info.get("id"),
+                            "name": room_info.get("name"),
+                            "capacity": room_info.get("capacity", 0),
+                        })
+                
+                # Stop early if we have enough rooms
+                if len(available_rooms) >= 10:
                     break
             
             if not available_rooms:
                 # Check if date might be too far in advance
                 try:
                     booking_date = datetime.strptime(date, "%Y-%m-%d")
+                    now = datetime.now()
                     days_ahead = (booking_date.date() - now.date()).days
                     if days_ahead > 14:
                         return {
                             "tool": self.name,
                             "success": True,
-                            "text": f"No rooms available at {building.capitalize() if building else 'any'} Library for {booking_date.strftime('%B %d, %Y')} from {start_time} to {end_time}. Note: Room reservations typically open 2 weeks in advance."
+                            "text": f"No rooms available at {display_name} for {booking_date.strftime('%B %d, %Y')} from {start_time} to {end_time}. Note: Room reservations typically open 2 weeks in advance. You can also book directly at: {reservation_url}"
                         }
                 except:
                     pass
@@ -888,42 +1000,34 @@ class LibCalEnhancedAvailabilityTool(Tool):
                 return {
                     "tool": self.name,
                     "success": True,
-                    "text": f"No rooms available at {building.capitalize() if building else 'any'} Library for {date} from {start_time} to {end_time}."
+                    "text": f"No rooms available at {display_name} for {date} from {start_time} to {end_time}. You can also try booking directly at: {reservation_url}"
                 }
             
-            # Sort by capacity and censor IDs
-            rooms_data = []
-            for room in available_rooms:
-                space = room.get("space", {})
-                rooms_data.append({
-                    "name": space.get("name"),
-                    "capacity": space.get("capacity"),
-                    "id": space.get("id")  # Keep for booking, but mark as internal
-                })
-            
-            rooms_data.sort(key=lambda x: x["capacity"])
+            # Sort by capacity
+            available_rooms.sort(key=lambda x: x["capacity"])
             
             # Format for user (censor IDs)
-            room_list = [f"• {r['name']} (capacity: {r['capacity']})" for r in rooms_data[:5]]
+            room_list = [f"• {r['name']} (capacity: {r['capacity']})" for r in available_rooms[:5]]
             
             if log_callback:
-                log_callback(f"✅ [LibCal Enhanced Availability Tool] Found {len(rooms_data)} rooms")
+                log_callback(f"✅ [LibCal Enhanced Availability Tool] Found {len(available_rooms)} available rooms")
             
             return {
                 "tool": self.name,
                 "success": True,
-                "text": f"Available rooms at {building.capitalize()} Library:\n\n" + "\n".join(room_list),
-                "rooms_data": rooms_data,  # Keep full data for booking
+                "text": f"Available rooms at {display_name}:\n\n" + "\n".join(room_list),
+                "rooms_data": available_rooms,  # Keep full data for booking
                 "building": building
             }
         except Exception as e:
             if log_callback:
                 log_callback(f"❌ [LibCal Enhanced Availability Tool] Error: {str(e)}")
+            reservation_url = _get_reservation_url(building)
             return {
                 "tool": self.name,
                 "success": False,
                 "error": str(e),
-                "text": "Couldn't search rooms. Visit https://libcal.miamioh.edu/"
+                "text": f"Couldn't search rooms. You can book directly at: {reservation_url}"
             }
 
 async def _get_library_phone(building: str) -> str:
@@ -965,8 +1069,9 @@ class LibCalComprehensiveReservationTool(Tool):
     ) -> Dict[str, Any]:
         """Book a room with comprehensive validation."""
         try:
-            # Look up library-specific phone number from DB
+            # Look up library-specific phone number and reservation URL
             library_phone = await _get_library_phone(building)
+            reservation_url = _get_reservation_url(building)
             
             # Validate library name FIRST before collecting other details
             is_valid, result, display_name = await _validate_library_for_rooms(building)
@@ -1006,10 +1111,22 @@ class LibCalComprehensiveReservationTool(Tool):
                     "endTime": "end time (e.g., '4pm', '4 in the afternoon')",
                 }
                 friendly_list = [friendly_names.get(p, p) for p in missing_params]
+                
+                # Add optional but recommended fields if not yet provided
+                optional_hints = []
+                if not room_capacity:
+                    optional_hints.append("group size (e.g., 'party of 4', '6 people')")
+                if building == "king" and not any(kw in query.lower() for kw in ["king", "art", "rentschler", "hamilton", "middletown", "gardner"]):
+                    optional_hints.append("preferred library (King, Art & Architecture, Rentschler, or Gardner-Harvey)")
+                
+                optional_text = ""
+                if optional_hints:
+                    optional_text = f"\n\nOptionally, you can also tell me: {', '.join(optional_hints)}. If not specified, I'll default to King Library and find the best-fitting room."
+                
                 return {
                     "tool": self.name,
                     "success": False,
-                    "text": f"To complete your room reservation, I still need: {', '.join(friendly_list)}. You can use natural language - no special formatting needed!"
+                    "text": f"To complete your room reservation, I still need: {', '.join(friendly_list)}. You can use natural language - no special formatting needed!{optional_text}"
                 }
             
             # Validate email
@@ -1135,7 +1252,7 @@ class LibCalComprehensiveReservationTool(Tool):
                             return {
                                 "tool": self.name,
                                 "success": False,
-                                "text": f"No rooms are available for {booking_date.strftime('%B %d, %Y')}. Note: Room reservations typically open 2 weeks in advance. Please try a closer date, or contact the library at {library_phone} for further assistance."
+                                "text": f"No rooms are available for {booking_date.strftime('%B %d, %Y')}. Note: Room reservations typically open 2 weeks in advance. Please try a closer date, or book directly at: {reservation_url}"
                             }
                     except:
                         pass
@@ -1143,7 +1260,7 @@ class LibCalComprehensiveReservationTool(Tool):
                     return {
                         "tool": self.name,
                         "success": False,
-                        "text": f"No rooms available at any library building for the requested time. You might try a different time slot or date, or feel free to contact us at {library_phone} for further assistance."
+                        "text": f"No rooms available at any library building for the requested time. You might try a different time slot or date. You can also book directly at: {reservation_url}"
                     }
             
             rooms_data = availability_result.get("rooms_data", [])
@@ -1246,7 +1363,7 @@ class LibCalComprehensiveReservationTool(Tool):
                         return {
                             "tool": self.name,
                             "success": False,
-                            "text": f"Your booking request has failed. Please try again or contact us at {library_phone} for further assistance."
+                            "text": f"Your booking request has failed. Please try again or book directly at: {reservation_url}"
                         }
                 else:
                     error_data = response.text
@@ -1272,7 +1389,7 @@ class LibCalComprehensiveReservationTool(Tool):
                 "tool": self.name,
                 "success": False,
                 "error": str(e),
-                "text": "Booking failed. Please visit https://libcal.miamioh.edu/ to book directly."
+                "text": f"Booking failed. You can book directly at: {_get_reservation_url(building)}"
             }
 
 class LibCalCancelReservationTool(Tool):

@@ -133,9 +133,10 @@ class LibCalComprehensiveAgent(Agent):
         
         return None
     
-    async def route_to_tool(self, query: str) -> str:
-        """Route to appropriate LibCal tool based on query keywords."""
+    async def route_to_tool(self, query: str, intent_summary: str = "", conversation_history: list = None) -> str:
+        """Route to appropriate LibCal tool based on query keywords and conversation context."""
         q_lower = query.lower()
+        context_lower = (intent_summary or "").lower()
         
         # Ask Us Chat hours keywords
         if any(phrase in q_lower for phrase in [
@@ -152,6 +153,22 @@ class LibCalComprehensiveAgent(Agent):
         # Booking keywords (must come before room search)
         if any(word in q_lower for word in ["book", "reserve", "make a reservation", "schedule a room"]):
             return "libcal_comprehensive_reservation"
+        
+        # Check intent summary for booking context (from intent normalizer)
+        if any(word in context_lower for word in ["booking", "reservation", "reserve", "book a room"]):
+            return "libcal_comprehensive_reservation"
+        
+        # Check conversation history for ongoing booking context
+        if conversation_history:
+            for msg in conversation_history[-6:]:
+                content = (msg.get("content", "") or "").lower()
+                if any(phrase in content for phrase in [
+                    "book", "reserve", "reservation", "room booking",
+                    "confirmation number", "room reserved",
+                    "i still need", "complete your room reservation",
+                    "finalize your", "confirm which date",
+                ]):
+                    return "libcal_comprehensive_reservation"
         
         # Room search keywords
         if any(word in q_lower for word in ["room", "study room", "study space", "available room", "find room"]):
@@ -277,12 +294,47 @@ Respond with ONLY valid JSON:
 
     async def execute(self, query: str, log_callback=None, **kwargs) -> Dict[str, Any]:
         """Execute the agent with date and building extraction for all tool types."""
-        # Route to specific tool
-        tool_name = await self.route_to_tool(query)
+        conversation_history = kwargs.pop("conversation_history", [])
+        intent_summary = kwargs.pop("intent_summary", "")
+        
+        # Route to specific tool - use intent summary and conversation history for context
+        tool_name = await self.route_to_tool(
+            query,
+            intent_summary=intent_summary,
+            conversation_history=conversation_history
+        )
+        
+        if log_callback:
+            log_callback(f"🔧 [LibCal Agent] Routed to tool: {tool_name}")
+        
+        # For booking/availability from conversation context, build combined query
+        # so the LLM can extract params from the full multi-turn conversation
+        extraction_query = query
+        if tool_name in ("libcal_comprehensive_reservation", "libcal_enhanced_availability") and conversation_history:
+            # Build combined context from conversation history + current message
+            history_parts = []
+            for msg in conversation_history[-6:]:
+                role = "User" if msg.get("type") == "user" else "Assistant"
+                content = msg.get("content", "")
+                if content:
+                    history_parts.append(f"{role}: {content}")
+            if history_parts:
+                extraction_query = "\n".join(history_parts) + f"\nUser: {query}"
+                if log_callback:
+                    log_callback(f"📋 [LibCal Agent] Using multi-turn context for param extraction")
         
         # Extract building/space for ALL LibCal tools (hours, availability, reservation)
         if "building" not in kwargs:
+            # Try extracting building from both current query and conversation context
             building = self._extract_building_from_query(query)
+            if building.startswith("UNKNOWN:") and conversation_history:
+                # Try extracting from conversation history
+                for msg in conversation_history[-6:]:
+                    content = msg.get("content", "") or ""
+                    hist_building = self._extract_building_from_query(content)
+                    if not hist_building.startswith("UNKNOWN:"):
+                        building = hist_building
+                        break
             if log_callback:
                 log_callback(f"🏛️ [LibCal Agent] Extracted building from query: {building}")
             
@@ -299,9 +351,12 @@ Respond with ONLY valid JSON:
                         f"'{unknown_name.title()}' is not a recognized Miami University library for room reservations. "
                         f"Study rooms are available at:\n"
                         f"• **King Library** (Oxford main campus)\n"
+                        f"• **Wertz Art & Architecture Library** (Oxford)\n"
                         f"• **Rentschler Library** (Hamilton campus)\n"
-                        f"• **Gardner-Harvey Library** (Middletown campus)\n"
-                        f"• **Wertz Art & Architecture Library** (Oxford)\n\n"
+                        f"• **Gardner-Harvey Library** (Middletown campus)\n\n"
+                        f"You can also book directly online:\n"
+                        f"• Oxford & Middletown: https://muohio.libcal.com/allspaces\n"
+                        f"• Hamilton: https://muohio.libcal.com/reserve/hamilton\n\n"
                         f"Which library would you like to reserve a room at?"
                     ),
                 }
@@ -314,7 +369,7 @@ Respond with ONLY valid JSON:
         
         # For reservation/availability tools, extract ALL booking params via LLM
         if tool_name in ("libcal_comprehensive_reservation", "libcal_enhanced_availability"):
-            booking_params = await self._extract_booking_params(query, log_callback)
+            booking_params = await self._extract_booking_params(extraction_query, log_callback)
             
             # Merge extracted params into kwargs (don't overwrite already-provided ones)
             param_mapping = {
