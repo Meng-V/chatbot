@@ -52,13 +52,16 @@ const UserInfoForm = ({ onFormSubmit, chatHistory }) => {
         })
         .join('\n\n');
 
-      const response = await fetch('/api/summarize-chat', {
+      const isDev = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+      const summarizeUrl = isDev ? '/api/summarize-chat' : '/smartchatbot/api/summarize-chat';
+
+      const response = await fetch(summarizeUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ chatHistory: historyText }),
       });
 
-      if (!response.ok) throw new Error('Failed to generate summary');
+      if (!response.ok) throw new Error(`Server returned ${response.status}`);
 
       const data = await response.json();
       await navigator.clipboard.writeText(data.summary);

@@ -31,6 +31,7 @@ from src.database.prisma_client import connect_database, disconnect_database
 from src.utils.weaviate_client import get_weaviate_client, close_weaviate_client, get_weaviate_url
 from src.api.health import router as health_router
 from src.api.summarize import router as summarize_router
+from src.api.ticket import router as ticket_router
 from src.api.askus_hours import router as askus_router
 from src.api.route import router as route_router
 
@@ -205,8 +206,14 @@ app.add_middleware(
 # Include health/monitoring routers
 app.include_router(health_router)
 app.include_router(summarize_router)
+app.include_router(ticket_router)
 app.include_router(askus_router)
 app.include_router(route_router)
+
+# Production Nginx proxies /smartchatbot/api/* with full path preserved,
+# so mount API routers at that prefix too for production compatibility.
+app.include_router(summarize_router, prefix="/smartchatbot/api")
+app.include_router(ticket_router, prefix="/smartchatbot/api")
 
 # Socket.IO server for real-time communication
 # Allow all origins in development for easier debugging

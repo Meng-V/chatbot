@@ -1,6 +1,5 @@
 import { useState, useContext } from 'react';
 import { Copy, Sparkles } from 'lucide-react';
-import { SocketContext } from '../context/SocketContextProvider';
 import { MessageContext } from '../context/MessageContextProvider';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -16,8 +15,10 @@ const TicketWidget = () => {
   const [details, setDetails] = useState('');
   const [generatingSummary, setGeneratingSummary] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [submitted, setSubmitted] = useState(false);
+  const [submitError, setSubmitError] = useState(null);
 
-  const { socketContextValues } = useContext(SocketContext);
   const { messageContextValues } = useContext(MessageContext);
   const chatHistory = messageContextValues.message;
 
@@ -56,7 +57,10 @@ const TicketWidget = () => {
     try {
       const historyText = formatChatHistory();
 
-      const response = await fetch('/api/summarize-chat', {
+      const isDev = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+      const summarizeUrl = isDev ? '/api/summarize-chat' : '/smartchatbot/api/summarize-chat';
+
+      const response = await fetch(summarizeUrl, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -65,7 +69,7 @@ const TicketWidget = () => {
       });
 
       if (!response.ok) {
-        throw new Error('Failed to generate summary');
+        throw new Error(`Server returned ${response.status}`);
       }
 
       const data = await response.json();
@@ -80,15 +84,44 @@ const TicketWidget = () => {
     }
   };
 
-  const handleTicketSubmit = (e) => {
+  const handleTicketSubmit = async (e) => {
     e.preventDefault();
-    const formData = new FormData();
-    formData.append('question', question);
-    formData.append('email', email);
-    formData.append('name', name);
-    formData.append('details', details);
-    formData.append('ua', navigator.userAgent);
-    socketContextValues.offlineTicketSubmit(formData);
+    if (!question.trim()) {
+      setSubmitError('Please enter a question.');
+      return;
+    }
+    setSubmitting(true);
+    setSubmitError(null);
+
+    try {
+      const isDev = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+      const ticketUrl = isDev ? '/api/ticket/create' : '/smartchatbot/api/ticket/create';
+
+      const response = await fetch(ticketUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          question: question.trim().slice(0, 150),
+          details: details.trim(),
+          name: name.trim(),
+          email: email.trim(),
+          ua: navigator.userAgent,
+        }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok || data.error) {
+        throw new Error(data.error || `Server returned ${response.status}`);
+      }
+
+      setSubmitted(true);
+    } catch (error) {
+      console.error('Ticket submission error:', error);
+      setSubmitError(error.message || 'Failed to submit ticket. Please try again.');
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   return (
@@ -175,9 +208,21 @@ const TicketWidget = () => {
           className="mt-1"
         />
       </div>
-      <Button type="submit" variant="miami" className="mt-2">
-        Submit
-      </Button>
+      {submitError && (
+        <p className="text-sm text-red-600">Failed to submit ticket. Please contact us at 
+        <a href="https://www.lib.miamioh.edu/about/organization/contact-us/">https://www.lib.miamioh.edu/about/organization/contact-us/</a>
+        <p className="text-xs text-gray-600">Error message: {submitError}</p>
+        </p>
+      )}
+      {submitted ? (
+        <div className="rounded-md border border-green-200 bg-green-50 p-3 text-sm text-green-800">
+          Your ticket has been submitted successfully. A librarian will follow up via email.
+        </div>
+      ) : (
+        <Button type="submit" variant="miami" className="mt-2" disabled={submitting}>
+          {submitting ? <><Spinner className="h-4 w-4 mr-1" />Submitting...</> : 'Submit'}
+        </Button>
+      )}
     </form>
   );
 };

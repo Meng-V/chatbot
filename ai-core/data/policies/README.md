@@ -18,6 +18,7 @@ Authoritative Oxford policy pages:
 5. Course reserves: https://libguides.lib.miamioh.edu/reserves-textbooks
 6. Streaming video: https://libguides.lib.miamioh.edu/reserves-textbooks/StreamingVideoAndRemoteInstruction
 7. Electronic reserves: https://libguides.lib.miamioh.edu/reserves-textbooks/electronicreserves
+8. Document Delivery and Remote Instruction: https://libguides.lib.miamioh.edu/reserves-textbooks/documentdelivery
 
 ## Usage
 
