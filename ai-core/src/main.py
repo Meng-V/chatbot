@@ -34,6 +34,14 @@ from src.api.summarize import router as summarize_router
 from src.api.ticket import router as ticket_router
 from src.api.askus_hours import router as askus_router
 from src.api.route import router as route_router
+from src.api.readiness_router import (
+    build_readiness_router,
+    make_postgres_probe,
+    make_weaviate_probe,
+    make_openai_probe,
+    make_libcal_probe,
+)
+from src.api.admin.smoketest_router import build_smoketest_router
 
 # ---------------------------------------------------------------------------
 # .env loading — MUST NOT follow symlinks on production
@@ -209,6 +217,109 @@ app.include_router(summarize_router)
 app.include_router(ticket_router)
 app.include_router(askus_router)
 app.include_router(route_router)
+
+
+# --- Op 3: /health/ready + /smoketest (rebuild observability) -------------
+# Built as dependency-injected routers so test setup can stub probes.
+# The legacy /health and /readiness stay live alongside these.
+def _build_readiness_probes():
+    import httpx
+    from src.database.prisma_client import get_prisma_client
+    from src.services.libcal_oauth import get_libcal_oauth_service
+
+    async def pg_exec():
+        client = get_prisma_client()
+        if not client.is_connected():
+            await client.connect()
+        await client.execute_raw("SELECT 1")
+
+    async def wv_meta():
+        client = get_weaviate_client()
+        if client is None:
+            raise RuntimeError("weaviate client unavailable")
+        return client.get_meta()
+
+    async def openai_ping():
+        # Cheap auth check: hit /v1/models. A tiny completion would be
+        # more faithful to the plan but costs a token per probe call
+        # (every readiness poll). /v1/models exercises the auth path
+        # and is free.
+        api_key = os.getenv("OPENAI_API_KEY", "")
+        if not api_key:
+            raise RuntimeError("OPENAI_API_KEY not set")
+        async with httpx.AsyncClient(timeout=5.0) as hc:
+            r = await hc.get(
+                "https://api.openai.com/v1/models",
+                headers={"Authorization": f"Bearer {api_key}"},
+            )
+            r.raise_for_status()
+
+    async def libcal_status():
+        svc = get_libcal_oauth_service()
+        token = await svc.get_token()
+        if not token:
+            raise RuntimeError("no token")
+
+    return [
+        make_postgres_probe(pg_exec),
+        make_weaviate_probe(wv_meta),
+        make_openai_probe(openai_ping),
+        make_libcal_probe(libcal_status),
+    ]
+
+
+app.include_router(build_readiness_router({"probes": _build_readiness_probes()}))
+
+
+def _smoketest_ask_bot(question: str) -> dict:
+    """Sync wrapper around library_graph for /smoketest.
+
+    Called from inside a running FastAPI event loop, so we cannot
+    reuse it -- run the coroutine on a dedicated thread with its own
+    loop. The smoketest sync contract (Callable[[str], dict]) lives
+    in observability/smoketest.py; keeping it sync there lets unit
+    tests stub `ask_bot` without pulling in asyncio.
+
+    Rebuild synthesizer isn't wired yet, so citations will be empty
+    until that lands -- the endpoint will truthfully report
+    `has_citation: false` until then. That's the signal, not a bug.
+    """
+    import asyncio
+    import threading
+
+    async def _run():
+        result = await library_graph.ainvoke({
+            "user_message": question,
+            "messages": [],
+            "conversation_history": [],
+            "conversation_id": None,
+            "_logger": AgentLogger(request_id="smoketest"),
+        })
+        return {
+            "answer": (result or {}).get("final_answer", "") or "",
+            "citations": (result or {}).get("citations", []) or [],
+            "is_refusal": bool((result or {}).get("is_refusal", False)),
+        }
+
+    box: dict = {}
+
+    def _worker():
+        try:
+            box["result"] = asyncio.run(_run())
+        except Exception as e:  # noqa: BLE001
+            box["error"] = e
+
+    t = threading.Thread(target=_worker, daemon=True)
+    t.start()
+    t.join(timeout=12.0)
+    if t.is_alive():
+        raise TimeoutError("library_graph did not return within 12s")
+    if "error" in box:
+        raise box["error"]
+    return box.get("result") or {"answer": "", "citations": [], "is_refusal": False}
+
+
+app.include_router(build_smoketest_router({"ask_bot": _smoketest_ask_bot}))
 
 
 # Socket.IO server for real-time communication

@@ -196,6 +196,7 @@ node_modules
 /ai-core/data/*
 /ai-core/test_data/*
 /ai-core/eval_results/*
+/ai-core/ai-core/
 /ai-core/scripts/sync_liaisons_from_website.py
 /ai-core/docker-compose.weaviate.local.yml
 /test

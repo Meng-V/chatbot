@@ -1,5 +1,5 @@
 generator client {
-  provider = "prisma-client-py"
+  provider  = "prisma-client-py"
   interface = "asyncio"
 }
 
@@ -15,6 +15,24 @@ model Message {
   conversationId  String
   isPositiveRated Boolean?
   conversation    Conversation @relation(fields: [conversationId], references: [id])
+
+  // Smart-chatbot rebuild telemetry (added per plan: Citation contract +
+  // Operations §1). All optional so existing messages don't need backfill.
+  intent         String? // kNN classifier label, e.g. "hours" | "makerspace" | "ill"
+  scopeCampus    String? // resolved scope.campus -- "oxford" | "hamilton" | "middletown"
+  scopeLibrary   String? // resolved scope.library or null
+  scopeSource    String? // "library_alias" | "campus_alias" | "session_origin" | "default"
+  modelUsed      String? // "gpt-5.4-mini" | "gpt-5.2"  (concrete ID, not tier)
+  confidence     String? // synthesizer self-reported: "high" | "medium" | "low"
+  wasRefusal     Boolean           @default(false)
+  refusalTrigger String? // matches a key in refusal_templates (no_results, low_confidence, ...)
+  citedChunkIds  String[]          @default([]) // FK list to ChunkProvenance.chunkId
+  reviews        LibrarianReview[]
+
+  @@index([conversationId])
+  @@index([intent])
+  @@index([scopeCampus])
+  @@index([wasRefusal])
 }
 
 model Conversation {
@@ -29,27 +47,39 @@ model Conversation {
 }
 
 model ModelTokenUsage {
-  id               String       @id @default(uuid())
-  llmModelName     String
-  completionTokens Int
-  promptTokens     Int
-  totalTokens      Int
-  conversationId   String
-  conversation     Conversation @relation(fields: [conversationId], references: [id])
-  createdAt        DateTime     @default(now())
+  id                String       @id @default(uuid())
+  llmModelName      String
+  completionTokens  Int
+  promptTokens      Int
+  totalTokens       Int
+  // Smart-chatbot rebuild: cache-hit measurement (plan: Layer 4).
+  // Defaults to 0 so OpenAI clients that don't yet report cached_tokens
+  // don't break inserts. Week-4 gate: cachedInputTokens / promptTokens >= 0.6.
+  cachedInputTokens Int          @default(0)
+  // Which call site produced this usage record. Lets us debug per-site
+  // cache regressions ("synth cache dropped to 0.3 -- prefix drifted").
+  callSite          String? // "agent_loop" | "synthesizer" | "clarifier" | "judge" | "embedding"
+  conversationId    String
+  conversation      Conversation @relation(fields: [conversationId], references: [id])
+  createdAt         DateTime     @default(now())
+
+  @@index([conversationId])
+  @@index([llmModelName])
+  @@index([callSite])
+  @@index([createdAt])
 }
 
 model ToolExecution {
-  id              String       @id @default(uuid())
-  conversationId  String
-  agentName       String
-  toolName        String
-  parameters      String       @default("{}")
-  success         Boolean
-  executionTime   Int          @default(0)
-  timestamp       DateTime     @default(now())
-  conversation    Conversation @relation(fields: [conversationId], references: [id])
-  
+  id             String       @id @default(uuid())
+  conversationId String
+  agentName      String
+  toolName       String
+  parameters     String       @default("{}")
+  success        Boolean
+  executionTime  Int          @default(0)
+  timestamp      DateTime     @default(now())
+  conversation   Conversation @relation(fields: [conversationId], references: [id])
+
   @@index([conversationId])
   @@index([agentName])
   @@index([toolName])
@@ -65,17 +95,17 @@ model ConversationFeedback {
 
 // MyGuide Subject Mapping Models
 model Subject {
-  id          String             @id @default(uuid())
-  name        String             @unique
-  regional    Boolean            @default(false)
-  createdAt   DateTime           @default(now())
-  updatedAt   DateTime           @updatedAt
-  libGuides   SubjectLibGuide[]
-  regCodes    SubjectRegCode[]
-  majorCodes  SubjectMajorCode[]
-  deptCodes   SubjectDeptCode[]
-  librarians  LibrarianSubject[]
-  guides      LibGuideSubject[]
+  id         String             @id @default(uuid())
+  name       String             @unique
+  regional   Boolean            @default(false)
+  createdAt  DateTime           @default(now())
+  updatedAt  DateTime           @updatedAt
+  libGuides  SubjectLibGuide[]
+  regCodes   SubjectRegCode[]
+  majorCodes SubjectMajorCode[]
+  deptCodes  SubjectDeptCode[]
+  librarians LibrarianSubject[]
+  guides     LibGuideSubject[]
 
   @@index([name])
 }
@@ -102,11 +132,11 @@ model SubjectRegCode {
 }
 
 model SubjectMajorCode {
-  id         String  @id @default(uuid())
-  subjectId  String
-  majorCode  String
-  majorName  String
-  subject    Subject @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+  id        String  @id @default(uuid())
+  subjectId String
+  majorCode String
+  majorName String
+  subject   Subject @relation(fields: [subjectId], references: [id], onDelete: Cascade)
 
   @@unique([subjectId, majorCode])
   @@index([majorCode])
@@ -129,7 +159,7 @@ model SubjectDeptCode {
 model Campus {
   id          String    @id @default(uuid())
   name        String    @unique // "Oxford", "Hamilton", "Middletown"
-  displayName String    // "Oxford Campus", "Hamilton Campus"
+  displayName String // "Oxford Campus", "Hamilton Campus"
   isMain      Boolean   @default(false) // True for Oxford (flagship)
   libraries   Library[]
   createdAt   DateTime  @default(now())
@@ -139,44 +169,67 @@ model Campus {
 }
 
 model Library {
-  id              String         @id @default(uuid())
-  campusId        String
-  name            String         // "King Library", "Rentschler Library"
-  displayName     String         // "Edgar W. King Library"
-  shortName       String?        // "King", "Art", "Rentschler"
-  libcalBuildingId String        @unique // LibCal building ID for RESERVATIONS API (e.g., "2047" for King)
-  libcalLocationId String?       // LibCal location ID for HOURS API (e.g., "8113" for King)
-  phone           String?        // Contact phone number (e.g., "513-529-4141")
-  address         String?        // Physical address (e.g., "151 S. Campus Ave, Oxford, OH 45056")
-  website         String?        // Library website URL (e.g., "https://www.lib.miamioh.edu/")
-  isMain          Boolean        @default(false) // True for main library on each campus
-  spaces          LibrarySpace[]
-  campus          Campus         @relation(fields: [campusId], references: [id], onDelete: Cascade)
-  createdAt       DateTime       @default(now())
-  updatedAt       DateTime       @updatedAt
+  id               String         @id @default(uuid())
+  campusId         String
+  // Short canonical ID matching src/scope/aliases.py (king | wertz | special |
+  // rentschler | gardner_harvey | sword). Unique. This is the value that
+  // appears in Weaviate Chunk.library and on every retrieval filter.
+  canonicalId      String?        @unique
+  name             String // "King Library", "Rentschler Library"
+  displayName      String // "Edgar W. King Library"
+  shortName        String? // "King", "Art", "Rentschler"
+  libcalBuildingId String         @unique // LibCal building ID for RESERVATIONS API (e.g., "2047" for King)
+  libcalLocationId String? // LibCal location ID for HOURS API (e.g., "8113" for King)
+  phone            String? // Contact phone number (e.g., "513-529-4141")
+  address          String? // Physical address (e.g., "151 S. Campus Ave, Oxford, OH 45056")
+  website          String? // Library website URL (e.g., "https://www.lib.miamioh.edu/")
+  isMain           Boolean        @default(false) // True for main library on each campus
+  // The truth-table for "does this building offer X service" (plan: §8).
+  // Services NOT in this list don't exist at this building -- bot must
+  // refuse rather than infer parity with another campus.
+  servicesOffered  String[]       @default([])
+  // Coarse role used by the synthesizer to phrase "main building of campus X"
+  // type answers. "main_building" | "sub_building" | "department" | "depository"
+  buildingRole     String?
+  // Canonical source URL describing this building -- used for "where do I
+  // find more about Wertz" type follow-up.
+  sourceUrl        String?
+  spaces           LibrarySpace[]
+  campus           Campus         @relation(fields: [campusId], references: [id], onDelete: Cascade)
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
 
   @@index([name])
   @@index([shortName])
+  @@index([canonicalId])
   @@index([libcalBuildingId])
   @@index([libcalLocationId])
 }
 
 model LibrarySpace {
-  id              String   @id @default(uuid())
-  libraryId       String
-  name            String   // "Maker Space", "Special Collections & University Archives"
-  displayName     String   // Full display name
-  shortName       String?  // "Makerspace", "Special Collections"
+  id               String   @id @default(uuid())
+  libraryId        String
+  name             String // "Maker Space", "Special Collections & University Archives"
+  displayName      String // Full display name
+  shortName        String? // "Makerspace", "Special Collections"
   buildingLocation String? // Physical location within building (e.g., "Third floor", "Lower level")
-  libcalLocationId String  @unique // LibCal location ID for hours API (e.g., "11904" for Makerspace)
-  libcalBuildingId String? @unique // LibCal building ID for reservations (e.g., "8269" for Makerspace)
-  phone           String?  // Contact phone number (e.g., "(513) 529-2871")
-  email           String?  // Contact email (e.g., "create@miamioh.edu")
-  website         String?  // Space website URL (e.g., "https://libguides.lib.miamioh.edu/create/makerspace")
-  spaceType       String   @default("service") // "service", "collection", "study_area"
-  library         Library  @relation(fields: [libraryId], references: [id], onDelete: Cascade)
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  libcalLocationId String   @unique // LibCal location ID for hours API (e.g., "11904" for Makerspace)
+  libcalBuildingId String?  @unique // LibCal building ID for reservations (e.g., "8269" for Makerspace)
+  phone            String? // Contact phone number (e.g., "(513) 529-2871")
+  email            String? // Contact email (e.g., "create@miamioh.edu")
+  website          String? // Space website URL (e.g., "https://libguides.lib.miamioh.edu/create/makerspace")
+  spaceType        String   @default("service") // "service", "collection", "study_area"
+  // Smart-chatbot rebuild (plan: §7 featured services + §8 truth tables).
+  // Equipment list is structured so `lookup_space("makerspace")` answers
+  // "does the MakerSpace have a 3D printer?" deterministically rather than
+  // letting the synthesizer hallucinate from prose. Keep these in sync with
+  // the canonical service page during the weekly ETL diff review.
+  equipment        String[] @default([]) // ["3d_printer", "vinyl_cutter", "sewing_machine", ...]
+  services         String[] @default([]) // ["consultations", "training", "av_production", ...]
+  capacity         Int?
+  library          Library  @relation(fields: [libraryId], references: [id], onDelete: Cascade)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
 
   @@index([name])
   @@index([shortName])
@@ -186,23 +239,23 @@ model LibrarySpace {
 
 // Librarian/Staff Directory (verified contacts only)
 model Librarian {
-  id          String             @id @default(uuid())
-  name        String
-  email       String             @unique
-  title       String?
-  department  String?
-  phone       String?
-  photoUrl    String?
-  profileUrl  String?
-  libguideProfileId String?      // LibGuides profile ID
-  campus      String             @default("Oxford")  // "Oxford", "Hamilton", "Middletown"
-  isRegional  Boolean            @default(false)     // True for Hamilton/Middletown
-  isActive    Boolean            @default(true)
-  createdAt   DateTime           @default(now())
-  updatedAt   DateTime           @updatedAt
-  
-  subjects    LibrarianSubject[]
-  
+  id                String   @id @default(uuid())
+  name              String
+  email             String   @unique
+  title             String?
+  department        String?
+  phone             String?
+  photoUrl          String?
+  profileUrl        String?
+  libguideProfileId String? // LibGuides profile ID
+  campus            String   @default("Oxford") // "Oxford", "Hamilton", "Middletown"
+  isRegional        Boolean  @default(false) // True for Hamilton/Middletown
+  isActive          Boolean  @default(true)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  subjects LibrarianSubject[]
+
   @@index([email])
   @@index([name])
   @@index([campus])
@@ -211,17 +264,17 @@ model Librarian {
 
 // LibGuide Pages
 model LibGuide {
-  id          String            @id @default(uuid())
+  id          String   @id @default(uuid())
   name        String
-  url         String            @unique
+  url         String   @unique
   description String?
-  guideId     String?           // LibGuides API ID
-  isActive    Boolean           @default(true)
-  createdAt   DateTime          @default(now())
-  updatedAt   DateTime          @updatedAt
-  
-  subjects    LibGuideSubject[]
-  
+  guideId     String? // LibGuides API ID
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  subjects LibGuideSubject[]
+
   @@index([name])
   @@index([guideId])
 }
@@ -234,7 +287,7 @@ model LibrarianSubject {
   isPrimary   Boolean   @default(false)
   librarian   Librarian @relation(fields: [librarianId], references: [id], onDelete: Cascade)
   subject     Subject   @relation(fields: [subjectId], references: [id], onDelete: Cascade)
-  
+
   @@unique([librarianId, subjectId])
   @@index([subjectId])
   @@index([librarianId])
@@ -247,8 +300,126 @@ model LibGuideSubject {
   subjectId  String
   libGuide   LibGuide @relation(fields: [libGuideId], references: [id], onDelete: Cascade)
   subject    Subject  @relation(fields: [subjectId], references: [id], onDelete: Cascade)
-  
+
   @@unique([libGuideId, subjectId])
   @@index([subjectId])
   @@index([libGuideId])
+}
+
+// ============================================================================
+// SMART-CHATBOT REBUILD MODELS
+// All tables below are added per the plan at
+//   .claude/plans/i-am-a-web-breezy-prism.md
+// They support the four problem-layer fixes:
+//   - URL allowlist for synthesizer URL validator (UrlSeen)
+//   - Chunk -> URL bridge for citation forensics (ChunkProvenance)
+//   - Librarian-driven corrections without redeploys (ManualCorrection)
+//   - Per-turn verdicts from subject librarians (LibrarianReview)
+//   - Daily token cost rollup for budget alerting (DailyCost)
+// ============================================================================
+
+/// URL allowlist. The synthesizer's URL-validator rejects any URL not
+/// present here (or in retrieval results). Refreshed by the ETL on every
+/// run -- 200-status URLs go in, missing URLs get is_active=false.
+/// Featured-service URLs (Adobe, ILL, MakerSpace, etc.) get priority="high"
+/// so a transient sitemap glitch doesn't blackhole them.
+model UrlSeen {
+  url           String   @id // canonical post-redirect URL
+  httpStatus    Int // last observed HTTP status
+  contentType   String? // "text/html" | "application/pdf"
+  source        String // "sitemap" | "manual" | "libguide"
+  priority      String   @default("normal") // "high" | "normal"  (high == featured-service)
+  isActive      Boolean  @default(true) // false == removed in last crawl
+  isBlacklisted Boolean  @default(false) // librarian-set: never serve, even if live
+  lastSeen      DateTime
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([isActive])
+  @@index([priority])
+  @@index([isBlacklisted])
+}
+
+/// Bridge from a Weaviate chunk_id back to its source URL + metadata.
+/// Lets us join Message.citedChunkIds -> UrlSeen for forensic auditing
+/// ("what evidence did the bot use here, and is that URL still live?").
+/// Append-only; garbage-collected after 90 days.
+model ChunkProvenance {
+  chunkId         String    @id // uuid mirrored to Weaviate Chunk.chunk_id
+  documentId      String // FK-shaped to Weaviate Document.document_id
+  sourceUrl       String // canonical URL the chunk came from
+  topic           String // "borrow" | "spaces" | "technology" | ...
+  campus          String // "oxford" | "hamilton" | "middletown"
+  library         String? // null == not building-bound
+  audience        String[]  @default([]) // ["student", "faculty", ...]
+  featuredService String? // "adobe_checkout" | "ill" | "makerspace" | ... | null
+  contentHash     String // SHA-256 of cleaned chunk text
+  lastModified    DateTime? // from HTTP Last-Modified header
+  ingestedAt      DateTime  @default(now())
+
+  @@index([sourceUrl])
+  @@index([documentId])
+  @@index([campus])
+  @@index([library])
+  @@index([topic])
+  @@index([featuredService])
+}
+
+/// Librarian-driven corrections. Read by `apply_corrections()` in
+/// src/synthesis/corrections.py before every synthesizer call. No deploy
+/// required to add or expire a correction. Forced 6-month review default.
+model ManualCorrection {
+  id           String   @id @default(uuid())
+  scope        String // "url" | "chunk" | "intent" | "global"
+  target       String // url, chunk_id, intent name, or "*"
+  action       String // "suppress" | "replace" | "pin" | "blacklist_url"
+  replacement  String? // for action=replace: the corrected text
+  queryPattern String? // for action=pin: regex matching user questions
+  reason       String // required -- no anonymous corrections
+  createdBy    String // librarian email
+  createdAt    DateTime @default(now())
+  expiresAt    DateTime // forced review default = createdAt + 180d
+  active       Boolean  @default(true)
+  fireCount    Int      @default(0) // bumped by retrieval each time the correction matches
+
+  @@index([active])
+  @@index([scope, target])
+  @@index([createdBy])
+  @@index([expiresAt])
+}
+
+/// Per-turn librarian verdict. Powers Op 1 (subject-librarian dialog
+/// review queue + weekly digest email).
+model LibrarianReview {
+  id          String   @id @default(uuid())
+  messageId   String // FK to Message.id
+  librarianId String // FK to Librarian.id
+  verdict     String // "correct" | "partial" | "wrong" | "should_refuse"
+  note        String?
+  reviewedAt  DateTime @default(now())
+  message     Message  @relation(fields: [messageId], references: [id], onDelete: Cascade)
+
+  @@unique([messageId, librarianId]) // one verdict per librarian per turn
+  @@index([librarianId])
+  @@index([verdict])
+  @@index([reviewedAt])
+}
+
+/// Daily token-cost rollup. Written by ai-core/scripts/cost_rollup.py
+/// (cron). Powers the cost-anomaly alert and the weekly trend dashboard.
+model DailyCost {
+  id           String   @id @default(uuid())
+  date         DateTime @db.Date // bucket date (UTC)
+  model        String // model identifier
+  callSite     String // "agent_loop" | "synthesizer" | "clarifier" | "judge" | "embedding"
+  inputTokens  Int      @default(0)
+  cachedTokens Int      @default(0)
+  outputTokens Int      @default(0)
+  callCount    Int      @default(0)
+  usd          Float // computed at rollup time using current per-model price (USD; float is fine for reporting, not accounting)
+  createdAt    DateTime @default(now())
+
+  @@unique([date, model, callSite]) // one row per (date, model, callSite)
+  @@index([date])
+  @@index([model])
 }
