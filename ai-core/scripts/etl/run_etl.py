@@ -301,6 +301,23 @@ def _build_prod_pipeline() -> Pipeline:
     )
 
 
+def _setup_logging(verbose: bool) -> None:
+    """Wire up root logging for CLI runs.
+
+    INFO by default; DEBUG with `--verbose`. One-line format keeps
+    diff-report / checkpoint output readable in a terminal without
+    drowning in tracebacks. Structlog is used by the serving stack
+    (src/observability/logging.py); the ETL is a script, so plain
+    stdlib logging is the right tool here.
+    """
+    level = logging.DEBUG if verbose else logging.INFO
+    logging.basicConfig(
+        level=level,
+        format="%(asctime)s %(levelname)s %(name)s %(message)s",
+        datefmt="%H:%M:%S",
+    )
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Run the smart-chatbot ETL pipeline.")
     parser.add_argument("--dry-run", action="store_true",
