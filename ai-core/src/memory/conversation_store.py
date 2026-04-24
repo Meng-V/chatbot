@@ -1,4 +1,18 @@
-"""Conversation memory using Prisma + PostgreSQL."""
+"""Conversation memory using Prisma + PostgreSQL.
+
+This module is shared between the legacy stack (calls `add_message`,
+`log_token_usage`, etc.) and the new orchestrator (`add_message_v2`,
+`log_token_usage_v2`). The v2 helpers accept the rebuild-era columns
+on `Message` and `ModelTokenUsage`:
+
+    Message.intent / scopeCampus / scopeLibrary / scopeSource /
+            modelUsed / confidence / wasRefusal / refusalTrigger /
+            citedChunkIds
+    ModelTokenUsage.cachedInputTokens / callSite
+
+Existing functions are unchanged so the legacy bot keeps working
+during the rollout. When the legacy path retires, fold v2 -> v1 names.
+"""
 import os
 from typing import List, Dict, Any, Optional
 from datetime import datetime
@@ -180,3 +194,133 @@ async def save_conversation_feedback(
                 "userComment": user_comment
             }
         )
+
+
+# ============================================================================
+# v2 helpers -- smart-chatbot rebuild
+# ----------------------------------------------------------------------------
+# These accept the per-turn telemetry columns added to Message and
+# ModelTokenUsage by the rebuild plan. Each is a thin wrapper around the
+# Prisma create call -- the orchestrator (src/graph/new_orchestrator.py)
+# is the only caller.
+#
+# Why separate functions instead of optional kwargs on the v1 helpers:
+#   1. The v1 helpers are used by the legacy 6-agent stack. Adding kwargs
+#      that no caller ever passes muddies the call sites.
+#   2. Tests that stub conversation_store can stub v1 OR v2 independently.
+#   3. When the legacy stack retires, deleting v1 is one edit; renaming
+#      v2 -> v1 is another. Clean cutover.
+# ============================================================================
+
+
+async def add_message_v2(
+    conversation_id: str,
+    *,
+    message_type: str,
+    content: str,
+    intent: Optional[str] = None,
+    scope_campus: Optional[str] = None,
+    scope_library: Optional[str] = None,
+    scope_source: Optional[str] = None,
+    model_used: Optional[str] = None,
+    confidence: Optional[str] = None,
+    was_refusal: bool = False,
+    refusal_trigger: Optional[str] = None,
+    cited_chunk_ids: Optional[List[str]] = None,
+) -> str:
+    """Add a message with smart-chatbot rebuild telemetry.
+
+    All telemetry fields are optional. If the caller doesn't have a
+    value (e.g. the orchestrator hit a refusal before classification
+    returned an intent), pass None and the column stays null.
+
+    Returns the new message id -- the orchestrator stores this so the
+    matching ModelTokenUsage rows can be associated with the turn.
+    """
+    await ensure_connection()
+    prisma = get_prisma_client()
+    data: Dict[str, Any] = {
+        "conversationId": conversation_id,
+        "type": message_type,
+        "content": content,
+        "timestamp": datetime.now(),
+        "wasRefusal": was_refusal,
+        "citedChunkIds": cited_chunk_ids or [],
+    }
+    # Only include columns we actually have a value for. Prisma's
+    # `create` happily accepts missing optionals, but explicit None
+    # overwrites can confuse the query planner -- skip them.
+    if intent is not None:
+        data["intent"] = intent
+    if scope_campus is not None:
+        data["scopeCampus"] = scope_campus
+    if scope_library is not None:
+        data["scopeLibrary"] = scope_library
+    if scope_source is not None:
+        data["scopeSource"] = scope_source
+    if model_used is not None:
+        data["modelUsed"] = model_used
+    if confidence is not None:
+        data["confidence"] = confidence
+    if refusal_trigger is not None:
+        data["refusalTrigger"] = refusal_trigger
+    message = await prisma.message.create(data=data)
+    return message.id
+
+
+async def log_token_usage_v2(
+    conversation_id: str,
+    *,
+    model_name: str,
+    prompt_tokens: int,
+    completion_tokens: int,
+    total_tokens: int,
+    cached_input_tokens: int = 0,
+    call_site: Optional[str] = None,
+) -> None:
+    """Log LLM token usage with cache-hit accounting and call-site tag.
+
+    `cached_input_tokens` is the OpenAI usage response's `cached_tokens`
+    field. The week-4 prompt-cache gate is
+        sum(cached_input_tokens) / sum(prompt_tokens) >= 0.6
+    across the eval suite. `call_site` lets us attribute regressions to
+    a specific prompt prefix when the average drops.
+
+    `call_site` keys (per cost_rollup + plan Layer 4):
+        "agent_loop" | "synthesizer" | "clarifier" | "judge" | "embedding"
+    """
+    await ensure_connection()
+    prisma = get_prisma_client()
+    data: Dict[str, Any] = {
+        "conversationId": conversation_id,
+        "llmModelName": model_name,
+        "promptTokens": prompt_tokens,
+        "completionTokens": completion_tokens,
+        "totalTokens": total_tokens,
+        "cachedInputTokens": cached_input_tokens,
+    }
+    if call_site is not None:
+        data["callSite"] = call_site
+    await prisma.modeltokenusage.create(data=data)
+
+
+def cache_hit_rate(prompt_tokens: int, cached_input_tokens: int) -> float:
+    """Helper: cache-hit rate as a fraction in [0, 1].
+
+    Returns 0.0 when prompt_tokens is zero (avoids div-by-zero in
+    aggregation queries that haven't been guarded). The week-4 release
+    gate is >= 0.6 across the eval run.
+    """
+    if prompt_tokens <= 0:
+        return 0.0
+    rate = cached_input_tokens / prompt_tokens
+    # Clamp -- a misconfigured client could in theory report
+    # cached > prompt; clamp to 1.0 so dashboards don't show "120%".
+    return min(1.0, max(0.0, rate))
+
+
+__all_v2__ = [
+    "add_message_v2",
+    "cache_hit_rate",
+    "log_token_usage_v2",
+]
