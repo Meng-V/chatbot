@@ -274,11 +274,18 @@ app.include_router(build_readiness_router({"probes": _build_readiness_probes()})
 def _smoketest_ask_bot(question: str) -> dict:
     """Sync wrapper around library_graph for /smoketest.
 
+    Called from inside a running FastAPI event loop, so we cannot
+    reuse it -- run the coroutine on a dedicated thread with its own
+    loop. The smoketest sync contract (Callable[[str], dict]) lives
+    in observability/smoketest.py; keeping it sync there lets unit
+    tests stub `ask_bot` without pulling in asyncio.
+
     Rebuild synthesizer isn't wired yet, so citations will be empty
     until that lands -- the endpoint will truthfully report
     `has_citation: false` until then. That's the signal, not a bug.
     """
     import asyncio
+    import threading
 
     async def _run():
         result = await library_graph.ainvoke({
@@ -294,14 +301,22 @@ def _smoketest_ask_bot(question: str) -> dict:
             "is_refusal": bool((result or {}).get("is_refusal", False)),
         }
 
-    try:
-        loop = asyncio.get_event_loop()
-        if loop.is_running():
-            # Called from within an async context -- schedule on a new loop.
-            return asyncio.run_coroutine_threadsafe(_run(), loop).result(timeout=15)
-        return loop.run_until_complete(_run())
-    except RuntimeError:
-        return asyncio.run(_run())
+    box: dict = {}
+
+    def _worker():
+        try:
+            box["result"] = asyncio.run(_run())
+        except Exception as e:  # noqa: BLE001
+            box["error"] = e
+
+    t = threading.Thread(target=_worker, daemon=True)
+    t.start()
+    t.join(timeout=12.0)
+    if t.is_alive():
+        raise TimeoutError("library_graph did not return within 12s")
+    if "error" in box:
+        raise box["error"]
+    return box.get("result") or {"answer": "", "citations": [], "is_refusal": False}
 
 
 app.include_router(build_smoketest_router({"ask_bot": _smoketest_ask_bot}))
