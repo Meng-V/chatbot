@@ -136,15 +136,28 @@ def _default_llm_call(
     tools: list[dict],
     model: str,
 ) -> tuple[dict, list[ToolCall], dict]:
-    """Placeholder. Raises NotImplementedError until src/llm/client.py
-    is wired per the freshness rule."""
-    raise NotImplementedError(
-        "Agent LLM client not yet wired. Wire src/llm/client.py "
-        "(see plan: Model & API freshness rule -- check OpenAI docs "
-        "before writing the call shape) and pass it as the `llm` "
-        "argument to run_agent(), or monkeypatch _default_llm_call "
-        "for tests."
+    """Real LLM call via the Responses API (src/llm/client.py).
+
+    The `messages` argument is the agent loop's running list of input
+    items (user message, prior assistant messages, tool outputs).
+    Per the Responses API contract, this list IS the `input=` payload
+    -- it accepts message-shaped dicts plus `function_call_output`
+    items keyed by `call_id`.
+
+    `tools` must already be in the Responses-API internally-tagged
+    shape (see ToolRegistry.as_responses_tools()).
+    """
+    # Lazy import: src.llm.client imports openai which requires a key;
+    # tests pass their own `llm=` and never trigger this path.
+    from src.llm.client import completion_with_tools
+
+    assistant_message, tool_calls, usage = completion_with_tools(
+        prefix_id=prefix_id,
+        input_items=messages,
+        tools=tools,
+        model=model,
     )
+    return assistant_message, tool_calls, usage.as_dict()
 
 
 # --- Loop -----------------------------------------------------------------
@@ -190,7 +203,10 @@ def run_agent(
     total_in = 0
     total_cached = 0
     total_out = 0
-    tools_schema = registry.as_openai_tools()
+    # Responses API uses internally-tagged tool shape (no `function`
+    # wrapper). `as_responses_tools()` also flips strict=true per the
+    # Responses migration guide.
+    tools_schema = registry.as_responses_tools()
 
     for i in range(max_iterations):
         llm_message, tool_calls, usage = call(
@@ -276,8 +292,22 @@ def run_agent(
                 output_tokens=total_out,
             )
 
-        # Feed results back into the messages array for the next iteration.
-        messages.append(llm_message)
+        # Feed results back into the input items for the next iteration.
+        # Per the Responses API contract, append the FULL list of
+        # output items the model returned (not just an "assistant
+        # message" wrapper) so function_call items round-trip
+        # correlated with their function_call_output siblings by
+        # call_id. The wrapper dict our llm helper returns carries
+        # the original output items in `_response_output_items`.
+        prior_outputs = llm_message.get("_response_output_items")
+        if isinstance(prior_outputs, list):
+            messages.extend(prior_outputs)
+        else:
+            # Test stubs / non-Responses-shaped LLMs may return only
+            # the consolidated message dict. Append it as-is so the
+            # loop still progresses; tests that use stubs won't have
+            # a real Responses replay either.
+            messages.append(llm_message)
         for result in results:
             messages.append(_tool_result_message(result))
 
@@ -308,18 +338,26 @@ def _canonical_args(args: dict) -> str:
 
 
 def _tool_result_message(result: ToolResult) -> dict:
-    """Shape a ToolResult as an OpenAI-format `tool` role message so
-    the LLM sees it on the next turn."""
+    """Shape a ToolResult as a Responses-API `function_call_output`
+    input item so the LLM sees it on the next turn.
+
+    Per the Responses migration guide: "tool calls and their outputs
+    are two distinct types of Items that are correlated using a
+    `call_id`." The shape is:
+        {"type": "function_call_output", "call_id": "...", "output": "..."}
+
+    `output` is a string per the API contract (the LLM treats it as
+    the tool's textual output). We JSON-stringify dict/list outputs;
+    errors get a structured `{"error": "..."}` JSON string. Non-JSON-
+    safe data falls back to repr to keep the loop running instead of
+    crashing the request.
+    """
     import json
 
     content: Any
     if result.is_error:
         content = {"error": result.error}
     else:
-        # Serializing arbitrary tool output; fall back to repr if the
-        # data isn't JSON-serializable. In prod, tool authors should
-        # return dict / list / primitives only, but a defensive repr
-        # keeps the loop running instead of crashing on bad output.
         try:
             content = result.data
             json.dumps(content, default=str)
@@ -327,10 +365,9 @@ def _tool_result_message(result: ToolResult) -> dict:
             content = {"repr": repr(result.data)}
 
     return {
-        "role": "tool",
-        "tool_call_id": result.call_id,
-        "name": result.name,
-        "content": json.dumps(content, default=str),
+        "type": "function_call_output",
+        "call_id": result.call_id,
+        "output": json.dumps(content, default=str),
     }
 
 

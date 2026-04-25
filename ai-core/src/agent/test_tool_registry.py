@@ -91,6 +91,31 @@ def test_as_openai_tools_empty_registry() -> None:
     assert ToolRegistry().as_openai_tools() == []
 
 
+def test_as_responses_tools_shape() -> None:
+    """Responses-API tools are internally-tagged: name/description/
+    parameters at the top level, no `function` wrapper, strict=True
+    by default per the migration guide."""
+    reg = ToolRegistry()
+    reg.register(_basic_tool("a"))
+    reg.register(_basic_tool("b"))
+    schema = reg.as_responses_tools()
+    assert len(schema) == 2
+    for entry in schema:
+        assert entry["type"] == "function"
+        # No nested wrapper.
+        assert "function" not in entry
+        # Top-level keys (the Responses-API contract).
+        assert entry["name"] in {"a", "b"}
+        assert "description" in entry
+        assert "parameters" in entry
+        # Strict by default per the Responses migration guide.
+        assert entry["strict"] is True
+
+
+def test_as_responses_tools_empty_registry() -> None:
+    assert ToolRegistry().as_responses_tools() == []
+
+
 # --- dispatch: success / errors ---
 
 
@@ -181,6 +206,8 @@ def main() -> int:
         test_register_duplicate_raises,
         test_as_openai_tools_shape,
         test_as_openai_tools_empty_registry,
+        test_as_responses_tools_shape,
+        test_as_responses_tools_empty_registry,
         test_dispatch_unknown_tool_returns_error_result,
         test_dispatch_success_returns_data_and_latency,
         test_dispatch_tool_error_returns_structured_error,

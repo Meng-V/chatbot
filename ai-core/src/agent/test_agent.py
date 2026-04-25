@@ -263,8 +263,8 @@ def test_conversation_history_preserved_and_extended() -> None:
     # Second call: includes the assistant + tool result messages.
     second_msgs = llm.calls[1]["messages"]
     assert len(second_msgs) > len(first_msgs)
-    # Tool result message present.
-    assert any(m.get("role") == "tool" for m in second_msgs)
+    # Tool result message present (Responses-API function_call_output shape).
+    assert any(m.get("type") == "function_call_output" for m in second_msgs)
 
 
 # --- _canonical_args ---
@@ -287,22 +287,24 @@ def test_canonical_args_handles_non_json_safe_values() -> None:
 
 
 def test_tool_result_message_success_shape() -> None:
+    """Per Responses API: tool outputs are `function_call_output` items
+    correlated with their function_call sibling by `call_id`."""
     r = ToolResult(call_id="tc1", name="echo", data={"echoed": "hi"})
     msg = _tool_result_message(r)
-    assert msg["role"] == "tool"
-    assert msg["tool_call_id"] == "tc1"
-    assert msg["name"] == "echo"
-    # Content is JSON-stringified for the LLM.
-    assert isinstance(msg["content"], str)
-    assert "echoed" in msg["content"]
+    assert msg["type"] == "function_call_output"
+    assert msg["call_id"] == "tc1"
+    # Output is JSON-stringified for the LLM.
+    assert isinstance(msg["output"], str)
+    assert "echoed" in msg["output"]
 
 
 def test_tool_result_message_error_shape() -> None:
     r = ToolResult(call_id="tc1", name="echo", error="LibCal 503")
     msg = _tool_result_message(r)
-    assert msg["role"] == "tool"
-    assert "error" in msg["content"]
-    assert "LibCal 503" in msg["content"]
+    assert msg["type"] == "function_call_output"
+    assert msg["call_id"] == "tc1"
+    assert "error" in msg["output"]
+    assert "LibCal 503" in msg["output"]
 
 
 def test_tool_result_message_handles_non_json_safe_data() -> None:
@@ -314,8 +316,8 @@ def test_tool_result_message_handles_non_json_safe_data() -> None:
 
     r = ToolResult(call_id="tc1", name="x", data=Weird())
     msg = _tool_result_message(r)
-    assert isinstance(msg["content"], str)
-    assert msg["role"] == "tool"
+    assert msg["type"] == "function_call_output"
+    assert isinstance(msg["output"], str)
 
 
 def main() -> int:
