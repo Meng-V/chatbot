@@ -1,0 +1,20 @@
+date,librarian_email,scope,target,action,replacement_or_pattern,reason,expires_at,applied_to_db
+,,,,,,,,
+# scope values:   url | chunk | intent | global
+# action values:  suppress | replace | pin | blacklist_url
+#
+# scope x action combinations (per plan §Op 2):
+#   - chunk + suppress       : retrieval excludes the chunk_id
+#   - url   + blacklist_url  : ETL stops re-adding; URL validator rejects
+#   - chunk + replace        : keep chunk position, swap text
+#   - url   + pin            : promote to rank 1 for matching query_pattern
+#
+# expires_at: default 6 months from `date`. Auto-renewal email goes out;
+# stale corrections that no one renews fall off automatically.
+#
+# applied_to_db column:
+#   - blank  -- still pending
+#   - INSERT -- pasted into ManualCorrection table
+#
+# When the v1 React admin lands, librarians submit corrections via UI and
+# this CSV becomes a backup/audit trail rather than the system of record.
