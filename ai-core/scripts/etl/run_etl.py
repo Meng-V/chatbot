@@ -42,6 +42,7 @@ from scripts.etl import (  # noqa: E402  (sys.path mutation above)
     diff_report,
     discover,
     extract,
+    gate,
     upsert,
 )
 
@@ -319,9 +320,36 @@ def _setup_logging(verbose: bool) -> None:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Run the smart-chatbot ETL pipeline.")
+    parser = argparse.ArgumentParser(
+        description="Run the smart-chatbot ETL pipeline.",
+        epilog=(
+            "Phases: prepare (dry-run + write diff + write approval template), "
+            "apply (verify approval token + run for real). See "
+            "scripts/etl/FIRST_RUN.md for the full operator runbook."
+        ),
+    )
+    parser.add_argument(
+        "--phase",
+        choices=("prepare", "apply"),
+        default=None,
+        help=(
+            "Two-phase gated invocation. `prepare` runs the pipeline in "
+            "dry-run mode and writes a diff + unsigned approval template. "
+            "A librarian then signs the approval. `apply` verifies the "
+            "signed approval and runs the pipeline for real."
+        ),
+    )
+    parser.add_argument(
+        "--diff",
+        type=Path,
+        default=None,
+        help=(
+            "Path to the diff .md file to apply. Used with --phase apply. "
+            "If omitted, defaults to the most recent approved-but-not-applied diff."
+        ),
+    )
     parser.add_argument("--dry-run", action="store_true",
-                        help="Skip embed/upsert/tombstone; only discover+extract+classify+chunk.")
+                        help="(Legacy) equivalent to --phase prepare without the approval template.")
     parser.add_argument("--campus", choices=list(config.SITEMAPS), default=None,
                         help="Restrict to one campus.")
     parser.add_argument("--limit", type=int, default=None,
@@ -332,30 +360,63 @@ def main() -> int:
     _setup_logging(args.verbose)
     t0 = time.time()
 
-    if args.dry_run:
-        # Dry-run only needs the fetcher (real one is fine -- it's just
-        # HTTP GETs); embed/upsert/tombstone/allowlist won't run.
-        pipeline = Pipeline(
-            fetch=build_requests_fetcher(),
-            embed=_default_embed,
-            upsert_chunks=_default_upsert,
-            tombstone=_default_tombstone,
-            update_allowlist=_default_allowlist,
-        )
-    else:
+    # --- APPLY phase: verify the gate, then run the destructive pipeline.
+    if args.phase == "apply":
+        diff_path = args.diff or gate.find_latest_pending_diff()
+        if diff_path is None:
+            logger.error(
+                "no pending diff found in %s. Run `--phase prepare` first.",
+                config.DIFF_REPORT_DIR,
+            )
+            return 2
+        decision = gate.verify_gate(diff_path)
+        if not decision.proceed:
+            logger.error("gate refused: %s", decision.reason)
+            return 3
+        logger.info("gate ok: %s. proceeding with apply.", decision.reason)
         try:
             pipeline = _build_prod_pipeline()
         except ImportError as e:
-            logger.error(
-                "prod pipeline cannot be wired: %s. "
-                "Either install the missing deps or pass --dry-run.",
-                e,
-            )
+            logger.error("prod pipeline cannot be wired: %s.", e)
             return 2
+        try:
+            report = run(
+                dry_run=False,
+                campus_filter=args.campus,
+                url_limit=args.limit,
+                pipeline=pipeline,
+            )
+        except NotImplementedError as e:
+            logger.error("step not configured: %s", e)
+            return 2
+        # Mark the diff as applied so re-running --phase apply on the same
+        # diff is a no-op (forced re-prepare for any new run).
+        assert decision.token is not None
+        marker = gate.mark_applied(diff_path, decision.token, dt.datetime.utcnow())
+        logger.info("apply complete; marker written: %s", marker)
+        elapsed = time.time() - t0
+        logger.info(
+            "ETL apply finished in %.1fs: %d new chunks, %d tombstoned URLs",
+            elapsed,
+            len(report.upsert.new_chunk_ids),
+            len(report.upsert.tombstoned_urls),
+        )
+        return 0
+
+    # --- PREPARE phase (or legacy --dry-run): no destructive writes; emit
+    # diff + (for prepare) an unsigned approval template.
+    is_prepare = args.phase == "prepare" or args.dry_run
+    pipeline = Pipeline(
+        fetch=build_requests_fetcher(),
+        embed=_default_embed,
+        upsert_chunks=_default_upsert,
+        tombstone=_default_tombstone,
+        update_allowlist=_default_allowlist,
+    )
 
     try:
         report = run(
-            dry_run=args.dry_run,
+            dry_run=is_prepare,
             campus_filter=args.campus,
             url_limit=args.limit,
             pipeline=pipeline,
@@ -363,13 +424,30 @@ def main() -> int:
     except NotImplementedError as e:
         logger.error("step not configured: %s", e)
         return 2
+
     elapsed = time.time() - t0
     logger.info(
-        "ETL run finished in %.1fs: %d new chunks, %d tombstoned URLs",
+        "ETL %s finished in %.1fs: %d new chunks, %d tombstoned URLs",
+        args.phase or ("dry-run" if args.dry_run else "run"),
         elapsed,
         len(report.upsert.new_chunk_ids),
         len(report.upsert.tombstoned_urls),
     )
+
+    if args.phase == "prepare":
+        # Locate the diff just written (write_diff_report names it by
+        # finished-at timestamp) and emit the approval template.
+        diff_dir = Path(config.DIFF_REPORT_DIR)
+        latest_md = max(diff_dir.glob("*.md"), key=lambda p: p.stat().st_mtime)
+        token_path = gate.write_approval_template(latest_md, dt.datetime.utcnow())
+        print()
+        print(f"Diff:     {latest_md}")
+        print(f"Approval: {token_path}")
+        print()
+        print("Next: a librarian opens the .approval file, fills in their")
+        print("email + ack, saves, then the operator runs:")
+        print(f"    python -m scripts.etl.run_etl --phase apply --diff {latest_md.name}")
+
     return 0
 
 
