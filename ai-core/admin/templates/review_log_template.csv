@@ -1,0 +1,16 @@
+message_id,reviewed_at,librarian_email,verdict,note,follow_up_action,followed_up
+,,,,,,
+# Verdict values: correct | partial | wrong | should_refuse
+# Follow-up actions:
+#   - none                       (verdict was correct/partial-acceptable)
+#   - corrected_url              (filed a ManualCorrection, see correction_log_template.csv)
+#   - escalated_to_web_team      (page itself is wrong; needs site edit)
+#   - flagged_to_program_lead    (pattern issue; needs discussion)
+#   - opened_github_issue        (bot bug; link the issue # in `note`)
+#
+# Workflow:
+#   1. Run query 01_my_subject_queue.sql (or 02/03/04) in Metabase.
+#   2. For each row that needs review, paste its message_id here and fill in.
+#   3. When the v1 admin React UI ships, this file is replaced by the
+#      LibrarianReview table -- but the column shape is the same, so the
+#      sheet's history can be migrated by an INSERT...SELECT script.
