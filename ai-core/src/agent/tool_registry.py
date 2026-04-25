@@ -126,12 +126,12 @@ class ToolRegistry:
         return self.tools.get(name)
 
     def as_openai_tools(self) -> list[dict]:
-        """Serialize the registry as the shape OpenAI's tools= param
-        expects: `[{"type": "function", "function": {...}}, ...]`.
+        """Serialize the registry in the legacy Chat-Completions tools shape:
+        `[{"type": "function", "function": {name, description, parameters}}, ...]`.
 
-        Kept here rather than inline in the agent loop so a future
-        schema bump (e.g. OpenAI renames `function` to something
-        else) is one change in one place.
+        Kept for the legacy code path. New code should use
+        `as_responses_tools()` -- the Responses API uses an
+        internally-tagged shape with no `function` wrapper.
         """
         return [
             {
@@ -141,6 +141,33 @@ class ToolRegistry:
                     "description": t.description,
                     "parameters": t.parameters,
                 },
+            }
+            for t in self.tools.values()
+        ]
+
+    def as_responses_tools(self) -> list[dict]:
+        """Serialize the registry in the Responses-API internally-tagged
+        shape: `[{"type": "function", "name", "description", "parameters",
+        "strict": True}, ...]`.
+
+        Two differences from `as_openai_tools()`:
+          - No nested `function` wrapper -- name/description/parameters
+            sit at the top level of each tool item.
+          - `strict: True` by default. Per the Responses migration
+            guide: "In the Responses API, functions ARE strict by
+            default" (vs Chat Completions where they're non-strict by
+            default). Strict mode forces argument JSON to exactly
+            match the schema -- the same enforcement as Structured
+            Outputs and the only sane default for tools we'll
+            actually dispatch.
+        """
+        return [
+            {
+                "type": "function",
+                "name": t.name,
+                "description": t.description,
+                "parameters": t.parameters,
+                "strict": True,
             }
             for t in self.tools.values()
         ]

@@ -216,26 +216,84 @@ class SynthesizerLLM(Protocol):
         ...
 
 
+# JSON schema for the synthesizer's structured output. Passed to the
+# Responses API as `text.format` so the model is forced to produce a
+# matching shape -- no need for downstream JSON-repair / regex parsing.
+# Keep this OUTSIDE _default_llm_call so byte-stability of the prompt
+# prefix isn't accidentally tied to schema bytes.
+_SYNTHESIZER_OUTPUT_SCHEMA: dict = {
+    "type": "object",
+    "additionalProperties": False,
+    "required": ["answer", "citations", "confidence"],
+    "properties": {
+        "answer": {
+            "type": "string",
+            "description": "The grounded answer to the user's question. "
+                           "Use [n] markers to cite items in `citations`.",
+        },
+        "citations": {
+            "type": "array",
+            "description": "Numbered citations the model used. Empty list "
+                           "is valid for refusals or 'no sources' answers.",
+            "items": {
+                "type": "object",
+                "additionalProperties": False,
+                "required": ["n", "url", "snippet"],
+                "properties": {
+                    "n": {
+                        "type": "integer",
+                        "description": "1-indexed citation number "
+                                       "matching the [n] markers in `answer`.",
+                    },
+                    "url": {
+                        "type": "string",
+                        "description": "Source URL from the evidence bundle.",
+                    },
+                    "snippet": {
+                        "type": "string",
+                        "description": "Short quote (~50-150 chars) from the "
+                                       "source, shown in the citation chip.",
+                    },
+                },
+            },
+        },
+        "confidence": {
+            "type": "string",
+            "enum": ["low", "medium", "high"],
+            "description": "Self-reported confidence in the grounded answer. "
+                           "Use 'low' to trigger a post-processor refusal.",
+        },
+    },
+}
+
+
 def _default_llm_call(
     *,
     prefix_id: str,
     dynamic_suffix: str,
     model: str,
 ) -> tuple[dict, dict]:
-    """Placeholder LLM call. Replaced when src/llm/client.py lands.
+    """Real synthesizer call via the Responses API + structured outputs.
 
-    Raises NotImplementedError deliberately so an accidentally-live
-    synthesizer call surfaces immediately during development rather
-    than silently shipping a stub answer. Tests pass a stub via the
-    `llm` argument to `synthesize()` and never hit this.
+    Per the Responses migration guide, structured outputs go in
+    `text={"format": {"type": "json_schema", "name", "strict",
+    "schema"}}`. The output_text helper returns the JSON string, which
+    src/llm/client.structured_completion parses for us. The result is
+    a dict matching _SYNTHESIZER_OUTPUT_SCHEMA above; SynthesisRequest
+    -> parse_synthesizer_response then joins each citation back to its
+    evidence chunk so the post-processor's cross-campus check has the
+    metadata it needs.
     """
-    raise NotImplementedError(
-        "Synthesizer LLM client not yet wired. Wire src/llm/client.py "
-        "(see plan: Model & API freshness rule -- check OpenAI docs "
-        "before writing the call shape) and pass it as the `llm` "
-        "argument to synthesize(), or monkeypatch _default_llm_call "
-        "for tests."
+    from src.llm.client import structured_completion
+
+    parsed, usage = structured_completion(
+        prefix_id=prefix_id,
+        dynamic_suffix=dynamic_suffix,
+        response_schema=_SYNTHESIZER_OUTPUT_SCHEMA,
+        schema_name="synthesizer_output",
+        model=model,
     )
+    return parsed, usage.as_dict()
 
 
 # --- Top-level orchestration ----------------------------------------------
