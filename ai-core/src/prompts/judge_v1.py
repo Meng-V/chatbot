@@ -102,6 +102,88 @@ contradict these are "wrong":
 - ILL:               all campuses (each library handles pickup)
 - Newspapers (NYT/WSJ): all campuses (electronic)
 - Digital Collections: online (university-wide)
+
+# More judgment exemplars (stable cache padding)
+
+Q: "Can the library submit my ILL request for me?"
+Expected: "REFUSAL -- bot points to the ILL form, never submits."
+Bot:      "I've submitted your ILL request for The Great Gatsby. You'll \
+hear back in 1-2 weeks."
+Output:
+{"verdict": "wrong", "reason": "Bot roleplayed an action it cannot \
+perform. Action vs guidance boundary violated.", "citation_validity": "n_a"}
+
+Q: "How do I get Photoshop as a student?"
+Expected: "Student Adobe Creative Cloud access via Adobe site, cite \
+software/adobe page."
+Bot:      "Photoshop is part of Adobe Creative Cloud. As a student you \
+can install it at no cost via your university account [1]."
+Citations: [1] = software/adobe page (in expected allowed_urls).
+Output:
+{"verdict": "correct", "reason": "Audience path correctly identified; \
+citation matches expected URL.", "citation_validity": "all_valid"}
+
+Q: "How do I get Photoshop as a student?"
+Expected: same as above.
+Bot:      "Photoshop is part of Adobe CC. Download it from \
+https://example.com/photoshop -- free for students."
+Output:
+{"verdict": "wrong", "reason": "URL is fabricated; not in allowed_urls.", \
+"citation_validity": "some_invalid"}
+
+Q: "Hours at the Hamilton library tonight?"
+Expected: "Live LibCal Rentschler hours."
+Bot:      "Rentschler closes at 9pm tonight [1]." (citation = LibCal URL)
+Output:
+{"verdict": "correct", "reason": "Live data correctly retrieved and cited.", \
+"citation_validity": "all_valid"}
+
+Q: "Hours at the Hamilton library tonight?"
+Expected: "Live LibCal Rentschler hours."
+Bot:      "King Library is open until 2am [1]." (citation = King LibCal URL)
+Output:
+{"verdict": "wrong", "reason": "Cross-campus leak: cited Oxford evidence \
+for a Hamilton question.", "citation_validity": "all_valid"}
+
+Q: "Where do I return an ILL book at Middletown?"
+Expected: "Middletown ILL pickup at Gardner-Harvey; do not give Oxford \
+return location."
+Bot:      "I don't have specific return-location info for Gardner-Harvey. \
+Try the Middletown library staff directory: <URL>."
+Output:
+{"verdict": "refused_correctly", "reason": "Bot refused rather than \
+substituting Oxford info.", "citation_validity": "n_a"}
+
+Q: "What digital collections does Miami have?"
+Expected: "Front-door description + URL; do not enumerate item-level \
+claims."
+Bot:      "We have over 50 digital collections including the Walter \
+Havighurst Special Collections, the Freedom Summer collection, and the \
+Smith Library of Regional History [1]."
+Citations: [1] = digital-collections page; the page does NOT itemize \
+those collections.
+Output:
+{"verdict": "wrong", "reason": "Bot enumerated specific collections not \
+present in the cited page; per-collection text is invention.", \
+"citation_validity": "some_invalid"}
+
+# Edge-case rules (stable cache padding)
+
+E1. Partial citations. If the bot makes 5 claims and cites 3, the 2 \
+uncited claims drag the verdict to "partial" even if the cited 3 are \
+correct. Citation discipline is non-negotiable.
+
+E2. Confidence vs correctness. The bot's self-reported `confidence` \
+field does NOT influence the verdict. A "low" confidence answer that \
+turns out to be correct is still "correct"; a "high" confidence answer \
+that's wrong is still "wrong".
+
+E3. Tone is not scored. A correct answer phrased curtly is still \
+correct. A wrong answer phrased politely is still wrong.
+
+E4. Future-dated questions ("when's the next library renovation?") \
+where the corpus has no answer should be refusals; if the bot answered \
+with a guess, that's "answered_should_have_refused".
 """
 
 register_prefix("judge_v1", JUDGE_V1_PREFIX)

@@ -105,6 +105,89 @@ research help?",
   ],
   "tone": "neutral"
 }
+
+EXAMPLE C (ILL ambiguity -- request vs status check):
+Candidates: ["ill_request", "ill_status", "ill_return"]
+User: "About my interlibrary loan..."
+Output:
+{
+  "question": "What do you need to do with your interlibrary loan?",
+  "options": [
+    {"label": "Request a new ILL", "intent": "ill_request"},
+    {"label": "Check status of an existing request", "intent": "ill_status"},
+    {"label": "Return an ILL book", "intent": "ill_return"}
+  ],
+  "tone": "neutral"
+}
+
+EXAMPLE D (MakerSpace ambiguity -- info vs reserve vs equipment):
+Candidates: ["makerspace_info", "makerspace_reserve", "makerspace_equipment"]
+User: "MakerSpace?"
+Output:
+{
+  "question": "What would you like to know about the MakerSpace?",
+  "options": [
+    {"label": "General info and hours", "intent": "makerspace_info"},
+    {"label": "Reserve / book a session", "intent": "makerspace_reserve"},
+    {"label": "What equipment is available?", "intent": "makerspace_equipment"}
+  ],
+  "tone": "neutral"
+}
+
+EXAMPLE E (room booking -- which campus):
+Candidates: ["room_book_king", "room_book_wertz", "room_book_rentschler", "room_book_gardner_harvey"]
+User: "I need to book a study room"
+Output:
+{
+  "question": "Which library do you want to book a room at?",
+  "options": [
+    {"label": "King (Oxford)", "intent": "room_book_king"},
+    {"label": "Wertz Art & Architecture (Oxford)", "intent": "room_book_wertz"},
+    {"label": "Rentschler (Hamilton)", "intent": "room_book_rentschler"},
+    {"label": "Gardner-Harvey (Middletown)", "intent": "room_book_gardner_harvey"}
+  ],
+  "tone": "neutral"
+}
+
+EXAMPLE F (Special Collections vs general research):
+Candidates: ["special_collections_access", "research_appointment"]
+User: "I want to look at some old documents for my history class"
+Output:
+{
+  "question": "Are you looking for materials in our Special Collections \
+(rare books, university archives, manuscripts), or general research help \
+finding sources?",
+  "options": [
+    {"label": "Special Collections materials", "intent": "special_collections_access"},
+    {"label": "General research help", "intent": "research_appointment"}
+  ],
+  "tone": "neutral"
+}
+
+# Tone reference
+
+The clarifier's tone should mirror a friendly reference desk staffer:
+- Direct: "Which library?" not "I'd love to help! Could you tell me..."
+- Neutral: never "unfortunately" or "I'm sorry" -- the user did nothing wrong.
+- Concrete buttons: each option is something the user could plausibly want, \
+not a hedged catch-all like "Other" (use "None of the above" if needed; the \
+existing UI handles that path separately).
+
+# Refusal cases (don't generate a clarification, just refuse)
+
+Don't ask the user to clarify when:
+1. The candidate set is essentially one intent + "out_of_scope". Just route \
+to the intent OR refuse outright. A clarification adds a turn for nothing.
+2. The disambiguation requires information the user can't provide ("Did you \
+mean MakerSpace 1 or MakerSpace 2?" -- the user doesn't know).
+3. The classifier returned an empty candidate set. That's an out_of_scope \
+result, not a clarification opportunity.
+
+In any of those cases, return:
+{"question": null, "options": [], "tone": "refuse"}
+
+The orchestrator interprets `tone: "refuse"` as a signal to skip the \
+clarification round and go straight to refusal templates.
 """
 
 register_prefix("clarifier_v1", CLARIFIER_V1_PREFIX)
