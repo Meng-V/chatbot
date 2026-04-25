@@ -30,6 +30,7 @@ from typing import Literal, Optional
 from urllib.parse import urlparse
 
 from src.scope.aliases import (
+    BLOCKED_CAMPUS_PHRASES,
     CAMPUS_ALIASES,
     CAMPUS_DISPLAY,
     Campus,
@@ -143,6 +144,13 @@ def resolve_scope(
     """
     haystack = (user_message or "").lower()
 
+    # Suppress campus-alias matching when a known false-positive phrase is
+    # present (e.g., "Hamilton Journal-News" -- the newspaper, not the
+    # campus). Library-alias matching is unaffected.
+    campus_matching_blocked = any(
+        phrase in haystack for phrase in BLOCKED_CAMPUS_PHRASES
+    )
+
     # 1. Library alias (most specific)
     lib_match = _longest_alias_match(haystack, LIBRARY_ALIASES)
     if lib_match is not None:
@@ -154,15 +162,16 @@ def resolve_scope(
         # the campus signal wins. The library name is then a service
         # mention, not a building selection -- the synthesizer's
         # services_offered truth table will refuse appropriately.
-        campus_match = _longest_alias_match(haystack, CAMPUS_ALIASES)
-        if campus_match is not None:
-            campus_from_alias = CAMPUS_ALIASES[campus_match]
-            if campus_from_alias != lib_campus:
-                return Scope(
-                    campus=campus_from_alias,
-                    library=None,
-                    source="campus_alias",
-                )
+        if not campus_matching_blocked:
+            campus_match = _longest_alias_match(haystack, CAMPUS_ALIASES)
+            if campus_match is not None:
+                campus_from_alias = CAMPUS_ALIASES[campus_match]
+                if campus_from_alias != lib_campus:
+                    return Scope(
+                        campus=campus_from_alias,
+                        library=None,
+                        source="campus_alias",
+                    )
 
         return Scope(
             campus=lib_campus,
@@ -171,13 +180,14 @@ def resolve_scope(
         )
 
     # 2. Campus alias (no library narrow-down)
-    campus_match = _longest_alias_match(haystack, CAMPUS_ALIASES)
-    if campus_match is not None:
-        return Scope(
-            campus=CAMPUS_ALIASES[campus_match],
-            library=None,
-            source="campus_alias",
-        )
+    if not campus_matching_blocked:
+        campus_match = _longest_alias_match(haystack, CAMPUS_ALIASES)
+        if campus_match is not None:
+            return Scope(
+                campus=CAMPUS_ALIASES[campus_match],
+                library=None,
+                source="campus_alias",
+            )
 
     # 3. Session origin (regional-campus widget user)
     if session_origin_campus is not None:
