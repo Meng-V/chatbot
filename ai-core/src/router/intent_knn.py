@@ -235,6 +235,51 @@ def build_classifier(
     return IntentKNN(exemplars=exemplars, embedder=embedder)
 
 
+# --- Disk-backed exemplar loader ------------------------------------------
+
+
+_EXEMPLARS_PATH = (
+    __import__("pathlib").Path(__file__).parent / "exemplars" / "exemplars.jsonl"
+)
+"""Where the labeled exemplar JSONL lives. Built by
+scripts/build_exemplars_jsonl.py from the librarian-labeled CSV.
+Returns an empty list if the file doesn't exist yet (graceful early-
+launch behavior; the classifier returns out_of_scope-needs-clarify
+on every call until exemplars are populated)."""
+
+
+def load_exemplars_from_disk(
+    path: "Optional[__import__('pathlib').Path]" = None,
+) -> list[tuple[str, str]]:
+    """Read labeled exemplars from the JSONL file produced by
+    scripts/build_exemplars_jsonl.py.
+
+    Returns a list of (intent, utterance) tuples ready to pass to
+    `build_classifier()`. Returns an empty list if the file doesn't
+    exist -- callers fall through to the empty-classifier degradation
+    path.
+    """
+    import json
+    from pathlib import Path
+
+    p = path if path is not None else _EXEMPLARS_PATH
+    if not p.exists():
+        return []
+    out: list[tuple[str, str]] = []
+    with open(p, encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if not line or line.startswith("//"):
+                continue
+            obj = json.loads(line)
+            intent = obj.get("intent", "")
+            utterance = obj.get("utterance", "")
+            if not intent or not utterance:
+                continue
+            out.append((intent, utterance))
+    return out
+
+
 # --- Intent registry ------------------------------------------------------
 #
 # The canonical list of intent labels the classifier may return.
