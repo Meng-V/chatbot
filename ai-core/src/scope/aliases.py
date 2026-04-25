@@ -92,6 +92,13 @@ LIBRARY_ALIASES: dict[str, Library] = {
     "king library": "king",
     "king": "king",
     "main library": "king",
+    # MakerSpace exists ONLY at King (Oxford). Mentioning the MakerSpace
+    # is a strong signal the user is asking about King -- treat it as a
+    # library alias so retrieval narrows. If MakerSpace ever expands to
+    # another campus, this becomes a multi-mapping (handle in resolver).
+    "makerspace": "king",
+    "maker space": "king",
+    "the makerspace": "king",
 
     # Wertz / Art & Architecture (Oxford second building)
     "wertz art and architecture library": "wertz",
@@ -111,6 +118,13 @@ LIBRARY_ALIASES: dict[str, Library] = {
     "university archives": "special",
     "the archives": "special",
     "scua": "special",
+    # Service-name aliases that are unambiguously bound to Special Collections.
+    # "Archivist" without further qualification means the University Archivist
+    # at SCUA in King -- there's only one. Matches questions like
+    # "Who is the archivist?" / "Can I email the archivist?".
+    "university archivist": "special",
+    "the archivist": "special",
+    "archivist": "special",
 
     # Rentschler (Hamilton)
     "rentschler library": "rentschler",
@@ -156,6 +170,36 @@ CAMPUS_ALIASES: dict[str, Campus] = {
     "mum": "middletown",
     "mumid": "middletown",
 }
+
+# --- Phrases that suppress campus matching ----------------------------------
+#
+# Some campus IDs collide with proper nouns that have nothing to do with
+# Miami's campuses -- the "Hamilton Journal-News" newspaper, the "Hamilton"
+# musical, "Middletown" as a place outside Ohio, etc. When one of these
+# phrases appears in the user message, the resolver does NOT treat the
+# embedded "hamilton" / "middletown" as a campus signal.
+#
+# These are lowercased, substring-matched. Add new entries here as they
+# surface in misclassified queries -- one-line edits, no code changes.
+# (Library-alias matches are unaffected; only CAMPUS_ALIASES matching is
+# suppressed when one of these phrases is present.)
+
+BLOCKED_CAMPUS_PHRASES: tuple[str, ...] = (
+    # Newspapers / publications
+    "hamilton journal-news",
+    "hamilton journal news",
+    "hamilton spectator",
+    "journal-news",
+    "middletown journal",
+    # The musical / historical figure
+    "hamilton musical",
+    "alexander hamilton",
+    # Other proper nouns that contain campus IDs
+    "middletown ny",
+    "middletown new york",
+    "middletown ohio newspaper",  # disambiguates from the campus
+)
+
 
 # --- Domain → campus mapping (for session-origin detection) ------------------
 #
