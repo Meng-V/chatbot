@@ -238,9 +238,12 @@ const ChatBotComponent = ({ askUsStatus = { isOpen: false, hoursToday: null } })
               .filter((l) => l.length > 0)
               .slice(0, 5);
 
-            const lowConfidenceHint = /No strong matches found|Institutional knowledge service is temporarily unavailable|ask a clarifying question/i.test(
-              adjustedMessage,
-            );
+            // Structured confidence (v2) wins over text heuristic (legacy).
+            const lowConfidenceHint =
+              message.confidence === 'low' ||
+              /No strong matches found|Institutional knowledge service is temporarily unavailable|ask a clarifying question/i.test(
+                adjustedMessage,
+              );
             return (
               <div
                 key={index}
@@ -267,43 +270,66 @@ const ChatBotComponent = ({ askUsStatus = { isOpen: false, hoursToday: null } })
                   >
                     {typeof message.text === 'object' ? (
                       <div className="half-line-height">
-                        <MessageComponents msg={bodyText} />
+                        <MessageComponents msg={bodyText} citations={message.citations} />
                       </div>
                     ) : (
-                      <MessageComponents msg={bodyText} />
+                      <MessageComponents msg={bodyText} citations={message.citations} />
                     )}
                   </div>
                 </div>
-                {/* Render nicely formatted citations when available */}
-                {message.sender !== 'user' && references.length > 0 && (
-                  <div className="max-w-md mt-2 px-4 py-3 border border-gray-300 rounded-md bg-gray-50">
-                    <h4 className="text-xs font-semibold mb-2 text-gray-700">
-                      Sources
-                    </h4>
-                    <ul className="list-disc pl-4 space-y-1">
-                      {references.map((line, i) => {
-                        const urlMatch = line.match(/https?:\/\/\S+/);
-                        const url = urlMatch ? urlMatch[0] : undefined;
-                        return (
-                          <li key={i} className="text-gray-700">
-                            {url ? (
-                              <a
-                                href={url}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="text-blue-600 hover:underline"
-                              >
-                                {url}
-                              </a>
-                            ) : (
-                              <span>{line}</span>
-                            )}
-                          </li>
-                        );
-                      })}
-                    </ul>
-                  </div>
-                )}
+                {/* Sources footer.
+                    v2 path: render from message.citations (structured),
+                    matching the inline [n] chips above.
+                    Legacy path: parse the "References:" tail from message text. */}
+                {message.sender !== 'user' &&
+                  ((message.citations && message.citations.length > 0) ||
+                    references.length > 0) && (
+                    <div className="max-w-md mt-2 px-4 py-3 border border-gray-300 rounded-md bg-gray-50">
+                      <h4 className="text-xs font-semibold mb-2 text-gray-700">
+                        Sources
+                      </h4>
+                      <ul className="list-disc pl-4 space-y-1">
+                        {message.citations && message.citations.length > 0
+                          ? message.citations.map((c, i) => (
+                              <li key={i} className="text-gray-700 text-xs">
+                                <span className="font-semibold mr-1">[{c.n}]</span>
+                                {c.url ? (
+                                  <a
+                                    href={c.url}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="text-blue-600 hover:underline break-all"
+                                  >
+                                    {c.url}
+                                  </a>
+                                ) : (
+                                  <span>{c.snippet || ''}</span>
+                                )}
+                              </li>
+                            ))
+                          : references.map((line, i) => {
+                              const urlMatch = line.match(/https?:\/\/\S+/);
+                              const url = urlMatch ? urlMatch[0] : undefined;
+                              return (
+                                <li key={i} className="text-gray-700">
+                                  {url ? (
+                                    <a
+                                      href={url}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      className="text-blue-600 hover:underline"
+                                    >
+                                      {url}
+                                    </a>
+                                  ) : (
+                                    <span>{line}</span>
+                                  )}
+                                </li>
+                              );
+                            })}
+                      </ul>
+                    </div>
+                  )}
                 {/* Render clarification choices if present */}
                 {message.sender !== 'user' && message.clarificationChoices && (
                   <ClarificationChoices

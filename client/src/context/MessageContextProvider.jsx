@@ -41,16 +41,34 @@ const MessageContextProvider = ({ children }) => {
     const messageText =
       typeof message === 'object' && message.response
         ? message.response.join('\n')
+        : typeof message === 'object' && typeof message.answer === 'string'
+        ? message.answer
         : message;
+
+    // Pull through the structured-output fields the synthesizer emits when
+    // the v2 stack is live: { answer, citations: [{n, url, snippet}], confidence }.
+    // Old/legacy responses won't have these -- they stay undefined and the
+    // renderer falls back to the existing flat behavior.
+    const citations =
+      message && typeof message === 'object' && Array.isArray(message.citations)
+        ? message.citations
+        : undefined;
+    const confidence =
+      message && typeof message === 'object' && typeof message.confidence === 'string'
+        ? message.confidence
+        : undefined;
+
     setMessage((prevMessages) => {
       const updatedMessages = [
         ...prevMessages,
-        { 
-          text: messageText, 
-          sender, 
+        {
+          text: messageText,
+          sender,
           messageId: id,
           responseTime: responseTime, // Time in seconds for bot responses
-          timestamp: Date.now()
+          timestamp: Date.now(),
+          citations,
+          confidence,
         },
       ];
       sessionStorage.setItem('chat_messages', JSON.stringify(updatedMessages));
