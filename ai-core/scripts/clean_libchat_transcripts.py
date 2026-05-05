@@ -233,8 +233,14 @@ def _suggest_intent(utterance: str) -> Optional[str]:
     return best[0]
 
 
-def clean(input_path: Path, output_path: Path, report_path: Path) -> None:
-    """Run the cleaning pipeline and write the labeling-ready CSV."""
+def clean(input_paths: list[Path], output_path: Path, report_path: Path) -> None:
+    """Run the cleaning pipeline across one or more LibChat exports and
+    write a unified labeling-ready CSV.
+
+    Multiple inputs are concatenated and dedup is global -- a row that
+    appears in 2024 AND 2025 is kept once. The `source` column tracks
+    which file(s) it came from for traceability.
+    """
     raw_count = 0
     drop_short = 0
     drop_long = 0
@@ -243,64 +249,67 @@ def clean(input_path: Path, output_path: Path, report_path: Path) -> None:
     drop_greeting = 0
     drop_dup = 0
 
-    seen: set[str] = set()
-    rows_out: list[dict] = []
+    seen: dict[str, dict] = {}  # signature -> row (so we can update sources)
 
-    with open(input_path, encoding="utf-8-sig") as f:
-        reader = csv.DictReader(f)
-        for row in reader:
-            raw_count += 1
-            iq = (row.get("Initial Question") or "").strip()
-            if not iq:
-                continue
+    for input_path in input_paths:
+        source_label = input_path.stem  # e.g. "tran_raw_2024"
+        with open(input_path, encoding="utf-8-sig") as f:
+            reader = csv.DictReader(f)
+            for row in reader:
+                raw_count += 1
+                iq = (row.get("Initial Question") or "").strip()
+                if not iq:
+                    continue
 
-            iq = _normalize(iq)
+                iq = _normalize(iq)
 
-            # Hard length bounds
-            if len(iq) < MIN_LEN:
-                drop_short += 1
-                continue
-            if len(iq) > MAX_LEN:
-                drop_long += 1
-                continue
+                if len(iq) < MIN_LEN:
+                    drop_short += 1
+                    continue
+                if len(iq) > MAX_LEN:
+                    drop_long += 1
+                    continue
 
-            # Greeting filter
-            if _is_greeting(iq):
-                drop_greeting += 1
-                continue
+                if _is_greeting(iq):
+                    drop_greeting += 1
+                    continue
 
-            # PII filter (whole-row drop)
-            if _has_pii(iq):
-                drop_pii += 1
-                continue
+                if _has_pii(iq):
+                    drop_pii += 1
+                    continue
 
-            # Hard-reject phrases (account help etc.)
-            if _is_hard_reject(iq):
-                drop_hard_reject += 1
-                continue
+                if _is_hard_reject(iq):
+                    drop_hard_reject += 1
+                    continue
 
-            # Belt-and-suspenders mask in case anything slipped through
-            iq_clean = _strip_pii(iq)
+                iq_clean = _strip_pii(iq)
+                sig = re.sub(r"[^a-z0-9 ]", "", iq_clean.lower())
 
-            # Dedup by lowercased + alphanum-only signature so
-            # punctuation / case differences don't fragment the dedup.
-            sig = re.sub(r"[^a-z0-9 ]", "", iq_clean.lower())
-            if sig in seen:
-                drop_dup += 1
-                continue
-            seen.add(sig)
+                if sig in seen:
+                    drop_dup += 1
+                    # Track that this utterance also appeared in this source.
+                    existing_sources = seen[sig]["source"]
+                    if source_label not in existing_sources.split(","):
+                        seen[sig]["source"] = existing_sources + "," + source_label
+                    continue
 
-            suggested = _suggest_intent(iq_clean) or ""
-            rows_out.append({
-                "utterance": iq_clean,
-                "suggested_intent": suggested,
-                "intent": "",
-            })
+                suggested = _suggest_intent(iq_clean) or ""
+                seen[sig] = {
+                    "utterance": iq_clean,
+                    "suggested_intent": suggested,
+                    "intent": "",
+                    "source": source_label,
+                }
+
+    rows_out = list(seen.values())
 
     # Write the labeling CSV
     output_path.parent.mkdir(parents=True, exist_ok=True)
     with open(output_path, "w", encoding="utf-8", newline="") as f:
-        w = csv.DictWriter(f, fieldnames=["utterance", "suggested_intent", "intent"])
+        w = csv.DictWriter(
+            f,
+            fieldnames=["utterance", "suggested_intent", "intent", "source"],
+        )
         w.writeheader()
         for r in rows_out:
             w.writerow(r)
@@ -310,8 +319,8 @@ def clean(input_path: Path, output_path: Path, report_path: Path) -> None:
     lines = [
         f"# LibChat exemplar cleaning report",
         "",
-        f"- Input file:  `{input_path.name}`",
-        f"- Raw rows:    **{raw_count}**",
+        f"- Input files: {', '.join(f'`{p.name}`' for p in input_paths)}",
+        f"- Raw rows (total across inputs): **{raw_count}**",
         f"- Kept after cleaning: **{len(rows_out)}**",
         "",
         "## Drops",
@@ -366,7 +375,13 @@ def clean(input_path: Path, output_path: Path, report_path: Path) -> None:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n")[0])
-    parser.add_argument("--input", type=Path, required=True)
+    parser.add_argument(
+        "--input",
+        type=Path,
+        nargs="+",
+        required=True,
+        help="One or more LibChat CSV exports (multi-year inputs are merged + globally deduped).",
+    )
     parser.add_argument(
         "--output",
         type=Path,
@@ -379,8 +394,10 @@ def main() -> int:
     )
     args = parser.parse_args()
 
-    if not args.input.exists():
-        print(f"input not found: {args.input}", file=sys.stderr)
+    missing = [p for p in args.input if not p.exists()]
+    if missing:
+        for p in missing:
+            print(f"input not found: {p}", file=sys.stderr)
         return 2
 
     clean(args.input, args.output, args.report)
