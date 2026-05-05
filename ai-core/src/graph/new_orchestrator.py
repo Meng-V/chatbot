@@ -335,24 +335,35 @@ def _extract_evidence(agent_outcome: AgentOutcome) -> list[EvidenceChunk]:
     """Walk the agent's tool-call trail and collect evidence chunks.
 
     Each `search_kb` tool result is expected to return
-    `{"chunks": [...]}` where each chunk is a dict that maps onto
-    EvidenceChunk fields. Other tool results (hours, room availability)
-    aren't retrieval evidence and don't feed the synthesizer's
-    citation bundle -- they go into the conversation as tool messages
-    and the LLM can quote them from context.
+    `{"evidence": [...]}` (the wire shape from
+    src.tools.search_kb_tool) where each item is
+    `{n, chunk_id, source_url, snippet, library, campus, topic,
+    featured_service, score}`. Other tool results (hours, room
+    availability) aren't retrieval evidence and don't feed the
+    synthesizer's citation bundle.
+
+    Defensive read: also accepts the legacy `chunks` key with `text`
+    field so any older fixture or alternate tool variant keeps
+    working. The synthesizer expects EvidenceChunk.text -- we map
+    `snippet` -> `text` here so downstream code stays simple.
     """
     evidence: list[EvidenceChunk] = []
     for turn in agent_outcome.turns:
         for result in turn.tool_results:
             if result.is_error or result.name != "search_kb":
                 continue
-            raw_chunks = (result.data or {}).get("chunks", [])
-            for raw in raw_chunks:
+            data = result.data or {}
+            # Prefer the wire-shape `evidence` key; fall back to
+            # legacy `chunks` so older fixtures keep working.
+            raw_items = data.get("evidence") or data.get("chunks") or []
+            for raw in raw_items:
+                # Wire shape uses `snippet`; legacy uses `text`.
+                text = str(raw.get("snippet", raw.get("text", "")))
                 evidence.append(
                     EvidenceChunk(
                         chunk_id=str(raw.get("chunk_id", "")),
                         source_url=str(raw.get("source_url", raw.get("url", ""))),
-                        text=str(raw.get("text", "")),
+                        text=text,
                         campus=raw.get("campus"),
                         library=raw.get("library"),
                         topic=raw.get("topic"),
