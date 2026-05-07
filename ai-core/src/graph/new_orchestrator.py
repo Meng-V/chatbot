@@ -321,10 +321,11 @@ def run_turn(
 
 
 _REASONING_INTENTS = frozenset(
-    {"cross_campus_comparison", "policy_question"}
+    {"cross_campus_comparison", "loan_policy", "research_consultation"}
 )
-"""Intents that get `gpt-5.2` by default. Comparative / policy questions
-benefit from the reasoning tier; quick lookups don't."""
+"""Intents that get `gpt-5.2` by default. Comparative + policy + research-
+consultation questions benefit from the reasoning tier; quick lookups
+don't."""
 
 
 def _is_reasoning_intent(intent: str) -> bool:

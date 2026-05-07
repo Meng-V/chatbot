@@ -259,7 +259,7 @@ def test_service_unavailable_short_circuits_to_refusal() -> None:
         service_available_at="King Library on the Oxford campus",
     )
     deps = _build_deps(
-        classification=_classification("makerspace_info"),
+        classification=_classification("makerspace_3d"),
         evidence_in_search_kb_result=[_evidence_dict("c1", campus="oxford")],
         service_refusal=refusal_ctx,
     )
@@ -422,9 +422,10 @@ def test_extract_evidence_ignores_non_search_kb_tools() -> None:
 
 def test_reasoning_intent_routes_to_gpt_5_2() -> None:
     assert _is_reasoning_intent("cross_campus_comparison") is True
-    assert _is_reasoning_intent("policy_question") is True
+    assert _is_reasoning_intent("loan_policy") is True
+    assert _is_reasoning_intent("research_consultation") is True
     assert _is_reasoning_intent("hours") is False
-    assert _is_reasoning_intent("ill_request") is False
+    assert _is_reasoning_intent("interlibrary_loan") is False
 
 
 # --- Telemetry / log_turn ---
