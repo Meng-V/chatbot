@@ -49,6 +49,10 @@ SCOPE_FREE_TRIGGERS = [
     RefusalTrigger.LIVE_DATA_DOWN,
     RefusalTrigger.MODEL_SELF_FLAGGED,
     RefusalTrigger.CITATION_INVALID,
+    # Per-intent capability registry refusals (intent_capabilities.py
+    # routes here when classifier picks `account` or `events_news`).
+    RefusalTrigger.ACCOUNT_PRIVACY,
+    RefusalTrigger.NEWS_EXCLUDED,
 ]
 
 SCOPED_TRIGGERS = [

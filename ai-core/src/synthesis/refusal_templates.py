@@ -24,7 +24,7 @@ from typing import Optional
 
 
 class RefusalTrigger(str, Enum):
-    """The nine reasons a turn can downgrade to a refusal.
+    """The reasons a turn can downgrade to a refusal.
 
     String-valued so the enum is JSON-serializable for logging and
     eval-suite reporting without a custom encoder.
@@ -39,8 +39,8 @@ class RefusalTrigger(str, Enum):
 
     # Intent / capability side
     OUT_OF_SCOPE = "out_of_scope"
-    """kNN classifier picked `out_of_scope` (e.g. catalog searches,
-    sports scores, homework help)."""
+    """kNN classifier picked `out_of_scope` (e.g. sports scores,
+    homework help, weather)."""
 
     CAPABILITY_LIMIT = "capability_limit"
     """capability_scope.py flagged this as a thing the bot cannot do
@@ -49,6 +49,17 @@ class RefusalTrigger(str, Enum):
     LIVE_DATA_DOWN = "live_data_down"
     """LibCal / LibAnswers tool call failed or timed out. The bot
     refuses with this trigger instead of guessing stale hours."""
+
+    # Per-intent capability registry (intent_capabilities.py) hits
+    ACCOUNT_PRIVACY = "account_privacy"
+    """User asked about MY checkouts/fines/holds. Bot has no access to
+    user-specific account state and must point to MyAccount login."""
+
+    NEWS_EXCLUDED = "news_excluded"
+    """User asked about library news / events / exhibits. ETL design
+    excludes /about/news-events/* (stale event content is the prime
+    source of "fake service" hallucinations). Point to the live
+    News & Events page."""
 
     # Synthesizer side
     MODEL_SELF_FLAGGED = "model_self_flagged"
@@ -148,6 +159,21 @@ _TEMPLATES: dict[RefusalTrigger, str] = {
         "There isn't a {service_name} at the {campus_display} campus "
         "library. {service_name} is at {service_available_at}. For help "
         "at {campus_display}, ask the library staff through Ask Us."
+    ),
+    # Per-intent capability refusals. The full body (including the
+    # canonical URL) lives in intent_capabilities.py -- the orchestrator
+    # uses that copy directly. These short fallbacks cover the case
+    # where someone calls render_refusal() on these triggers without
+    # going through the capability registry first.
+    RefusalTrigger.ACCOUNT_PRIVACY: (
+        "I can't see your library account. To view your checkouts, "
+        "holds, and fines, sign in to MyAccount with your Miami "
+        "credentials."
+    ),
+    RefusalTrigger.NEWS_EXCLUDED: (
+        "I don't have library events, news, or exhibits indexed. "
+        "Please check the News & Events page on the library website "
+        "directly for current listings."
     ),
 }
 

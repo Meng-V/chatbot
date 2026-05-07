@@ -50,6 +50,11 @@ from src.observability.metrics import (
     record_refusal,
     record_request,
 )
+from src.router.intent_capabilities import (
+    CapabilityTier,
+    IntentCapability,
+    get_intent_capability,
+)
 from src.router.intent_knn import Classification, IntentKNN, MARGIN_HIGH, MARGIN_LOW
 from src.scope.resolver import Scope, resolve_scope, resolve_session_origin
 from src.synthesis.corrections import EvidenceChunk, ManualCorrection
@@ -196,6 +201,31 @@ def run_turn(
         latency_ms = int((time.monotonic() - turn_start) * 1000)
         record_request(endpoint="/chat", status="clarify", latency_s=latency_ms / 1000)
         return _clarify_response(classification, scope, latency_ms)
+
+    # --- 2.5. Per-intent capability check ---
+    # Some intents (account, events_news, find_resource, databases) are
+    # deliberately not LLM-answerable: the answer is an authoritative
+    # URL or a privacy refusal. Skip agent + synth entirely and return
+    # the templated response. See src/router/intent_capabilities.py.
+    capability = get_intent_capability(classification.intent)
+    if capability.tier == CapabilityTier.POINT_TO_URL:
+        latency_ms = int((time.monotonic() - turn_start) * 1000)
+        record_request(endpoint="/chat", status="point_to_url",
+                       latency_s=latency_ms / 1000)
+        return _capability_response(
+            classification, scope, capability, latency_ms,
+            is_refusal=False,
+        )
+    if capability.tier == CapabilityTier.REFUSE:
+        latency_ms = int((time.monotonic() - turn_start) * 1000)
+        record_request(endpoint="/chat", status="refusal",
+                       latency_s=latency_ms / 1000)
+        if capability.refusal_trigger:
+            record_refusal(trigger=capability.refusal_trigger)
+        return _capability_response(
+            classification, scope, capability, latency_ms,
+            is_refusal=True,
+        )
 
     # --- 3. Service-availability pre-check ---
     # If the user asked about MakerSpace at Middletown (say), skip
@@ -436,6 +466,51 @@ def _shape_response(
         agent_stopped_reason=agent_outcome.stopped_reason,
         latency_ms=total_latency_ms,
         cited_chunk_ids=cited_chunk_ids,
+    )
+
+
+def _capability_response(
+    classification: Classification,
+    scope: Scope,
+    capability: IntentCapability,
+    latency_ms: int,
+    *,
+    is_refusal: bool,
+) -> TurnResponse:
+    """Templated TurnResponse for POINT_TO_URL or REFUSE intents.
+
+    The capability registry's `short_message` already includes the
+    canonical URL, so we don't need synthesizer + post-processor to
+    compose anything. The citation list is the canonical URL alone --
+    the UI renders one citation chip linking to the right page.
+
+    Zero LLM tokens consumed. Latency is just the routing path.
+    """
+    citations: list[dict] = []
+    if capability.canonical_url:
+        citations.append({
+            "n": 1,
+            "url": capability.canonical_url,
+            "snippet": "",  # the short_message body already explains
+        })
+
+    return TurnResponse(
+        answer=capability.short_message,
+        is_refusal=is_refusal,
+        refusal_trigger=capability.refusal_trigger or None,
+        citations=citations,
+        # Confidence is "high" for both POINT_TO_URL and REFUSE: the
+        # response is deterministic (templated), so the bot is fully
+        # confident in what it's emitting -- no LLM uncertainty here.
+        confidence="high",
+        intent=classification.intent,
+        scope=scope.as_filter(),
+        model_used="(none -- capability registry)",
+        tokens={"input": 0, "cached_input": 0, "output": 0},
+        fired_corrections=[],
+        agent_stopped_reason=capability.tier.value,
+        latency_ms=latency_ms,
+        cited_chunk_ids=[],
     )
 
 
