@@ -132,20 +132,24 @@ HOST_TO_CAMPUS: Final[dict[str, str]] = {
     "www.mid.miamioh.edu": "middletown",
 }
 
-# Path-substring -> library canonical ID. Inside Oxford domain, this
-# disambiguates between King, Wertz, Special Collections. Regional domains
-# default to their primary library unless overridden here.
+# Path-substring -> library canonical ID. Order matters: classify.py
+# does first-match-wins. SPECIFIC overrides come BEFORE broad host
+# defaults, so a `/sword/` URL on the Middletown host still resolves
+# to SWORD instead of Gardner-Harvey.
 LIBRARY_BY_URL_SUBSTRING: Final[tuple[tuple[str, str], ...]] = (
-    # Oxford
+    # --- Specific path overrides (must come BEFORE host defaults) ---
+    # Oxford-specific buildings
     ("/about/locations/king-library", "king"),
     ("/about/locations/art-arch", "wertz"),
     ("/about/locations/special-collections", "special"),
     ("wertz", "wertz"),
-    # Regional defaults baked in; overrides below.
-    ("ham.miamioh.edu", "rentschler"),
-    ("mid.miamioh.edu", "gardner_harvey"),
+    # SWORD lives on the Middletown campus but is its own library;
+    # the path-override beats the mid.miamioh.edu host default below.
     ("/sword/", "sword"),
     ("/depository/", "sword"),
+    # --- Regional host defaults (broadest; checked last) ---
+    ("ham.miamioh.edu", "rentschler"),
+    ("mid.miamioh.edu", "gardner_harvey"),
 )
 
 
