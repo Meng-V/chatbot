@@ -344,17 +344,45 @@ class SmokeResult:
     fixture: SmokeFixture
     actual_path: str
     response: TurnResponse
-    duration_ms: int
+    duration_us: int
+    """Wall-clock duration in MICROseconds. The smoke runs against
+    stubbed LLM/Weaviate so per-fixture time is dominated by Python
+    overhead -- typically 5-50 us. Storing microseconds (not ms)
+    means every fixture has nonzero, comparable timing in the
+    output, instead of every entry rounding to 0ms."""
+
     ok: bool
+
+    @property
+    def duration_ms(self) -> float:
+        """Convenience for callers that want milliseconds. Returns a
+        float (not int) so sub-millisecond fixtures don't truncate."""
+        return self.duration_us / 1000
 
     @property
     def status_line(self) -> str:
         mark = "PASS" if self.ok else "FAIL"
+        # Pick a unit that makes the number readable: us for sub-ms,
+        # ms otherwise. The smoke is supposed to run sub-ms per
+        # fixture (it's a wiring check, not a perf benchmark) so us
+        # is the common case.
+        if self.duration_us < 1000:
+            time_str = f"{self.duration_us:>5d} us"
+        elif self.duration_us < 1_000_000:
+            time_str = f"{self.duration_us / 1000:>5.1f} ms"
+        else:
+            time_str = f"{self.duration_us / 1_000_000:>5.2f} s"
         return (
             f"{mark} {self.fixture.name:<28} "
-            f"path={self.actual_path:<20} "
-            f"({self.duration_ms}ms)"
+            f"path={self.actual_path:<22} "
+            f"({time_str})"
         )
+
+
+def _now_us() -> int:
+    """Microsecond-precision wall clock. perf_counter_ns gives us
+    microseconds even on macOS where time.monotonic rounds to ms."""
+    return time.perf_counter_ns() // 1000
 
 
 def run_smoke(fixtures: Optional[list[SmokeFixture]] = None) -> list[SmokeResult]:
@@ -367,7 +395,7 @@ def run_smoke(fixtures: Optional[list[SmokeFixture]] = None) -> list[SmokeResult
             user_message=fix.user_message,
             conversation_id=f"smoke-{fix.name}",
         )
-        start = time.monotonic()
+        start_us = _now_us()
         try:
             resp = run_turn(request, deps)
         except Exception as e:  # noqa: BLE001
@@ -376,30 +404,39 @@ def run_smoke(fixtures: Optional[list[SmokeFixture]] = None) -> list[SmokeResult
                     fixture=fix,
                     actual_path=f"crash:{type(e).__name__}",
                     response=None,  # type: ignore[arg-type]
-                    duration_ms=int((time.monotonic() - start) * 1000),
+                    duration_us=_now_us() - start_us,
                     ok=False,
                 )
             )
             continue
-        duration_ms = int((time.monotonic() - start) * 1000)
+        duration_us = _now_us() - start_us
         path = classify_response_path(resp)
         results.append(
             SmokeResult(
                 fixture=fix,
                 actual_path=path,
                 response=resp,
-                duration_ms=duration_ms,
+                duration_us=duration_us,
                 ok=path == fix.expected_path,
             )
         )
     return results
 
 
+def _format_total(total_us: int) -> str:
+    """Pick a reasonable unit for the bottom-line total."""
+    if total_us < 1000:
+        return f"{total_us} us"
+    if total_us < 1_000_000:
+        return f"{total_us / 1000:.1f} ms"
+    return f"{total_us / 1_000_000:.2f} s"
+
+
 def main() -> int:
     results = run_smoke()
     print()
     print("v2 stack smoke results:")
-    print("-" * 64)
+    print("-" * 70)
     for r in results:
         print(r.status_line)
         if not r.ok:
@@ -412,10 +449,12 @@ def main() -> int:
                 f"{(r.response.answer if r.response else '(crash)')[:120]!r}"
             )
     failed = [r for r in results if not r.ok]
-    print("-" * 64)
+    print("-" * 70)
+    total_us = sum(r.duration_us for r in results)
     print(
         f"{len(results) - len(failed)}/{len(results)} passed "
-        f"in {sum(r.duration_ms for r in results)}ms total"
+        f"in {_format_total(total_us)} total "
+        f"(stubbed LLM + Weaviate; this is wiring overhead only)"
     )
     return 1 if failed else 0
 

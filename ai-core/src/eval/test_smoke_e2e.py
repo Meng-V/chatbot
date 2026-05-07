@@ -150,25 +150,112 @@ def test_run_smoke_all_under_one_second_each() -> None:
     something is wrong (real network call leaked in?). Cap is generous."""
     results = run_smoke()
     for r in results:
-        assert r.duration_ms < 1000, f"{r.fixture.name} took {r.duration_ms}ms"
+        assert r.duration_us < 1_000_000, (
+            f"{r.fixture.name} took {r.duration_us}us"
+        )
+
+
+def test_run_smoke_records_nonzero_microseconds() -> None:
+    """The smoke must report ACTUAL timing, not 0 from a rounded int.
+    Stubbed LLM + Weaviate run in microseconds, but never 0 -- if any
+    fixture shows 0us, something broke the timer or the orchestrator
+    short-circuited before run_turn was called.
+    """
+    results = run_smoke()
+    for r in results:
+        assert r.duration_us > 0, (
+            f"{r.fixture.name}: 0 us means the timer didn't run; "
+            f"original 'int(seconds * 1000)' bug regressed?"
+        )
+
+
+def test_full_agent_path_takes_longer_than_short_circuit() -> None:
+    """Differential check that the smoke is exercising both paths.
+    Short-circuit (clarify, point_to_url, refuse) skips the agent;
+    agent_then_answer / agent_then_refusal does NOT. Therefore agent
+    paths MUST take longer than short-circuit paths on average.
+    If they take the same time, one path is broken (likely both are
+    short-circuiting).
+    """
+    results = run_smoke()
+    short_circuit = [r for r in results if r.actual_path in (
+        "clarify", "point_to_url", "refuse",
+    )]
+    full_agent = [r for r in results if r.actual_path in (
+        "agent_then_answer", "agent_then_refusal",
+    )]
+    assert short_circuit, "no short-circuit fixtures ran"
+    assert full_agent, "no full-agent fixtures ran"
+    avg_short = sum(r.duration_us for r in short_circuit) / len(short_circuit)
+    avg_full = sum(r.duration_us for r in full_agent) / len(full_agent)
+    # Full-agent path runs 2 LLM calls + tool dispatch + synth +
+    # post-processor; short-circuit returns templated text. Expect
+    # at least 1.5x ratio. If they're tied, agent didn't run.
+    assert avg_full > avg_short * 1.3, (
+        f"full-agent path ({avg_full:.1f}us avg) not measurably "
+        f"slower than short-circuit ({avg_short:.1f}us avg) -- "
+        f"is the agent actually running?"
+    )
+
+
+def test_full_agent_fixtures_consume_LLM_tokens() -> None:
+    """Belt-and-suspenders: a full-agent run MUST report nonzero
+    tokens (the canned LLM stubs return token counts). If any
+    agent_then_* fixture shows zero tokens, the orchestrator
+    short-circuited where it shouldn't have."""
+    results = run_smoke()
+    for r in results:
+        if r.actual_path.startswith("agent_then_"):
+            assert r.response.tokens["input"] > 0, (
+                f"{r.fixture.name} took agent path but "
+                f"tokens={r.response.tokens} -- LLM didn't run?"
+            )
+
+
+def test_short_circuit_fixtures_consume_zero_LLM_tokens() -> None:
+    """Inverse check: short-circuit paths MUST NOT call the LLM."""
+    results = run_smoke()
+    for r in results:
+        if r.actual_path in ("clarify", "point_to_url", "refuse"):
+            assert r.response.tokens == {
+                "input": 0, "cached_input": 0, "output": 0,
+            }, (
+                f"{r.fixture.name} short-circuited but "
+                f"tokens={r.response.tokens} -- LLM ran when it shouldn't"
+            )
 
 
 def test_smoke_result_status_line_format() -> None:
     fix = _FIXTURES[0]
-    deps = _build_deps(fix)
     # Don't actually run; just construct a SmokeResult and check shape.
     r = SmokeResult(
         fixture=fix,
         actual_path="clarify",
         response=_resp(agent_stopped_reason="clarify"),
-        duration_ms=42,
+        duration_us=42_000,  # 42 ms
         ok=True,
     )
     line = r.status_line
     assert "PASS" in line
     assert fix.name in line
     assert "clarify" in line
-    assert "42ms" in line
+    assert "42.0 ms" in line
+
+
+def test_smoke_result_status_line_microsecond_format() -> None:
+    """Sub-millisecond fixtures display in us, not ms."""
+    fix = _FIXTURES[0]
+    r = SmokeResult(
+        fixture=fix,
+        actual_path="clarify",
+        response=_resp(agent_stopped_reason="clarify"),
+        duration_us=37,
+        ok=True,
+    )
+    line = r.status_line
+    assert "37 us" in line
+    # Make sure we don't display "0 ms" -- the bug we're fixing.
+    assert "0 ms" not in line
 
 
 def test_smoke_result_failed_status_line() -> None:
@@ -177,10 +264,25 @@ def test_smoke_result_failed_status_line() -> None:
         fixture=fix,
         actual_path="agent_then_answer",  # mismatch
         response=_resp(),
-        duration_ms=5,
+        duration_us=5_000,  # 5 ms
         ok=False,
     )
     assert "FAIL" in r.status_line
+
+
+def test_duration_ms_property_returns_float() -> None:
+    """SmokeResult.duration_ms is a float so sub-ms fixtures don't
+    truncate to 0 (the bug we're locking against)."""
+    r = SmokeResult(
+        fixture=_FIXTURES[0],
+        actual_path="clarify",
+        response=_resp(agent_stopped_reason="clarify"),
+        duration_us=37,
+        ok=True,
+    )
+    assert isinstance(r.duration_ms, float)
+    assert r.duration_ms == 0.037
+    assert r.duration_ms > 0  # would be 0 with the old int truncation
 
 
 # --- Path-specific assertions on the response ---
@@ -258,8 +360,16 @@ def main() -> int:
         test_run_smoke_all_fixtures_pass,
         test_run_smoke_subset,
         test_run_smoke_all_under_one_second_each,
+        # Differential / non-zero-time checks (added after librarian
+        # caught "0ms total" output that hid the int(ms) rounding):
+        test_run_smoke_records_nonzero_microseconds,
+        test_full_agent_path_takes_longer_than_short_circuit,
+        test_full_agent_fixtures_consume_LLM_tokens,
+        test_short_circuit_fixtures_consume_zero_LLM_tokens,
         test_smoke_result_status_line_format,
+        test_smoke_result_status_line_microsecond_format,
         test_smoke_result_failed_status_line,
+        test_duration_ms_property_returns_float,
         test_databases_path_response_has_a_z_url,
         test_account_path_response_is_refusal_with_myaccount_link,
         test_makerspace_hamilton_path_refuses_with_service_not_at_building,
