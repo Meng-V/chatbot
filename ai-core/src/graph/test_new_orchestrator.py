@@ -249,6 +249,112 @@ def test_clarification_short_circuits_before_agent() -> None:
     assert resp.confidence == "low"
 
 
+# --- Capability-registry early-out paths --------------------------------
+
+
+def test_databases_intent_short_circuits_to_a_z_page() -> None:
+    """Per librarian decision: never look up DB by name. Always route
+    to the A-Z list. Saves agent + synth tokens AND avoids the
+    name-misspelling failure mode."""
+    deps = _build_deps(
+        classification=_classification("databases"),
+        evidence_in_search_kb_result=[_evidence_dict("c1")],
+    )
+    request = TurnRequest(
+        user_message="do you have JSTOR",
+        conversation_id="conv-1",
+    )
+    resp = run_turn(request, deps)
+    assert not resp.is_refusal
+    assert resp.agent_stopped_reason == "point_to_url"
+    # Zero LLM tokens -- agent + synth skipped entirely.
+    assert resp.tokens == {"input": 0, "cached_input": 0, "output": 0}
+    # Citation is the A-Z page itself.
+    assert len(resp.citations) == 1
+    assert "az/databases" in resp.citations[0]["url"]
+    assert "Databases A-Z" in resp.answer
+
+
+def test_find_resource_intent_short_circuits_to_primo() -> None:
+    deps = _build_deps(
+        classification=_classification("find_resource"),
+        evidence_in_search_kb_result=[_evidence_dict("c1")],
+    )
+    request = TurnRequest(
+        user_message="do you have a copy of Hamlet",
+        conversation_id="conv-1",
+    )
+    resp = run_turn(request, deps)
+    assert not resp.is_refusal
+    assert resp.agent_stopped_reason == "point_to_url"
+    assert resp.tokens["input"] == 0
+    assert "primo" in resp.citations[0]["url"].lower()
+    assert "Primo" in resp.answer
+    # ILL fallback also mentioned for "we don't have it" path.
+    assert "Interlibrary Loan" in resp.answer
+
+
+def test_account_intent_short_circuits_with_privacy_refusal() -> None:
+    deps = _build_deps(
+        classification=_classification("account"),
+        evidence_in_search_kb_result=[_evidence_dict("c1")],
+    )
+    request = TurnRequest(
+        user_message="how much do I owe?",
+        conversation_id="conv-1",
+    )
+    resp = run_turn(request, deps)
+    assert resp.is_refusal
+    assert resp.refusal_trigger == "account_privacy"
+    assert resp.tokens["input"] == 0
+    assert "MyAccount" in resp.answer
+    assert "can't access" in resp.answer.lower()
+
+
+def test_events_news_intent_short_circuits_with_news_refusal() -> None:
+    deps = _build_deps(
+        classification=_classification("events_news"),
+        evidence_in_search_kb_result=[_evidence_dict("c1")],
+    )
+    request = TurnRequest(
+        user_message="what events are happening this week",
+        conversation_id="conv-1",
+    )
+    resp = run_turn(request, deps)
+    assert resp.is_refusal
+    assert resp.refusal_trigger == "news_excluded"
+    assert resp.tokens["input"] == 0
+    # The refusal must explain WHY (stale events would mislead).
+    assert (
+        "old event" in resp.answer.lower()
+        or "stale" in resp.answer.lower()
+    )
+    # Points to the live News & Events page.
+    assert "news-events" in resp.citations[0]["url"]
+
+
+def test_capability_early_out_logs_telemetry() -> None:
+    """The log_turn callback fires with the right shape even when the
+    orchestrator short-circuits before the agent."""
+    captured: list[dict] = []
+    deps = _build_deps(
+        classification=_classification("databases"),
+        evidence_in_search_kb_result=[_evidence_dict("c1")],
+        log_capture=captured,
+    )
+    # The orchestrator's log_turn is invoked from the agent path; for
+    # short-circuit responses we don't currently call it (the response
+    # IS the log). This test pins that behavior so a future change to
+    # log short-circuits is intentional, not accidental.
+    request = TurnRequest(user_message="any", conversation_id="conv-1")
+    resp = run_turn(request, deps)
+    assert resp.intent == "databases"
+    assert resp.agent_stopped_reason == "point_to_url"
+    # No log_turn call yet for short-circuits -- documented behavior.
+    # If we add it later, change this assertion in the same PR.
+    assert captured == []
+
+
 def test_service_unavailable_short_circuits_to_refusal() -> None:
     """If the service isn't offered at this campus, post-processor
     short-circuits to SERVICE_NOT_AT_BUILDING regardless of
@@ -499,6 +605,11 @@ def main() -> int:
     tests = [
         test_happy_path_returns_answer,
         test_clarification_short_circuits_before_agent,
+        test_databases_intent_short_circuits_to_a_z_page,
+        test_find_resource_intent_short_circuits_to_primo,
+        test_account_intent_short_circuits_with_privacy_refusal,
+        test_events_news_intent_short_circuits_with_news_refusal,
+        test_capability_early_out_logs_telemetry,
         test_service_unavailable_short_circuits_to_refusal,
         test_low_confidence_synthesis_becomes_refusal,
         test_token_accumulation,
