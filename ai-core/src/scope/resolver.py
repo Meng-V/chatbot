@@ -83,17 +83,46 @@ class Scope:
 
 
 def _longest_alias_match(haystack: str, alias_table: dict[str, object]) -> Optional[str]:
-    """Return the longest alias that appears as a substring of haystack, or None.
+    """Return the longest alias that matches haystack on WORD BOUNDARIES,
+    or None.
 
     Both `haystack` and table keys must already be lowercased.
 
-    O(n*m) scan -- fine for our ~50 aliases. Premature optimization here
+    Word-boundary match (not raw substring) is critical: "I'm looking
+    for a book" must NOT trigger the `king` library alias because
+    `king` happens to be a substring of `looking`. Same for `sword`
+    inside `password`, `wertz` inside (hypothetical) longer words, etc.
+
+    Implementation: for each alias, scan for occurrences and check
+    that the chars immediately before and after are NOT word
+    characters (alphanumeric or underscore). Faster than compiling
+    one regex per alias for the small (~70 alias) table.
+
+    O(n*m) scan -- fine for our ~70 aliases. Premature optimization
     (Aho-Corasick, trie) hurts readability and has no measurable effect.
     """
     best: Optional[str] = None
+    haylen = len(haystack)
     for alias in alias_table:
-        if alias in haystack and (best is None or len(alias) > len(best)):
-            best = alias
+        # Find all occurrences and check word-boundary on each.
+        start = 0
+        while True:
+            idx = haystack.find(alias, start)
+            if idx < 0:
+                break
+            # Char before alias must be non-word (or start of string).
+            before_ok = idx == 0 or not haystack[idx - 1].isalnum() and haystack[idx - 1] != "_"
+            # Char after alias must be non-word (or end of string).
+            end_idx = idx + len(alias)
+            after_ok = (
+                end_idx == haylen
+                or (not haystack[end_idx].isalnum() and haystack[end_idx] != "_")
+            )
+            if before_ok and after_ok:
+                if best is None or len(alias) > len(best):
+                    best = alias
+                break  # found a valid occurrence; longer-alias check handled at outer level
+            start = idx + 1
     return best
 
 
