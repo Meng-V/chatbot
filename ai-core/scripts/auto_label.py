@@ -292,8 +292,12 @@ PATTERNS: dict[str, dict[str, list[str]]] = {
             "find articles", "find an article in",
             "scholarly articles", "peer reviewed articles",
             "peer-reviewed articles",
+            "biology databases", "history databases",
+            "psychology databases", "nursing databases",
+            "education databases",
+            "biology database", "history database",
         ],
-        "keywords": ["database"],
+        "keywords": ["database", "databases"],
         "negative": [
             "do you have a copy of", "looking for a book",
             "place a hold", "interlibrary",
@@ -532,11 +536,12 @@ PATTERNS: dict[str, dict[str, list[str]]] = {
             "photocopy", "photocopier",
         ],
         "phrases": [
-            "printer", "scanner",
+            "printer", "scanner", "scanners",
             "print job", "printing services",
             "muconnect", "eduroam",
+            "color print", "printing in color",
         ],
-        "keywords": ["printing", "wifi", "wi-fi"],
+        "keywords": ["printing", "wifi", "wi-fi", "scanning", "scanner"],
         "negative": [],
     },
 
@@ -725,18 +730,22 @@ PATTERNS: dict[str, dict[str, list[str]]] = {
             "library news",
             "what's happening at", "anything happening at",
             "events at the library", "events at king",
-            "exhibit", "exhibits",
             "talk at the library", "lecture at the library",
             "is anything going on", "anything going on",
         ],
         "phrases": [
             "art exhibit",
             "library lecture",
+            # NB: NOT "exhibit" alone -- "exhibition" appears in
+            # academic catalog titles ("single exhibition from 1982")
+            # and would false-positive find_resource queries.
         ],
         "keywords": [],
         "negative": [
             "research workshop", "data workshop",
             "instruction workshop",
+            # Find-resource queries about exhibition catalogs
+            "find books", "help me find", "looking for", "research project",
         ],
     },
 
@@ -773,19 +782,28 @@ PATTERNS: dict[str, dict[str, list[str]]] = {
 
     "cross_campus_comparison": {
         "strong": [
-            "all campuses", "all libraries",
-            "every campus", "every miami library", "every library",
-            "at all three campuses", "at each campus",
+            "all campuses", "every campus", "every miami library",
+            "at all three campuses", "at all three libraries",
+            "at each campus", "for each campus",
             "compare libraries", "compare the libraries",
-            "available at all", "available at each",
+            "compare campuses",
         ],
         "phrases": [
             "between hamilton and middletown",
             "oxford and hamilton", "oxford and middletown",
             "hamilton and oxford", "middletown and oxford",
+            "all libraries open", "all libraries have",
+            # "available at all" is too aggressive on its own (matches
+            # "available at all hours" -- a different shape).
+            "available at all three", "available at each",
         ],
         "keywords": [],
-        "negative": [],
+        "negative": [
+            # Common false positive: "checkout not available at all"
+            # is a circulation issue, not a campus comparison.
+            "not available at all",
+            "available at all hours", "open at all",
+        ],
     },
 
     "human_handoff": {
@@ -844,19 +862,42 @@ PER_INTENT_CAP = 80
 # ----------------------------------------------------------------------------
 
 
+_WORD_BOUNDARY_CACHE: dict[str, re.Pattern] = {}
+
+
+def _word_boundary_match(needle: str, haystack: str) -> bool:
+    """True iff `needle` appears in `haystack` on word boundaries.
+
+    Why not raw substring: short patterns like "nyt" / "ill" / "wsj"
+    appear inside common English words ("a-NYT-hing", "tr-ILL-y",
+    "an-SWE-r" almost) and would silently false-positive otherwise.
+    Same bug class as the scope resolver fix.
+
+    Phrases with whitespace (e.g. "study room") still get word-bounded
+    on each side -- the inner whitespace is the natural separator.
+
+    Cached because we re-test the same patterns thousands of times.
+    """
+    pat = _WORD_BOUNDARY_CACHE.get(needle)
+    if pat is None:
+        pat = re.compile(r"\b" + re.escape(needle) + r"\b")
+        _WORD_BOUNDARY_CACHE[needle] = pat
+    return bool(pat.search(haystack))
+
+
 def _score_intent(utterance_lower: str, patterns: dict[str, list[str]]) -> float:
     score = 0.0
     for s in patterns.get("strong", []):
-        if s in utterance_lower:
+        if _word_boundary_match(s, utterance_lower):
             score += 5.0
     for p in patterns.get("phrases", []):
-        if p in utterance_lower:
+        if _word_boundary_match(p, utterance_lower):
             score += 3.0
     for k in patterns.get("keywords", []):
-        if k in utterance_lower:
+        if _word_boundary_match(k, utterance_lower):
             score += 1.0
     for n in patterns.get("negative", []):
-        if n in utterance_lower:
+        if _word_boundary_match(n, utterance_lower):
             score -= 3.0
     return score
 
@@ -865,13 +906,44 @@ def _is_out_of_scope(utterance_lower: str) -> bool:
     for pat in OUT_OF_SCOPE_PATTERNS:
         if re.search(pat, utterance_lower, re.IGNORECASE):
             return True
-    # Very-short single-word questions that aren't library-related
+    # Very-short single-word / two-word questions that aren't
+    # library-related. The keyword allowlist is the explicit ESCAPE
+    # set: any short message containing one of these is library-
+    # adjacent enough that we DON'T want to slap out_of_scope on it.
     if len(utterance_lower.split()) <= 2 and not any(
         kw in utterance_lower
         for kw in [
-            "hours", "open", "close", "wifi", "print", "scan",
-            "library", "book", "ill", "adobe", "makerspace",
-            "room", "hold", "renew",
+            # Buildings / hours / spaces
+            "hours", "open", "close", "wifi", "library", "room",
+            # Borrow / circulation
+            "book", "ill", "hold", "renew", "checkout", "checkout?",
+            "borrow", "due", "fine",
+            # Tech / software
+            "adobe", "photoshop", "illustrator", "indesign",
+            "premiere", "acrobat", "matlab", "spss", "stata",
+            "print", "scan", "copy",
+            # Spaces
+            "makerspace", "3d", "vinyl", "sewing",
+            # Research
+            "database", "databases", "jstor", "ebsco", "proquest",
+            "pubmed", "psycinfo", "scifinder", "ohiolink", "worldcat",
+            "citation", "apa", "mla", "zotero", "endnote",
+            "gis", "data",
+            # Collections
+            "archives", "archive", "scua", "havighurst", "manuscript",
+            # Newspapers
+            "nyt", "wsj", "newspaper",
+            # Subjects (single-word subject queries are usually
+            # subject_librarian or find_resource, not OOS)
+            "biology", "chemistry", "physics", "history", "english",
+            "psychology", "sociology", "anthropology", "philosophy",
+            "engineering", "nursing", "music", "art", "education",
+            "business", "economics", "math", "mathematics",
+            "literature", "spanish", "french", "german", "japanese",
+            "kinesiology", "geology", "geography", "linguistics",
+            "religion", "theatre", "theater", "architecture",
+            "journalism", "communication", "marketing", "finance",
+            "accounting", "biochemistry", "neuroscience",
         ]
     ):
         return True

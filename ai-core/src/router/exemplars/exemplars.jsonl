@@ -9,7 +9,6 @@
 {"intent": "human_handoff", "utterance": "We have a professor at the circ desk... she said she needs help with her canvas site. She said a librarian has helped her before. She would like to talk to someone in person. She specifically said she doesn't want to chat.", "source": "libchat_2025"}
 {"intent": "find_resource", "utterance": "I am looking for a book titled \"mental toughness in youth sports.\"", "source": "libchat_2025"}
 {"intent": "databases", "utterance": "Do we no longer have access to dissertations on ProQuest?", "source": "libchat_2025"}
-{"intent": "newspapers", "utterance": "Can I check out Foundations of Global Health for the semester? Would this cost me anything?", "source": "libchat_2025"}
 {"intent": "adobe_access", "utterance": "Am I able to digitally rent Adobe suites (mainly Adobe Illustrator)?", "source": "libchat_2025"}
 {"intent": "find_resource", "utterance": "Hi! I need a book that would contain pre 19th Century ceramic vessels or works of pottery", "source": "libchat_2025"}
 {"intent": "databases", "utterance": "Does Web of Science now require one to register for an account before accessing the database?", "source": "libchat_2025"}
@@ -17,7 +16,7 @@
 {"intent": "circulation_basic", "utterance": "is it possible to checkout a book online?", "source": "libchat_2025"}
 {"intent": "subject_librarian", "utterance": "who is the biology subject librarian?", "source": "libchat_2025"}
 {"intent": "newspapers", "utterance": "Wall Street journal access not available through the Miami log in, still asks for me to pay for a subscription", "source": "libchat_2025"}
-{"intent": "out_of_scope", "utterance": "biology databases", "source": "libchat_2025"}
+{"intent": "databases", "utterance": "biology databases", "source": "libchat_2025"}
 {"intent": "databases", "utterance": "The libraries have over 500 databases in its \"Databases A-Z\" list. How many of these are listed as being useful for biology research?", "source": "libchat_2025"}
 {"intent": "interlibrary_loan", "utterance": "How can I request a book that is not in the Miami collection? I have used OhioLink in the past but don't see that option on the library page", "source": "libchat_2025"}
 {"intent": "hours", "utterance": "Hi! What time is the IMC open until today?", "source": "libchat_2025"}
@@ -37,6 +36,7 @@
 {"intent": "find_resource", "utterance": "Hi - I am trying to locate info re: book award. Usually Jr in high school", "source": "libchat_2025"}
 {"intent": "newspapers", "utterance": "How do I acess the NY Times and the Washington Post for free with my Miami account?", "source": "libchat_2025"}
 {"intent": "adobe_access", "utterance": "I am trying to book Adobe Creative Cloud for 2 weeks, i have done this before but when I go to checkout the same popup comes up saying that I can not have multiple concurrent bookings but I dont have a booking right now", "source": "libchat_2025"}
+{"intent": "printing_wifi", "utterance": "Is there a photography slide scanner available at King Library", "source": "libchat_2025"}
 {"intent": "adobe_access", "utterance": "My IMS 254 teacher said I would check out adobe illustrator for 14 days from the library, but I cant find where it's at.", "source": "libchat_2025"}
 {"intent": "newspapers", "utterance": "Is tthe New York Times working with the Miami email?", "source": "libchat_2025"}
 {"intent": "databases", "utterance": "I am unable to access articles. I am a graduate student, and I have had access in the past. It keeps sending me to a site called EBSCO.", "source": "libchat_2025"}
@@ -52,7 +52,7 @@
 {"intent": "circulation_basic", "utterance": "I have a student attempting to request a book for pickup but the main system isn't recognizing his Miami unique ID. How should we proceed?", "source": "libchat_2025"}
 {"intent": "newspapers", "utterance": "where is the link to get a new york times subscrption for students?", "source": "libchat_2025"}
 {"intent": "citation_help", "utterance": "I have six authors for an online news article. Do I list all of them on my reference page in APA?", "source": "libchat_2025"}
-{"intent": "out_of_scope", "utterance": "https://proxy.lib.miamioh.edu/login?url=https://search.ebscohost.com/login.aspx?direct=true&amp;AuthType=cookie,ip&amp;db=cat00344a&amp;AN=mucat.b4018605&amp;site=eds-live&amp;scope=site&amp;profile=eds-cat-jy", "source": "libchat_2025"}
+{"intent": "databases", "utterance": "https://proxy.lib.miamioh.edu/login?url=https://search.ebscohost.com/login.aspx?direct=true&amp;AuthType=cookie,ip&amp;db=cat00344a&amp;AN=mucat.b4018605&amp;site=eds-live&amp;scope=site&amp;profile=eds-cat-jy", "source": "libchat_2025"}
 {"intent": "databases", "utterance": "Hello! I am doing research for a professor, and I cant save my EBSCO searches. Do you know if there is any way I can make an account with EBSCO to save the search history? I just feel like I do a new search everytime and cant save my findings", "source": "libchat_2025"}
 {"intent": "find_resource", "utterance": "Is this book available? Introduction to Water Resources and Environmental Issues –Karrie Lynn Pennington and Thomas V. Cech.", "source": "libchat_2025"}
 {"intent": "makerspace_3d", "utterance": "Do you still have a button maker at King Library?", "source": "libchat_2025"}
@@ -102,18 +102,14 @@
 {"intent": "newspapers", "utterance": "Good morning, I lost free access to articles through my Miami account for NY Times and Washington Post. Is it possible to renew it?", "source": "libchat_2025"}
 {"intent": "interlibrary_loan", "utterance": "I work at Bowling Green State University and I need to contact your staff person(s) who handle your OhioLINK requests. Thanks.", "source": "libchat_2025"}
 {"intent": "interlibrary_loan", "utterance": "How do I make an Inter-library loan request (nowadays)?", "source": "libchat_2025"}
-{"intent": "subject_librarian", "utterance": "Will the business librarians be working today?", "source": "libchat_2025"}
 {"intent": "find_resource", "utterance": "Where can I find photos from former Miami sports photographer Ed Meador on the Cradle of Coaches and in general?", "source": "libchat_2025"}
 {"intent": "interlibrary_loan", "utterance": "Hi folks -- how do I request a book from a Miami branch campus; I can't do it through OhioLINK because it's the same institution by their reckoning; is there an intra-Miami request mechanism?", "source": "libchat_2025"}
 {"intent": "human_handoff", "utterance": "We have a staff member that would like to speak with a librarian", "source": "libchat_2025"}
 {"intent": "find_resource", "utterance": "hello, I'm looking for an article that talk about infectious disease caused by microbes that affects humans", "source": "libchat_2025"}
-{"intent": "newspapers", "utterance": "I am trying to use the school's databases to look up \"The Bipartisan Infrastructure Law\" but I am having a hard time finding anything.", "source": "libchat_2025"}
-{"intent": "cross_campus_comparison", "utterance": "Hi! Are the government info books available at all hours that the library is open? I'm working on the Business Law paper for Professor Becker and want to be sure I'm there when I can access Ohio Jurisprudence 3d. Thank you!", "source": "libchat_2025"}
 {"intent": "citation_help", "utterance": "how to cite IBIS world in APA style", "source": "libchat_2025"}
 {"intent": "find_resource", "utterance": "I am trying to find scholarly/peer reviewed sources for my essay on how dance teams are underfunded but I am struggling to find sources using the library data bases. Where can I look to find good sources?", "source": "libchat_2025"}
 {"intent": "find_resource", "utterance": "What is the SW Depository and where can I find an article in it?", "source": "libchat_2025"}
 {"intent": "databases", "utterance": "I am trying to access the online database to research more about Jennie Elder Suel. How would I do so?", "source": "libchat_2025"}
-{"intent": "newspapers", "utterance": "if I want information on policies in Europe and America surrounding transportation which database would I use? Is there one that I can search anything?", "source": "libchat_2025"}
 {"intent": "databases", "utterance": "Web of Science is not uploading. I am working from home", "source": "libchat_2025"}
 {"intent": "databases", "utterance": "do we have access to pubmed articles as a student? if not, I need some help requesting an article", "source": "libchat_2025"}
 {"intent": "find_resource", "utterance": "I am looking for college of engineering and computing powerpoint templates. Can I find them here?", "source": "libchat_2025"}
@@ -121,22 +117,17 @@
 {"intent": "human_handoff", "utterance": "I have a patron on the phone that would like to speak to a librarian. Who can I transfer the call to?", "source": "libchat_2025"}
 {"intent": "adobe_access", "utterance": "Hello! I just had a question about accessing Adobe Cloud Reader. I am a graduate student and need to format my thesis in PDF. I wasn’t sure where I could go in the library to do this. Thank you!", "source": "libchat_2025"}
 {"intent": "data_services", "utterance": "How do I register for scifinder?", "source": "libchat_2025"}
-{"intent": "room_booking", "utterance": "Monday I made a few study room bookings for the week but I never received email confirmation for those bookings. Can you confirm if I do have study room reservations this week?", "source": "libchat_2025"}
 {"intent": "citation_help", "utterance": "how do I cite a quote from a book chapter", "source": "libchat_2025"}
 {"intent": "databases", "utterance": "There is currently an internal service error in EBSCO and I am unable to access any articles for my Master's Thesis. When will this be resolved?", "source": "libchat_2025"}
 {"intent": "newspapers", "utterance": "Before the new myMiami came into being, I had a subscription to the NY Times that I could click on in my frequently used links. How do I access that now?", "source": "libchat_2025"}
 {"intent": "find_resource", "utterance": "What library guide falls under Data science? I am trying to find a library guide that can give me access to articles about data monetization.", "source": "libchat_2025"}
 {"intent": "newspapers", "utterance": "how can i access the NYT subscription?", "source": "libchat_2025"}
-{"intent": "special_collections", "utterance": "Is there a database for finding primary sources?", "source": "libchat_2025"}
 {"intent": "databases", "utterance": "I am trying to get acces to an Oikos article via JSTOR link and I get an error", "source": "libchat_2025"}
 {"intent": "out_of_scope", "utterance": "Hi! I am trying to access a text to write my paper on in one of my courses? I wonder if I would be able to get access to this text: https://www.tandfonline.com/doi/full/10.1080/1369118X.2023.2166358", "source": "libchat_2025"}
-{"intent": "citation_help", "utterance": "What is a website for generating APA citations?", "source": "libchat_2025"}
 {"intent": "printing_wifi", "utterance": "do u guys have poster printing services?", "source": "libchat_2025"}
 {"intent": "databases", "utterance": "Hi! Do you know how I might read this article? https://web-s-ebscohost-com.proxy.lib.miamioh.edu/ehost/detail/detail?vid=6&amp;sid=7cec9d86-15a0-423d-8198-099f1db7d376%40redis&amp;bdata=JnNpdGU9ZWhvc3QtbGl2ZSZzY29wZT1zaXRl#AN=37036138&amp;db=cmedm", "source": "libchat_2025"}
 {"intent": "find_resource", "utterance": "I'm trying to find two peered review sources for Plant hormones - specifically Gibberellic acid and it's effect on the height of plants.", "source": "libchat_2025"}
 {"intent": "find_resource", "utterance": "Hi, I am trying to find a few books. Wondering If there’s a chance to get assistance", "source": "libchat_2025"}
-{"intent": "newspapers", "utterance": "I'm having trouble finding articles about the history of queer women depicted in film. I'm having a little trouble finding anything that looks relevant", "source": "libchat_2025"}
-{"intent": "special_collections", "utterance": "Hi, I was wondering if there was any secondary or primary sources on Libya specifically anything on Idris of Libya, Muammar Gaddafi or the Libya civil war.", "source": "libchat_2025"}
 {"intent": "software_access", "utterance": "Are there any transcription tools available for students through the library? One of my students needs help transcribing interviews for his research paper, and I'm not familiar with the tools/software available.", "source": "libchat_2025"}
 {"intent": "interlibrary_loan", "utterance": "I need help with doing an interlibrary loan", "source": "libchat_2025"}
 {"intent": "find_resource", "utterance": "Patron is here... Looking for an article from NPMA Field Guide to Structural Pests? Are you available to help? Are you in the building right now?", "source": "libchat_2025"}
@@ -146,7 +137,6 @@
 {"intent": "find_resource", "utterance": "Hi, I am trying to find resources that provide information on how retailers can attract customers in their physical stores.", "source": "libchat_2025"}
 {"intent": "databases", "utterance": "What databases are free and easy to use regarding studies/articles in sociology, urban design, economics, and/or social class/stratification theories?", "source": "libchat_2025"}
 {"intent": "citation_help", "utterance": "https://kids.iocdf.org/professionals/md/pediatric-ocd/ https://iocdf.org/about-ocd/ocd-treatment/ I was confused on how to put these two sources into APA format, since the rest of my sources are journal entries with authors?", "source": "libchat_2025"}
-{"intent": "newspapers", "utterance": "I am having a hard time looking for a commentary article on culturally responsive curriculum, how would I go about finding something. I looked in the article search and still have not found anything in regards to a commentary article.", "source": "libchat_2025"}
 {"intent": "find_resource", "utterance": "Where can I find articles/data about female shoppers in retail?", "source": "libchat_2025"}
 {"intent": "find_resource", "utterance": "HI! I am trying to find a Thesis, is it possible through the inter system?", "source": "libchat_2025"}
 {"intent": "find_resource", "utterance": "where can i get the book Buried Beneath the Boabab Tree", "source": "libchat_2025"}
@@ -160,12 +150,13 @@
 {"intent": "citation_help", "utterance": "Are you able to help with questions about citing sources?", "source": "libchat_2025"}
 {"intent": "adobe_access", "utterance": "Do computers in the library have adobe creative cloud?", "source": "libchat_2025"}
 {"intent": "databases", "utterance": "how do i access a disseration on proquest?", "source": "libchat_2025"}
+{"intent": "databases", "utterance": "I am having trouble finding history databases on Wars, are there any you recommend?", "source": "libchat_2025"}
 {"intent": "adobe_access", "utterance": "how do I access photoshop on the library computer", "source": "libchat_2025"}
 {"intent": "interlibrary_loan", "utterance": "Where in King Library should I pick up an interlibrary loan that arrived?", "source": "libchat_2025"}
 {"intent": "account", "utterance": "How can I pay my library fines?", "source": "libchat_2025"}
 {"intent": "citation_help", "utterance": "I am unsure how to cite this pdf, which is an instruction manual https://s3.amazonaws.com/alpco-docs/11/11-CORHU-E01-SLV.pdf", "source": "libchat_2025"}
 {"intent": "out_of_scope", "utterance": "During class we learned that there was a way to translate articles on onesearch but I can't remember how. Where can I find that resource? I am trying to translate this research study that I found in spanish.", "source": "libchat_2025"}
-{"intent": "newspapers", "utterance": "I am trying to submit a software checkout but I keep getting an error message that the booking does not allow concurrent checkout, but I do not have anything currently checked out. Are you able to help with this?", "source": "libchat_2025"}
+{"intent": "software_access", "utterance": "I am trying to submit a software checkout but I keep getting an error message that the booking does not allow concurrent checkout, but I do not have anything currently checked out. Are you able to help with this?", "source": "libchat_2025"}
 {"intent": "interlibrary_loan", "utterance": "I need to request the hard copy volumes of Research Quarterly in Exercise and Sport from 2013 to 2022. Could you help me do this? When I log into the ILLiad system, I don't see a place to request the physical volume in hard copy.", "source": "libchat_2025"}
 {"intent": "interlibrary_loan", "utterance": "Hello, how can i access interlibrary loan in the libraries' site?", "source": "libchat_2025"}
 {"intent": "citation_help", "utterance": "How do I cite a section for in-text citation? For example, if I want to cite Section 4 letter a of a section, do I do: Sentence. (Section 4(a)). (Document, Rule, Year). ? Or put a space? (Section 4(a) ). Or am I way off?", "source": "libchat_2025"}
@@ -173,7 +164,6 @@
 {"intent": "interlibrary_loan", "utterance": "I think I just requested something on Ohio link but I'm not sure-- my computer froze up. Is there any way I can check?", "source": "libchat_2025"}
 {"intent": "location_directions", "utterance": "Hello, I accidentally brought a library book home to Minnesota with me. Can I mail it to the standard library address as a return?", "source": "libchat_2025"}
 {"intent": "adobe_access", "utterance": "Hi, I was in the CIM lab this morning but couldn't figure out what I needed. I have a PDF that needs to be converted to a jpeg for social media posting, and it looks like a special version of Adobe is needed. What do you recommend?", "source": "libchat_2025"}
-{"intent": "course_reserves", "utterance": "Is there a Textbooks on Reserve program at the Hamilton campus library, or is it only at Middletown?", "source": "libchat_2025"}
 {"intent": "tech_checkout", "utterance": "Can a resident of oxford check out a laptop? Does it cost money?", "source": "libchat_2025"}
 {"intent": "renewal", "utterance": "How many times can I renew books (I have two novels that I checked out)", "source": "libchat_2025"}
 {"intent": "circulation_basic", "utterance": "how do i check out a book", "source": "libchat_2025"}
@@ -194,13 +184,9 @@
 {"intent": "find_resource", "utterance": "I am looking for a data base or source where I can find primary source newspapers, specifically I am searching for newspapers published by the Ventura County Star between 1944-1945. Where can I find such a database?", "source": "libchat_2025"}
 {"intent": "interlibrary_loan", "utterance": "I requested a textbook through OhioLink and am trying to get it shipped to OSU campus since I live near there - how will I know if my request went through?", "source": "libchat_2025"}
 {"intent": "find_resource", "utterance": "Where can I find Miami University research poster templates?", "source": "libchat_2025"}
-{"intent": "newspapers", "utterance": "Do you have anything on early black settlement in southwest Ohio?", "source": "libchat_2025"}
 {"intent": "room_booking", "utterance": "I am considering going back to school part time, but I also have a job I don't want to give up. If I take two classes I might need a place to work, and I was told I could reserve study rooms, but that might have limits.", "source": "libchat_2025"}
-{"intent": "interlibrary_loan", "utterance": "I have \"Cancelled by ILL staff\" on some of my ILL requests, including one which I have the book with me right now. Why have they been canceled and how do I remedy this?", "source": "libchat_2025"}
 {"intent": "databases", "utterance": "The web of Science page with not open in my computer. I am working at home.", "source": "libchat_2025"}
 {"intent": "interlibrary_loan", "utterance": "Can you help with a record in the catalog http://catalog.ohiolink.edu/iii/encore/record/C__Rb41668913 showing a due date of 7-01-24? A patron contacted OhioLINK because they are trying to place a hold on it.", "source": "libchat_2025"}
-{"intent": "newspapers", "utterance": "I have some books from the 1890's regarding the Franco-Prussian War that I would like to donate. I sent an email on Monday to William Modrow, but have not heard anything back.", "source": "libchat_2025"}
-{"intent": "newspapers", "utterance": "There's a mom on the phone asking about calculus registration today from 1:30-3:30 - does anyone know anything about that? She's asking what she should bring", "source": "libchat_2025"}
 {"intent": "hours", "utterance": "How late is the main library open today?", "source": "libchat_2025"}
 {"intent": "find_resource", "utterance": "Whenever I do a OneSearch, it comes back saying no results. I am trying to find articles on Francois' langurs by Andrew Louden. I only found one.", "source": "libchat_2025"}
 {"intent": "databases", "utterance": "Did Miami stop subscribing to the Dictionary of Old English? I cannot find it in the database list", "source": "libchat_2025"}
@@ -235,7 +221,7 @@
 {"intent": "adobe_access", "utterance": "what is the checkout duration for creative cloud", "source": "libchat_2025"}
 {"intent": "location_directions", "utterance": "Which floor are the engineering librarians on?", "source": "libchat_2025"}
 {"intent": "location_directions", "utterance": "What floor is the engineering department located on", "source": "libchat_2025"}
-{"intent": "out_of_scope", "utterance": "history librarian", "source": "libchat_2025"}
+{"intent": "subject_librarian", "utterance": "history librarian", "source": "libchat_2025"}
 {"intent": "adobe_access", "utterance": "What is the check out duration for adobe creative cloud", "source": "libchat_2025"}
 {"intent": "location_directions", "utterance": "On what floor can you find the office of the engineering librarians?", "source": "libchat_2025"}
 {"intent": "citation_help", "utterance": "How to cite a webpage in MLA with no author", "source": "libchat_2025"}
@@ -245,7 +231,6 @@
 {"intent": "find_resource", "utterance": "Where can I find an example of an APA title page?", "source": "libchat_2025"}
 {"intent": "adobe_access", "utterance": "1) checkout duration for Adobe software 2)where is the office of the engineering librarians", "source": "libchat_2025"}
 {"intent": "interlibrary_loan", "utterance": "Hi--I'm trying to order this book to get mailed to me but it does not show in Miami's catalogue in a search, only the OH Link site: https://olc1.ohiolink.edu/search/t?SEARCH=princely+magnificence%3A+court+jewels", "source": "libchat_2025"}
-{"intent": "newspapers", "utterance": "There's a man on the phone, Kenneth Shephard, that wants to know if we have a copy of his thesis he submitted in the 80s - I didn't find anything, but figured you guys might be a little better equipped to look! Is there someone I can transfer him to?", "source": "libchat_2025"}
 {"intent": "find_resource", "utterance": "Hello where can I find the web of science database?", "source": "libchat_2025"}
 {"intent": "research_consultation", "utterance": "who would be best to contact for research help in the following areas", "source": "libchat_2025"}
 {"intent": "newspapers", "utterance": "As a student at Miami, what journals do I have access to for free. Like the New York Time or the Wall Street Journal?", "source": "libchat_2025"}
@@ -269,6 +254,7 @@
 {"intent": "find_resource", "utterance": "Where can I find resources related to using ChatGPT on academic projects?", "source": "libchat_2025"}
 {"intent": "adobe_access", "utterance": "Is there someone who can assist me in using Adobe Illustrator?", "source": "libchat_2025"}
 {"intent": "subject_librarian", "utterance": "Who is the subject librarian for biology", "source": "libchat_2025"}
+{"intent": "printing_wifi", "utterance": "Hello. For an assignment, I need to submit a pdf. If i write it on paper, do you guys have a scanner I can use to scan my paper to a pdf?", "source": "libchat_2025"}
 {"intent": "citation_help", "utterance": "How do I cite a speech in MLA format", "source": "libchat_2025"}
 {"intent": "databases", "utterance": "Where can I find the PsycInfo database?", "source": "libchat_2025"}
 {"intent": "databases", "utterance": "how to access Psycinfo database", "source": "libchat_2025"}
@@ -282,7 +268,6 @@
 {"intent": "find_resource", "utterance": "Where can I find information on an APA style reference page (reference page for before paper is started/written)?", "source": "libchat_2025"}
 {"intent": "find_resource", "utterance": "in which library and on what floor can i find the office of engineering librarians", "source": "libchat_2025"}
 {"intent": "makerspace_3d", "utterance": "hello! Is there a laminator available for students to use in the library or makerspace?", "source": "libchat_2025"}
-{"intent": "newspapers", "utterance": "I have been looking for resources on a painting called Cathedrale de Reims by louis Orr for a few days now and can't find anything. If you have any ideas on where to point me that would be appreciated.", "source": "libchat_2025"}
 {"intent": "find_resource", "utterance": "I am looking for the book \"Immanence - Deleuze and Philosophy (Plateaus - New Directions in Deleuze Studies)\" by Miguel de Beistegui", "source": "libchat_2025"}
 {"intent": "databases", "utterance": "I can't connect to web of science. I click on the link and just go to a blank page.", "source": "libchat_2025"}
 {"intent": "citation_help", "utterance": "Can I use an \"Article number\" in place of an issue number in an APA citation?", "source": "libchat_2025"}
@@ -293,7 +278,6 @@
 {"intent": "adobe_access", "utterance": "Hello - does the library have reservable computer lab spaces equipped with Adobe software?", "source": "libchat_2025"}
 {"intent": "find_resource", "utterance": "Hi I am trying to find some scholarly sources about the meaning of color. they need to be peer reviewed and I am struggling to find the right combination of words within the search function of Articles &amp; more", "source": "libchat_2025"}
 {"intent": "special_collections", "utterance": "can I access the library's special collections (3rd floor by makers space) documents online? or do i have to go in", "source": "libchat_2025"}
-{"intent": "human_handoff", "utterance": "have a patron on the phone that want to talk to a humanaties librarian... who is on call and what number can we transfer to?", "source": "libchat_2025"}
 {"intent": "room_booking", "utterance": "I wanted to book a study room on October 14th at 10 am in order to take the LSAT, but I now realize that that is during Fall Break. Is it possible to arrange something please? No worries if not, I can try to find a different testing space. Thanks!", "source": "libchat_2025"}
 {"intent": "adobe_access", "utterance": "How do I contact someone about concerns with the library's adobe software checkout?", "source": "libchat_2025"}
 {"intent": "databases", "utterance": "I am not sure how to access or cite articles from web of science", "source": "libchat_2025"}
@@ -310,9 +294,6 @@
 {"intent": "newspapers", "utterance": "how can i see articles in ny times' cooking section?", "source": "libchat_2025"}
 {"intent": "find_resource", "utterance": "Where can I find Miamis oldest atlases?", "source": "libchat_2025"}
 {"intent": "citation_help", "utterance": "how do I cite in apa?", "source": "libchat_2025"}
-{"intent": "circulation_basic", "utterance": "where do I find the catalog so I can place holds on books online?", "source": "libchat_2025"}
-{"intent": "newspapers", "utterance": "Can you find me anything else on the writing skills of a special education teacher?", "source": "libchat_2025"}
-{"intent": "citation_help", "utterance": "Hi! When using MLA formatting, do I put an apostrophe or a period after the month? Ex. 13 Jul, 2023 OR 13 Jul. 2023", "source": "libchat_2025"}
 {"intent": "databases", "utterance": "I'm looking for some help with the web of science API. Whom would be best to speak with about that? Thanks!", "source": "libchat_2025"}
 {"intent": "adobe_access", "utterance": "Can I checkout Adobe creative cloud for today?", "source": "libchat_2025"}
 {"intent": "find_resource", "utterance": "I am trying to find resources for an annotated bibliography. How do I find texts and articles that are valuable online to read?", "source": "libchat_2025"}
@@ -323,21 +304,15 @@
 {"intent": "citation_help", "utterance": "I am confused on how to cite a video in APA. Here is the doi- 10.3791/57137-v", "source": "libchat_2025"}
 {"intent": "newspapers", "utterance": "I was told we have access to the New York Times, and I was wondering how I can view their articles through the paywall", "source": "libchat_2025"}
 {"intent": "research_consultation", "utterance": "Is something going on with the Scholarly Commons?", "source": "libchat_2025"}
-{"intent": "newspapers", "utterance": "How can people reach the library if they need help with anything?", "source": "libchat_2025"}
-{"intent": "newspapers", "utterance": "hello, ive done everything to rent out the software final cut pro, and connected my apple id, it still says it cost 299.99 instead of being able to be downloaded. I was wondering if there was anything i missed doing in order for it to work", "source": "libchat_2025"}
 {"intent": "makerspace_3d", "utterance": "Does the maker space provide shirts/items to be embroidered or do we bring our own?", "source": "libchat_2025"}
 {"intent": "room_booking", "utterance": "I’m doing a presentation on King Library, I was wondering if you could tell me abt the study rooms (how to book one, what they are used for primarily, where are they located, how long can you use them, etc", "source": "libchat_2025"}
 {"intent": "newspapers", "utterance": "Hi, I am trying to access old articles from the NY Times from off campus. I logged in, but it says I need to be on the campus network. Is that true?", "source": "libchat_2025"}
 {"intent": "databases", "utterance": "JStor proxy login is not working", "source": "libchat_2025"}
 {"intent": "adobe_access", "utterance": "I would like access to the database that has articles and data on families and parent engagement. I also want to know if the library computers have Camtasia and Adobe Cloud loaded on them.", "source": "libchat_2025"}
 {"intent": "find_resource", "utterance": "where can i find articles ?", "source": "libchat_2025"}
-{"intent": "newspapers", "utterance": "is there a fee or charge for anything", "source": "libchat_2025"}
 {"intent": "research_consultation", "utterance": "I have a patron asking for research help. Can someone please come down?", "source": "libchat_2025"}
 {"intent": "citation_help", "utterance": "In an AMA reference list, is there a limit on the number of authors to mention? For example, if 22 people wrote a paper, should all 22 authors be listed in the reference list?", "source": "libchat_2025"}
 {"intent": "find_resource", "utterance": "I need a book that has information on built or unbuilt projects in Architecture", "source": "libchat_2025"}
-{"intent": "newspapers", "utterance": "Hi I am trying to access resources for my incomplete class in psychology but it says I am unauthorized to access these articles is there anything that can be done?", "source": "libchat_2025"}
-{"intent": "newspapers", "utterance": "Hi I am trying to access certain research so that I may complete my incomplete class in pyschology but it says I am not authorized to read it even though I have accessed it before during the summer, is there anything that can be done?", "source": "libchat_2025"}
-{"intent": "newspapers", "utterance": "are there any charges for using anything in the library or is everything free", "source": "libchat_2025"}
 {"intent": "find_resource", "utterance": "where can i find journal articles for my teaching / education classes", "source": "libchat_2025"}
 {"intent": "newspapers", "utterance": "I am trying to reactivate my NYT pass but the group pass link seems to be broken. Where can I go to set up access again?", "source": "libchat_2025"}
 {"intent": "find_resource", "utterance": "HI I am a librarian at OSU and worked with your former art librarian Ashley Jones 10 years ago we started a round table for ALA together. I am trying to find her? any chance you can help/connect me?", "source": "libchat_2025"}
@@ -346,37 +321,30 @@
 {"intent": "adobe_access", "utterance": "ive tried to check out the adobe creative cloud multiple times, but it still wont give me access. i also don't get the confirmation emails anymore.", "source": "libchat_2025"}
 {"intent": "adobe_access", "utterance": "i keep trying to rent the adobe creative cloud, but still wont lry mr log in. what do i do?", "source": "libchat_2025"}
 {"intent": "find_resource", "utterance": "I am trying to find a peer reviewed source on the migrant crisis in chicago. Can you help me find sources? I cannot find anything", "source": "libchat_2025"}
-{"intent": "databases", "utterance": "What username and password can i use to log into jstore", "source": "libchat_2025"}
 {"intent": "room_booking", "utterance": "Is it possible for a non-student to reserve a group study room?", "source": "libchat_2025"}
 {"intent": "find_resource", "utterance": "where can i find the free link for adobe illustrator", "source": "libchat_2025"}
 {"intent": "adobe_access", "utterance": "Are there any Adobe Creative Clouds available now? I just cancelled my subscription to renew it but I can't see it", "source": "libchat_2025"}
 {"intent": "out_of_scope", "utterance": "accessing edscohost", "source": "libchat_2025"}
 {"intent": "databases", "utterance": "I am unable to log in to proquest", "source": "libchat_2025"}
-{"intent": "newspapers", "utterance": "There's a student on the phone that wants to know if we have anything from the 'veteran's collection' that we could loan out for a student org event tomorrow - not totally sure what they're talking about and what they would need?", "source": "libchat_2025"}
 {"intent": "research_consultation", "utterance": "I scheduled an appointment to meet with Katie Gibson yesterday, and I cannot find the confirmation email. Was I supposed to get one? Or could you confirm the appointment? Should have been for 10:30 today.", "source": "libchat_2025"}
 {"intent": "out_of_scope", "utterance": "finals time", "source": "libchat_2025"}
 {"intent": "location_directions", "utterance": "what floor of shriver is the testing center?", "source": "libchat_2025"}
 {"intent": "location_directions", "utterance": "what floor is the testing center on in shriver", "source": "libchat_2025"}
 {"intent": "adobe_access", "utterance": "i am unable to check out adobe", "source": "libchat_2025"}
 {"intent": "databases", "utterance": "I can get to the following site but can't get the text to open. https://www-proquest-com.proxy.lib.miamioh.edu/results/A21ECC4738BF4BECPQ/1?accountid=12434", "source": "libchat_2025"}
-{"intent": "newspapers", "utterance": "Do you have annything on early hip hop music?", "source": "libchat_2025"}
 {"intent": "interlibrary_loan", "utterance": "I cannot find my records for which journal publishers will waive charges for Open Access for Miami authors, through OhioLink. Please direct me to information on which publishers", "source": "libchat_2025"}
 {"intent": "newspapers", "utterance": "I have it on my calendar that my New York Times group pass expired on November 19. I still can read articles today. How to I reactivate my group pass? Thanks,", "source": "libchat_2025"}
 {"intent": "account", "utterance": "How long after checking books back into the library does this information reflect in my library account?", "source": "libchat_2025"}
-{"intent": "citation_help", "utterance": "Hi! How do I do an in-text citation for a webpage with no author? This is in MLA formatting. Thank you!", "source": "libchat_2025"}
 {"intent": "digital_collections", "utterance": "I have a faculty who has a documentary for their online course. They stated that it has been digitized with Miami Library-how can this be accessed by students?", "source": "libchat_2025"}
 {"intent": "room_booking", "utterance": "is there a cancellation policy for the study rooms?", "source": "libchat_2025"}
-{"intent": "citation_help", "utterance": "I have a question about APA citations for abstracts", "source": "libchat_2025"}
 {"intent": "software_access", "utterance": "do any computers have tableau installed on them or able to have it downloaded on them", "source": "libchat_2025"}
 {"intent": "software_access", "utterance": "do any computers have tableau installed or able to be installed", "source": "libchat_2025"}
-{"intent": "newspapers", "utterance": "Does Miami offer anything for getting into \"pitchbook\" without us students having to put down our cards for a free trial?", "source": "libchat_2025"}
 {"intent": "citation_help", "utterance": "I have questions on how to cite images found online in APA format", "source": "libchat_2025"}
-{"intent": "citation_help", "utterance": "Questions about APA citations for images", "source": "libchat_2025"}
 {"intent": "special_collections", "utterance": "how do i find special collections information to cite as a resource online", "source": "libchat_2025"}
 {"intent": "databases", "utterance": "Could you please see if you can get me the full text of the following paper? https://pubmed.ncbi.nlm.nih.gov/26547804/", "source": "libchat_2025"}
+{"intent": "printing_wifi", "utterance": "Is there a paper scanner at the library? How to use it?", "source": "libchat_2025"}
 {"intent": "newspapers", "utterance": "does Miami have access to subscription based news publications like the New York Times and Reuters", "source": "libchat_2025"}
 {"intent": "citation_help", "utterance": "how do i write an apa citation if there is no date", "source": "libchat_2025"}
-{"intent": "special_collections", "utterance": "Hi, I'm trying to find primary sources of how the Vietnam war was portrayed in Western media and I'm not sure where to start.", "source": "libchat_2025"}
 {"intent": "makerspace_3d", "utterance": "Have some questions about the 3d printing process. I sent an email to what was on the library website about it but have yet to hear a response back.", "source": "libchat_2025"}
 {"intent": "newspapers", "utterance": "How do I access the New York Times historical issues? (1981)", "source": "libchat_2025"}
 {"intent": "adobe_access", "utterance": "Hi. I just want to make sure I have the Creative Cloud software checked out correctly. It should be available this Sunday at 12am. My id is mccar192", "source": "libchat_2025"}
@@ -385,12 +353,8 @@
 {"intent": "tech_checkout", "utterance": "Is there any way that I can rent a laptop from King Library to take a final tomorrow? My personal laptop doesn't have a working camera, and I need a camera for the duration of my exam.", "source": "libchat_2025"}
 {"intent": "interlibrary_loan", "utterance": "Can I return Ohiolink books to any participating library in Ohio?", "source": "libchat_2025"}
 {"intent": "printing_wifi", "utterance": "How do I print double-sided using MU print", "source": "libchat_2025"}
-{"intent": "special_collections", "utterance": "I need help finding primary sources, specifically those on the catholic church and its changing stance or previous stance on womens rights, LGBTQ+, and other social issues", "source": "libchat_2025"}
-{"intent": "special_collections", "utterance": "i am doing a history project right now and am looking for primary sources that discuss the impact the Catholic church had on the US during the 1950s", "source": "libchat_2025"}
 {"intent": "makerspace_3d", "utterance": "is the makerspace open?", "source": "libchat_2025"}
-{"intent": "special_collections", "utterance": "how do i find primary sources that are not just about miami", "source": "libchat_2025"}
 {"intent": "databases", "utterance": "Hello! I am trying to get links to my articles to show my teacher and when i click on the link it says to log into ebsco. I do not know how to do that I was hoping you could help", "source": "libchat_2025"}
-{"intent": "newspapers", "utterance": "Is there anything in the archives about apartheid in South Africa?", "source": "libchat_2025"}
 {"intent": "databases", "utterance": "When I look for an article, there's a yellow line at the top that says \"Miami University users, login for full-text access\". When I try to login it sends me to EBSCO. But then is says unable to validate login credentials. What am I doing wrong?", "source": "libchat_2025"}
 {"intent": "databases", "utterance": "I cannot use academic search complete. It says there is error in httphandler. how can I fix that.", "source": "libchat_2025"}
 {"intent": "newspapers", "utterance": "Do students get a free subscription to the Financial Times digital newspaper?", "source": "libchat_2025"}
@@ -421,9 +385,7 @@
 {"intent": "circulation_basic", "utterance": "Where do I go to check out a book? I've done it before and cant find the link on the website", "source": "libchat_2025"}
 {"intent": "human_handoff", "utterance": "I have a prof on the phone asking to speak to a librarian. Who should I transfer the call to?", "source": "libchat_2025"}
 {"intent": "databases", "utterance": "Could you help me find the Web of Science Database?", "source": "libchat_2025"}
-{"intent": "out_of_scope", "utterance": "citation problem", "source": "libchat_2025"}
 {"intent": "digital_collections", "utterance": "I'm a sociology professor. Is it still possible to get a DVD digitized so that I can upload it to Canvas? Thanks!", "source": "libchat_2025"}
-{"intent": "newspapers", "utterance": "Hi! I am looking for resources on american sign language, but I cant find anything. I am probably not looking in the right spot", "source": "libchat_2025"}
 {"intent": "adobe_access", "utterance": "I have tried to reserve a Adobe Creative Cloud license, but when I click on checkout (everytime) it always pops up with \"TImeout\"", "source": "libchat_2025"}
 {"intent": "databases", "utterance": "I am having trouble accessing Business Source Complete.", "source": "libchat_2025"}
 {"intent": "newspapers", "utterance": "Are we able to create accounts for other online newspaper access like we can for NYT or WSJ?", "source": "libchat_2025"}
@@ -431,7 +393,6 @@
 {"intent": "out_of_scope", "utterance": "got disconnected", "source": "libchat_2025"}
 {"intent": "databases", "utterance": "we used to have safari proquest (orielly) book subscription. I can't find it.", "source": "libchat_2025"}
 {"intent": "citation_help", "utterance": "when citing resources, when do I use http or https, and how do i cite a url?", "source": "libchat_2025"}
-{"intent": "special_collections", "utterance": "I was wondering if you had any primary sources involving tracheostomy care or anything involving difficulty caring for patients alone", "source": "libchat_2025"}
 {"intent": "circulation_basic", "utterance": "I would like to request a few books", "source": "libchat_2025"}
 {"intent": "makerspace_3d", "utterance": "Are 3-d printers available to be used in the makerspace? Like, anyone can sign up and use them?", "source": "libchat_2025"}
 {"intent": "databases", "utterance": "Where is EBSCOhost", "source": "libchat_2025"}
@@ -439,7 +400,6 @@
 {"intent": "databases", "utterance": "I am not able to access web of science after I login in to mymiami. It pops to ask me username and password.", "source": "libchat_2025"}
 {"intent": "tech_checkout", "utterance": "I need to checkout a laptop for my quiz tomorrow", "source": "libchat_2025"}
 {"intent": "interlibrary_loan", "utterance": "When trying to ask for an inter library loan for https://pubs.acs.org/doi/10.1021/acsreagents.4260 the system was not allowing me to. Can I have help requesting it?", "source": "libchat_2025"}
-{"intent": "newspapers", "utterance": "question about google indoor room tour - heard that it was done at King - curious about speaking with anyone who knows anything about it", "source": "libchat_2025"}
 {"intent": "interlibrary_loan", "utterance": "American holocaust : Columbus and the conquest of the New World / David E. Stannard is listed as missing, billed, several years ago. Can I request it from Ohio Link?", "source": "libchat_2025"}
 {"intent": "databases", "utterance": "I'm looking for news articles on the Wyoming City Schools (Ohio) school board elections in 2023. I've been struggling with Nexis Uni and cannot get it to narrow things down --- can you help", "source": "libchat_2025"}
 {"intent": "adobe_access", "utterance": "Can you provide me the link to check out photoshop?", "source": "libchat_2025"}
@@ -447,10 +407,12 @@
 {"intent": "newspapers", "utterance": "I have been looking for the newspaper article from the New York Times on the shirtwaist factory fire from March 26, 1911. Can you help me find it?", "source": "libchat_2025"}
 {"intent": "adobe_access", "utterance": "I have a document that needs to be made into alt-text, but currently it is inaccessible. I used Adobe Acrobat Pro to convert it to OCR, but it is still not accessible for a screen reader. Could you please help me?", "source": "libchat_2025"}
 {"intent": "citation_help", "utterance": "How would I cite an online dictionary definition in MLA format?", "source": "libchat_2025"}
-{"intent": "special_collections", "utterance": "I need help finding primary sources", "source": "libchat_2025"}
+{"intent": "newspapers", "utterance": "NYT on line access I understand that there is a page on your website that allows me to read the NYT for free online. Where is it?", "source": "libchat_2025"}
 {"intent": "makerspace_3d", "utterance": "where is the maker space in the library?", "source": "libchat_2025"}
 {"intent": "digital_collections", "utterance": "I'm having trouble finding the link to the form to request that a digitized film be made accessible in Canvas. Can you please point me in the right direction.", "source": "libchat_2025"}
 {"intent": "databases", "utterance": "I am trying to connect to ebsco from Luxembourg, without success", "source": "libchat_2025"}
+{"intent": "newspapers", "utterance": "Does Miami have a subscription to the Financial Times newspaper?", "source": "libchat_2025"}
+{"intent": "newspapers", "utterance": "Whoops, I just got disconnected from Andy Revelle! Does Miami have a subscription to the financial times?", "source": "libchat_2025"}
 {"intent": "citation_help", "utterance": "Hi, when using the mla format for anthology and a place of publication is included, how do I format that?", "source": "libchat_2025"}
 {"intent": "adobe_access", "utterance": "Are staff allowed to use Adobe?", "source": "libchat_2025"}
 {"intent": "room_booking", "utterance": "Can I reserve study rooms in Farmer?", "source": "libchat_2025"}
@@ -460,11 +422,10 @@
 {"intent": "interlibrary_loan", "utterance": "Hello, I recently was helped to find a book on worldcat, but I am unsure how to actually request the book. Is there anywhere I can follow steps for this?", "source": "libchat_2025"}
 {"intent": "citation_help", "utterance": "How would is cite Washington State Legislature House Bill 2032 found at this link: https://lawfilesext.leg.wa.gov/biennium/2023-24/Pdf/Bills/House%20Bills/2032.pdf?q=20240304154451 In APA format?", "source": "libchat_2025"}
 {"intent": "citation_help", "utterance": "Im trying to cite a dictionary in APA format. Do you know the best way to format that?", "source": "libchat_2025"}
+{"intent": "newspapers", "utterance": "I want my students to be able to search issues of the New York Times from 1915 and 1916, but I cannot figure out how to access the Times via the University catalog. Can you help me please?", "source": "libchat_2025"}
 {"intent": "databases", "utterance": "I can't get into JSTOR from home.", "source": "libchat_2025"}
 {"intent": "databases", "utterance": "Hi--I can't access EEBO anymore through ProQuest. I'm using it remotely.", "source": "libchat_2025"}
-{"intent": "data_services", "utterance": "Is SciFinderN not working today? I have been using it on most days without a problem (writing invited review paper)", "source": "libchat_2025"}
 {"intent": "interlibrary_loan", "utterance": "Hi, how do I know when a book i requested on OhioLink made it to the art/arch library? Will I get an email?", "source": "libchat_2025"}
-{"intent": "data_services", "utterance": "Yesterday I reported a problem logging into SciFinderN. I can log into Science Direct. I presume a work order was submitted. Any idea of the time to remedy it?", "source": "libchat_2025"}
 {"intent": "renewal", "utterance": "Do I have to come into the library to renew a book or can I do it online/over the phone?", "source": "libchat_2025"}
 {"intent": "human_handoff", "utterance": "Patron requesting to speak with a librarian... He's at the King Circ Desk right now. Is someone available to meet with him? Thanks!", "source": "libchat_2025"}
 {"intent": "course_reserves", "utterance": "What is the current process for faculty to put books on reserve at the library? I have my own co[pies", "source": "libchat_2025"}
@@ -475,18 +436,20 @@
 {"intent": "interlibrary_loan", "utterance": "Hello. I was searching for a a book on WorldCat and the tillte is listed as being an ebook here at the library. Is it availble for guests to access? Tnanks", "source": "libchat_2025"}
 {"intent": "interlibrary_loan", "utterance": "for science librarian: suddenly I can do SciFinderN searches ok but cannot access OhioLink to get copies of papers I find", "source": "libchat_2025"}
 {"intent": "citation_help", "utterance": "how to i cite a website in APA and how do i do in text citations with APA", "source": "libchat_2025"}
-{"intent": "special_collections", "utterance": "I was asking for help with primary sources but i got disconnected.", "source": "libchat_2025"}
 {"intent": "interlibrary_loan", "utterance": "the book I seek is not in MU Libraries. How can I search OhioLink or request by ILL?", "source": "libchat_2025"}
+{"intent": "newspapers", "utterance": "Forgot my Miami University email that I need to renew WSJ?", "source": "libchat_2025"}
 {"intent": "citation_help", "utterance": "Hello! I was curious if you all were able to help me formulate a citation? I am trying to cite Ohio State Issue 1 in an MLA format but am having trouble figuring out the the proper information to put down?", "source": "libchat_2025"}
 {"intent": "databases", "utterance": "how does one gain an account to ProQuest for an electronic resource.?", "source": "libchat_2025"}
 {"intent": "databases", "utterance": "I am having trouble accessing business source complete. I have had this trouble for a while now. I am working remotley and on the VPN", "source": "libchat_2025"}
 {"intent": "interlibrary_loan", "utterance": "Hello, How do I know if the book I requested from Ohio LINK has arrived or not?", "source": "libchat_2025"}
 {"intent": "interlibrary_loan", "utterance": "Hello, How do I know if the book I requested from OhioLINK has arrived or not?", "source": "libchat_2025"}
 {"intent": "citation_help", "utterance": "how do i cite a journal wigth multiple authors please?", "source": "libchat_2025"}
+{"intent": "newspapers", "utterance": "Hi! I was curious if you have print copies of the NYT? I am looking for a print from Feb. 20, 2024", "source": "libchat_2025"}
 {"intent": "databases", "utterance": "Do we have a way to access articles on JSTOR?", "source": "libchat_2025"}
 {"intent": "renewal", "utterance": "Do i need to come into the library to renew a book or is there a way to renew it remotely?", "source": "libchat_2025"}
-{"intent": "special_collections", "utterance": "I am having trouble finding primary sources that discuss \"Neandertal-Skullcap 1\"", "source": "libchat_2025"}
+{"intent": "printing_wifi", "utterance": "Is there a scanner at King Library that I could scan pages out of a book into PDF or JPEG?", "source": "libchat_2025"}
 {"intent": "interlibrary_loan", "utterance": "I can't seem to get into OhioLINK from off campus. Any known problems", "source": "libchat_2025"}
+{"intent": "newspapers", "utterance": "how can I access new york times articles for free?", "source": "libchat_2025"}
 {"intent": "databases", "utterance": "How to use the nexis uni program to search for relevant cases and statues for my BLS class", "source": "libchat_2025"}
 {"intent": "research_consultation", "utterance": "I was hoping to add an item to scholarly commons but it doesn't seem to be working as it did in the past. I can't tell if I'm getting logged in, and am not seeing an option to add new item.", "source": "libchat_2025"}
 {"intent": "adobe_access", "utterance": "HOW I CAN GET ADOBE ACROBAT FOR PDF DOCUMENTS?", "source": "libchat_2025"}
@@ -494,35 +457,44 @@
 {"intent": "databases", "utterance": "looking for the nexis uni database for my business law paper, i am also wondering how to find the judges writings, if i remember correctly there is a book that is full of them. thank you in advance for all your time and help", "source": "libchat_2025"}
 {"intent": "circulation_basic", "utterance": "I'm trying to request a book from the SW Depository and I need a library barcode to request the book. Where do I find the barcode?", "source": "libchat_2025"}
 {"intent": "interlibrary_loan", "utterance": "Hi, I am trying to get a copy of a book and am blanking on how to request (such as an interlibrary loan) it if Miami doesn't own a copy. Can you remind me where I can find that form?", "source": "libchat_2025"}
-{"intent": "special_collections", "utterance": "Can you help me find primary sources about societal expectations of women during the 19th century", "source": "libchat_2025"}
 {"intent": "databases", "utterance": "Greetings, I am a student in an English Studies class, and I am wondering what databases you would recommend me using to find sources on writing and communication within the pharmaceutical field. Thank you in advance for your assistance.", "source": "libchat_2025"}
-{"intent": "databases", "utterance": "I am having trouble getting in to ProQuest databases, specifically NYT Historical and Chicago Tribune historical. I am off campus. Can you check to see if you can get in?", "source": "libchat_2025"}
 {"intent": "adobe_access", "utterance": "If a student needs Adobe Creative Cloud how do they go about it and what's the time for for them to have it? It's required for a course the professor advises they go to the library.", "source": "libchat_2025"}
 {"intent": "makerspace_3d", "utterance": "Question about the makerspace: do you need to purchase supplies on your own to use the button makers or are those available for use already?", "source": "libchat_2025"}
 {"intent": "interlibrary_loan", "utterance": "Hi I uploaded my dissertation on Ohio Link as part of my graduation requirement, but I wonder if I could still publish it with another journal?", "source": "libchat_2025"}
-{"intent": "databases", "utterance": "PsychINFO (EBSCOhost) and ERIC (EBSCOhost) databases not opening when clicked on", "source": "libchat_2025"}
 {"intent": "research_consultation", "utterance": "Is the scholarly commons down? I'm getting a Service Temporarily Unavailable error. https://sc.lib.miamioh.edu/", "source": "libchat_2025"}
 {"intent": "human_handoff", "utterance": "I have a patron on the phone that would like to speak to a librarian. Who can I transfer him to and what's the number?", "source": "libchat_2025"}
 {"intent": "adobe_access", "utterance": "Trying to get creative cloud when is the soonest I can make that happen?", "source": "libchat_2025"}
 {"intent": "tech_checkout", "utterance": "Can I still check out a laptop today or is it too late in the day?", "source": "libchat_2025"}
+{"intent": "newspapers", "utterance": "I tried to access the New York Times newspaper through this link and got an error message: https://proxy.lib.miamioh.edu/login?url=https://myaccount.nytimes.com/grouppass/access", "source": "libchat_2025"}
 {"intent": "software_access", "utterance": "I am a faculty member. Do you know how I can get SPSS on my computer?", "source": "libchat_2025"}
+{"intent": "newspapers", "utterance": "how can I use New York Times for free", "source": "libchat_2025"}
+{"intent": "newspapers", "utterance": "How do you access the new york times", "source": "libchat_2025"}
 {"intent": "citation_help", "utterance": "can i know how to cite a picture from pinterest into a research poster", "source": "libchat_2025"}
-{"intent": "makerspace_3d", "utterance": "hello, Do you have button makers for students to check out? Thanks", "source": "libchat_2025"}
 {"intent": "special_collections", "utterance": "I wanted to see if there was an digital copy of 'The Miami years, 1809-1984 \" by Walter Havighurst. I seems that is out of print", "source": "libchat_2025"}
 {"intent": "tech_checkout", "utterance": "Would I be able to borrow a calculator for an exam next week", "source": "libchat_2025"}
 {"intent": "room_booking", "utterance": "How do I book a study room in the mcvey datascience building", "source": "libchat_2025"}
+{"intent": "newspapers", "utterance": "I am not able to open the Washington Post historical database this afternoon. Is there an issue with it or am I doing something wrong?", "source": "libchat_2025"}
 {"intent": "interlibrary_loan", "utterance": "Hi. Who is the best person to call about an Ohiolink question?", "source": "libchat_2025"}
 {"intent": "room_booking", "utterance": "How can I book study rooms at the clinical health sciences building", "source": "libchat_2025"}
 {"intent": "adobe_access", "utterance": "Does Miami have Adobe Acrobat Pro? I would like to split one PDF file and then merge two different PDF files.", "source": "libchat_2025"}
 {"intent": "citation_help", "utterance": "I have a question about APA format and I am in the library now. I have a format/layout I downloaded, but I am confused on what is supposed to be written in each section", "source": "libchat_2025"}
 {"intent": "interlibrary_loan", "utterance": "I need help to add accessibility feature on my thesis report before uploading to ohiolink", "source": "libchat_2025"}
+{"intent": "newspapers", "utterance": "Where is the site that explains how students can log into the NY Times for free? TIA!", "source": "libchat_2025"}
+{"intent": "newspapers", "utterance": "I signed up for Wall Street Journal online but can't retrace my steps in order to read it", "source": "libchat_2025"}
+{"intent": "newspapers", "utterance": "trying to get to washington post database and get article about contraception from 1987", "source": "libchat_2025"}
 {"intent": "printing_wifi", "utterance": "how do I send a print job it keeps saying I didn't include the printer address so where do Include it", "source": "libchat_2025"}
 {"intent": "software_access", "utterance": "Do you currently have this book at the library? Systems and Signals: A MATLAB Integrated Approach Here is the ISBN: 9781138075474", "source": "libchat_2025"}
+{"intent": "newspapers", "utterance": "Is there a way to subscribe for free to the New York Times, Washington Post, Wall Street Journal?", "source": "libchat_2025"}
 {"intent": "interlibrary_loan", "utterance": "Hi, I ordered multiple books from OhioLink and was wondering whether you might be able to check to see if they are in? I know I'm notified but sometimes that's later and I'm working on a book. Thanks!", "source": "libchat_2025"}
+{"intent": "newspapers", "utterance": "trying to find a newspaper article: \"some Maryland parents argue a new health curriculum is unfit...\" from Washington Post on May 17, 2022", "source": "libchat_2025"}
 {"intent": "adobe_access", "utterance": "i have a patron down here that needs assistance using adobe creative cloud, would someone be able to come down here and help him?", "source": "libchat_2025"}
 {"intent": "adobe_access", "utterance": "Does Miami have any free or discounted photoshop partnerships", "source": "libchat_2025"}
+{"intent": "newspapers", "utterance": "Do we have access to the New York Times? Trying to access a couple of articles on NYT.", "source": "libchat_2025"}
 {"intent": "interlibrary_loan", "utterance": "Hi, I have an interlibrary loan that it won't let me renew, and I'm going to be out of town for a month. I was wondering if it could be extended? Otherwise, I will have to return it, and then try to check it out again. Thanks for your help! :)", "source": "libchat_2025"}
 {"intent": "interlibrary_loan", "utterance": "I'm trying to find the book Queering Anti-Zionism by Corinne Blackmer. Miami doesn't have it and am having trouble figuring out if I can do it through interlibrary loan. Thank you.", "source": "libchat_2025"}
+{"intent": "newspapers", "utterance": "Where is the NY Times sign in page? My year is up and I need to renew.", "source": "libchat_2025"}
+{"intent": "newspapers", "utterance": "I sent in a chat request a minute ago asking about NY Times log in page.", "source": "libchat_2025"}
+{"intent": "account", "utterance": "I wanted to look up a book I borrowed and renewed several times, but I can't seem to find a history of the books I borrowed.", "source": "libchat_2025"}
 {"intent": "interlibrary_loan", "utterance": "Where is the button to link to Ohio Link?", "source": "libchat_2025"}
 {"intent": "makerspace_3d", "utterance": "Hello, I was looking at the Makerspace, but all I see are softwares to checkout. Is the Makerspace not open during the summer? I wanted to do some 3D printing. In the library hours, I do see that the Makerspace is open.", "source": "libchat_2025"}
 {"intent": "adobe_access", "utterance": "I am trying to turn in my Masters Thesis for format checking, and it says I need to access adobe acrobat pro for accessibility reasons. Do you know how I do this ?", "source": "libchat_2025"}
@@ -531,10 +503,11 @@
 {"intent": "adobe_access", "utterance": "Hello, could you point me to where I can access adobe pro for my masters thesis format check?", "source": "libchat_2025"}
 {"intent": "citation_help", "utterance": "If I have a date eg NHS (2024, July 3) in my reference list will it need to be the same in the writing?", "source": "libchat_2025"}
 {"intent": "interlibrary_loan", "utterance": "I'm trying to log into the ILLiad system and I keep putting in my username and password and going in a circle. Is the site down? Am I able to submit a request another way?", "source": "libchat_2025"}
-{"intent": "out_of_scope", "utterance": "need citations", "source": "libchat_2025"}
 {"intent": "circulation_basic", "utterance": "How do I check out a book? I know that seems basic, but EVERY time I search for a book on the website, it is not clear to me how I check it out, and I'm sick of poking buttons until I happen on something.", "source": "libchat_2025"}
+{"intent": "newspapers", "utterance": "Quick q - do we have a subscription to the financial times? I know we have that online database for it that stops at 2010 but a patron is at the front desk asking about current issues", "source": "libchat_2025"}
 {"intent": "special_collections", "utterance": "how do i access the special collections?", "source": "libchat_2025"}
 {"intent": "adobe_access", "utterance": "Hi im an incoming miami freshman. I was wondering when using the adobe creative cloud can I keep renewing my liscence after I start using it?", "source": "libchat_2025"}
+{"intent": "newspapers", "utterance": "Does Miami have a subscription to the new york times that i can access with my miami credentials?", "source": "libchat_2025"}
 {"intent": "interlibrary_loan", "utterance": "I requested an item through Ohio Link, but I need both volumes 1 and 2. How do I do that? I am afraid OL will only send one of the volumes to me.", "source": "libchat_2025"}
 {"intent": "circulation_basic", "utterance": "How do I request a book in storage? The request form is for requesting articles only?", "source": "libchat_2025"}
 {"intent": "tech_checkout", "utterance": "Is there any option to borrow a laptop for a few days? I am International student. I reached Oxford yesterday. I will buy laptop shortly. But before that I need a laptop to do my regular works.", "source": "libchat_2025"}
@@ -543,13 +516,14 @@
 {"intent": "room_booking", "utterance": "Where can I go to reserve a group study room and on what floor are they most located?", "source": "libchat_2025"}
 {"intent": "hours", "utterance": "Hey im doing a scavenger hunt and have a couple questions. Whats your name? What hours is the chat service staffed? What time does king close todya", "source": "libchat_2025"}
 {"intent": "adobe_access", "utterance": "I am having an issue activiating my adobe subscription I checked out", "source": "libchat_2025"}
-{"intent": "makerspace_3d", "utterance": "Are maker spaces open today?", "source": "libchat_2025"}
+{"intent": "hours", "utterance": "Are maker spaces open today?", "source": "libchat_2025"}
 {"intent": "adobe_access", "utterance": "I'm trying to rent out Adobe Creative Suite and was told its here but cannot find it anyway I can get some direction? thank You!", "source": "libchat_2025"}
 {"intent": "circulation_basic", "utterance": "how do I borrow books from King", "source": "libchat_2025"}
 {"intent": "adobe_access", "utterance": "I checked out Adobe Creative Cloud for 8/26 - 9/9. I tried to access Adobe and it isn't working even though everything is updated and I am signed in.", "source": "libchat_2025"}
 {"intent": "adobe_access", "utterance": "I'm trying to checkout adobe cloud and it won't let me even try to sign in to see the days available it says \"invalid ID\" before giving me an option to sign in with my Miami account", "source": "libchat_2025"}
-{"intent": "course_reserves", "utterance": "How can I put textbooks on reserve for a class?", "source": "libchat_2025"}
+{"intent": "newspapers", "utterance": "I teach ENG 108 this Fall, and my students need to find articles for their projects in the new York Times. Do they need to create an account with The New York Times as my students were required a few years ago. Thanks!", "source": "libchat_2025"}
 {"intent": "interlibrary_loan", "utterance": "How can I access a book that is listed in worldcat but is not at miami or in Ohiolink?", "source": "libchat_2025"}
+{"intent": "newspapers", "utterance": "Hi, How do I access the New York Times from my MU account? Thanks", "source": "libchat_2025"}
 {"intent": "adobe_access", "utterance": "How do you check out adobe illustrator on a computer", "source": "libchat_2025"}
 {"intent": "software_access", "utterance": "Can I access SPSS statistics on a desktop at King? I cannot use the software on my personal laptop", "source": "libchat_2025"}
 {"intent": "interlibrary_loan", "utterance": "OSU has this title that I want to read. How can I proceed? Via OhioLink or ILL? https://library.ohio-state.edu/search/o883963226", "source": "libchat_2025"}
@@ -557,6 +531,7 @@
 {"intent": "location_directions", "utterance": "which floor can you find the office of the engineering librarians", "source": "libchat_2025"}
 {"intent": "adobe_access", "utterance": "What is the checkout duration for Adobe Creative Cloud?", "source": "libchat_2025"}
 {"intent": "loan_policy", "utterance": "For graduate students, the loan period is 1 semester, but in some cases I got 3 weeks. Why is that?", "source": "libchat_2025"}
+{"intent": "newspapers", "utterance": "Can we read the NYT online?", "source": "libchat_2025"}
 {"intent": "room_booking", "utterance": "are study rooms a charge to your Miami ID", "source": "libchat_2025"}
 {"intent": "research_consultation", "utterance": "Who would be best to contact for research help in the following areas? history spanish biology english", "source": "libchat_2025"}
 {"intent": "adobe_access", "utterance": "I just checked out adobe CC and I can't figure out how to download Adobe XD now that I have it.", "source": "libchat_2025"}
@@ -577,7 +552,6 @@
 {"intent": "room_booking", "utterance": "How do I book a study room for the clinical health science building?", "source": "libchat_2025"}
 {"intent": "citation_help", "utterance": "In MLA format, how do I format a source from a scholarly journal with multiple authors? This is for an annotated bibliography.", "source": "libchat_2025"}
 {"intent": "adobe_access", "utterance": "I signed up for a adobe creative cloud account but when I log it it is not giving me access to the apps.", "source": "libchat_2025"}
-{"intent": "out_of_scope", "utterance": "https://eds-p-ebscohost-com.proxy.lib.miamioh.edu/eds/detail/detail?vid=0&amp;sid=d78f30df-1f09-479d-b14a-27dc587c3641%40redis&amp;bdata=JkF1dGhUeXBlPWNvb2tpZSxpcCZzaXRlPWVkcy1saXZlJnNjb3BlPXNpdGU%3d#AN=edsjsr.10.2307.747707&amp;db=edsjsr", "source": "libchat_2025"}
 {"intent": "circulation_basic", "utterance": "can I check out a book today Sunday?", "source": "libchat_2025"}
 {"intent": "room_booking", "utterance": "How do I book a study room at Mcvey", "source": "libchat_2025"}
 {"intent": "room_booking", "utterance": "can i book a study room in the mcvey data science building", "source": "libchat_2025"}
@@ -623,7 +597,6 @@
 {"intent": "circulation_basic", "utterance": "Can I place a hold on a book to pick it up later today? Specifically he Dancer Prepares: Modern Dance for Beginners", "source": "libchat_2025"}
 {"intent": "interlibrary_loan", "utterance": "I tried to request a book through OhioLINK (title: The German legends of the Brothers Grimm). How will I know when it comes in or if it was requested successfully?", "source": "libchat_2025"}
 {"intent": "citation_help", "utterance": "How do I make an APA citation?", "source": "libchat_2025"}
-{"intent": "citation_help", "utterance": "With MLA citations, when I am including a quote from an academic journal in an essay, how should I mention the page number the quote came from?", "source": "libchat_2025"}
 {"intent": "room_booking", "utterance": "I want to reserve a study room in the basement of farmer school of business for a group meeting for FIN303", "source": "libchat_2025"}
 {"intent": "citation_help", "utterance": "If an author includes two last names, do I put both in a parenthetical citation for citing in the MLA format?", "source": "libchat_2025"}
 {"intent": "printing_wifi", "utterance": "how to print B&amp;W pdf at benton hall", "source": "libchat_2025"}
@@ -664,9 +637,7 @@
 {"intent": "citation_help", "utterance": "What do you include in a in text citation in APA format?", "source": "libchat_2025"}
 {"intent": "interlibrary_loan", "utterance": "Good Morning, I would like to know if Scientific reports is covered uder Ohio link free apc agreement. And does Health Services and Outcomes Research Methodology under the ohio like free apc aggrement ? Thank", "source": "libchat_2025"}
 {"intent": "interlibrary_loan", "utterance": "I am a raduate student and I issued a book through OhioLink. I was under the impression I could keep it for the semester, but I need to return it in a couple weeks. How can I keep it for the semester, as we need the textbook for the whole time.", "source": "libchat_2025"}
-{"intent": "interlibrary_loan", "utterance": "Hi is it possible to renew ILL books?", "source": "libchat_2025"}
 {"intent": "hours", "utterance": "i am looking to borrow a loaner computer for a couple of days. what are the hours i could come in and check one out?", "source": "libchat_2025"}
-{"intent": "cross_campus_comparison", "utterance": "Why is checkout not available at all and only says last year", "source": "libchat_2025"}
 {"intent": "human_handoff", "utterance": "A faculty member would like to speak to a librarian here at the King Circ Desk. Is anyone available to come to the desk? Thanks!", "source": "libchat_2025"}
 {"intent": "interlibrary_loan", "utterance": "How do I request a book through World Cat?", "source": "libchat_2025"}
 {"intent": "room_booking", "utterance": "i am looking at how to book a study room at the data sciences building", "source": "libchat_2025"}
@@ -685,6 +656,8 @@
 {"intent": "room_booking", "utterance": "How long can I book a room for in the Armstrong", "source": "libchat_2025"}
 {"intent": "citation_help", "utterance": "how to cite a in module lecture video from professor with no link", "source": "libchat_2025"}
 {"intent": "citation_help", "utterance": "A student wants to know how to cite in APA a book that has been translated from an older book.", "source": "libchat_2025"}
+{"intent": "interlibrary_loan", "utterance": "I have a textbook I checked out through OHIOLink but I'm unable to renew it again. I still need it for the rest of the semester. What would you recommend so that I can continue using the textbook for the next few weeks?", "source": "libchat_2025"}
+{"intent": "interlibrary_loan", "utterance": "Is there any way I can get access to Mustang Journal by Lisa Wood? I've tried OhioLink and ILL, but haven't had any luck.", "source": "libchat_2025"}
 {"intent": "room_booking", "utterance": "how do i reserve a room in the health and clinical building online?", "source": "libchat_2025"}
 {"intent": "out_of_scope", "utterance": "laptop loan", "source": "libchat_2025"}
 {"intent": "citation_help", "utterance": "APA 7TH, how to cite and reference this please McCance &amp; Huether's Pathophysiology Julia Rogers", "source": "libchat_2025"}
@@ -708,14 +681,13 @@
 {"intent": "citation_help", "utterance": "So, I have found some data from MRI Simmons. The problem is I do not know how to cite it or know the context behind the survey. It is about whole bean coffee demographics.", "source": "libchat_2025"}
 {"intent": "account", "utterance": "Hi, can you see what books I have checked out in the past?", "source": "libchat_2025"}
 {"intent": "citation_help", "utterance": "What kind of citation category would this link fall under in APA format? https://www.sciencedirect.com/science/article/pii/S092666902400102X", "source": "libchat_2025"}
+{"intent": "citation_help", "utterance": "I'm currently trying to cite an article in scholarly context in APA format. The format includes page numbers, but there are no page numbers unless I download as a PDF. What should I do then? https://doi.org/10.1016/j.indcrop.2024.118122", "source": "libchat_2025"}
 {"intent": "printing_wifi", "utterance": "Can i get a photocopy of my passport at the library? and am i able to get it on my phone some way?", "source": "libchat_2025"}
 {"intent": "printing_wifi", "utterance": "can i get a photocopy of my passport at the ibrary?", "source": "libchat_2025"}
 {"intent": "room_booking", "utterance": "how to reserve a study room in farmer", "source": "libchat_2025"}
 {"intent": "space_info", "utterance": "Polk-Patterson Graduate Reading Room", "source": "libchat_2025"}
-{"intent": "special_collections", "utterance": "I am looking for four different primary sources on World War II.", "source": "libchat_2025"}
 {"intent": "digital_collections", "utterance": "how do i find the Washington Post Historical database and then to the Times Digital Archive, 1785-2010 database", "source": "libchat_2025"}
 {"intent": "digital_collections", "utterance": "how do i go to Washington Post Historical database and then to the Times Digital Archive, 1785-2010 database", "source": "libchat_2025"}
-{"intent": "special_collections", "utterance": "primary sources for the holocaust", "source": "libchat_2025"}
 {"intent": "out_of_scope", "utterance": "Temperature", "source": "libchat_2025"}
 {"intent": "out_of_scope", "utterance": "Google scholar", "source": "libchat_2025"}
 {"intent": "hours", "utterance": "Is it open to the public? and what are the hours now that students are gone?", "source": "libchat_2025"}
@@ -727,24 +699,28 @@
 {"intent": "out_of_scope", "utterance": "documentation", "source": "libchat_2025"}
 {"intent": "room_booking", "utterance": "I need to take a remote proctored exam on Thursday, July 3, 2025 from 1-5pm. Is there any way I can reserve a study room for that period? I know it exceeds the 2 hour limit.", "source": "libchat_2025"}
 {"intent": "printing_wifi", "utterance": "Can a Ph.D. thesis from a student that received her doctorate from Miami University be checked out? Unfortunately, my wife cannot find her copy of her 2000 thesis; I was hoping to be able to borrow your copy so I could make a photocopy of it.", "source": "libchat_2025"}
+{"intent": "citation_help", "utterance": "Hi, using APA reference. I have a webpage that has a link to microsoft excel with data that i have used from it, how would i reference this in the reference list? thankyou", "source": "libchat_2025"}
+{"intent": "account", "utterance": "Good morning. I am currently out of the country and having problems loading the log in page for my library account. I have a book that needs renewed. Are you able to help me? greenjm3", "source": "libchat_2025"}
 {"intent": "room_booking", "utterance": "Is there anyway to book a study room longer than the limit? I have a 3.5 hour exam and would like to complete it in some kind of secluded space.", "source": "libchat_2025"}
 {"intent": "room_booking", "utterance": "Is there any way to book a study room longer than the limit? I have a 3.5 hour exam and would like to complete it in some kind of secluded space.", "source": "libchat_2025"}
 {"intent": "renewal", "utterance": "I tried to renew a book and get the message Your account has expired. What do I need to do to get it activated?", "source": "libchat_2025"}
 {"intent": "account", "utterance": "Why can’t I sign in to my library account?", "source": "libchat_2025"}
 {"intent": "makerspace_3d", "utterance": "Hi, I have a question about 3D printing capabilities, if that's available over the summer? Thanks!", "source": "libchat_2025"}
-{"intent": "out_of_scope", "utterance": "Where's WorldCat?!", "source": "libchat_2025"}
+{"intent": "citation_help", "utterance": "I would like to know how to cite a souce in the middle of a paragraph. EX: According to Mannheim et al. (2025), these changes lead to increased disposable income, improving financial stability.", "source": "libchat_2025"}
 {"intent": "course_reserves", "utterance": "Please remind me of the name and email of the librarian who processes course reserve materials", "source": "libchat_2025"}
 {"intent": "loan_policy", "utterance": "What is the loan period for books requested from the SouthWest depository? Is it the same for journals?", "source": "libchat_2025"}
 {"intent": "out_of_scope", "utterance": "scavenger hunt!", "source": "libchat_2025"}
+{"intent": "citation_help", "utterance": "how to cite an article in mla format", "source": "libchat_2025"}
+{"intent": "citation_help", "utterance": "I have a paper almost ready to submit for publication. I need help in formatting using APA Manual Edition 7 and perhaps a check on the reference list. Thanks, Dave", "source": "libchat_2025"}
 {"intent": "circulation_basic", "utterance": "when you request a book in the library, I can use it for 6 weeks?", "source": "libchat_2025"}
 {"intent": "circulation_basic", "utterance": "I would like to request a specific book, but I can't figure out how to request it.", "source": "libchat_2025"}
 {"intent": "course_reserves", "utterance": "if one of my classes has a textbook on reserve, can I ask the front desk to make a copy of said pages? Or is there equipment for me to do that myself?", "source": "libchat_2025"}
 {"intent": "makerspace_3d", "utterance": "Is the maker space open today for tshirt printing", "source": "libchat_2025"}
 {"intent": "hours", "utterance": "Hello! What are the hours for King Cafe?", "source": "libchat_2025"}
 {"intent": "research_consultation", "utterance": "I am working on an assignment and need help finding contact info for research help.", "source": "libchat_2025"}
+{"intent": "citation_help", "utterance": "I am searching 5-8 publications in my reference list as a final check for accuracy. I keep getting no results.", "source": "libchat_2025"}
 {"intent": "makerspace_3d", "utterance": "Does the makerspace have these things? Wood lathe Drill press Knitting machine", "source": "libchat_2025"}
 {"intent": "circulation_basic", "utterance": "Can I place a hold on a book online?", "source": "libchat_2025"}
-{"intent": "tech_checkout", "utterance": "I was wondering if there were any scientific calculators that could borrow for a quiz tomorrow because I haven't had the chance to buy one they", "source": "libchat_2025"}
 {"intent": "out_of_scope", "utterance": "Test question", "source": "libchat_2025"}
 {"intent": "space_info", "utterance": "Where can the King Cafe hours be found?", "source": "libchat_2025"}
 {"intent": "printing_wifi", "utterance": "How to print", "source": "libchat_2025"}
@@ -753,7 +729,6 @@
 {"intent": "data_services", "utterance": "I am trying to create my SciFinder account. When I click \"create account\" I then click \"academic\" institution. That tells me I need to go back to my institution to get access. I wasn't sure where to find instructions on how to login to SciFinder.", "source": "libchat_2025"}
 {"intent": "account", "utterance": "Is there a way via MyAccount to see the books I have checked out in the past?", "source": "libchat_2025"}
 {"intent": "instruction_request", "utterance": "Could someone come to my class (Mosler 306, WF 8:30 - 9:50) or may I bring my class to Rentschler Library in Schwarm one day next week or the week after?", "source": "libchat_2025"}
-{"intent": "special_collections", "utterance": "I am trying to find primary sources about Great Britain's economic depression in the 1930s and I cannot find anything", "source": "libchat_2025"}
 {"intent": "printing_wifi", "utterance": "How to print a word document at kings library on personal computer", "source": "libchat_2025"}
 {"intent": "digital_collections", "utterance": "Could I get the film \"The Matrix\" digitized and posted to Canvas for my class so they could watch it online?", "source": "libchat_2025"}
 {"intent": "room_booking", "utterance": "Is there a way to reserve a room in farmer?", "source": "libchat_2025"}
@@ -769,17 +744,15 @@
 {"intent": "room_booking", "utterance": "l want to ask l book a study room on Armstrong, where can l get the key to access", "source": "libchat_2025"}
 {"intent": "room_booking", "utterance": "Is there a way to book a study room in McVay/Data and Science building.", "source": "libchat_2025"}
 {"intent": "location_directions", "utterance": "Where is the library search", "source": "libchat_2025"}
-{"intent": "tech_checkout", "utterance": "Do you have any scientific calculators available for checkout?", "source": "libchat_2025"}
 {"intent": "printing_wifi", "utterance": "How do I print 11x17", "source": "libchat_2025"}
 {"intent": "circulation_basic", "utterance": "I'm trying to request a book but says there's no copies", "source": "libchat_2025"}
-{"intent": "subject_librarian", "utterance": "who are the subject librarians and what are the subjects they specialize in?", "source": "libchat_2025"}
 {"intent": "circulation_basic", "utterance": "If a book is at the Middletown Library and says 1 copy 1 available, how do I borrow from Oxford/King Lib?", "source": "libchat_2025"}
 {"intent": "tech_checkout", "utterance": "Is it possible to check out a laptop for the day?", "source": "libchat_2025"}
 {"intent": "room_booking", "utterance": "Can I be sent a link to book a study room at farmer? Farmer is not an option on here. Thank you", "source": "libchat_2025"}
 {"intent": "out_of_scope", "utterance": "scholarly journals", "source": "libchat_2025"}
 {"intent": "room_booking", "utterance": "do you have study rooms", "source": "libchat_2025"}
 {"intent": "room_booking", "utterance": "How do i reserve a study room?", "source": "libchat_2025"}
-{"intent": "special_collections", "utterance": "Are there any online primary sources regarding fashion history?", "source": "libchat_2025"}
+{"intent": "room_booking", "utterance": "Are there any study rooms available for a group of 3?", "source": "libchat_2025"}
 {"intent": "out_of_scope", "utterance": "roman empire", "source": "libchat_2025"}
 {"intent": "makerspace_3d", "utterance": "does the makerspace have specific hours? also do you have a laminator", "source": "libchat_2025"}
 {"intent": "makerspace_3d", "utterance": "Are you allowed to just walk into the makerspace and make something", "source": "libchat_2025"}
@@ -800,13 +773,12 @@
 {"intent": "out_of_scope", "utterance": "Megan Janowski", "source": "libchat_2025"}
 {"intent": "hours", "utterance": "Hi, is the library open today?", "source": "libchat_2025"}
 {"intent": "course_reserves", "utterance": "I am trying to see if there is a textbook on reserve that I need for a class, and the link to look it up is not working", "source": "libchat_2025"}
+{"intent": "printing_wifi", "utterance": "Do you know if there is a 35mm slide scanner at the library for use?", "source": "libchat_2025"}
 {"intent": "account", "utterance": "I am unable to access my library account, being shown \" bad message error\" , do I need to contact IT?", "source": "libchat_2025"}
 {"intent": "renewal", "utterance": "How do I renew my loaner computer through this site?", "source": "libchat_2025"}
 {"intent": "printing_wifi", "utterance": "I have a poster presentation coming up. How do i print my large poster? It is for a science conference.", "source": "libchat_2025"}
 {"intent": "circulation_basic", "utterance": "I placed a request for a book I need for a class, why did my request disappear? I have had no contact about the book either, it just isn't a request anymore.", "source": "libchat_2025"}
-{"intent": "course_reserves", "utterance": "I have a question about placing textbooks on reserve.", "source": "libchat_2025"}
-{"intent": "special_collections", "utterance": "I need help finding 2 primary sources for my literature review. I am having trouble only finding review articles.", "source": "libchat_2025"}
-{"intent": "tech_checkout", "utterance": "Are iPad Pros and apple pencils only available for 24 hours? Is there any way we can extend this?", "source": "libchat_2025"}
+{"intent": "special_collections", "utterance": "Quick question about interlibrary loans: I need an image from a rare book at the NY Public Library. Can I request a scan of that image through ILL instead of borrowing the whole book?", "source": "libchat_2025"}
 {"intent": "research_consultation", "utterance": "Hello, I am currently researching for a MKT 345 project where we are coming up with a marketing strategy for the brand. I am looking for resources to help with my research, if you have any you could recommend that would be amazing! Thank you!", "source": "libchat_2025"}
 {"intent": "tech_checkout", "utterance": "I rented a scientific calculator from you yesterday. It is due back today but I was wondering if there was any way I could renew it for one more day and turn it back in tomorrow?", "source": "libchat_2025"}
 {"intent": "research_consultation", "utterance": "How do I schedule a meeting with my librarian?", "source": "libchat_2025"}
@@ -819,19 +791,11 @@
 {"intent": "subject_librarian", "utterance": "Can you remind me how to book time with a Business Librarian?", "source": "libchat_2025"}
 {"intent": "human_handoff", "utterance": "a woman on the phone has questions about \"copyright issues\" and wants to speak to a librarian - who can i transfer her call to", "source": "libchat_2025"}
 {"intent": "renewal", "utterance": "Hello! Am I able to renew a book from ILL? The due date is today. Thanks!", "source": "libchat_2025"}
-{"intent": "special_collections", "utterance": "Hello! I am looking into the thypoid disease and primary sources from 1880 and 1930. Where do I start? Is there a page I can look at and search through/ filter for these sources?", "source": "libchat_2025"}
-{"intent": "special_collections", "utterance": "I am looking for primary sources on the history of the development of western campus. Maps would be very helpful but short articles can also work. Do you have any recommendations or helpful starting points?", "source": "libchat_2025"}
-{"intent": "events_news", "utterance": "Would you be able to help me find 3 books and 7 articles on Keith Haring and his single exhibition from 1982 for my research project for ART406?", "source": "libchat_2025"}
 {"intent": "human_handoff", "utterance": "Hi. I have an emeriti professor at the circ desk that would like to speak to a librarian in person. He said he will go to whoever's office so I just need to know where to send him.", "source": "libchat_2025"}
-{"intent": "circulation_basic", "utterance": "When can I pick up my book requests?", "source": "libchat_2025"}
+{"intent": "cross_campus_comparison", "utterance": "I want to return the books that I have from library though I don't come to Oxford in person. Can I return them to the Hamilton or Middletown campus library instead?", "source": "libchat_2025"}
 {"intent": "circulation_basic", "utterance": "Am I able to request a book from a different campus' library to be sent to my campus' library or to me?", "source": "libchat_2025"}
-{"intent": "special_collections", "utterance": "I would like to find primary sources for how holidays are celebrated in schools, how the celebrations have changed over recent years", "source": "libchat_2025"}
 {"intent": "makerspace_3d", "utterance": "I am trying to make a reservation in the makerspace but I am getting an error message even though I have not made any bookings for today.", "source": "libchat_2025"}
 {"intent": "makerspace_3d", "utterance": "can I talk to someone from maker space on here?", "source": "libchat_2025"}
 {"intent": "tech_checkout", "utterance": "Hello. Me and my fellows will have a final presentation of our thesis projects. I want to arrange a video recordin of their presentation for everyone. Therefore, I want to barrow a camera and tripod for April 23rd and 24th. Can you help me with that?", "source": "libchat_2025"}
-{"intent": "digital_collections", "utterance": "I am trying to find an issue of LIFE Magazine dated July 1939 for a HST229 class, but I tried searching the Digital collections and databases but I could not find any results. Is there somewhere else I should look?", "source": "libchat_2025"}
 {"intent": "research_consultation", "utterance": "Looking to schedule a meeting with a librarian for a group project where we need access to financials data for a set of companies", "source": "libchat_2025"}
-{"intent": "special_collections", "utterance": "I need only primary articles and im not sure how to figure out if they are primary sources?", "source": "libchat_2025"}
-{"intent": "subject_librarian", "utterance": "how do i book an appoint with a Liason librarian for Educational leadership?", "source": "libchat_2025"}
 {"intent": "renewal", "utterance": "My Wall Street Journal subscription has been suspended for some reason. How do I renew it?", "source": "libchat_2025"}
-{"intent": "special_collections", "utterance": "I'm looking for primary sources on the AIDS epidemic, specifically but not limited to things talking about the AIDS quilt", "source": "libchat_2025"}
