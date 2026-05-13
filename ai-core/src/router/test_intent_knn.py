@@ -55,8 +55,8 @@ from src.router.intent_knn import (  # noqa: E402
 # Each axis represents a coarse intent cluster:
 #   axis 0 -> hours
 #   axis 1 -> room_booking
-#   axis 2 -> librarian_lookup
-#   axis 3 -> makerspace_info
+#   axis 2 -> subject_librarian
+#   axis 3 -> makerspace_3d
 #
 # The embedder reads keywords from the utterance and assigns vector
 # weight to the matching axis. Mixed-keyword utterances get blended
@@ -65,8 +65,8 @@ from src.router.intent_knn import (  # noqa: E402
 _KEYWORDS = {
     0: ("hours", "open", "close"),     # hours
     1: ("room", "book", "reserve"),    # room_booking
-    2: ("librarian", "ask", "subject"),# librarian_lookup
-    3: ("makerspace", "3d", "printer"),# makerspace_info
+    2: ("librarian", "ask", "subject"),# subject_librarian
+    3: ("makerspace", "3d", "printer"),# makerspace_3d
 }
 
 
@@ -102,7 +102,7 @@ def test_exact_match_high_score_high_margin() -> None:
     knn = _build([
         ("hours", "what are the hours"),
         ("room_booking", "book a room"),
-        ("makerspace_info", "is the makerspace open"),
+        ("makerspace_3d", "is the makerspace open"),
     ])
     out = knn.classify("hours when open")
     assert out.intent == "hours"
@@ -133,19 +133,19 @@ def test_per_intent_best_score_wins_aggregation() -> None:
         ("hours", "hours general two"),
         ("hours", "hours general three"),
         # 1 strong librarian exemplar
-        ("librarian_lookup", "librarian subject ask"),
+        ("subject_librarian", "librarian subject ask"),
     ])
     # Query lights up the librarian cluster strongly.
     out = knn.classify("librarian subject ask")
-    assert out.intent == "librarian_lookup"
+    assert out.intent == "subject_librarian"
 
 
 def test_classification_returns_top_k_candidates() -> None:
     knn = _build([
         ("hours", "hours"),
         ("room_booking", "book a room"),
-        ("librarian_lookup", "ask a librarian"),
-        ("makerspace_info", "3d printer"),
+        ("subject_librarian", "ask a librarian"),
+        ("makerspace_3d", "3d printer"),
     ])
     knn.top_k = 3
     out = knn.classify("hours")
@@ -157,7 +157,7 @@ def test_classification_returns_top_k_candidates() -> None:
 def test_margin_high_no_clarification() -> None:
     knn = _build([
         ("hours", "hours when open"),
-        ("makerspace_info", "3d printer makerspace"),  # very different cluster
+        ("makerspace_3d", "3d printer makerspace"),  # very different cluster
     ])
     out = knn.classify("hours open")
     assert out.margin >= MARGIN_HIGH
@@ -226,25 +226,31 @@ def test_build_classifier_embeds_at_construction() -> None:
 
 
 def test_intents_registry_includes_documented_set() -> None:
-    """The plan calls out specific intents the orchestrator depends on.
-    A future PR that drops one without updating the orchestrator would
-    cause silent routing failures -- this test fails CI if the
-    contract drifts."""
+    """The orchestrator and routing code depend on these intent labels
+    existing. A future PR that drops one without updating the
+    orchestrator would cause silent routing failures -- this test
+    fails CI if the contract drifts.
+
+    Mirrors the 28-intent taxonomy grounded in lib.miamioh.edu/use/
+    and /research/. See `INTENTS` in intent_knn.py for the docstring.
+    """
     documented = {
-        "hours",
-        "room_booking",
-        "librarian_lookup",
-        "service_howto",
-        "policy_question",
-        "adobe_access",
-        "ill_request",
-        "makerspace_info",
-        "special_collections",
-        "digital_collections",
+        # Lookup
+        "hours", "location_directions", "staff_lookup", "subject_librarian",
+        # Borrow / circulation
+        "circulation_basic", "renewal", "loan_policy", "account",
+        "interlibrary_loan", "course_reserves", "find_resource",
+        # Spaces
+        "room_booking", "space_info", "makerspace_3d",
+        # Technology
+        "printing_wifi", "tech_checkout", "software_access", "adobe_access",
+        # Research
+        "databases", "citation_help", "research_consultation",
+        "data_services", "digital_collections", "special_collections",
         "newspapers",
-        "cross_campus_comparison",
-        "human_handoff",
-        "out_of_scope",
+        # Other
+        "events_news", "instruction_request", "service_howto",
+        "cross_campus_comparison", "human_handoff", "out_of_scope",
     }
     actual = set(INTENTS)
     missing = documented - actual

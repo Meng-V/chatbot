@@ -44,8 +44,8 @@ from src.retrieval.search import (
 
 _INTENT_TO_FEATURED: dict[str, str] = {
     "adobe_access": "adobe_checkout",
-    "ill_request": "ill",
-    "makerspace_info": "makerspace",
+    "interlibrary_loan": "ill",
+    "makerspace_3d": "makerspace",
     "special_collections": "special_collections",
     "digital_collections": "digital_collections",
     "newspapers": "newspapers",

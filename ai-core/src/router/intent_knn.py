@@ -235,31 +235,113 @@ def build_classifier(
     return IntentKNN(exemplars=exemplars, embedder=embedder)
 
 
+# --- Disk-backed exemplar loader ------------------------------------------
+
+
+_EXEMPLARS_PATH = (
+    __import__("pathlib").Path(__file__).parent / "exemplars" / "exemplars.jsonl"
+)
+"""Where the labeled exemplar JSONL lives. Built by
+scripts/build_exemplars_jsonl.py from the librarian-labeled CSV.
+Returns an empty list if the file doesn't exist yet (graceful early-
+launch behavior; the classifier returns out_of_scope-needs-clarify
+on every call until exemplars are populated)."""
+
+
+def load_exemplars_from_disk(
+    path: "Optional[__import__('pathlib').Path]" = None,
+) -> list[tuple[str, str]]:
+    """Read labeled exemplars from the JSONL file produced by
+    scripts/build_exemplars_jsonl.py.
+
+    Returns a list of (intent, utterance) tuples ready to pass to
+    `build_classifier()`. Returns an empty list if the file doesn't
+    exist -- callers fall through to the empty-classifier degradation
+    path.
+    """
+    import json
+    from pathlib import Path
+
+    p = path if path is not None else _EXEMPLARS_PATH
+    if not p.exists():
+        return []
+    out: list[tuple[str, str]] = []
+    with open(p, encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if not line or line.startswith("//"):
+                continue
+            obj = json.loads(line)
+            intent = obj.get("intent", "")
+            utterance = obj.get("utterance", "")
+            if not intent or not utterance:
+                continue
+            out.append((intent, utterance))
+    return out
+
+
 # --- Intent registry ------------------------------------------------------
 #
 # The canonical list of intent labels the classifier may return.
 # Keeping it here (not in a YAML file) means typos in
 # orchestrator code are caught at import time.
+#
+# Grounded in the real service taxonomy at lib.miamioh.edu/use/ and
+# /research/. Replaces the previous 14-intent set whose `ill_request`
+# bucket was over-broad (catching circulation questions like "will I
+# get a confirmation when I place a hold").
+#
+# Granularity choice: 28 intents. Each maps to a distinct service or
+# answer-shape on the website. The kNN classifier handles 28 fine when
+# each has 30+ exemplars; if any cluster is sparse after the librarian
+# labels, fold into a sibling at training time.
 
 INTENTS: tuple[str, ...] = (
-    # Lookup intents (data-shaped answers, structured responses)
+    # --- Lookup (info-shaped answers) ---
     "hours",
+    "location_directions",
+    "staff_lookup",
+    "subject_librarian",
+
+    # --- Borrow / circulation ---
+    # Distinct from interlibrary_loan: this covers Miami-OWNED items
+    # (placing a hold, "did the request go through", checkout
+    # confirmations). Real ILL is when Miami doesn't have the item.
+    "circulation_basic",
+    "renewal",
+    "loan_policy",
+    "account",
+    "interlibrary_loan",  # OhioLINK / ILLiad / WorldCat ONLY
+    "course_reserves",
+    "find_resource",      # "do you have X" -> catalog search
+
+    # --- Spaces ---
     "room_booking",
-    "librarian_lookup",
-    "service_howto",
-    "policy_question",
-    # Featured services -- separate intents so retrieval can boost
-    # featured_service-tagged chunks without an extra classifier pass
-    "adobe_access",
-    "ill_request",
-    "makerspace_info",
-    "special_collections",
+    "space_info",         # silent floor / group study / where is the cafe
+    "makerspace_3d",      # MakerSpace + 3D printing (high-value featured)
+
+    # --- Technology ---
+    "printing_wifi",
+    "tech_checkout",      # laptops / chargers / calculators / cameras
+    "software_access",    # software available on lib computers / checkout
+    "adobe_access",       # Adobe-specific (high-volume, distinct flow)
+
+    # --- Research ---
+    "databases",          # find articles / databases / e-resources
+    "citation_help",      # APA / MLA / Chicago / Zotero
+    "research_consultation",  # book research help, copyright, scholarly comm
+    "data_services",      # GIS / R / Python / data viz
     "digital_collections",
+    "special_collections",
     "newspapers",
-    # Cross-campus -- explicit intent so the orchestrator knows to
-    # run retrieval per-campus and merge
+
+    # --- Other ---
+    "events_news",        # upcoming events, exhibits, library news
+    "instruction_request",  # faculty asking for a library session for their class
+    "service_howto",      # generic "how do I X" catch-all (food/lockers/quiet
+                          # area / "where is the espresso bar" — when the
+                          # question doesn't fit a more specific service intent)
     "cross_campus_comparison",
-    # Routing intents
     "human_handoff",
     "out_of_scope",
 )

@@ -1,0 +1,6 @@
+# Per-environment build outputs of scripts/clean_libchat_transcripts.py
+# (the labeling-ready CSV and its coverage report). Both are derived
+# from the raw transcript export and may contain partially-cleaned PII
+# until the librarian's labeling pass completes -- keep out of git.
+exemplars_for_labeling.csv
+labeling_coverage_report.md
