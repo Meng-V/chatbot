@@ -97,6 +97,22 @@ MARGIN_HIGH = 0.10
 MARGIN_LOW = 0.05
 """Below this margin, classifier is uncertain -- ask the user."""
 
+SCORE_FLOOR = 0.50
+"""Absolute top-1 cosine-similarity floor. Below this, NO exemplar is
+genuinely close to the user message -- the message isn't about the
+library at all. Override the kNN's "best of 38" to out_of_scope.
+
+Calibrated against the gold-set eval (see findings/2026-05-13_v38_
+classifier.md): real library questions, even ones routed to the wrong
+intent, score >=0.50 against some exemplar. Off-topic questions
+("Do my homework", "What's the score of the Bengals game") score
+0.40-0.45 because no exemplar is genuinely about that topic.
+
+Without this floor the classifier picks a best-of-38 even when
+nothing matches -- a textbook closed-set classifier failure on
+open-world inputs. With the floor, the bot refuses cleanly instead
+of confidently mis-routing."""
+
 
 # --- Embedder seam --------------------------------------------------------
 
@@ -198,6 +214,25 @@ class IntentKNN:
         runner_up_score = ranked[1][1] if len(ranked) > 1 else 0.0
         margin = top_score - runner_up_score
 
+        # Absolute-score floor: if NO exemplar is genuinely close, the
+        # message isn't a library question. Override the closed-set
+        # best-of-38 to out_of_scope. We do this AFTER computing margin
+        # so telemetry still records the (suppressed) intent guess and
+        # margin -- helps tune SCORE_FLOOR against real traffic.
+        if top_score < SCORE_FLOOR:
+            return Classification(
+                intent="out_of_scope",
+                score=top_score,
+                margin=margin,
+                # `needs_clarification=False` -- we're CONFIDENT this is
+                # off-topic, not unsure between two intents. The
+                # refusal flow handles this; clarification chips would
+                # only confuse the user ("did you mean: hours / room /
+                # databases?" for a sports question).
+                needs_clarification=False,
+                candidates=ranked,
+            )
+
         return Classification(
             intent=top_intent,
             score=top_score,
@@ -238,45 +273,72 @@ def build_classifier(
 # --- Disk-backed exemplar loader ------------------------------------------
 
 
-_EXEMPLARS_PATH = (
-    __import__("pathlib").Path(__file__).parent / "exemplars" / "exemplars.jsonl"
+_EXEMPLARS_DIR = (
+    __import__("pathlib").Path(__file__).parent / "exemplars"
 )
+_EXEMPLARS_PATH = _EXEMPLARS_DIR / "exemplars.jsonl"
 """Where the labeled exemplar JSONL lives. Built by
-scripts/build_exemplars_jsonl.py from the librarian-labeled CSV.
-Returns an empty list if the file doesn't exist yet (graceful early-
-launch behavior; the classifier returns out_of_scope-needs-clarify
-on every call until exemplars are populated)."""
+scripts/pack_labeled_v38.py from the librarian-labeled CSV.
+
+The loader globs `exemplars*.jsonl` in this directory, so synthetic
+supplements (e.g. `exemplars_synthetic_v38.jsonl` filling thin-tail
+intents) merge in automatically without code changes. Returns an
+empty list if no files exist yet (graceful early-launch behavior;
+the classifier returns out_of_scope-needs-clarify on every call
+until exemplars are populated)."""
 
 
 def load_exemplars_from_disk(
     path: "Optional[__import__('pathlib').Path]" = None,
 ) -> list[tuple[str, str]]:
-    """Read labeled exemplars from the JSONL file produced by
-    scripts/build_exemplars_jsonl.py.
+    """Read labeled exemplars from the JSONL files in the exemplars dir.
 
-    Returns a list of (intent, utterance) tuples ready to pass to
-    `build_classifier()`. Returns an empty list if the file doesn't
-    exist -- callers fall through to the empty-classifier degradation
-    path.
+    Files matching `exemplars*.jsonl` (lexicographic order so loads
+    are deterministic) are concatenated. Comments (lines starting
+    with `//`) and blank lines are skipped.
+
+    Args:
+        path: Optional override -- if a single file, reads just that
+            file; if a directory, globs `exemplars*.jsonl` inside.
+            Default: the exemplars/ subdir adjacent to this module.
+
+    Returns:
+        A list of (intent, utterance) tuples ready to pass to
+        `build_classifier()`. Empty list if no files exist -- callers
+        fall through to the empty-classifier degradation path.
     """
     import json
     from pathlib import Path
 
-    p = path if path is not None else _EXEMPLARS_PATH
-    if not p.exists():
-        return []
     out: list[tuple[str, str]] = []
-    with open(p, encoding="utf-8") as f:
-        for line in f:
-            line = line.strip()
-            if not line or line.startswith("//"):
-                continue
-            obj = json.loads(line)
-            intent = obj.get("intent", "")
-            utterance = obj.get("utterance", "")
-            if not intent or not utterance:
-                continue
-            out.append((intent, utterance))
+
+    if path is not None:
+        # Caller-specified path: single file or single directory.
+        p = Path(path)
+        if p.is_dir():
+            files = sorted(p.glob("exemplars*.jsonl"))
+        elif p.exists():
+            files = [p]
+        else:
+            return []
+    else:
+        # Default: glob the canonical directory.
+        if not _EXEMPLARS_DIR.exists():
+            return []
+        files = sorted(_EXEMPLARS_DIR.glob("exemplars*.jsonl"))
+
+    for f_path in files:
+        with open(f_path, encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line or line.startswith("//"):
+                    continue
+                obj = json.loads(line)
+                intent = obj.get("intent", "")
+                utterance = obj.get("utterance", "")
+                if not intent or not utterance:
+                    continue
+                out.append((intent, utterance))
     return out
 
 
@@ -386,5 +448,6 @@ __all__ = [
     "IntentKNN",
     "MARGIN_HIGH",
     "MARGIN_LOW",
+    "SCORE_FLOOR",
     "build_classifier",
 ]

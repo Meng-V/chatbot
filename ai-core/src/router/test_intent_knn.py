@@ -41,6 +41,7 @@ from src.router.intent_knn import (  # noqa: E402
     INTENTS,
     MARGIN_HIGH,
     MARGIN_LOW,
+    SCORE_FLOOR,
     Classification,
     Exemplar,
     IntentKNN,
@@ -162,6 +163,90 @@ def test_margin_high_no_clarification() -> None:
     out = knn.classify("hours open")
     assert out.margin >= MARGIN_HIGH
     assert out.needs_clarification is False
+
+
+# --- Absolute-score floor (open-world refusal gate) ----------------------
+
+
+def test_score_below_floor_routes_to_out_of_scope() -> None:
+    """If NO exemplar is genuinely close to the user message, the kNN
+    classifier's "best of 38" override fires -- the message isn't a
+    library question. Without this floor, the bot picks the least-bad
+    intent for "what's the score of the Bengals game" and tries to
+    answer it.
+
+    Uses hand-constructed Exemplar vectors so cosine values are exact
+    (the keyword-fake embedder pins single-axis exemplars at 0.5
+    against uniform-vector queries, which is right ON the floor and
+    can't exercise the < branch cleanly).
+    """
+    # Query vector orthogonal to all exemplar vectors → cosine = 0 < FLOOR.
+    query_vec = [0.0, 0.0, 0.0, 1.0]
+
+    def embedder(t: str) -> list[float]:
+        return query_vec
+
+    knn = IntentKNN(
+        exemplars=[
+            Exemplar(intent="hours", text="hours", vector=[1.0, 0.0, 0.0, 0.0]),
+            Exemplar(intent="makerspace_3d", text="ms", vector=[0.0, 1.0, 0.0, 0.0]),
+        ],
+        embedder=embedder,
+    )
+    out = knn.classify("nothing relevant")
+    assert out.score < SCORE_FLOOR, (
+        f"premise broken: expected score < {SCORE_FLOOR}; got {out.score}"
+    )
+    assert out.intent == "out_of_scope", (
+        f"floor override failed: got intent={out.intent} score={out.score}"
+    )
+    # NOT a clarification -- we're CONFIDENT it's off-topic.
+    assert out.needs_clarification is False
+    # candidates list is preserved for telemetry / debug -- callers can
+    # see which intent the kNN *would* have picked.
+    assert out.candidates, "candidates should still be reported for telemetry"
+
+
+def test_score_above_floor_does_not_trigger_override() -> None:
+    """A strong match well above SCORE_FLOOR routes normally even if
+    the score is below 1.0. Sanity check that the floor doesn't
+    accidentally suppress real library questions."""
+    knn = _build([
+        ("hours", "what are the hours open close"),
+        ("makerspace_3d", "makerspace 3d printer"),
+    ])
+    out = knn.classify("hours when do you open close")
+    assert out.score >= SCORE_FLOOR, "premise broken"
+    assert out.intent == "hours", f"expected hours, got {out.intent}"
+
+
+def test_score_floor_overrides_intent_even_when_out_of_scope_exemplar_exists() -> None:
+    """If `out_of_scope` is already the closest intent but the score
+    is still below floor, the result is the same: out_of_scope. This
+    is the "no false-confidence" property -- a bot that says "this is
+    out of scope" with cosine 0.99 vs cosine 0.30 carries very
+    different operational weight, but the public answer is identical."""
+    query_vec = [0.0, 0.0, 0.0, 1.0]
+
+    def embedder(t: str) -> list[float]:
+        return query_vec
+
+    knn = IntentKNN(
+        exemplars=[
+            Exemplar(intent="hours", text="hours", vector=[1.0, 0.0, 0.0, 0.0]),
+            Exemplar(
+                intent="out_of_scope",
+                text="off-topic",
+                vector=[0.0, 1.0, 0.0, 0.0],
+            ),
+        ],
+        embedder=embedder,
+    )
+    out = knn.classify("xyz random nonsense words")
+    assert out.intent == "out_of_scope"
+    # Whether the underlying top-1 was out_of_scope or hours doesn't
+    # matter -- both paths reach out_of_scope. This test is just
+    # documenting the contract.
 
 
 # --- Cosine math ---
@@ -295,6 +380,9 @@ def main() -> int:
         test_per_intent_best_score_wins_aggregation,
         test_classification_returns_top_k_candidates,
         test_margin_high_no_clarification,
+        test_score_below_floor_routes_to_out_of_scope,
+        test_score_above_floor_does_not_trigger_override,
+        test_score_floor_overrides_intent_even_when_out_of_scope_exemplar_exists,
         test_cosine_identical_vectors_returns_one,
         test_cosine_orthogonal_vectors_returns_zero,
         test_cosine_opposite_vectors_returns_negative_one,
