@@ -44,14 +44,36 @@ import sys
 from collections import Counter
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
 
 # Allow running as a script.
 _HERE = Path(__file__).resolve().parent
 _AI_CORE = _HERE.parent.parent
 sys.path.insert(0, str(_AI_CORE))
 
+# Load .env so OPENAI_API_KEY is available when --with-judge fires.
+# Tiny inline parser avoids adding python-dotenv as a dependency.
+_ENV_PATH = _AI_CORE.parent / ".env"
+if _ENV_PATH.exists():
+    import os as _os
+    for _line in _ENV_PATH.read_text(encoding="utf-8").splitlines():
+        if not _line or _line.startswith("#") or "=" not in _line:
+            continue
+        _k, _, _v = _line.partition("=")
+        _k = _k.strip()
+        _v = _v.strip().strip('"').strip("'")
+        if _k and _k not in _os.environ:
+            _os.environ[_k] = _v
+
 from src.eval.golden_set import GoldQuestion, load_golden_set  # noqa: E402
+from src.eval.judge import (  # noqa: E402
+    JudgeAggregate,
+    JudgeParseError,
+    JudgeRequest,
+    Verdict,
+    aggregate_verdicts,
+    judge_answer,
+)
 from src.eval.smoke_e2e import (  # noqa: E402
     CannedAgentLLM,
     CannedSynthesizerLLM,
@@ -150,6 +172,18 @@ class EvalReport:
     """Number of citations emitted across all answers."""
     answers_with_citations: int = 0
     """Number of non-refusal answers that included at least one citation."""
+    # LLM-as-judge aggregates (populated only when --with-judge is set
+    # AND the response was non-stub i.e. capability-tier short-circuit).
+    judge_aggregate: Optional[JudgeAggregate] = None
+    judge_called: int = 0
+    judge_skipped_stub: int = 0
+    """Cases where the response was stubbed agent_then_answer/refusal,
+    not worth judging because the answer is canned regardless of
+    question. Tracked separately so the user knows the judge's
+    coverage is partial in the wiring phase."""
+    judge_errors: int = 0
+    """JudgeParseError count -- the judge returned malformed JSON.
+    Logged but doesn't stop the run."""
     by_category: dict[str, dict] = field(default_factory=dict)
     results: list[EvalResult] = field(default_factory=list)
 
@@ -271,6 +305,67 @@ def _build_stub_deps(classifier: IntentKNN) -> OrchestratorDeps:
     )
 
 
+# --- LLM-as-judge wrapper -------------------------------------------------
+#
+# Implements the `JudgeLLM` Protocol against `src.llm.client.structured_
+# completion`. The judge prompt prefix is `judge_v1` (registered in
+# src/prompts/judge_v1.py). Strict JSON schema so the parsed output
+# matches `Verdict`'s fields exactly.
+
+
+_JUDGE_SCHEMA = {
+    "type": "object",
+    "additionalProperties": False,
+    "properties": {
+        "verdict": {
+            "type": "string",
+            "enum": [
+                "correct", "partial", "wrong",
+                "refused_correctly", "refused_incorrectly",
+                "answered_should_have_refused",
+            ],
+        },
+        "reason": {"type": "string"},
+        "citation_validity": {
+            "type": "string",
+            "enum": ["all_valid", "some_invalid", "no_citations", "n_a"],
+        },
+    },
+    "required": ["verdict", "reason", "citation_validity"],
+}
+
+
+def _real_judge_llm(*, prefix_id: str, dynamic_suffix: str, model: str):
+    """Real JudgeLLM impl that calls src.llm.client.structured_completion.
+
+    Imported lazily so test runs don't pull in the OpenAI SDK. Returns
+    `(parsed_dict, usage_dict)` per the JudgeLLM Protocol.
+    """
+    from src.llm.client import structured_completion
+    parsed, usage = structured_completion(
+        prefix_id=prefix_id,
+        dynamic_suffix=dynamic_suffix,
+        response_schema=_JUDGE_SCHEMA,
+        schema_name="judge_verdict",
+        model=model,
+    )
+    return parsed, {
+        "input_tokens": usage.input_tokens,
+        "cached_input_tokens": usage.cached_input_tokens,
+        "output_tokens": usage.output_tokens,
+    }
+
+
+# Stub-output detection: the synth stub always returns this exact
+# answer text. When the bot's answer matches, the response is a
+# canned stub and not worth running through a paid judge.
+_STUB_ANSWER_MARKER = "King opens at 7am [1]."
+
+
+def _is_stub_answer(answer: Optional[str]) -> bool:
+    return bool(answer) and _STUB_ANSWER_MARKER in answer
+
+
 # --- Per-question runners -------------------------------------------------
 
 
@@ -342,15 +437,24 @@ def _run_bot(q: GoldQuestion, deps: OrchestratorDeps) -> dict:
 def run_eval(
     filter_category: Optional[str] = None,
     scope_only: bool = False,
+    with_judge: bool = False,
+    judge_llm: Optional[Any] = None,
 ) -> EvalReport:
     """Run the eval suite.
 
-    With scope_only=True: only exercises src/scope/resolver.py (the
-    legacy behavior).
-
-    With scope_only=False (default): builds the full orchestrator wiring
-    (real classifier + stub LLMs) and runs every gold question through
-    `run_turn`, recording scope+intent+path accuracy per question.
+    Args:
+        filter_category: If set, only run gold cases in this category.
+        scope_only: True -> only exercise src/scope/resolver.py (legacy mode).
+        with_judge: True -> after each turn, run the LLM-as-judge against
+            the bot's response. Skips cases where the response is
+            stubbed (agent_then_answer / agent_then_refusal with the
+            canned answer) -- judging stub output wastes money. Only
+            capability-tier short-circuits (POINT_TO_URL, REFUSE) get
+            judged in the current wiring phase. Cost: ~$0.02 per real
+            judge call, ~14-20 calls per full run = ~$0.20.
+        judge_llm: Callable matching JudgeLLM Protocol. If None and
+            with_judge=True, uses `_real_judge_llm` (calls OpenAI).
+            Tests pass a stub.
     """
     questions = load_golden_set()
     if filter_category:
@@ -364,6 +468,15 @@ def run_eval(
     classifier: Optional[IntentKNN] = None
     if not scope_only:
         classifier = _build_classifier()
+
+    # Resolve the judge LLM if needed. Import prompts/judge_v1 so the
+    # prefix registers before any call. Late-import keeps non-judge
+    # runs from paying for the openai/prompt-builder imports.
+    judge_verdicts: list[Verdict] = []
+    if with_judge:
+        import src.prompts.judge_v1  # noqa: F401 -- registers prefix
+        if judge_llm is None:
+            judge_llm = _real_judge_llm
 
     for q in questions:
         scope_match, ac_campus, ac_lib = _check_scope(q)
@@ -418,6 +531,34 @@ def run_eval(
                 if not result.bot_was_refusal:
                     report.answers_with_citations += 1
 
+            # LLM-as-judge -- plan §verification 2 ("automated scoring:
+            # answer correctness LLM-as-judge"). Skipped for stub
+            # output: judging "King opens at 7am [1]." against every
+            # gold question would produce mostly-wrong verdicts that
+            # tell us nothing about the bot's real behavior. Only run
+            # against capability-tier templated responses where the
+            # output reflects real bot logic.
+            if with_judge and judge_llm is not None and result.bot_answer:
+                if _is_stub_answer(result.bot_answer):
+                    report.judge_skipped_stub += 1
+                else:
+                    judge_req = JudgeRequest(
+                        question=q.question,
+                        expected_answer=q.expected_answer,
+                        bot_answer=result.bot_answer,
+                        allowed_urls=q.allowed_urls,
+                    )
+                    try:
+                        outcome = judge_answer(judge_req, judge_llm=judge_llm)
+                        result.judge_verdict = outcome.verdict.verdict
+                        judge_verdicts.append(outcome.verdict)
+                        report.judge_called += 1
+                    except JudgeParseError as e:
+                        report.judge_errors += 1
+                        logger.warning(
+                            "judge parse failed for %s: %s", q.id, e,
+                        )
+
         report.results.append(result)
         cat = report.by_category.setdefault(
             q.category,
@@ -443,6 +584,8 @@ def run_eval(
 
     # Top-level scope total is eligible-only; bot total is everything.
     report.total = len(scope_eligible)
+    if with_judge:
+        report.judge_aggregate = aggregate_verdicts(judge_verdicts)
     return report
 
 
@@ -511,6 +654,28 @@ def _percentile(values: list[int], pct: float) -> float:
 
 
 # --- Reporting ------------------------------------------------------------
+
+
+def _print_judge_block(report: EvalReport) -> None:
+    """Render the judge-verdict section. Caller already gated on
+    `report.judge_aggregate is not None`."""
+    agg = report.judge_aggregate
+    if agg is None:
+        return
+    print()
+    print(f"LLM-as-judge verdicts ({report.judge_called} judged, "
+          f"{report.judge_skipped_stub} skipped as stub output, "
+          f"{report.judge_errors} parse errors):")
+    if agg.total == 0:
+        print("  (no eligible cases this run)")
+        return
+    print(f"  correct_rate (correct + refused_correctly): "
+          f"{100 * agg.correct_rate:.1f}%")
+    print(f"  citation_valid_rate (non-refusal answers):  "
+          f"{100 * agg.citation_valid_rate:.1f}%")
+    print("  by verdict:")
+    for v, n in sorted(agg.by_verdict.items(), key=lambda kv: -kv[1]):
+        print(f"    {v:35s} {n}")
 
 
 def _print_report(report: EvalReport, verbose: bool, scope_only: bool) -> None:
@@ -586,6 +751,10 @@ def _print_report(report: EvalReport, verbose: bool, scope_only: bool) -> None:
             print(f"  output p50={_percentile(outputs, 50):.0f} p95={_percentile(outputs, 95):.0f} "
                   f"sum={sum(outputs):,}")
 
+        # Judge block (only when --with-judge produced anything).
+        if report.judge_aggregate is not None:
+            _print_judge_block(report)
+
     print()
     if scope_only:
         print("Per-category scope match rate (eligible only):")
@@ -632,6 +801,14 @@ def main() -> int:
         "--scope-only", action="store_true",
         help="Only check src/scope/resolver.py; don't build the bot.",
     )
+    parser.add_argument(
+        "--with-judge", action="store_true",
+        help=(
+            "After each turn, run the LLM-as-judge against the bot's "
+            "response (using `judge_v1` prompt + gpt-5.4-mini). Skips "
+            "stubbed answers automatically. ~$0.02 per judged case."
+        ),
+    )
     parser.add_argument("--verbose", "-v", action="store_true")
     args = parser.parse_args()
 
@@ -643,6 +820,7 @@ def main() -> int:
     report = run_eval(
         filter_category=args.filter,
         scope_only=args.scope_only,
+        with_judge=args.with_judge,
     )
     _print_report(report, verbose=args.verbose, scope_only=args.scope_only)
 
