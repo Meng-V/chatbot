@@ -153,10 +153,15 @@ expired hours, old exhibits)."*
 
 **Gap:** none material. The `events_news` intent had 13 exemplars
 in the labeled v38 set — fewer than the strong intents (218 for
-newspapers, 166 for adobe) but enough to route reliably. The
-classifier accuracy report doesn't have a gold-set case for this
-intent specifically, so we're not measuring its routing in the
-gold-set eval. Worth adding 2-3 gold cases.
+newspapers, 166 for adobe) but enough to route reliably.
+
+(**Correction from earlier draft:** the v3 gold set [PR #39] does
+cover `events_news` with 3 cases: `events_this_week`,
+`events_exhibits`, `events_workshop`. Re-running the classifier
+eval against the full 184-case v3 gold set shows 2/3 correct on
+this intent — the single miss routes to `out_of_scope`, which
+still produces a refusal in the orchestrator, just via a less-
+specific path.)
 
 ## Archetype 5 — Account-state hallucination ("Your fines are $14.50")
 
@@ -191,7 +196,7 @@ layer, not just at the synthesis layer.
 | 1. Cross-campus wire-cross | Scope resolver + capability tier (`service_not_at_building`) | `test_makerspace_hamilton_path_refuses_with_service_not_at_building` | `LibrarySpace.services_offered` is data-dependent — librarian must seed |
 | 2. Fabricated URLs | `UrlSeen` allowlist + post-processor citation validator | `test_url_not_cited_not_in_allowlist_refuses` | Apply phase hasn't run; `UrlSeen` empty in prod |
 | 3. Polluted retrievals | `trafilatura` extraction + boilerplate filter + scope-tagged chunks | `test_extract.py` + `test_scope_filter.py` | No printing-specific smoke fixture; depends on apply phase |
-| 4. Stale events/news | ETL excludes `/about/news-events/*` + `events_news` REFUSE | `test_events_news_is_refuse_with_news_excluded_trigger` | 0 gold-set cases for `events_news` |
+| 4. Stale events/news | ETL excludes `/about/news-events/*` + `events_news` REFUSE | `test_events_news_is_refuse_with_news_excluded_trigger` | None material — v3 gold set covers `events_news` with 3 cases (2/3 correct on classifier eval) |
 | 5. Account hallucination | `account` REFUSE before agent runs | `test_account_path_response_is_refusal_with_myaccount_link` | None — strongest coverage |
 
 ## What this exercise does NOT tell us
@@ -218,6 +223,6 @@ layer, not just at the synthesis layer.
 - [ ] `src/eval/run_eval.py` TODOs filled in (bot orchestrator +
       judge wiring) so the gold-set eval reports end-to-end
       citation validity rate, not just intent accuracy.
-- [ ] Add ≥2 gold-set cases for `events_news` intent.
+- [x] Add ≥2 gold-set cases for `events_news` intent — done in PR #39 (3 cases).
 - [ ] Add a "printing pollution" smoke-e2e fixture once Weaviate
       has live chunks.
