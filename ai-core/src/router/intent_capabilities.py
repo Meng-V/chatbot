@@ -122,6 +122,22 @@ _POINT_TO_URL: dict[str, IntentCapability] = {
             "Loan: https://www.lib.miamioh.edu/use/borrow/ill/"
         ),
     ),
+    "library_employment": IntentCapability(
+        intent="library_employment",
+        tier=CapabilityTier.POINT_TO_URL,
+        canonical_url="https://www.lib.miamioh.edu/about/organization/employment/",
+        short_message=(
+            "Miami University Libraries posts job openings on the "
+            "library employment page. Student worker positions, staff "
+            "positions, and faculty librarian positions all link out "
+            "from there to the official Miami Workday job-posting "
+            "system.\n\n"
+            "Employment: https://www.lib.miamioh.edu/about/organization/employment/\n\n"
+            "Why route here? Job-posting content changes constantly "
+            "and lives on Workday, not in our indexed pages. The "
+            "official page is always current."
+        ),
+    ),
 }
 
 
@@ -161,6 +177,23 @@ _REFUSE: dict[str, IntentCapability] = {
             "https://www.lib.miamioh.edu/about/news-events/"
         ),
         refusal_trigger="news_excluded",
+    ),
+    "website_feedback": IntentCapability(
+        intent="website_feedback",
+        tier=CapabilityTier.REFUSE,
+        canonical_url="https://www.lib.miamioh.edu/research/research-support/ask/",
+        short_message=(
+            "I can't fix the library website, broken links, or chatbot "
+            "behavior on my own -- those reports go to the library web "
+            "team. Please describe the problem through Ask Us and a "
+            "real person will follow up + log the issue.\n\n"
+            "Ask Us: https://www.lib.miamioh.edu/research/research-support/ask/\n\n"
+            "If it's a broken database link or off-campus access "
+            "problem specifically (most common report), the proxy / "
+            "EZproxy team handles those -- mention the database name "
+            "and the URL you tried."
+        ),
+        refusal_trigger="website_feedback_handoff",
     ),
 }
 

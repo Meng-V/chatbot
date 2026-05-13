@@ -231,8 +231,16 @@ def test_intents_registry_includes_documented_set() -> None:
     orchestrator would cause silent routing failures -- this test
     fails CI if the contract drifts.
 
-    Mirrors the 28-intent taxonomy grounded in lib.miamioh.edu/use/
-    and /research/. See `INTENTS` in intent_knn.py for the docstring.
+    Mirrors the 38-intent taxonomy grounded in lib.miamioh.edu/use/,
+    /research/, and the librarian-curated labeling guide
+    (intent_labeling_guide_38.md). See `INTENTS` in intent_knn.py.
+
+    The seven intents past the original 31-set are: remote_access,
+    accessibility_services, copyright_permissions, scholarly_publishing,
+    av_production, website_feedback, library_employment. They came from
+    real LibChat case clusters that the smaller taxonomy was forcing
+    into wrong buckets (especially remote_access at 352 cases and
+    av_production splitting off tech_checkout).
     """
     documented = {
         # Lookup
@@ -244,17 +252,28 @@ def test_intents_registry_includes_documented_set() -> None:
         "room_booking", "space_info", "makerspace_3d",
         # Technology
         "printing_wifi", "tech_checkout", "software_access", "adobe_access",
+        "av_production",
         # Research
         "databases", "citation_help", "research_consultation",
         "data_services", "digital_collections", "special_collections",
         "newspapers",
+        # Access / policy
+        "remote_access", "accessibility_services", "copyright_permissions",
+        "scholarly_publishing",
         # Other
         "events_news", "instruction_request", "service_howto",
         "cross_campus_comparison", "human_handoff", "out_of_scope",
+        "website_feedback", "library_employment",
     }
     actual = set(INTENTS)
     missing = documented - actual
     assert not missing, f"missing intents from registry: {missing}"
+    # 38-intent contract lock-in. If we add another, update both the
+    # set above and this count -- the assertion is a tripwire against
+    # silent expansion that bypasses test review.
+    assert len(documented) == 38, (
+        f"expected 38 documented intents, got {len(documented)}"
+    )
 
 
 def test_classification_dataclass_shape() -> None:

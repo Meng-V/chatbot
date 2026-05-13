@@ -291,10 +291,22 @@ def load_exemplars_from_disk(
 # bucket was over-broad (catching circulation questions like "will I
 # get a confirmation when I place a hold").
 #
-# Granularity choice: 28 intents. Each maps to a distinct service or
-# answer-shape on the website. The kNN classifier handles 28 fine when
-# each has 30+ exemplars; if any cluster is sparse after the librarian
-# labels, fold into a sibling at training time.
+# Granularity choice: 38 intents. Each maps to a distinct service or
+# answer-shape on the website. Refined from the earlier 31-intent set
+# after librarian review of 6,236 real LibChat transcripts surfaced
+# 7 services that didn't fit any existing bucket:
+#
+#   - remote_access         (352 real cases -- the largest gap by far;
+#                            users hit proxy / EZproxy errors)
+#   - website_feedback      (46 cases -- broken links / wrong content)
+#   - scholarly_publishing  (41 cases -- Scholarly Commons, IR deposit)
+#   - library_employment    (38 cases -- jobs at the library)
+#   - copyright_permissions (14 cases -- distinct from citation_help)
+#   - av_production         (14 cases -- distinct from tech_checkout)
+#   - accessibility_services (9 cases -- ADA accommodations)
+#
+# See ai-core/src/router/exemplars/INTENT_GUIDE.md for the full
+# definition table + priority rules + tie-breaks.
 
 INTENTS: tuple[str, ...] = (
     # --- Lookup (info-shaped answers) ---
@@ -325,22 +337,41 @@ INTENTS: tuple[str, ...] = (
     "tech_checkout",      # laptops / chargers / calculators / cameras
     "software_access",    # software available on lib computers / checkout
     "adobe_access",       # Adobe-specific (high-volume, distinct flow)
+    "av_production",      # podcast/video studios, recording, media-creation
+                          # workflow (distinct from tech_checkout: equipment
+                          # borrowing vs end-to-end production support)
 
     # --- Research ---
-    "databases",          # find articles / databases / e-resources
+    "databases",          # JSTOR/EBSCO/PubMed -- which db to use, A-Z list
     "citation_help",      # APA / MLA / Chicago / Zotero
-    "research_consultation",  # book research help, copyright, scholarly comm
-    "data_services",      # GIS / R / Python / data viz
+    "research_consultation",  # research appointment, topic narrowing,
+                              # source strategy, meet a librarian
+    "data_services",      # GIS / R / Python / data viz / research data
     "digital_collections",
     "special_collections",
     "newspapers",
+    "remote_access",      # EZproxy / off-campus database access /
+                          # 401-403 errors / VPN-shaped questions.
+                          # CRITICAL: distinct from `databases` --
+                          # "Do you have JSTOR?" = databases;
+                          # "How do I get into JSTOR from home?" = remote_access.
+    "copyright_permissions",  # fair use, permission to reuse, public
+                              # domain, TEACH Act. Distinct from
+                              # citation_help -- "How do I cite?" vs
+                              # "Am I allowed to use this?"
+    "scholarly_publishing",   # Scholarly Commons, IR deposit, author
+                              # rights, open access, thesis/diss deposit
 
     # --- Other ---
     "events_news",        # upcoming events, exhibits, library news
     "instruction_request",  # faculty asking for a library session for their class
-    "service_howto",      # generic "how do I X" catch-all (food/lockers/quiet
-                          # area / "where is the espresso bar" — when the
-                          # question doesn't fit a more specific service intent)
+    "accessibility_services",  # ADA, accommodations, alt formats
+    "library_employment",      # student/staff/faculty jobs at the libraries
+    "website_feedback",        # broken links, form errors, incorrect content,
+                               # chatbot feedback. Bot can't fix; route to
+                               # webmaster.
+    "service_howto",      # generic "how do I X" catch-all when no more
+                          # specific intent fits. Fallback only.
     "cross_campus_comparison",
     "human_handoff",
     "out_of_scope",

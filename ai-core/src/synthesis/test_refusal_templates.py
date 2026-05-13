@@ -50,9 +50,11 @@ SCOPE_FREE_TRIGGERS = [
     RefusalTrigger.MODEL_SELF_FLAGGED,
     RefusalTrigger.CITATION_INVALID,
     # Per-intent capability registry refusals (intent_capabilities.py
-    # routes here when classifier picks `account` or `events_news`).
+    # routes here when classifier picks `account`, `events_news`, or
+    # `website_feedback`).
     RefusalTrigger.ACCOUNT_PRIVACY,
     RefusalTrigger.NEWS_EXCLUDED,
+    RefusalTrigger.WEBSITE_FEEDBACK_HANDOFF,
 ]
 
 SCOPED_TRIGGERS = [
@@ -139,6 +141,20 @@ def test_every_trigger_has_a_template() -> None:
         assert trigger in _TEMPLATES, f"missing template for trigger: {trigger}"
 
 
+def test_website_feedback_handoff_routes_to_ask_us() -> None:
+    """The handoff is the whole point -- the bot cannot fix the website
+    itself, so the refusal must direct the user to a human channel
+    (Ask Us). A future copy edit that drops "Ask Us" silently breaks
+    the feedback escalation path."""
+    msg = render_refusal(RefusalTrigger.WEBSITE_FEEDBACK_HANDOFF)
+    assert "Ask Us" in msg
+    # And does NOT promise the bot will fix anything.
+    assert (
+        "can't fix" in msg.lower()
+        or "cannot fix" in msg.lower()
+    )
+
+
 def test_no_placeholders_in_scope_free_outputs() -> None:
     """Defense in depth: even if a scope-free template accidentally
     contains a placeholder, render must not ship it. (test_scope_free_
@@ -162,6 +178,7 @@ def main() -> int:
         test_service_not_at_building_renders_with_full_context,
         test_service_not_at_building_raises_when_service_name_missing,
         test_every_trigger_has_a_template,
+        test_website_feedback_handoff_routes_to_ask_us,
         test_no_placeholders_in_scope_free_outputs,
     ]
     failed = 0

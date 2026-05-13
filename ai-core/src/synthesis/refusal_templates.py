@@ -61,6 +61,11 @@ class RefusalTrigger(str, Enum):
     source of "fake service" hallucinations). Point to the live
     News & Events page."""
 
+    WEBSITE_FEEDBACK_HANDOFF = "website_feedback_handoff"
+    """User reported a broken link / wrong content / chatbot bug.
+    Bot can't fix the website itself; route to Ask Us so a real
+    person logs the issue and follows up."""
+
     # Synthesizer side
     MODEL_SELF_FLAGGED = "model_self_flagged"
     """The synthesizer returned `confidence: low` or the literal
@@ -174,6 +179,11 @@ _TEMPLATES: dict[RefusalTrigger, str] = {
         "I don't have library events, news, or exhibits indexed. "
         "Please check the News & Events page on the library website "
         "directly for current listings."
+    ),
+    RefusalTrigger.WEBSITE_FEEDBACK_HANDOFF: (
+        "Thanks for flagging that. I can't fix the library website or "
+        "chatbot directly -- please describe the problem through Ask "
+        "Us so the right person can look at it."
     ),
 }
 
