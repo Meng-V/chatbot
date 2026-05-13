@@ -1,0 +1,161 @@
+// Synthetic exemplars (source=synthetic_v38) to address thin-tail
+// intents in the librarian-labeled set. Targeted at specific gold-set
+// failure modes; see findings/2026-05-13_v38_classifier.md.
+//
+// Style: mirrors real LibChat phrasing (conversational, sometimes
+// short, occasionally typo'd). Each is a plausible user message --
+// not a sentence a librarian would write, a sentence a user would.
+//
+// Rules for adding more:
+//   1. One intent per row, source: "synthetic_v38" always.
+//   2. No duplicate utterances across the whole exemplars set
+//      (run scripts/pack_labeled_v38.py to validate; the packer
+//      doesn't enforce dedupe but the diff report will surface
+//      collisions).
+//   3. Phrase like a user, not a librarian. "where is wertz" beats
+//      "What is the location of the Wertz Art & Architecture Library?"
+//   4. Cover the variants in the labeling guide's tie-break rules,
+//      not just the central case.
+//
+// location_directions: building-level "where is X library" queries.
+// The librarian-labeled set covers room/department locations well but
+// has zero "where is the building itself" examples. Gold set
+// expects location_directions for all 7 such queries and they all
+// failed pre-synth.
+{"intent": "location_directions", "utterance": "Where is Wertz?", "source": "synthetic_v38"}
+{"intent": "location_directions", "utterance": "where is wertz library", "source": "synthetic_v38"}
+{"intent": "location_directions", "utterance": "What's the address of King Library?", "source": "synthetic_v38"}
+{"intent": "location_directions", "utterance": "address for king library", "source": "synthetic_v38"}
+{"intent": "location_directions", "utterance": "Where is Gardner-Harvey Library?", "source": "synthetic_v38"}
+{"intent": "location_directions", "utterance": "How do I find Rentschler Library?", "source": "synthetic_v38"}
+{"intent": "location_directions", "utterance": "Where is the library on the Hamilton campus?", "source": "synthetic_v38"}
+{"intent": "location_directions", "utterance": "where is the Middletown library located", "source": "synthetic_v38"}
+{"intent": "location_directions", "utterance": "What building is the art library in?", "source": "synthetic_v38"}
+{"intent": "location_directions", "utterance": "Where is SWORD?", "source": "synthetic_v38"}
+{"intent": "location_directions", "utterance": "How do I get to the regional depository?", "source": "synthetic_v38"}
+{"intent": "location_directions", "utterance": "directions to king library please", "source": "synthetic_v38"}
+{"intent": "location_directions", "utterance": "Where is Special Collections located?", "source": "synthetic_v38"}
+{"intent": "location_directions", "utterance": "Can you tell me how to get to BEST Library?", "source": "synthetic_v38"}
+{"intent": "location_directions", "utterance": "what's the street address for the library", "source": "synthetic_v38"}
+
+// service_howto: generic "how do I" fallbacks. The gold set has 17
+// service_howto cases and the labeled set has only 11 of these --
+// the classifier always picks a more specific intent. These
+// synthetic exemplars are deliberately broad so the intent earns
+// its fallback role.
+{"intent": "service_howto", "utterance": "What's the food policy?", "source": "synthetic_v38"}
+{"intent": "service_howto", "utterance": "Can I bring food into the library?", "source": "synthetic_v38"}
+{"intent": "service_howto", "utterance": "are drinks allowed at the library", "source": "synthetic_v38"}
+{"intent": "service_howto", "utterance": "Where is the silent study area?", "source": "synthetic_v38"}
+{"intent": "service_howto", "utterance": "Which floor is the quiet area?", "source": "synthetic_v38"}
+{"intent": "service_howto", "utterance": "How do I get a library account?", "source": "synthetic_v38"}
+{"intent": "service_howto", "utterance": "Do I need to sign up for anything to use the library?", "source": "synthetic_v38"}
+{"intent": "service_howto", "utterance": "How do guests use the library?", "source": "synthetic_v38"}
+{"intent": "service_howto", "utterance": "Can community members use the library?", "source": "synthetic_v38"}
+{"intent": "service_howto", "utterance": "What can I do at the library?", "source": "synthetic_v38"}
+{"intent": "service_howto", "utterance": "What services does the library offer?", "source": "synthetic_v38"}
+{"intent": "service_howto", "utterance": "I'm new here, what should I know about the library?", "source": "synthetic_v38"}
+{"intent": "service_howto", "utterance": "how do I use the library", "source": "synthetic_v38"}
+{"intent": "service_howto", "utterance": "what are the rules for using the library", "source": "synthetic_v38"}
+{"intent": "service_howto", "utterance": "Is there a lost and found at the library?", "source": "synthetic_v38"}
+
+// digital_collections: overview-level queries. Labeled set has 10
+// (mostly highly-specific "I'm looking for a particular item" cases).
+// Need exemplars for "what digital collections do you have" shape.
+{"intent": "digital_collections", "utterance": "What digital collections does the library have?", "source": "synthetic_v38"}
+{"intent": "digital_collections", "utterance": "What digital collections does Miami have?", "source": "synthetic_v38"}
+{"intent": "digital_collections", "utterance": "Where can I find your digital collections?", "source": "synthetic_v38"}
+{"intent": "digital_collections", "utterance": "How do I browse the library's digital collections?", "source": "synthetic_v38"}
+{"intent": "digital_collections", "utterance": "Do you have a digital archive?", "source": "synthetic_v38"}
+{"intent": "digital_collections", "utterance": "Tell me about the library's online collections", "source": "synthetic_v38"}
+{"intent": "digital_collections", "utterance": "digital exhibits at miami library", "source": "synthetic_v38"}
+{"intent": "digital_collections", "utterance": "Where are the scanned manuscripts and photos?", "source": "synthetic_v38"}
+{"intent": "digital_collections", "utterance": "Where can I see digitized library materials?", "source": "synthetic_v38"}
+{"intent": "digital_collections", "utterance": "Is there a digital library I can browse?", "source": "synthetic_v38"}
+
+// cross_campus_comparison: "do all libraries..." and "at every
+// campus" queries. Labeled set has 1 (literally one). This intent
+// needs the most synthetic help.
+{"intent": "cross_campus_comparison", "utterance": "Do all libraries have 3D printing?", "source": "synthetic_v38"}
+{"intent": "cross_campus_comparison", "utterance": "Does every campus have a MakerSpace?", "source": "synthetic_v38"}
+{"intent": "cross_campus_comparison", "utterance": "Are there special collections at every Miami library?", "source": "synthetic_v38"}
+{"intent": "cross_campus_comparison", "utterance": "Which campuses have study rooms?", "source": "synthetic_v38"}
+{"intent": "cross_campus_comparison", "utterance": "Do all the libraries offer the same services?", "source": "synthetic_v38"}
+{"intent": "cross_campus_comparison", "utterance": "Which libraries are open on weekends?", "source": "synthetic_v38"}
+{"intent": "cross_campus_comparison", "utterance": "Are all the libraries the same size?", "source": "synthetic_v38"}
+{"intent": "cross_campus_comparison", "utterance": "What's the difference between King and Wertz?", "source": "synthetic_v38"}
+{"intent": "cross_campus_comparison", "utterance": "How does the Hamilton library compare to Oxford?", "source": "synthetic_v38"}
+{"intent": "cross_campus_comparison", "utterance": "Do regional libraries have printing too?", "source": "synthetic_v38"}
+{"intent": "cross_campus_comparison", "utterance": "Compare services across the Miami libraries", "source": "synthetic_v38"}
+{"intent": "cross_campus_comparison", "utterance": "Can I get the same help at any Miami library?", "source": "synthetic_v38"}
+{"intent": "cross_campus_comparison", "utterance": "do oxford hamilton and middletown have the same hours", "source": "synthetic_v38"}
+{"intent": "cross_campus_comparison", "utterance": "Are there librarians at every campus?", "source": "synthetic_v38"}
+{"intent": "cross_campus_comparison", "utterance": "Does each library have its own special collections?", "source": "synthetic_v38"}
+
+// subject_librarian: "who is the X librarian" + role-based lookups.
+// Labeled set has 31 but skews toward "find my personal librarian".
+// Gold set's "Who works at the Hamilton library?" + "Who is the
+// archivist?" miss because labeled set has few of these shapes.
+{"intent": "subject_librarian", "utterance": "Who is the biology librarian?", "source": "synthetic_v38"}
+{"intent": "subject_librarian", "utterance": "Who's the archivist?", "source": "synthetic_v38"}
+{"intent": "subject_librarian", "utterance": "Who works at the Hamilton library?", "source": "synthetic_v38"}
+{"intent": "subject_librarian", "utterance": "Who handles psychology research at the library?", "source": "synthetic_v38"}
+{"intent": "subject_librarian", "utterance": "Who's my subject librarian for history?", "source": "synthetic_v38"}
+{"intent": "subject_librarian", "utterance": "Who is the engineering librarian?", "source": "synthetic_v38"}
+{"intent": "subject_librarian", "utterance": "I'm an English major; who's my librarian?", "source": "synthetic_v38"}
+{"intent": "subject_librarian", "utterance": "Which librarian helps with nursing research?", "source": "synthetic_v38"}
+{"intent": "subject_librarian", "utterance": "Who's the data librarian?", "source": "synthetic_v38"}
+{"intent": "subject_librarian", "utterance": "Do you have a librarian who specializes in business?", "source": "synthetic_v38"}
+
+// human_handoff: direct chat / call / connect-me requests.
+// Labeled set has 87 but mostly staff-to-staff transfers ("I have a
+// patron on the phone..."). User-facing "Can I chat?" cases are
+// under-represented.
+{"intent": "human_handoff", "utterance": "Can I chat with a librarian?", "source": "synthetic_v38"}
+{"intent": "human_handoff", "utterance": "I need to talk to a real person", "source": "synthetic_v38"}
+{"intent": "human_handoff", "utterance": "How do I contact the library?", "source": "synthetic_v38"}
+{"intent": "human_handoff", "utterance": "Is there someone I can email?", "source": "synthetic_v38"}
+{"intent": "human_handoff", "utterance": "Can I call the library?", "source": "synthetic_v38"}
+
+// accessibility_services: thin (6 exemplars). Plan-relevant -- ADA
+// queries are low-volume but high-stakes.
+{"intent": "accessibility_services", "utterance": "What accessibility services does the library offer?", "source": "synthetic_v38"}
+{"intent": "accessibility_services", "utterance": "I need an ADA accommodation for the library", "source": "synthetic_v38"}
+{"intent": "accessibility_services", "utterance": "Are library materials available in alternative formats?", "source": "synthetic_v38"}
+{"intent": "accessibility_services", "utterance": "Does the library have wheelchair access?", "source": "synthetic_v38"}
+{"intent": "accessibility_services", "utterance": "How do I request an accessible version of a book?", "source": "synthetic_v38"}
+{"intent": "accessibility_services", "utterance": "What accessibility resources are available?", "source": "synthetic_v38"}
+{"intent": "accessibility_services", "utterance": "I'm visually impaired; what library help is available?", "source": "synthetic_v38"}
+{"intent": "accessibility_services", "utterance": "Library accommodations for students with disabilities", "source": "synthetic_v38"}
+
+// copyright_permissions: 5 exemplars. Critical distinction vs
+// citation_help (per labeling guide: "Am I allowed to use this?" vs
+// "How do I cite this?").
+{"intent": "copyright_permissions", "utterance": "Am I allowed to use this image in my paper?", "source": "synthetic_v38"}
+{"intent": "copyright_permissions", "utterance": "Can I reuse this content?", "source": "synthetic_v38"}
+{"intent": "copyright_permissions", "utterance": "Is this material under fair use?", "source": "synthetic_v38"}
+{"intent": "copyright_permissions", "utterance": "Do I need permission to use this in my thesis?", "source": "synthetic_v38"}
+{"intent": "copyright_permissions", "utterance": "How do I find out if something is public domain?", "source": "synthetic_v38"}
+{"intent": "copyright_permissions", "utterance": "What does fair use mean for my classroom?", "source": "synthetic_v38"}
+{"intent": "copyright_permissions", "utterance": "Can I post this article on my course website?", "source": "synthetic_v38"}
+{"intent": "copyright_permissions", "utterance": "TEACH Act question about videos in class", "source": "synthetic_v38"}
+
+// av_production: 10 exemplars. Distinct from tech_checkout per
+// labeling guide ("borrow a microphone" vs "use the podcast studio").
+{"intent": "av_production", "utterance": "Where is the podcast studio?", "source": "synthetic_v38"}
+{"intent": "av_production", "utterance": "How do I book the video studio?", "source": "synthetic_v38"}
+{"intent": "av_production", "utterance": "Can I record a podcast at the library?", "source": "synthetic_v38"}
+{"intent": "av_production", "utterance": "I need help producing a video for my class", "source": "synthetic_v38"}
+{"intent": "av_production", "utterance": "Where can I edit audio at the library?", "source": "synthetic_v38"}
+{"intent": "av_production", "utterance": "Is there a place to film at the library?", "source": "synthetic_v38"}
+{"intent": "av_production", "utterance": "Does the library have a recording studio?", "source": "synthetic_v38"}
+{"intent": "av_production", "utterance": "media production support at miami library", "source": "synthetic_v38"}
+
+// instruction_request: 8 exemplars. Faculty-side, low-volume but
+// distinctive shape.
+{"intent": "instruction_request", "utterance": "I'd like to schedule a library instruction session for my class", "source": "synthetic_v38"}
+{"intent": "instruction_request", "utterance": "Can a librarian come teach my students about research?", "source": "synthetic_v38"}
+{"intent": "instruction_request", "utterance": "How do I request a library session for ENG 220?", "source": "synthetic_v38"}
+{"intent": "instruction_request", "utterance": "Schedule information literacy training for my course", "source": "synthetic_v38"}
+{"intent": "instruction_request", "utterance": "I want a librarian to visit my class", "source": "synthetic_v38"}
+{"intent": "instruction_request", "utterance": "course-integrated library instruction request", "source": "synthetic_v38"}

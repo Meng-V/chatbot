@@ -60,6 +60,21 @@ def test_find_resource_is_point_to_url_to_primo() -> None:
     assert "Interlibrary Loan" in cap.short_message
 
 
+def test_library_employment_is_point_to_url() -> None:
+    """Library jobs live on Workday, not in our indexed pages.
+    Job-posting content changes constantly -- routing to the
+    employment page is more accurate than anything the LLM could
+    paraphrase from a stale crawl."""
+    cap = get_intent_capability("library_employment")
+    assert cap.tier == CapabilityTier.POINT_TO_URL
+    assert "lib.miamioh.edu/about/organization/employment" in cap.canonical_url
+    # Body explains the Workday handoff so the user knows where they're going.
+    assert "Workday" in cap.short_message
+    # Mention of student / staff / faculty paths so users with different
+    # roles see themselves in the answer.
+    assert "student" in cap.short_message.lower()
+
+
 # --- REFUSE intents ------------------------------------------------------
 
 
@@ -83,6 +98,24 @@ def test_events_news_is_refuse_with_news_excluded_trigger() -> None:
     assert (
         "old event" in cap.short_message.lower()
         or "stale" in cap.short_message.lower()
+    )
+
+
+def test_website_feedback_is_refuse_with_handoff_trigger() -> None:
+    """User reports a broken link / wrong content / chatbot bug. Bot
+    can't fix the website itself; refusal routes to Ask Us so a real
+    person logs the issue and follows up. The refusal must be polite
+    -- the user is doing the library a favor by reporting."""
+    cap = get_intent_capability("website_feedback")
+    assert cap.tier == CapabilityTier.REFUSE
+    assert cap.refusal_trigger == "website_feedback_handoff"
+    assert cap.canonical_url is not None
+    # Ask Us is the canonical destination for feedback handoff.
+    assert "Ask Us" in cap.short_message or "ask" in cap.canonical_url.lower()
+    # Bot must NOT promise to fix the issue itself.
+    assert (
+        "can't fix" in cap.short_message.lower()
+        or "cannot fix" in cap.short_message.lower()
     )
 
 
@@ -117,6 +150,24 @@ def test_interlibrary_loan_is_ready() -> None:
     the form. Per plan: action vs guidance distinction."""
     cap = get_intent_capability("interlibrary_loan")
     assert cap.tier == CapabilityTier.READY
+
+
+def test_new_38set_intents_default_to_ready() -> None:
+    """The five new READY intents from the 38-set taxonomy go through
+    the normal agent loop. They're listed here individually so a future
+    edit that flips one to POINT_TO_URL or REFUSE has to update the
+    test and consciously acknowledge the change."""
+    for intent in (
+        "remote_access",            # off-campus / EZproxy questions (352 cases)
+        "accessibility_services",   # ADA accommodations
+        "copyright_permissions",    # fair use / reuse permission
+        "scholarly_publishing",     # open access / repository deposit
+        "av_production",            # podcast / video studio (split from tech_checkout)
+    ):
+        cap = get_intent_capability(intent)
+        assert cap.tier == CapabilityTier.READY, (
+            f"{intent} should be READY (agent + retrieval); got {cap.tier}"
+        )
 
 
 def test_unknown_intent_string_does_not_crash() -> None:
@@ -207,12 +258,15 @@ def main() -> int:
     tests = [
         test_databases_is_point_to_url,
         test_find_resource_is_point_to_url_to_primo,
+        test_library_employment_is_point_to_url,
         test_account_is_refuse_with_privacy_trigger,
         test_events_news_is_refuse_with_news_excluded_trigger,
+        test_website_feedback_is_refuse_with_handoff_trigger,
         test_unregistered_intent_defaults_to_ready,
         test_makerspace_is_ready,
         test_subject_librarian_is_ready,
         test_interlibrary_loan_is_ready,
+        test_new_38set_intents_default_to_ready,
         test_unknown_intent_string_does_not_crash,
         test_every_registered_capability_has_canonical_url,
         test_every_registered_capability_has_short_message,
