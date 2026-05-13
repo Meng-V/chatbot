@@ -136,6 +136,20 @@ class EvalReport:
     intent_matches: int = 0
     path_matches: int = 0
     bot_called: int = 0
+    # Refusal stats (plan §verification 2: "refusal rate"):
+    refusals_total: int = 0
+    refusals_correct: int = 0
+    """Refusals that match `gold.expected_outcome == 'refusal'`."""
+    refusals_false_positive: int = 0
+    """Refused when the gold expected an answer."""
+    refusals_missed: int = 0
+    """Didn't refuse when the gold expected a refusal."""
+    by_refusal_trigger: Counter = field(default_factory=Counter)
+    # Citation stats (plan §verification 2: "citation validity rate"):
+    citations_total: int = 0
+    """Number of citations emitted across all answers."""
+    answers_with_citations: int = 0
+    """Number of non-refusal answers that included at least one citation."""
     by_category: dict[str, dict] = field(default_factory=dict)
     results: list[EvalResult] = field(default_factory=list)
 
@@ -386,6 +400,24 @@ def run_eval(
                 report.path_matches += 1
             report.bot_called += 1
 
+            # Refusal accounting -- plan §verification 2.
+            if result.bot_was_refusal:
+                report.refusals_total += 1
+                if result.bot_refusal_trigger:
+                    report.by_refusal_trigger[result.bot_refusal_trigger] += 1
+                if q.expected_outcome == "refusal":
+                    report.refusals_correct += 1
+                elif q.expected_outcome == "answer":
+                    report.refusals_false_positive += 1
+            elif q.expected_outcome == "refusal":
+                report.refusals_missed += 1
+
+            # Citation accounting -- plan §verification 2.
+            if result.bot_citations_count:
+                report.citations_total += result.bot_citations_count
+                if not result.bot_was_refusal:
+                    report.answers_with_citations += 1
+
         report.results.append(result)
         cat = report.by_category.setdefault(
             q.category,
@@ -414,6 +446,70 @@ def run_eval(
     return report
 
 
+# --- Stats helpers --------------------------------------------------------
+
+
+def _percentile(values: list[int], pct: float) -> float:
+    """Linear-interpolated percentile. Returns 0 for an empty list.
+    Used for p50/p95 reporting of latency + token counts."""
+    if not values:
+        return 0.0
+    s = sorted(values)
+    if len(s) == 1:
+        return float(s[0])
+    k = (len(s) - 1) * (pct / 100)
+    f = int(k)
+    c = min(f + 1, len(s) - 1)
+    if f == c:
+        return float(s[f])
+    return s[f] + (s[c] - s[f]) * (k - f)
+
+
+# --- LLM-as-judge (TODO: wires up when real bot LLMs do) ------------------
+#
+# Plan §verification 2 calls for "answer correctness (LLM-as-judge)"
+# alongside the other 4 metrics this report now produces. The judge
+# would receive (gold question, gold expected_answer, bot answer) and
+# return a verdict in {"correct", "partial", "wrong"}, plus
+# "refusal_appropriate" / "refusal_wrong" for refusal cases.
+#
+# Two prerequisites that aren't met yet, both tracked elsewhere:
+#
+#   1. Real synthesizer LLM + real agent LLM, not stubs. Without them
+#      the bot's answer is always "King opens at 7am [1]." regardless
+#      of question, so a judge would correctly rate ~all non-refusal
+#      cases as "wrong" -- producing a meaningless 0% accuracy score.
+#      The synth/agent LLM protocols exist (src/llm/client.py +
+#      completion_with_tools / structured_completion); wiring them
+#      into the eval = a follow-up PR.
+#   2. A populated Weaviate index. Real agent depends on real
+#      retrieval. Today the ETL apply phase hasn't run.
+#
+# When both are in place, the judge wire-up is:
+#
+#     from src.llm.client import structured_completion
+#     verdict, _ = structured_completion(
+#         prefix_id="judge_v1",
+#         dynamic_suffix=json.dumps({
+#             "question": q.question,
+#             "expected": q.expected_answer,
+#             "actual": result.bot_answer,
+#         }),
+#         response_schema={
+#             "type": "object",
+#             "properties": {"verdict": {"enum": [
+#                 "correct", "partial", "wrong",
+#                 "refusal_appropriate", "refusal_wrong",
+#             ]}},
+#             "required": ["verdict"],
+#         },
+#     )
+#     result.judge_verdict = verdict["verdict"]
+#
+# Cost: ~$0.01 per gold question with gpt-5.4-mini, single regression
+# run = ~$2 for 184 cases.
+
+
 # --- Reporting ------------------------------------------------------------
 
 
@@ -440,6 +536,55 @@ def _print_report(report: EvalReport, verbose: bool, scope_only: bool) -> None:
             f"({path_pct:.1f}%)   "
             f"[expected_outcome -> {{point_to_url|agent_then_answer|...}}]"
         )
+
+        # Refusal stats. plan §verification 2 wants the rate visible
+        # broken into "correct refusal" (gold expected one) vs "false
+        # positive" (refused when gold wanted an answer) -- they're
+        # very different failure modes operationally.
+        print()
+        print(f"Refusals: {report.refusals_total}/{report.bot_called} turns "
+              f"({100 * report.refusals_total / report.bot_called:.1f}%)")
+        print(f"  correct refusals:        {report.refusals_correct}")
+        print(f"  false positives:         {report.refusals_false_positive}   "
+              f"(refused when gold expected an answer)")
+        print(f"  missed refusals:         {report.refusals_missed}   "
+              f"(answered when gold expected a refusal)")
+        if report.by_refusal_trigger:
+            print("  by trigger:")
+            for trigger, n in report.by_refusal_trigger.most_common():
+                print(f"    {trigger:35s} {n}")
+
+        # Citation stats.
+        non_refusal_turns = report.bot_called - report.refusals_total
+        if non_refusal_turns:
+            cite_rate = 100 * report.answers_with_citations / non_refusal_turns
+            print()
+            print(f"Citations: {report.answers_with_citations}/{non_refusal_turns} "
+                  f"non-refusal answers cited at least one source ({cite_rate:.1f}%)")
+            print(f"  Total citations emitted: {report.citations_total}")
+
+        # Cost + latency. Two histograms-of-one (p50/p95) per the plan's
+        # eval-suite report shape. All-or-nothing skip if telemetry
+        # wasn't recorded (e.g., the orchestrator crashed for a turn).
+        latencies = [r.latency_ms for r in report.results if r.latency_ms is not None]
+        inputs = [r.input_tokens or 0 for r in report.results if r.input_tokens is not None]
+        cached = [r.cached_input_tokens or 0 for r in report.results if r.cached_input_tokens is not None]
+        outputs = [r.output_tokens or 0 for r in report.results if r.output_tokens is not None]
+        if latencies:
+            print()
+            print(f"Latency (ms): "
+                  f"p50={_percentile(latencies, 50):.0f} "
+                  f"p95={_percentile(latencies, 95):.0f} "
+                  f"max={max(latencies)}")
+        if inputs:
+            cache_hit_pct = (100 * sum(cached) / sum(inputs)) if sum(inputs) else 0
+            print(f"Tokens:  "
+                  f"input p50={_percentile(inputs, 50):.0f} p95={_percentile(inputs, 95):.0f} "
+                  f"sum={sum(inputs):,}")
+            print(f"  cached input sum={sum(cached):,} "
+                  f"(cache hit {cache_hit_pct:.1f}% -- plan §week-4 gate >=60%)")
+            print(f"  output p50={_percentile(outputs, 50):.0f} p95={_percentile(outputs, 95):.0f} "
+                  f"sum={sum(outputs):,}")
 
     print()
     if scope_only:
