@@ -366,6 +366,288 @@ def _is_stub_answer(answer: Optional[str]) -> bool:
     return bool(answer) and _STUB_ANSWER_MARKER in answer
 
 
+# --- Real-LLM deps + realistic-fake search_kb ----------------------------
+#
+# When --with-real-llm is set, the eval uses the production agent +
+# synthesizer LLM defaults (which call OpenAI via src/llm/client) but
+# still uses a FAKE search_kb tool because no real Weaviate is
+# populated. The fake returns intent-keyed plausible evidence so the
+# synth has something to ground on. Pairs cleanly with --with-judge
+# for end-to-end scoring.
+#
+# Cost when --with-real-llm:
+#   ~$0.005 agent + ~$0.005 synth per turn = ~$1.80 for 184 cases
+#   plus ~$0.02 per judge call if --with-judge = ~$3.70 total
+# In practice you'll usually filter to a smaller category for
+# iteration cost.
+
+# Intent -> (canonical_url, plausible_evidence_text). One chunk per
+# intent. Text is short on purpose -- enough for the synth to
+# generate a grounded one-paragraph answer, but not so verbose that
+# we're effectively writing the bot's answer ourselves.
+_REALISTIC_EVIDENCE: dict[str, tuple[str, str]] = {
+    "hours": (
+        "https://www.lib.miamioh.edu/about/locations/king-library/",
+        "King Library hours: Mon-Thu 7am-2am, Fri 7am-10pm, "
+        "Sat 9am-10pm, Sun 10am-2am. Check the LibCal widget for "
+        "today's actual hours including holidays.",
+    ),
+    "location_directions": (
+        "https://www.lib.miamioh.edu/about/locations/",
+        "Miami's main library is the Edward King Library, located on "
+        "the Oxford campus at 151 South Campus Avenue. The Wertz Art "
+        "and Architecture Library is in Alumni Hall. Regional "
+        "libraries: Rentschler at Hamilton, Gardner-Harvey at "
+        "Middletown.",
+    ),
+    "staff_lookup": (
+        "https://www.lib.miamioh.edu/about/organization/",
+        "Find any librarian via the staff directory. For department "
+        "leadership (deans, associate deans), see the Organization "
+        "page.",
+    ),
+    "subject_librarian": (
+        "https://www.lib.miamioh.edu/about/organization/liaisons/",
+        "Each subject area has a designated liaison librarian. The "
+        "liaisons page lists them by department + email.",
+    ),
+    "room_booking": (
+        "https://miamioh.libcal.com/spaces",
+        "Group study rooms at King and Wertz are reservable via "
+        "LibCal. Reservations open 14 days in advance. Walk-ins are "
+        "OK if a room is free.",
+    ),
+    "space_info": (
+        "https://www.lib.miamioh.edu/use/spaces/",
+        "King has quiet (silent) study on the 3rd floor; group "
+        "study on the 1st-2nd floors. Lockers are available near "
+        "the main entrance. Food and drinks are allowed except in "
+        "the silent area.",
+    ),
+    "makerspace_3d": (
+        "https://www.lib.miamioh.edu/use/spaces/makerspace/",
+        "The MakerSpace is located in King Library, ground floor. "
+        "Equipment includes 3D printers (Prusa), a vinyl cutter, "
+        "sewing machines, and an embroidery machine. Open during "
+        "King's regular hours.",
+    ),
+    "printing_wifi": (
+        "https://www.lib.miamioh.edu/use/technology/printing/",
+        "Print from any campus computer or your laptop via the "
+        "wireless print queue. Scanning is free from the multi-"
+        "function devices on each floor. Color printing is "
+        "available at a per-page charge.",
+    ),
+    "tech_checkout": (
+        "https://www.lib.miamioh.edu/use/technology/",
+        "Laptops, chargers, calculators, and cameras are available "
+        "for checkout at the circulation desk. Check the equipment "
+        "list for current availability.",
+    ),
+    "circulation_basic": (
+        "https://www.lib.miamioh.edu/use/borrow/",
+        "Place a hold on any item via Primo. Pickup is at the King "
+        "circulation desk; you'll get an email when it's ready. "
+        "Holds are held for 7 days.",
+    ),
+    "renewal": (
+        "https://www.lib.miamioh.edu/use/borrow/",
+        "Books can be renewed online via MyAccount up to 5 times "
+        "unless someone else has placed a hold. Late fees apply "
+        "after the due date.",
+    ),
+    "loan_policy": (
+        "https://www.lib.miamioh.edu/use/borrow/",
+        "Standard loan period for undergraduates is 28 days; "
+        "graduate students 90 days; faculty 180 days. Late fees "
+        "are $0.25/day for general circulation.",
+    ),
+    "course_reserves": (
+        "https://www.lib.miamioh.edu/use/borrow/course-reserves/",
+        "Course reserves are textbooks and supplemental readings "
+        "instructors have placed at the circulation desk for "
+        "in-library use. Search by course number on the reserves "
+        "page.",
+    ),
+    "interlibrary_loan": (
+        "https://www.lib.miamioh.edu/use/borrow/ill/",
+        "Request items Miami doesn't own via OhioLINK or ILLiad. "
+        "OhioLINK items typically arrive in 3-5 business days; "
+        "ILLiad takes 1-2 weeks.",
+    ),
+    "citation_help": (
+        "https://libguides.lib.miamioh.edu/cite/",
+        "The citation guide covers APA, MLA, and Chicago. Examples "
+        "for books, journal articles, and websites. Miami also "
+        "subscribes to Zotero training.",
+    ),
+    "research_consultation": (
+        "https://www.lib.miamioh.edu/research/research-support/",
+        "Schedule a 30-60 minute research consultation with a "
+        "subject librarian. Bring your topic, any sources you've "
+        "found, and questions about research strategy.",
+    ),
+    "data_services": (
+        "https://www.lib.miamioh.edu/research/data-services/",
+        "Data services support includes GIS, statistical software "
+        "(R, SPSS, Stata), and data management plans. Consultations "
+        "by appointment.",
+    ),
+    "newspapers": (
+        "https://libguides.lib.miamioh.edu/news/",
+        "Miami subscribes to the New York Times, Wall Street "
+        "Journal, and Cincinnati Enquirer. Activate your NYT/WSJ "
+        "pass through the library's databases page.",
+    ),
+    "remote_access": (
+        "https://www.lib.miamioh.edu/use/technology/proxy/",
+        "Access databases from off campus using the library's "
+        "proxy. Sign in with your Miami credentials when prompted. "
+        "If a link gives a 401/403, prepend the proxy URL.",
+    ),
+    "av_production": (
+        "https://www.lib.miamioh.edu/use/spaces/",
+        "Podcast and video production spaces are available in King "
+        "Library. Reserve via LibCal. Equipment includes a "
+        "professional mic, camera, and editing software.",
+    ),
+    "scholarly_publishing": (
+        "https://www.lib.miamioh.edu/research/scholarly-publishing/",
+        "Scholarly Commons hosts Miami-authored works for open "
+        "access. The library provides author-rights guidance and "
+        "ETD (thesis/dissertation) deposit support.",
+    ),
+    "instruction_request": (
+        "https://www.lib.miamioh.edu/research/research-support/",
+        "Faculty can request a librarian-led instruction session "
+        "for their course. Submit through the instruction request "
+        "form at least 2 weeks before the desired session date.",
+    ),
+    "accessibility_services": (
+        "https://www.lib.miamioh.edu/use/accessibility/",
+        "Library accessibility services include alternative format "
+        "materials, accessible workstations, and ADA-compliant "
+        "study spaces. Coordinate via Miller Center for Disability.",
+    ),
+    "copyright_permissions": (
+        "https://libguides.lib.miamioh.edu/copyright/",
+        "Fair use, TEACH Act, and permissions guidance for "
+        "instructors and students. Includes the four-factor fair "
+        "use analysis worksheet.",
+    ),
+    "software_access": (
+        "https://www.lib.miamioh.edu/use/technology/software/",
+        "Library computers have Microsoft Office, SPSS, Stata, "
+        "MATLAB, and Adobe Creative Cloud. Some software is "
+        "available for personal-device install via the IT services "
+        "portal.",
+    ),
+    "adobe_access": (
+        "https://www.lib.miamioh.edu/use/technology/software/adobe/",
+        "Adobe Creative Cloud is available on library computers. "
+        "Students can also install Adobe on personal devices via "
+        "the Miami University Adobe license through IT services.",
+    ),
+    "human_handoff": (
+        "https://www.lib.miamioh.edu/research/research-support/ask/",
+        "Ask Us via chat, email, or phone for help from a librarian. "
+        "Chat hours align with King service desk hours; email gets "
+        "a same-day reply on business days.",
+    ),
+    "special_collections": (
+        "https://www.lib.miamioh.edu/about/locations/special-collections-archives/",
+        "Special Collections and University Archives is on the 3rd "
+        "floor of King. Appointments preferred. Holdings include "
+        "rare books, university records, and Western College "
+        "Memorial Library collections.",
+    ),
+    "digital_collections": (
+        "https://digital.lib.miamioh.edu/",
+        "Miami's digital collections include historical photos, "
+        "Miamian yearbooks, oral histories, and the Western College "
+        "for Women archive. Browse by collection or full-text search.",
+    ),
+    "cross_campus_comparison": (
+        "https://www.lib.miamioh.edu/about/locations/",
+        "Services vary by campus: King (Oxford) has the MakerSpace "
+        "and Special Collections; Rentschler (Hamilton) and "
+        "Gardner-Harvey (Middletown) offer printing, study rooms, "
+        "and research help. All campuses share electronic resources.",
+    ),
+    "service_howto": (
+        "https://www.lib.miamioh.edu/use/",
+        "Browse the library's services page for an index of how to "
+        "use each service: borrowing, spaces, technology, research "
+        "support.",
+    ),
+    # find_resource, databases, library_employment, events_news,
+    # account, website_feedback are all POINT_TO_URL / REFUSE; agent
+    # never runs for them. No evidence needed.
+}
+
+
+def _build_real_deps(classifier: IntentKNN, intent_for_evidence: str):
+    """Build OrchestratorDeps that use REAL OpenAI LLMs (no stubs).
+
+    The agent + synthesizer modules already default to real Responses
+    API calls when no `llm=` override is passed. We just have to not
+    pass the stubs that `_build_stub_deps` does.
+
+    `search_kb` is still a fake (no real Weaviate), but returns
+    realistic intent-keyed evidence from `_REALISTIC_EVIDENCE` so the
+    synthesizer has something plausible to ground on. The intent is
+    determined by the classifier upstream; we pass it through so the
+    tool's fake-evidence pick matches the resolved intent.
+    """
+    url, snippet = _REALISTIC_EVIDENCE.get(
+        intent_for_evidence,
+        (
+            "https://www.lib.miamioh.edu/",
+            "General library landing page; specific service info is "
+            "linked from the navigation.",
+        ),
+    )
+    fake_evidence = {
+        "n": 1,
+        "chunk_id": f"eval-realistic-{intent_for_evidence}",
+        "source_url": url,
+        "snippet": snippet,
+        "campus": "all",
+        "library": "all",
+        "topic": "service",
+        "featured_service": None,
+        "score": 0.85,
+    }
+
+    registry = ToolRegistry()
+    registry.register(Tool(
+        name="search_kb",
+        description=(
+            "Search the library knowledge base. Returns evidence "
+            "chunks the synthesizer can cite."
+        ),
+        parameters={
+            "type": "object",
+            "additionalProperties": False,
+            "properties": {
+                "query": {"type": "string"},
+            },
+            "required": ["query"],
+        },
+        handler=lambda args: {"evidence": [fake_evidence]},
+    ))
+
+    return OrchestratorDeps(
+        classifier=classifier,
+        tool_registry=registry,
+        agent_llm=None,         # use _default_llm_call -> real OpenAI
+        synthesizer_llm=None,   # ditto
+        load_corrections=lambda: [],
+        load_url_allowlist=lambda: {url},
+        lookup_service_availability=lambda intent, campus: None,
+    )
+
+
 # --- Per-question runners -------------------------------------------------
 
 
@@ -438,6 +720,7 @@ def run_eval(
     filter_category: Optional[str] = None,
     scope_only: bool = False,
     with_judge: bool = False,
+    with_real_llm: bool = False,
     judge_llm: Optional[Any] = None,
 ) -> EvalReport:
     """Run the eval suite.
@@ -448,10 +731,15 @@ def run_eval(
         with_judge: True -> after each turn, run the LLM-as-judge against
             the bot's response. Skips cases where the response is
             stubbed (agent_then_answer / agent_then_refusal with the
-            canned answer) -- judging stub output wastes money. Only
-            capability-tier short-circuits (POINT_TO_URL, REFUSE) get
-            judged in the current wiring phase. Cost: ~$0.02 per real
-            judge call, ~14-20 calls per full run = ~$0.20.
+            canned answer) -- judging stub output wastes money. With
+            stubs only ~14 cases per full run get judged (capability-
+            tier short-circuits). With --with-real-llm, every turn
+            gets a real answer + a real judge verdict.
+        with_real_llm: True -> use real OpenAI agent + synthesizer
+            LLMs (no stubs) plus a realistic intent-keyed fake
+            search_kb tool. Cost ~$0.01 per turn -> ~$1.80 for the
+            full 184-case set, or scale by `--filter`. Required if
+            you want LLM-as-judge to score real LLM behavior.
         judge_llm: Callable matching JudgeLLM Protocol. If None and
             with_judge=True, uses `_real_judge_llm` (calls OpenAI).
             Tests pass a stub.
@@ -468,6 +756,14 @@ def run_eval(
     classifier: Optional[IntentKNN] = None
     if not scope_only:
         classifier = _build_classifier()
+
+    # Register the agent + synthesizer prompt prefixes if we're going
+    # to call real LLMs. Modules register via `register_prefix()` at
+    # import time. Without these imports, `src.llm.client` raises
+    # PromptBuildError on first call.
+    if with_real_llm:
+        import src.prompts.agent_v1  # noqa: F401 -- registers prefix
+        import src.prompts.synthesizer_v1  # noqa: F401
 
     # Resolve the judge LLM if needed. Import prompts/judge_v1 so the
     # prefix registers before any call. Late-import keeps non-judge
@@ -503,7 +799,19 @@ def run_eval(
             # evidence and produces spurious no_results refusals.
             # Per-turn construction is cheap (no I/O, no embeddings)
             # so this is the right shape.
-            deps = _build_stub_deps(classifier)
+            if with_real_llm:
+                # Pre-classify to pick intent-keyed evidence for the
+                # realistic-fake search_kb. The orchestrator will
+                # re-classify with the same exemplars + cache hit,
+                # arriving at the same intent. One redundant cosine
+                # matmul; negligible vs the LLM cost about to happen.
+                pre_classification = classifier.classify(q.question)
+                deps = _build_real_deps(
+                    classifier,
+                    intent_for_evidence=pre_classification.intent,
+                )
+            else:
+                deps = _build_stub_deps(classifier)
             bot_out = _run_bot(q, deps)
             for k, v in bot_out.items():
                 setattr(result, k, v)
@@ -809,6 +1117,15 @@ def main() -> int:
             "stubbed answers automatically. ~$0.02 per judged case."
         ),
     )
+    parser.add_argument(
+        "--with-real-llm", action="store_true",
+        help=(
+            "Use real OpenAI agent + synthesizer LLMs (no stubs). "
+            "search_kb returns intent-keyed realistic-fake evidence. "
+            "Cost ~$0.01 per turn. Required if you want --with-judge "
+            "to score real LLM behavior instead of stub output."
+        ),
+    )
     parser.add_argument("--verbose", "-v", action="store_true")
     args = parser.parse_args()
 
@@ -821,6 +1138,7 @@ def main() -> int:
         filter_category=args.filter,
         scope_only=args.scope_only,
         with_judge=args.with_judge,
+        with_real_llm=args.with_real_llm,
     )
     _print_report(report, verbose=args.verbose, scope_only=args.scope_only)
 
