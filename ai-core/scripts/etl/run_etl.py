@@ -136,6 +136,11 @@ def build_requests_fetcher(cache_dir: Optional[Path] = None) -> FetchFn:
 
     session = requests.Session()
     session.headers["User-Agent"] = config.USER_AGENT
+    # Cap redirect-following so an infinite-redirect trap (seen on
+    # miamioh.edu/regionals/marketing-comms/* during the first ETL run)
+    # fails fast at config.MAX_REDIRECTS instead of `requests`'s
+    # 30-redirect default. Saves ~30 sec per trapped URL.
+    session.max_redirects = config.MAX_REDIRECTS
     cache = cache_dir or Path(config.RAW_CACHE_DIR)
     cache.mkdir(parents=True, exist_ok=True)
 
