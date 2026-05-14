@@ -374,6 +374,19 @@ def main() -> int:
                 config.DIFF_REPORT_DIR,
             )
             return 2
+        # UX fix: --diff accepts a basename (e.g. "2026-05-14_0219.md")
+        # and resolves it against the configured DIFF_REPORT_DIR. The
+        # operator just copy-pastes the filename from the prepare-phase
+        # output rather than figuring out the right relative path from
+        # wherever they happen to be invoking the command.
+        if diff_path is not None:
+            p = Path(diff_path)
+            if not p.exists() and not p.is_absolute():
+                # Try resolving relative to the diff report dir.
+                candidate = Path(config.DIFF_REPORT_DIR) / p.name
+                if candidate.exists():
+                    p = candidate
+            diff_path = p
         decision = gate.verify_gate(diff_path)
         if not decision.proceed:
             logger.error("gate refused: %s", decision.reason)
