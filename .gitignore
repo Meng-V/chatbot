@@ -203,3 +203,7 @@ node_modules
 staff-members - staff-members.csv
 ai-core/docs/WEAVIATE_SERVER_DEPLOYMENT.md
 log/deploy.sh
+docs/az_database_list.csv
+docs/notes.md
+tran_raw_2026_5.csv
+/.claude
