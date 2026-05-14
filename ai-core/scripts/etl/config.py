@@ -215,6 +215,14 @@ LIBRARY_BY_URL_SUBSTRING: Final[tuple[tuple[str, str], ...]] = (
 CHUNK_TARGET_TOKENS: Final[int] = 400
 CHUNK_OVERLAP_TOKENS: Final[int] = 50
 CHUNK_MIN_TOKENS: Final[int] = 50  # drop chunks shorter than this (boilerplate)
+# Hard upper bound on a single chunk's token count. Enforced by the chunker
+# when a "sentence" (post sentence-splitter) is itself larger than the target:
+# such sentences are hard-split into character windows of this size. The cap
+# exists because OpenAI's text-embedding-3-large rejects inputs above 8192
+# tokens with a 400, which causes the whole embed batch to fail silently
+# (see scripts/etl/upsert.py::embed_chunks). 1000 leaves a 7x safety margin
+# vs. the model limit and accommodates the ~50-token overlap prepend.
+CHUNK_HARD_MAX_TOKENS: Final[int] = 1000
 
 
 # --- Extraction quality gates -----------------------------------------------

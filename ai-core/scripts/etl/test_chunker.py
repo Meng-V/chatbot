@@ -232,11 +232,35 @@ def test_long_doc_splits_into_multiple_chunks() -> None:
 
 def test_oversized_single_sentence_still_emits() -> None:
     """A pathological single sentence longer than CHUNK_TARGET_TOKENS
-    still emits as one chunk -- better a fat chunk than to drop content."""
-    huge_sentence = "Word " * 1500  # ~1500 tokens, all one "sentence"
+    still emits chunks -- better a fat chunk than to drop content."""
+    huge_sentence = "Word " * 1500  # ~1875 approx-tokens, all one "sentence"
     chunks = chunk_document(_doc(body_text=huge_sentence), _meta())
     # Got something back even though it's larger than the target.
     assert len(chunks) >= 1
+
+
+def test_oversized_single_sentence_is_capped_at_hard_max() -> None:
+    """Regression: a pathological "sentence" (e.g. a JS dump or
+    unparagraphed list on a library page) MUST NOT produce a chunk
+    larger than CHUNK_HARD_MAX_TOKENS, because OpenAI's
+    text-embedding-3-large rejects inputs above 8192 tokens with a
+    400, which silently kills the whole embed batch.
+
+    Without the hard-split, a single 15k-token sentence would emit
+    one 15k-token chunk. We require it to be split into pieces, each
+    under the hard cap (with ~4 chars/token + small overlap slack)."""
+    # ~15000 approx-tokens (~60000 chars), well over the 8192 limit.
+    huge_sentence = "x" * 60_000
+    chunks = chunk_document(_doc(body_text=huge_sentence), _meta())
+    assert len(chunks) >= 2, "expected hard-split into multiple chunks"
+    # Each emitted chunk's approx-token count must be at-or-below the
+    # hard cap, plus a small slack for the prepended overlap prefix.
+    slack_tokens = config.CHUNK_OVERLAP_TOKENS + 10
+    cap = config.CHUNK_HARD_MAX_TOKENS + slack_tokens
+    for ch in chunks:
+        assert _approximate_tokens(ch.text) <= cap, (
+            f"chunk exceeds hard cap: {_approximate_tokens(ch.text)} > {cap}"
+        )
 
 
 def test_position_resets_per_document() -> None:
@@ -350,6 +374,7 @@ def main() -> int:
         test_short_doc_emits_one_chunk,
         test_long_doc_splits_into_multiple_chunks,
         test_oversized_single_sentence_still_emits,
+        test_oversized_single_sentence_is_capped_at_hard_max,
         test_position_resets_per_document,
         test_overlap_carries_text_across_boundary,
         test_content_hash_stable_for_stable_text,

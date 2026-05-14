@@ -192,6 +192,30 @@ def test_embed_chunks_failure_pads_with_empty_vectors() -> None:
     assert out[4] and out[5]  # third batch succeeded
 
 
+def test_embed_chunks_truncates_oversized_input() -> None:
+    """Regression: if a chunk's text exceeds the embedding model's
+    input limit (~32k chars / 8192 tokens), embed_chunks MUST truncate
+    rather than send it as-is. The previous behavior caused OpenAI to
+    400 the whole batch, silently dropping up to 100 chunks per
+    oversized input. This is a second-layer defense; the chunker's
+    CHUNK_HARD_MAX_TOKENS is the primary guard."""
+    # 100k chars -> well above the 32k-ish embedding input cap.
+    huge_text = "x" * 100_000
+    chunks = [
+        _chunk(chunk_id="c-small", text="hello"),
+        _chunk(chunk_id="c-huge", text=huge_text),
+    ]
+    client = StubEmbedClient()
+    out = embed_chunks(chunks, client, model="text-embedding-3-large", batch_size=10)
+    # Batch succeeded (no padding-with-empties): both got real vectors.
+    assert len(out) == 2
+    assert out[0] and out[1]
+    # The client saw a truncated string for the huge input, not 100k chars.
+    sent_huge = client.calls[0]["input"][1]
+    assert len(sent_huge) < 100_000
+    assert len(sent_huge) <= 8192 * 4  # under the model's char-equivalent cap
+
+
 # --- upsert step -------------------------------------------------------
 
 
@@ -412,6 +436,7 @@ def main() -> int:
         test_embed_chunks_returns_one_vector_per_chunk,
         test_embed_chunks_batches,
         test_embed_chunks_failure_pads_with_empty_vectors,
+        test_embed_chunks_truncates_oversized_input,
         test_upsert_new_chunk_records_new,
         test_upsert_dedupes_unchanged_content_hash,
         test_upsert_records_change_when_content_hash_differs,
