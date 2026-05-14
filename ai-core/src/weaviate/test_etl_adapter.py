@@ -33,7 +33,11 @@ _HERE = Path(__file__).resolve().parent
 _AI_CORE = _HERE.parent.parent
 sys.path.insert(0, str(_AI_CORE))
 
-from src.weaviate.etl_adapter import WeaviateETLAdapter, _CHUNK_PROPERTIES
+from src.weaviate.etl_adapter import (
+    WeaviateETLAdapter,
+    _CHUNK_PROPERTIES,
+    _chunk_uuid,
+)
 
 
 # --- Stub v4 client surface --------------------------------------------
@@ -233,6 +237,12 @@ def test_ensure_collection_creates_with_documented_properties() -> None:
     assert expected_names.issubset(created_names), (
         f"missing properties: {expected_names - created_names}"
     )
+    # chunk_id is the property that holds the original (pre-UUID5)
+    # identifier. Its presence in the schema is load-bearing -- without
+    # it, callers can't look up by chunk_id and ChunkProvenance joins
+    # break. Lock this in explicitly so a future refactor doesn't
+    # silently drop it.
+    assert "chunk_id" in created_names
 
 
 def test_ensure_collection_idempotent_after_first_call() -> None:
@@ -262,9 +272,56 @@ def test_upsert_chunk_writes_via_replace() -> None:
         vector=[0.1, 0.2, 0.3],
     )
     stored = a.client.collections._collections["Chunk_v1"].objects
-    assert "cid-1" in stored
-    assert stored["cid-1"]["properties"]["text"] == "hello"
-    assert stored["cid-1"]["vector"] == [0.1, 0.2, 0.3]
+    # The adapter writes the object under uuid5(chunk_id), not the raw
+    # chunk_id (Weaviate v4 422s on non-UUID ids -- the bug PR #44
+    # ended up with in prod).
+    stored_uuid = _chunk_uuid("cid-1")
+    assert stored_uuid in stored
+    assert stored[stored_uuid]["properties"]["text"] == "hello"
+    assert stored[stored_uuid]["vector"] == [0.1, 0.2, 0.3]
+    # And the original chunk_id is preserved as a property.
+    assert stored[stored_uuid]["properties"]["chunk_id"] == "cid-1"
+
+
+def test_chunk_uuid_is_deterministic() -> None:
+    """Same chunk_id must always produce the same UUID. Without this
+    property, dedup-by-chunk-id breaks on re-runs."""
+    a = _chunk_uuid("c-d8cb85a69c92d7ef")
+    b = _chunk_uuid("c-d8cb85a69c92d7ef")
+    assert a == b
+
+
+def test_chunk_uuid_distinguishes_different_ids() -> None:
+    """Different chunk_ids must produce different UUIDs. Otherwise
+    two unrelated chunks would collide in Weaviate."""
+    assert _chunk_uuid("c-foo") != _chunk_uuid("c-bar")
+
+
+def test_chunk_uuid_returns_valid_uuid_string() -> None:
+    """The returned string must parse as a UUID -- that's the whole
+    point of the conversion (Weaviate v4 validates this)."""
+    import uuid as _u
+    out = _chunk_uuid("c-d8cb85a69c92d7ef")
+    # Will raise ValueError if not a valid UUID.
+    _u.UUID(out)
+
+
+def test_upsert_then_get_chunk_roundtrip_via_chunk_id() -> None:
+    """Callers refer to chunks by the original chunk_id; the UUID5
+    conversion is internal to the adapter. Roundtrip through the
+    adapter's public surface must work regardless."""
+    a = _adapter()
+    a.upsert_chunk(
+        collection="Chunk_v1",
+        chunk_id="c-deterministic-test-id",
+        properties={"text": "roundtrip", "content_hash": "abc123"},
+        vector=[0.5, 0.5],
+    )
+    got = a.get_chunk(collection="Chunk_v1", chunk_id="c-deterministic-test-id")
+    assert got is not None
+    assert got["text"] == "roundtrip"
+    assert got["content_hash"] == "abc123"
+    assert got["chunk_id"] == "c-deterministic-test-id"
 
 
 def test_upsert_chunk_falls_back_to_insert_when_replace_fails() -> None:
@@ -281,8 +338,12 @@ def test_upsert_chunk_falls_back_to_insert_when_replace_fails() -> None:
         properties={"text": "via-insert"},
         vector=[1.0],
     )
-    # Fallback succeeded.
-    assert coll.objects["cid-2"]["properties"]["text"] == "via-insert"
+    # Fallback succeeded. Adapter hashes chunk_id -> UUID5 for the
+    # Weaviate id, so the stub's objects dict is keyed by that UUID.
+    stored_uuid = _chunk_uuid("cid-2")
+    assert coll.objects[stored_uuid]["properties"]["text"] == "via-insert"
+    # Original chunk_id is preserved as a property.
+    assert coll.objects[stored_uuid]["properties"]["chunk_id"] == "cid-2"
 
 
 def test_get_chunk_returns_properties_on_hit() -> None:
@@ -325,10 +386,13 @@ def test_soft_delete_by_url_tombstones_non_seen_only() -> None:
     )
     assert tombstoned == ["u3"]
     coll = a.client.collections._collections["Chunk_v1"]
-    assert coll.objects["c3"]["properties"]["deleted"] is True
-    assert coll.objects["c1"]["properties"]["deleted"] is False
+    # Stub's objects dict is keyed by the adapter's uuid5(chunk_id).
+    c1_uuid = _chunk_uuid("c1")
+    c3_uuid = _chunk_uuid("c3")
+    assert coll.objects[c3_uuid]["properties"]["deleted"] is True
+    assert coll.objects[c1_uuid]["properties"]["deleted"] is False
     # Tombstoned chunk should have a tombstoned_at timestamp.
-    assert coll.objects["c3"]["properties"].get("tombstoned_at")
+    assert coll.objects[c3_uuid]["properties"].get("tombstoned_at")
 
 
 def test_soft_delete_by_url_idempotent_on_already_deleted() -> None:
@@ -388,6 +452,10 @@ def main() -> int:
         test_ensure_collection_idempotent_after_first_call,
         test_ensure_collection_skips_create_if_already_exists,
         test_upsert_chunk_writes_via_replace,
+        test_chunk_uuid_is_deterministic,
+        test_chunk_uuid_distinguishes_different_ids,
+        test_chunk_uuid_returns_valid_uuid_string,
+        test_upsert_then_get_chunk_roundtrip_via_chunk_id,
         test_upsert_chunk_falls_back_to_insert_when_replace_fails,
         test_get_chunk_returns_properties_on_hit,
         test_get_chunk_returns_none_for_missing_object,

@@ -40,10 +40,29 @@ from __future__ import annotations
 
 import datetime as dt
 import logging
+import uuid
 from dataclasses import dataclass, field
 from typing import Any, Iterable, Optional
 
 logger = logging.getLogger(__name__)
+
+
+# Fixed namespace for converting the ETL's chunk_id (a short hex string
+# like "c-d8cb85a69c92d7ef") into a deterministic UUID5. Weaviate v4
+# strictly validates that an object's id field is a UUID; the chunker
+# emits arbitrary strings, so we hash them through uuid5 at this boundary.
+# Same chunk_id -> same UUID across runs, preserving idempotency.
+_CHUNK_NS = uuid.UUID("c0000000-0000-0000-c0c0-c0c0c0c0c0c0")
+
+
+def _chunk_uuid(chunk_id: str) -> str:
+    """Convert the ETL's chunk_id (arbitrary string) to a stable UUID
+    for use as a Weaviate object id.
+
+    Deterministic: `_chunk_uuid("c-abc") == _chunk_uuid("c-abc")` on every
+    call, so dedup / upsert by chunk_id still works.
+    """
+    return str(uuid.uuid5(_CHUNK_NS, chunk_id))
 
 
 # ----------------------------------------------------------------------------
@@ -56,6 +75,13 @@ logger = logging.getLogger(__name__)
 # Keep them in lockstep -- a schema/code mismatch produces silent prop drops.
 _CHUNK_PROPERTIES: tuple[tuple[str, str], ...] = (
     # (name, weaviate v4 DataType enum name)
+    # The Weaviate object's UUID is derived from `chunk_id` via uuid5
+    # (see `_chunk_uuid`). The original chunk_id string is ALSO stored
+    # as a property so callers can:
+    #   * Look up by chunk_id (filter on this property)
+    #   * Join back to ChunkProvenance.chunkId (Postgres uses the
+    #     original 'c-...' format, not the UUID5).
+    ("chunk_id", "TEXT"),
     ("document_id", "TEXT"),
     ("source_url", "TEXT"),
     ("text", "TEXT"),
@@ -167,19 +193,28 @@ class WeaviateETLAdapter:
     ) -> None:
         """Insert if new, replace if exists. Idempotent on chunk_id.
 
-        The chunk_id MUST be a valid UUID string (the chunker emits
-        these). v4 uses the UUID as the object's primary key, so the
-        ETL's "chunk_id is the dedup key" contract maps directly.
+        The chunker emits chunk_ids in the format 'c-<16 hex>' (see
+        `scripts/etl/chunker._derive_chunk_id`). Weaviate v4 requires
+        the object's id to be a valid UUID, so we hash the chunk_id
+        through uuid5 (`_chunk_uuid`) before sending. The original
+        chunk_id is stored as a property for callers that need to
+        look up by it OR join to `ChunkProvenance.chunkId` (Postgres
+        uses the original 'c-...' format).
         """
         self._ensure_collection(collection)
         coll = self.client.collections.get(collection)
+        obj_uuid = _chunk_uuid(chunk_id)
+        # Always include `chunk_id` as a property so the original
+        # identifier survives the UUID conversion. Callers may also
+        # have set it; if so we overwrite-with-same-value (no-op).
+        props_with_chunk_id = {**properties, "chunk_id": chunk_id}
         # `replace` is the upsert primitive in v4 if you key on UUID.
         # It creates if not found, replaces if found. Equivalent to
         # PUT in REST terms.
         try:
             coll.data.replace(
-                uuid=chunk_id,
-                properties=properties,
+                uuid=obj_uuid,
+                properties=props_with_chunk_id,
                 vector=vector,
             )
         except Exception as e:  # noqa: BLE001
@@ -187,14 +222,15 @@ class WeaviateETLAdapter:
             # back to insert.
             try:
                 coll.data.insert(
-                    uuid=chunk_id,
-                    properties=properties,
+                    uuid=obj_uuid,
+                    properties=props_with_chunk_id,
                     vector=vector,
                 )
             except Exception as e2:  # noqa: BLE001
                 raise RuntimeError(
                     f"Weaviate upsert failed for chunk_id={chunk_id!r} "
-                    f"in {collection!r}: replace={e!r}, insert={e2!r}"
+                    f"(uuid={obj_uuid}) in {collection!r}: "
+                    f"replace={e!r}, insert={e2!r}"
                 ) from e2
 
     def get_chunk(
@@ -209,6 +245,11 @@ class WeaviateETLAdapter:
         decision. We don't return the vector (it's not needed for the
         dedup check + dragging 3072 floats through this hot path would
         be wasteful).
+
+        Like upsert_chunk, this hashes chunk_id -> UUID5 before the
+        Weaviate fetch. The returned `properties` includes the original
+        `chunk_id` field that upsert_chunk stored, so callers see the
+        unaltered identifier.
         """
         if collection not in self._created_collections:
             # Collection doesn't exist -> object doesn't exist. Avoid
@@ -222,8 +263,9 @@ class WeaviateETLAdapter:
             self._created_collections.add(collection)
 
         coll = self.client.collections.get(collection)
+        obj_uuid = _chunk_uuid(chunk_id)
         try:
-            obj = coll.query.fetch_object_by_id(chunk_id)
+            obj = coll.query.fetch_object_by_id(obj_uuid)
         except Exception as e:  # noqa: BLE001
             logger.warning(
                 "get_chunk failed",

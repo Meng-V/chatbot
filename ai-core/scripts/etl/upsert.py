@@ -135,9 +135,15 @@ def embed_chunks(
             for item in resp.data:
                 out.append(list(item.embedding))
         except Exception as e:  # noqa: BLE001 -- never let one batch kill the run
+            # Include the actual error text in the log message so the
+            # default logging format surfaces it (extras aren't shown by
+            # default). Also log batch position + the longest input's
+            # length -- OpenAI's most common 400 cause is a single
+            # chunk exceeding the 8192-token cap.
+            max_chars = max((len(t) for t in texts), default=0)
             logger.error(
-                "embed batch failed",
-                extra={"batch_start": i, "batch_size": len(batch), "error": str(e)},
+                "embed batch failed [batch_start=%d size=%d max_chars=%d]: %s",
+                i, len(batch), max_chars, e,
             )
             # Pad with empty vectors so positions line up; upsert drops these.
             out.extend([[]] * len(batch))
