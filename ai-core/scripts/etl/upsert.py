@@ -104,6 +104,67 @@ class UrlSeenStore(Protocol):
 # --- Step 7: Embed -----------------------------------------------------------
 
 
+# Per-input cap. OpenAI text-embedding-3-large rejects single inputs
+# > 8192 tokens with a 400. ~4 chars/token, minus 1k chars slack for
+# multibyte / dense content. The chunker's CHUNK_HARD_MAX_TOKENS is
+# the primary guard; this is the second layer.
+_EMBED_MAX_INPUT_CHARS = 8192 * 4 - 1000
+
+# Per-REQUEST cap. text-embedding-3-large accepts up to 300_000 tokens
+# per request. We target a much lower budget because:
+#   1. tiktoken (cl100k_base) isn't always available, and our char/4
+#      estimate is wildly optimistic on dense text (URLs, code) where
+#      real tokens can be ~1.5x our estimate.
+#   2. The TPM (tokens-per-minute) rate limit is 5M; a few back-to-back
+#      300K-token requests trigger 429s. Smaller requests pace better.
+# 200_000 leaves 33% headroom against the 300K hard limit.
+_EMBED_MAX_BATCH_TOKENS = 200_000
+
+
+def _count_tokens(text: str, encoder: Any) -> int:
+    """Tokens for `text`, using tiktoken if available, else chars/4.
+
+    The chunker uses the same fallback (`_approximate_tokens`) so this
+    is consistent with chunk-size decisions when tiktoken isn't loaded.
+    """
+    if encoder is not None:
+        try:
+            return len(encoder.encode(text))
+        except Exception:  # noqa: BLE001 -- never let counting kill the run
+            pass
+    return max(1, len(text) // 4)
+
+
+def _iter_token_budgeted_batches(
+    texts: list[str],
+    *,
+    max_count: int,
+    max_tokens: int,
+    encoder: Any,
+) -> Iterable[tuple[int, list[str]]]:
+    """Yield `(batch_start, batch_texts)` such that each batch has
+    `len(batch) <= max_count` AND sum(tokens) <= max_tokens.
+
+    Single inputs already above `max_tokens` are yielded alone (caller
+    has already truncated to the per-input cap, so this is safe).
+    """
+    cur: list[str] = []
+    cur_tokens = 0
+    cur_start = 0
+    for i, t in enumerate(texts):
+        n = _count_tokens(t, encoder)
+        # Flush before adding if adding would exceed either cap.
+        if cur and (len(cur) >= max_count or cur_tokens + n > max_tokens):
+            yield cur_start, cur
+            cur = []
+            cur_tokens = 0
+            cur_start = i
+        cur.append(t)
+        cur_tokens += n
+    if cur:
+        yield cur_start, cur
+
+
 def embed_chunks(
     chunks: list[Chunk],
     client: EmbeddingClient,
@@ -113,11 +174,19 @@ def embed_chunks(
 ) -> list[list[float]]:
     """Compute embeddings for a list of chunks.
 
-    Batched per `batch_size` (OpenAI text-embedding-3-large allows up
-    to 2048; we default lower for headroom). Per-batch failure logs and
-    skips that batch with zero-vectors -- the upsert step tolerates
-    zero-vector rows by leaving them out of the index, so a partial
-    failure doesn't poison the whole run.
+    Batches are dynamically sized to satisfy BOTH:
+      - `len(batch) <= batch_size` (the count cap), AND
+      - sum(tokens(batch)) <= _EMBED_MAX_BATCH_TOKENS (the request cap).
+
+    The request-cap guard exists because OpenAI's embeddings API
+    rejects requests above 300_000 tokens, and our previous
+    fixed-count batching of 100 chunks could exceed that on
+    token-dense content even when each chunk was under the per-input
+    cap. See git history / PR #45 follow-up for the failure mode.
+
+    Per-batch failures log and pad with zero-vectors; the upsert step
+    tolerates zero-vector rows by leaving them out of the index, so a
+    partial failure doesn't poison the whole run.
 
     `model` MUST come from src/config/models.py::EMBEDDING_MODEL -- never
     hard-code a string here. The freshness rule applies: confirm the
@@ -125,12 +194,39 @@ def embed_chunks(
     """
     if not chunks:
         return []
+    # tiktoken is optional. If absent, fall back to chars/4 (same shape
+    # as the chunker's _approximate_tokens). The pipeline runs either
+    # way; tiktoken just makes the batching tighter.
+    encoder: Any = None
+    try:
+        import tiktoken  # type: ignore
+
+        encoder = tiktoken.get_encoding("cl100k_base")
+    except Exception:  # noqa: BLE001
+        encoder = None
+
+    # First pass: per-input truncation to keep any single chunk under
+    # the model's 8192-token-per-input cap.
+    texts: list[str] = []
+    for c in chunks:
+        t = c.text
+        if len(t) > _EMBED_MAX_INPUT_CHARS:
+            logger.warning(
+                "embed input truncated [chunk_id=%s orig_chars=%d -> %d]",
+                c.chunk_id, len(t), _EMBED_MAX_INPUT_CHARS,
+            )
+            t = t[:_EMBED_MAX_INPUT_CHARS]
+        texts.append(t)
+
     out: list[list[float]] = []
-    for i in range(0, len(chunks), batch_size):
-        batch = chunks[i : i + batch_size]
-        texts = [c.text for c in batch]
+    for batch_start, batch_texts in _iter_token_budgeted_batches(
+        texts,
+        max_count=batch_size,
+        max_tokens=_EMBED_MAX_BATCH_TOKENS,
+        encoder=encoder,
+    ):
         try:
-            resp = client.create(model=model, input=texts)
+            resp = client.create(model=model, input=batch_texts)
             # OpenAI SDK shape: resp.data is a list of objects with .embedding
             for item in resp.data:
                 out.append(list(item.embedding))
@@ -140,13 +236,13 @@ def embed_chunks(
             # default). Also log batch position + the longest input's
             # length -- OpenAI's most common 400 cause is a single
             # chunk exceeding the 8192-token cap.
-            max_chars = max((len(t) for t in texts), default=0)
+            max_chars = max((len(t) for t in batch_texts), default=0)
             logger.error(
                 "embed batch failed [batch_start=%d size=%d max_chars=%d]: %s",
-                i, len(batch), max_chars, e,
+                batch_start, len(batch_texts), max_chars, e,
             )
             # Pad with empty vectors so positions line up; upsert drops these.
-            out.extend([[]] * len(batch))
+            out.extend([[]] * len(batch_texts))
     return out
 
 

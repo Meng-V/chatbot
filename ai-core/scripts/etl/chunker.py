@@ -159,15 +159,33 @@ def chunk_document(
         tail_chars = overlap_tokens * 4
         prev_tail = body[-tail_chars:] if tail_chars > 0 else ""
 
+    # Hard cap on any single emitted chunk: prevents the
+    # oversize-sentence path below from producing chunks larger than
+    # OpenAI's 8192-token embedding input limit. Same approximation
+    # (~4 chars / token) as _approximate_tokens, kept in sync.
+    hard_max_chars = config.CHUNK_HARD_MAX_TOKENS * 4
+
     for sent in sentences:
         sent_tokens = _approximate_tokens(sent)
         # If a single sentence exceeds the target, emit it on its own --
-        # better a too-long chunk than to drop content.
+        # better a too-long chunk than to drop content. But CAP its size
+        # at CHUNK_HARD_MAX_TOKENS: library pages routinely produce
+        # monster "sentences" (long lists, JS dumps, unparagraphed
+        # blocks) that exceed the 8192-token embedding cap, which
+        # causes the whole embed batch to silently fail (see
+        # scripts/etl/upsert.py::embed_chunks).
         if sent_tokens >= target:
             if buf:
                 emit(buf)
                 buf, buf_tokens = [], 0
-            emit([sent])
+            if sent_tokens <= config.CHUNK_HARD_MAX_TOKENS:
+                emit([sent])
+            else:
+                # Hard-split by character window. Slight token bleed
+                # at boundaries is acceptable -- the alternative is
+                # losing the chunk's content entirely to a 400.
+                for start in range(0, len(sent), hard_max_chars):
+                    emit([sent[start : start + hard_max_chars]])
             continue
         if buf_tokens + sent_tokens > target:
             emit(buf)
