@@ -185,10 +185,23 @@ def assert_prefix_clears_cache_threshold(
 ) -> None:
     """Assert the registered prefix is long enough to engage the OpenAI cache.
 
-    We don't ship a real tokenizer here -- this uses a 4-chars-per-token
-    approximation, which under-counts (real tokens are usually shorter
-    than 4 chars). So the assertion is conservative: if it passes,
-    real-token-count almost certainly also passes.
+    Uses a 4-chars-per-token approximation. CALLERS SHOULD PASS A
+    THRESHOLD GREATER THAN OPENAI'S NOMINAL 1024 -- empirically a
+    1062-token-estimated prefix (synthesizer_v1 before padding)
+    failed to cache, even though it cleared the 1024 nominal mark.
+    Several factors contribute:
+
+      - English prose averages ~4 chars/token but dense content
+        (JSON examples, URL tables, headers) tokenizes denser.
+        chars/4 overestimates the token count for such content.
+      - The Responses API likely adds a few system tokens to wrap
+        the `instructions` field, eating into the cache prefix.
+      - The cache may need >1024 tokens to be ELIGIBLE; the
+        nominal "1024" is the lower bound, not a guaranteed hit.
+
+    Recommendation: pass `threshold_tokens=1300` (or more) for a
+    ~25% safety margin. See `test_all_shipped_prefixes_clear_cache_
+    threshold` in src/prompts/test_builder.py.
 
     Run this from a test for every registered prefix during CI.
     """
@@ -200,5 +213,7 @@ def assert_prefix_clears_cache_threshold(
         raise PromptBuildError(
             f"prefix {prefix_id!r} has ~{approx_tokens} tokens, below "
             f"cache threshold of {threshold_tokens}. Pad with terminology "
-            f"glossary / few-shot exemplars per plan Layer 4."
+            f"glossary / few-shot exemplars per plan Layer 4. (Note: "
+            f"OpenAI's nominal 1024-token rule isn't enough in practice; "
+            f"empirically clearing ~1300 tokens reliably engages cache.)"
         )
