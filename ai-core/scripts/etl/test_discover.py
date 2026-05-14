@@ -140,6 +140,96 @@ def test_makerspace_url_kept() -> None:
     assert not excluded
 
 
+# --- Positive library-content allowlist (the regionals filter) -----------
+
+
+def test_regional_marketing_url_rejected_as_not_library() -> None:
+    """Middletown's sitemap 308-redirects to a regional sitemap with
+    2,487 entries; zero are library content. Reject them at discover
+    time so the ETL doesn't waste 30 min crawling non-library pages."""
+    excluded, reason = _is_excluded(
+        "https://www.miamioh.edu/regionals/marketing-communications/services/"
+    )
+    assert excluded
+    assert reason == "not_library_url"
+
+
+def test_regional_news_url_rejected_as_not_library() -> None:
+    """Regional news URLs (`/regionals/news/...`) don't start with
+    `/news/` so the news-prefix filter doesn't catch them. The
+    library-content positive filter does."""
+    excluded, reason = _is_excluded(
+        "https://www.miamioh.edu/regionals/news/2021/01/gardner-harvey-library-spring-2021.html"
+    )
+    assert excluded
+    assert reason == "not_library_url"
+
+
+def test_regional_eccoe_url_rejected() -> None:
+    excluded, reason = _is_excluded(
+        "https://www.miamioh.edu/regionals/eccoe/remote-technology-resources/"
+    )
+    assert excluded
+
+
+def test_hamilton_library_path_kept() -> None:
+    """Regional library URLs at the canonical `/library/` path stay in.
+    The filter is about non-library REGIONAL content, not all regional."""
+    excluded, _ = _is_excluded(
+        "https://www.ham.miamioh.edu/library/about/"
+    )
+    assert not excluded
+
+
+def test_middletown_library_path_kept() -> None:
+    excluded, _ = _is_excluded(
+        "https://www.mid.miamioh.edu/library/services/"
+    )
+    assert not excluded
+
+
+def test_lib_subdomain_without_library_path_kept() -> None:
+    """The Oxford lib.miamioh.edu domain itself counts as library
+    content via the `lib.` host prefix; URLs there don't need
+    `/library/` in the path."""
+    excluded, _ = _is_excluded(
+        "https://www.lib.miamioh.edu/use/borrow/ill/"
+    )
+    assert not excluded
+
+
+# --- Internal `/_*` template paths (the 404 source) ----------------------
+
+
+def test_underscore_about_path_rejected() -> None:
+    """`/_about/larps.pdf`, `/_strategic/2020-fall.html` etc. are
+    Miami's internal CMS template paths leaked into the sitemap.
+    They 404 in the wild. First ETL run produced 7 such failures."""
+    excluded, reason = _is_excluded(
+        "https://www.lib.miamioh.edu/_about/larps.pdf"
+    )
+    assert excluded
+    assert "/_" in reason
+
+
+def test_underscore_strategic_path_rejected() -> None:
+    excluded, reason = _is_excluded(
+        "https://www.lib.miamioh.edu/_strategic/2020-fall.html"
+    )
+    assert excluded
+
+
+def test_underscore_files_path_rejected() -> None:
+    """The regional sitemap had `/regionals/_files/images/...` paths
+    that emitted lxml parse errors. Even though they're regional
+    (already caught by not_library_url), this provides defense in
+    depth on lib.miamioh.edu hosts too."""
+    excluded, reason = _is_excluded(
+        "https://www.lib.miamioh.edu/_files/images/things.html"
+    )
+    assert excluded
+
+
 # --- discover() with mocked sitemap fetch ----------------------------
 
 
@@ -191,6 +281,40 @@ def test_discover_filters_excluded_prefixes(monkeypatch) -> None:
     urls = [d.url for d in out]
     assert any("ill" in u for u in urls)
     assert not any("news-events" in u for u in urls)
+
+
+def test_discover_falls_back_to_seeds_when_sitemap_returns_no_library(monkeypatch) -> None:
+    """Middletown's sitemap 308-redirects to the regional sitemap with
+    2,487 non-library URLs. The library-content filter drops all of
+    them, leaving the campus with zero discovered URLs. The seed-URL
+    fallback must fire in this case, otherwise the campus is silently
+    excluded from the corpus."""
+    sitemap_urls = list(config.SITEMAPS.items())
+    if not sitemap_urls:
+        return
+    campus, sitemap = sitemap_urls[0]
+    seed_url = "https://www.mid.miamioh.edu/library/services/"
+    # Sitemap returns non-empty but ALL non-library URLs.
+    monkeypatch.setattr(
+        discover_mod, "_fetch_sitemap",
+        _stub_fetch({sitemap: [
+            "https://www.miamioh.edu/regionals/marketing-communications/",
+            "https://www.miamioh.edu/regionals/eccoe/news/",
+            "https://www.miamioh.edu/regionals/news/2021/",
+        ]}),
+    )
+    monkeypatch.setattr(
+        config, "SEED_URLS", {campus: [seed_url]},
+    )
+    out = discover()
+    urls_for_campus = [d.url for d in out if d.campus == campus]
+    # Seed URL must have been picked up after the empty-after-filter
+    # condition triggered the fallback.
+    assert seed_url in urls_for_campus, (
+        f"seed fallback didn't fire; got {urls_for_campus}"
+    )
+    sources = {d.source for d in out if d.campus == campus}
+    assert "seed" in sources
 
 
 def test_discover_falls_back_to_seeds_when_sitemap_empty(monkeypatch) -> None:
@@ -286,9 +410,19 @@ def main() -> int:
         test_legitimate_about_locations_url_kept,
         test_about_organization_url_kept,
         test_makerspace_url_kept,
+        test_regional_marketing_url_rejected_as_not_library,
+        test_regional_news_url_rejected_as_not_library,
+        test_regional_eccoe_url_rejected,
+        test_hamilton_library_path_kept,
+        test_middletown_library_path_kept,
+        test_lib_subdomain_without_library_path_kept,
+        test_underscore_about_path_rejected,
+        test_underscore_strategic_path_rejected,
+        test_underscore_files_path_rejected,
         test_discover_dedupes_across_campuses,
         test_discover_filters_excluded_prefixes,
         test_discover_falls_back_to_seeds_when_sitemap_empty,
+        test_discover_falls_back_to_seeds_when_sitemap_returns_no_library,
         test_discover_returns_DiscoveredUrl_with_campus_tagged,
         test_discovered_url_is_frozen,
     ]

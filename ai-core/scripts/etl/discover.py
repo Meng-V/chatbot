@@ -36,8 +36,44 @@ class DiscoveredUrl:
     source: str       # "sitemap" | "seed" | "manual"
 
 
+def _is_library_url(url: str) -> bool:
+    """Return True if `url` matches the positive library-content allowlist.
+
+    A URL is library content if EITHER:
+      - its host starts with one of LIBRARY_HOST_PREFIXES (`lib.`, `www.lib.`), OR
+      - its path contains one of LIBRARY_PATH_SUBSTRINGS (`/library/`).
+
+    Required because Middletown's sitemap 308-redirects to a regional
+    sitemap with 2,487 entries of which zero are library content. Without
+    this filter, the ETL would crawl ~2,300 non-library URLs and produce
+    hundreds of TooManyRedirects fetch failures on marketing-comms pages.
+    See findings/2026-05-13_etl_first_run.md.
+    """
+    parsed = urlparse(url)
+    host = (parsed.hostname or "").lower()
+    path = parsed.path or ""
+    for host_prefix in config.LIBRARY_HOST_PREFIXES:
+        if host.startswith(host_prefix):
+            return True
+    for path_substr in config.LIBRARY_PATH_SUBSTRINGS:
+        if path_substr in path:
+            return True
+    return False
+
+
 def _is_excluded(url: str) -> tuple[bool, Optional[str]]:
-    """Return (excluded?, reason) for a URL."""
+    """Return (excluded?, reason) for a URL.
+
+    Three checks, in order:
+      1. Positive library-content gate (host=lib.* or path contains
+         /library/). Anything outside this is rejected with
+         reason="not_library_url" -- the cheapest possible reject.
+      2. Path-prefix exclusion list (news, events, exhibits, internal
+         `/_*` template paths).
+      3. Substring exclusion (404 pages, test pages, READMEs).
+    """
+    if not _is_library_url(url):
+        return True, "not_library_url"
     parsed = urlparse(url)
     path = parsed.path or ""
     for prefix in config.EXCLUDE_URL_PREFIXES:
@@ -88,7 +124,9 @@ def discover() -> list[DiscoveredUrl]:
 
     for campus, sitemap_url in config.SITEMAPS.items():
         urls = _fetch_sitemap(sitemap_url)
-        if not urls:
+        sitemap_used = bool(urls)
+
+        if not sitemap_used:
             # Fall back to hand-curated seed URLs for this campus.
             urls = config.SEED_URLS.get(campus, [])
             source = "seed"
@@ -99,6 +137,7 @@ def discover() -> list[DiscoveredUrl]:
         else:
             source = "sitemap"
 
+        kept_for_campus = 0
         for url in urls:
             excluded, reason = _is_excluded(url)
             if excluded:
@@ -106,6 +145,30 @@ def discover() -> list[DiscoveredUrl]:
                 continue
             if url not in seen:
                 seen[url] = DiscoveredUrl(url=url, campus=campus, source=source)
+                kept_for_campus += 1
+
+        # Sitemap-then-empty-after-filter recovery: if the sitemap was
+        # non-empty but the positive library-content filter drained the
+        # entire batch (real case: Middletown's sitemap 308-redirects to
+        # the regional sitemap with 2,487 non-library URLs), retry with
+        # the seed URLs so the campus isn't silently dropped from the
+        # corpus.
+        if sitemap_used and kept_for_campus == 0:
+            seed_urls = config.SEED_URLS.get(campus, [])
+            if seed_urls:
+                logger.info(
+                    "sitemap returned only non-library URLs, falling back to seeds",
+                    extra={"campus": campus, "n_seeds": len(seed_urls)},
+                )
+                for url in seed_urls:
+                    excluded, reason = _is_excluded(url)
+                    if excluded:
+                        rejected.append((url, reason or "unknown"))
+                        continue
+                    if url not in seen:
+                        seen[url] = DiscoveredUrl(
+                            url=url, campus=campus, source="seed",
+                        )
 
     logger.info(
         "discovery complete",

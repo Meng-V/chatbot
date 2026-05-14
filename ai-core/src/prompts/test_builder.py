@@ -39,7 +39,15 @@ from src.prompts.builder import (  # noqa: E402
 # OpenAI's automatic prompt cache requires a >=1024-token identical
 # prefix (verify against current docs at code-change time per the
 # freshness rule). Conservative test threshold.
-CACHE_THRESHOLD_TOKENS = 1024
+# OpenAI's nominal cache threshold is 1024 tokens, but empirically a
+# 1062-token-estimated prefix (synthesizer_v1 pre-padding) had 0% cache
+# hit on identical back-to-back calls. The 4-chars-per-token approximation
+# overestimates token counts for JSON-heavy content (the synth prompt
+# has lots of curly braces + URL tables which tokenize denser).
+# 1300 gives a ~25% safety margin -- the synth was at 1062 estimated /
+# 1090ish actual and failed; at 2280 estimated / 2257 actual it caches
+# at 77%. So 1300 is comfortably above the empirical breaking point.
+CACHE_THRESHOLD_TOKENS = 1300
 
 
 def _reset_registry() -> None:

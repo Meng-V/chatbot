@@ -12,7 +12,20 @@ See plan: Data preparation playbook §4 (pipeline) and §7 (featured services).
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Final
+
+
+# --- Path anchor ------------------------------------------------------------
+#
+# Resolved once at import time. All output path constants below are absolute
+# so the ETL produces files in the right place regardless of where the
+# operator invokes it from. Previously the path strings were relative
+# ("ai-core/data/...") and the runbook required `cd ai-core` first; the
+# combo produced `ai-core/ai-core/data/...` when the cwd was already inside
+# ai-core. Anchoring to the module's location eliminates the cwd dependency.
+
+_AI_CORE_ROOT: Final[Path] = Path(__file__).resolve().parents[2]
 
 
 # --- Source domains ---------------------------------------------------------
@@ -36,11 +49,23 @@ SEED_URLS: Final[dict[str, list[str]]] = {
         # Add more as the librarian liaisons identify priority pages.
     ],
     "middletown": [
+        # Real Middletown library URLs use `.htm` extensions (the
+        # `/library/about/` slash form 404s; confirmed by HEAD-checking
+        # the landing page's `<a href>` tags). Add more as the librarian
+        # liaisons identify priority pages.
         "https://www.mid.miamioh.edu/library/",
-        "https://www.mid.miamioh.edu/library/about/",
-        "https://www.mid.miamioh.edu/library/services/",
-        "https://www.mid.miamioh.edu/library/research/",
-        # Add more as the librarian liaisons identify priority pages.
+        "https://www.mid.miamioh.edu/library/index.htm",
+        "https://www.mid.miamioh.edu/library/aboutus.htm",
+        "https://www.mid.miamioh.edu/library/services.htm",
+        "https://www.mid.miamioh.edu/library/research.htm",
+        "https://www.mid.miamioh.edu/library/libraryresearch.html",
+        "https://www.mid.miamioh.edu/library/printing.htm",
+        "https://www.mid.miamioh.edu/library/reference.htm",
+        "https://www.mid.miamioh.edu/library/reserves.htm",
+        "https://www.mid.miamioh.edu/library/textbookreserves.htm",
+        "https://www.mid.miamioh.edu/library/researchconsultations.htm",
+        "https://www.mid.miamioh.edu/library/citingsources.htm",
+        "https://www.mid.miamioh.edu/library/accessibility.htm",
     ],
 }
 
@@ -59,6 +84,11 @@ TLS_SKIP_ALLOWLIST: Final[set[str]] = {
 # News/events are the prime suspects for "fake service" hallucinations
 # (defunct programs, expired hours, old exhibits). The bot is not a news
 # platform; users wanting current events go to the news page directly.
+#
+# `/_` catches Miami's internal-template-path convention (`/_about/`,
+# `/_strategic/`, `/_carousel/`). These paths return 404 in the wild;
+# they're internal CMS scaffolding leaked into the sitemap. First ETL
+# run produced 7 such 404s -- the prefix drops them at discover time.
 EXCLUDE_URL_PREFIXES: Final[tuple[str, ...]] = (
     "/about/news-events/",
     "/news/",
@@ -68,6 +98,7 @@ EXCLUDE_URL_PREFIXES: Final[tuple[str, ...]] = (
     "/test/",
     "/staging/",
     "/dev/",
+    "/_",
 )
 
 # Specific path patterns to drop in addition to the prefixes above.
@@ -75,6 +106,32 @@ EXCLUDE_URL_SUBSTRINGS: Final[tuple[str, ...]] = (
     "readme",
     "/404",
     "/test-page",
+)
+
+
+# --- Positive library-content allowlist -------------------------------------
+#
+# The Middletown sitemap (`mid.miamioh.edu/sitemap.xml`) 308-redirects to
+# `miamioh.edu/regionals/sitemap.xml`, which contains 2,487 URLs of which
+# **zero** are library content (it's ECCOE, marketing-comms, athletics,
+# news archives, etc.). Without a positive library filter, the ETL would
+# happily crawl all 2,487 and produce ~265 TooManyRedirects fetch failures
+# on the regional marketing-comms pages.
+#
+# A URL counts as library content if EITHER:
+#   - its host starts with "lib." (e.g. lib.miamioh.edu), OR
+#   - its path contains "/library/" (e.g. ham.miamioh.edu/library/about/)
+#
+# Anything else is rejected at discover time with reason="not_library_url".
+# To allow a new domain or path shape, add to one of the patterns below.
+
+LIBRARY_HOST_PREFIXES: Final[tuple[str, ...]] = (
+    "lib.",      # lib.miamioh.edu
+    "www.lib.",  # www.lib.miamioh.edu
+)
+
+LIBRARY_PATH_SUBSTRINGS: Final[tuple[str, ...]] = (
+    "/library/",  # ham.miamioh.edu/library/*, mid.miamioh.edu/library/*
 )
 
 
@@ -191,8 +248,8 @@ EMBED_BATCH_SIZE: Final[int] = 100  # OpenAI text-embedding-3-large allows up to
 # --- Output paths -----------------------------------------------------------
 
 # Cache crawled HTML so failures don't re-fetch.
-RAW_CACHE_DIR: Final[str] = "ai-core/data/raw"
+RAW_CACHE_DIR: Final[str] = str(_AI_CORE_ROOT / "data" / "raw")
 # Diff reports for librarian review.
-DIFF_REPORT_DIR: Final[str] = "ai-core/data/diffs"
+DIFF_REPORT_DIR: Final[str] = str(_AI_CORE_ROOT / "data" / "diffs")
 # Pipeline checkpoint files (per-step state).
-CHECKPOINT_DIR: Final[str] = "ai-core/data/checkpoints"
+CHECKPOINT_DIR: Final[str] = str(_AI_CORE_ROOT / "data" / "checkpoints")
