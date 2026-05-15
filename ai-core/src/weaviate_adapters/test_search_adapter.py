@@ -1,7 +1,7 @@
 """
 Unit tests for WeaviateSearchAdapter.
 
-Run: `python -m src.weaviate.test_search_adapter` from ai-core/.
+Run: `python -m src.weaviate_adapters.test_search_adapter` from ai-core/.
 
 The risky logic is the recursive scope-filter-dict -> v4 Filter
 translation and the response-shape mapping. Both are tested with
@@ -29,7 +29,7 @@ _HERE = Path(__file__).resolve().parent
 _AI_CORE = _HERE.parent.parent
 sys.path.insert(0, str(_AI_CORE))
 
-from src.weaviate.search_adapter import (  # noqa: E402
+from src.weaviate_adapters.search_adapter import (  # noqa: E402
     WeaviateSearchAdapter,
     _translate_filter_with,
 )

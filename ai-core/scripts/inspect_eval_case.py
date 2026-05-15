@@ -58,7 +58,7 @@ def _live_chunks(q: GoldQuestion, k: int) -> list[dict]:
         from src.retrieval.scope_filter import ScopeFilter
         from src.retrieval.search import RetrievalRequest, search_kb
         from src.scope.resolver import resolve_scope
-        from src.weaviate.search_adapter import WeaviateSearchAdapter
+        from src.weaviate_adapters.search_adapter import WeaviateSearchAdapter
 
         s = resolve_scope(
             q.question,

@@ -1,7 +1,7 @@
 """
 Unit tests for WeaviateETLAdapter.
 
-Run: `python -m src.weaviate.test_etl_adapter` from ai-core/.
+Run: `python -m src.weaviate_adapters.test_etl_adapter` from ai-core/.
 
 The adapter wraps the v4 Weaviate client. We stub the client surface
 with an in-memory shape so the tests don't need a running Weaviate.
@@ -28,12 +28,12 @@ import types
 from pathlib import Path
 from typing import Any, Optional
 
-# Allow `python -m src.weaviate.test_etl_adapter` from ai-core/.
+# Allow `python -m src.weaviate_adapters.test_etl_adapter` from ai-core/.
 _HERE = Path(__file__).resolve().parent
 _AI_CORE = _HERE.parent.parent
 sys.path.insert(0, str(_AI_CORE))
 
-from src.weaviate.etl_adapter import (
+from src.weaviate_adapters.etl_adapter import (
     WeaviateETLAdapter,
     _CHUNK_PROPERTIES,
     _chunk_uuid,
