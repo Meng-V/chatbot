@@ -417,7 +417,7 @@ def _build_real_deps(
     exactly the behavior we want to measure.
     """
     from src.tools.search_kb_tool import make_search_kb_tool
-    from src.weaviate.search_adapter import WeaviateSearchAdapter
+    from src.weaviate_adapters.search_adapter import WeaviateSearchAdapter
 
     weav = WeaviateSearchAdapter()  # real v4 client via get_weaviate_client()
     registry = ToolRegistry()

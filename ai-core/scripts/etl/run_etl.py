@@ -286,7 +286,7 @@ def _build_prod_pipeline() -> Pipeline:
     from openai import OpenAI  # type: ignore
 
     from src.config.models import EMBEDDING_MODEL  # type: ignore
-    from src.weaviate.etl_adapter import WeaviateETLAdapter  # type: ignore
+    from src.weaviate_adapters.etl_adapter import WeaviateETLAdapter  # type: ignore
     from src.database.urlseen_adapter import PrismaUrlSeenStore  # type: ignore
 
     openai_client = OpenAI()
