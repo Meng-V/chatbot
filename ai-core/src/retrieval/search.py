@@ -119,11 +119,27 @@ class WeaviateLike(Protocol):
 # --- Entry point ---------------------------------------------------------
 
 
+def _default_collection() -> str:
+    """Resolve the Weaviate collection to query at request time.
+
+    Default is `Chunk_current` -- the alias the ETL's `promote_collection`
+    points at the latest approved version, on Weaviate v1.32+ servers
+    that support aliases.
+
+    On older servers (v1.27 / v1.28 / v1.31) where aliases don't exist
+    yet, set `WEAVIATE_CHUNK_COLLECTION=Chunk_v<date>` in `.env` to
+    select an explicit version. Restart the FastAPI worker after
+    changing it.
+    """
+    import os
+    return os.getenv("WEAVIATE_CHUNK_COLLECTION", "Chunk_current")
+
+
 def search_kb(
     request: RetrievalRequest,
     *,
     weaviate: WeaviateLike,
-    collection: str = "Chunk_current",
+    collection: Optional[str] = None,
 ) -> RetrievalResult:
     """Run a scope-filtered hybrid search and return EvidenceChunks.
 
@@ -141,6 +157,11 @@ def search_kb(
     """
     where = build_where_clause(request.scope)
     should_match = build_should_match(request.scope)
+    # Late-resolve the collection name so a `None` default falls
+    # through to the env var (`WEAVIATE_CHUNK_COLLECTION`) without
+    # forcing every caller to thread the env lookup themselves.
+    if collection is None:
+        collection = _default_collection()
 
     try:
         hits = weaviate.hybrid_search(

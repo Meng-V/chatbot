@@ -412,11 +412,68 @@ def promote_collection(
     `promote_collection(weaviate, version=previous_version)` -- a single
     alias swap, no data movement. Not part of the Pipeline because it's
     a manual decision gate (you don't want a cron auto-promoting).
+
+    Server compatibility:
+      * Weaviate v1.32+ supports server-side aliases via the v4 client's
+        `client.alias.{create,update,list_all}` API. We use that path
+        when available.
+      * Older servers (v1.27, v1.28, v1.31) don't support aliases at
+        all -- the API call returns a 404. For those, this function
+        emits clear instructions for the env-var fallback path
+        (set `WEAVIATE_CHUNK_COLLECTION=Chunk_v{version}` in `.env` and
+        restart the bot). Both `src/retrieval/search.py` and
+        `src/tools/search_kb_tool.py` honor that env var at request
+        time.
     """
-    if not hasattr(weaviate, "swap_alias"):
-        raise NotImplementedError(
-            "weaviate client does not expose swap_alias; wire one up "
-            "(Weaviate v4 client supports collections.alias.create / .replace)."
-        )
-    weaviate.swap_alias(alias=alias, target=f"Chunk_v{version}")
-    logger.info("promoted collection", extra={"alias": alias, "version": version})
+    target_collection = f"Chunk_v{version}"
+
+    # Attempt server-side alias swap (v1.32+ servers).
+    alias_api = getattr(weaviate, "alias", None)
+    if alias_api is not None:
+        try:
+            # The v4 client exposes alias management via client.alias.
+            # Use update if the alias exists, create otherwise.
+            existing = list(alias_api.list_all() or [])
+            existing_names = {a.alias_name for a in existing}
+            if alias in existing_names:
+                alias_api.update(
+                    alias_name=alias,
+                    new_target_collection=target_collection,
+                )
+                action = "updated"
+            else:
+                alias_api.create(
+                    alias_name=alias,
+                    target_collection=target_collection,
+                )
+                action = "created"
+            logger.info(
+                "promoted collection (server-side alias)",
+                extra={"alias": alias, "target": target_collection, "action": action},
+            )
+            return
+        except Exception as e:  # noqa: BLE001
+            # Fall through to env-var instructions. Server probably
+            # too old (v1.27 / v1.28 / v1.31 don't have aliases).
+            logger.info(
+                "server-side alias promotion failed (likely server pre-v1.32): %s",
+                e,
+            )
+
+    # Fallback path: server doesn't support aliases. The bot reads from
+    # WEAVIATE_CHUNK_COLLECTION at request time -- update that env var.
+    msg = (
+        f"\n  Server-side alias promotion not available on this Weaviate "
+        f"(typically pre-v1.32).\n"
+        f"  To make the bot read from the new collection, set this in "
+        f"your `.env`:\n\n"
+        f"      WEAVIATE_CHUNK_COLLECTION={target_collection}\n\n"
+        f"  Then restart the FastAPI worker so the env var is picked up.\n"
+        f"  This is functionally equivalent to an alias swap; it just "
+        f"requires a process restart\n  instead of an atomic server-side "
+        f"operation. The retrieval code in `src/retrieval/search.py`\n  "
+        f"and `src/tools/search_kb_tool.py` resolves the collection name "
+        f"from this env var at\n  request time.\n"
+    )
+    logger.info("promote_collection: %s", msg)
+    print(msg)
