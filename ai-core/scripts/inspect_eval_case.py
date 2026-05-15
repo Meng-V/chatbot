@@ -94,6 +94,22 @@ def _show(q: GoldQuestion, *, live: bool, k: int) -> None:
     print(f"  intent:    {q.intent}")
     print(f"  outcome:   {q.expected_outcome}")
     print(f"  scope:     campus={q.scope_campus}, library={q.scope_library}")
+    # session_origin is the field that EXPLAINS a non-Oxford scope on
+    # a generic question. Surface it next to scope so "why is this
+    # Hamilton when King is the default?" is answered inline, not a
+    # mystery. Default scope = Oxford/King; session_origin OVERRIDES
+    # that default when the chat widget is embedded on a regional
+    # campus site (ham.miamioh.edu / mid.miamioh.edu).
+    if q.needs_session_origin:
+        print(f"  session_origin: {q.needs_session_origin}  "
+              f"<-- OVERRIDES the Oxford/King default; scope is "
+              f"{q.scope_campus} because the chat is simulated as "
+              f"originating from the {q.needs_session_origin} campus site")
+    else:
+        print("  session_origin: (none)  -- scope came from the "
+              "question text or the Oxford/King default")
+    if q.notes:
+        print(f"  notes:     {q.notes}")
     print(bar)
 
     print("\n  QUESTION (what the user asked):")
