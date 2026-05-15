@@ -144,7 +144,7 @@ def make_search_kb_tool(
     weaviate: WeaviateLike,
     scope: ScopeFilter,
     intent: Optional[str] = None,
-    collection: str = "Chunk_current",
+    collection: Optional[str] = None,
 ) -> Tool:
     """Build the agent Tool wrapping search_kb for one request.
 
@@ -154,8 +154,11 @@ def make_search_kb_tool(
             over the handler so the LLM-visible schema stays minimal.
         intent: kNN classifier's chosen intent. Used to map to the
             chunk's featured_service tag for soft boosting.
-        collection: Weaviate collection alias to query. Default points
-            at the live alias; ETL atomic-swaps this between versions.
+        collection: Weaviate collection name to query. Default `None`
+            falls through to `WEAVIATE_CHUNK_COLLECTION` env var
+            (or `Chunk_current` if unset) at request time, so the
+            ETL's promote step can update the env var instead of
+            requiring a restart of every component holding a closure.
 
     Returns:
         A Tool ready to register with ToolRegistry.

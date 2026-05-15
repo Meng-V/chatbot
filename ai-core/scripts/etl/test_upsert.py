@@ -388,34 +388,89 @@ def test_allowlist_empty_input_still_calls_store_with_empty_set() -> None:
 # --- promote_collection ------------------------------------------------
 
 
-def test_promote_collection_calls_swap_alias() -> None:
-    class WeaviateWithAlias:
+def test_promote_collection_uses_v4_alias_api_when_available() -> None:
+    """Weaviate v1.32+ servers + the v4 client expose `client.alias`.
+    promote_collection prefers this server-side path: atomic, no
+    process restart needed."""
+    class _AliasObj:
+        def __init__(self, name: str):
+            self.alias_name = name
+
+    class StubAliasApi:
         def __init__(self) -> None:
-            self.swap_args: dict = {}
+            self.existing: list = []
+            self.create_calls: list[dict] = []
+            self.update_calls: list[dict] = []
 
-        def swap_alias(self, *, alias: str, target: str) -> None:
-            self.swap_args = {"alias": alias, "target": target}
+        def list_all(self):
+            return self.existing
 
-    weaviate = WeaviateWithAlias()
-    promote_collection(weaviate, version="20260507_0200")
-    assert weaviate.swap_args == {
-        "alias": "Chunk_current",
-        "target": "Chunk_v20260507_0200",
-    }
+        def create(self, *, alias_name: str, target_collection: str) -> None:
+            self.create_calls.append(
+                {"alias_name": alias_name, "target_collection": target_collection}
+            )
+            self.existing.append(_AliasObj(alias_name))
+
+        def update(self, *, alias_name: str, new_target_collection: str) -> None:
+            self.update_calls.append(
+                {"alias_name": alias_name,
+                 "new_target_collection": new_target_collection}
+            )
+
+    class WeaviateWithAlias:
+        def __init__(self):
+            self.alias = StubAliasApi()
+
+    # First call: alias doesn't exist yet -> create.
+    w = WeaviateWithAlias()
+    promote_collection(w, version="20260507_0200")
+    assert w.alias.create_calls == [{
+        "alias_name": "Chunk_current",
+        "target_collection": "Chunk_v20260507_0200",
+    }]
+    assert w.alias.update_calls == []
+
+    # Second call: alias now exists -> update (idempotent re-promote).
+    promote_collection(w, version="20260514_1929")
+    assert w.alias.update_calls == [{
+        "alias_name": "Chunk_current",
+        "new_target_collection": "Chunk_v20260514_1929",
+    }]
 
 
-def test_promote_collection_raises_when_swap_alias_missing() -> None:
-    """Without swap_alias support the operation can't be safely
-    performed; we fail loud rather than silently doing nothing."""
+def test_promote_collection_emits_env_var_instructions_on_old_server() -> None:
+    """When the server doesn't support aliases (Weaviate <v1.32), the
+    function falls back to printing instructions for the env-var path
+    instead of raising. Bot operators set WEAVIATE_CHUNK_COLLECTION
+    in .env and restart -- functionally equivalent to an alias swap.
+
+    This is the path the user hit on Weaviate v1.27.3.
+    """
     class NoAliasClient:
+        # No `alias` attribute -- mimics older servers.
         pass
 
-    try:
-        promote_collection(NoAliasClient(), version="1")
-    except NotImplementedError as e:
-        assert "swap_alias" in str(e)
-        return
-    raise AssertionError("expected NotImplementedError")
+    # Should NOT raise.
+    promote_collection(NoAliasClient(), version="20260514_1929")
+
+
+def test_promote_collection_falls_back_when_alias_api_errors() -> None:
+    """If the alias API exists on the client but the server doesn't
+    actually support aliases (e.g. v4.16 client + v1.31 server), the
+    API call raises. promote_collection should catch + fall back to
+    env-var instructions rather than crash mid-promote."""
+    class FailingAliasApi:
+        def list_all(self):
+            raise RuntimeError("server does not support aliases")
+
+    class WeaviateWithFailingAlias:
+        def __init__(self):
+            self.alias = FailingAliasApi()
+
+    # Should NOT raise.
+    promote_collection(
+        WeaviateWithFailingAlias(), version="20260514_1929",
+    )
 
 
 # --- UpsertResult shape ------------------------------------------------
@@ -450,8 +505,9 @@ def main() -> int:
         test_allowlist_marks_featured_urls,
         test_allowlist_passes_url_data_through,
         test_allowlist_empty_input_still_calls_store_with_empty_set,
-        test_promote_collection_calls_swap_alias,
-        test_promote_collection_raises_when_swap_alias_missing,
+        test_promote_collection_uses_v4_alias_api_when_available,
+        test_promote_collection_emits_env_var_instructions_on_old_server,
+        test_promote_collection_falls_back_when_alias_api_errors,
         test_upsert_result_default_empty_lists,
     ]
     failed = 0

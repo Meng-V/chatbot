@@ -193,6 +193,51 @@ def test_collection_name_passed_through() -> None:
     assert stub.calls[0]["collection"] == "Chunk_v2"
 
 
+def test_collection_resolves_from_env_when_none() -> None:
+    """When `collection=None`, the retrieval layer reads
+    WEAVIATE_CHUNK_COLLECTION at request time. This is the env-var
+    fallback for Weaviate servers older than v1.32 (which don't
+    support server-side aliases). Bot operators set the env var
+    instead of running an alias swap."""
+    import os
+    stub = StubWeaviate(hits=[_hit()])
+    # Build with collection=None (the new default)
+    tool = make_search_kb_tool(
+        weaviate=stub, scope=ScopeFilter(campus="oxford"),
+        collection=None,
+    )
+    prev = os.environ.get("WEAVIATE_CHUNK_COLLECTION")
+    try:
+        os.environ["WEAVIATE_CHUNK_COLLECTION"] = "Chunk_vv20260514_1929"
+        tool.handler({"query": "q"})
+        assert stub.calls[0]["collection"] == "Chunk_vv20260514_1929"
+    finally:
+        # Restore prior env state so test ordering doesn't matter
+        if prev is None:
+            os.environ.pop("WEAVIATE_CHUNK_COLLECTION", None)
+        else:
+            os.environ["WEAVIATE_CHUNK_COLLECTION"] = prev
+
+
+def test_collection_defaults_to_chunk_current_when_no_env_no_arg() -> None:
+    """The env-var fallback's own fallback: if neither caller-arg nor
+    env var is set, default to `Chunk_current` (the alias name for
+    Weaviate v1.32+ deployments). Locks in the documented contract."""
+    import os
+    stub = StubWeaviate(hits=[_hit()])
+    tool = make_search_kb_tool(
+        weaviate=stub, scope=ScopeFilter(campus="oxford"),
+        collection=None,
+    )
+    prev = os.environ.pop("WEAVIATE_CHUNK_COLLECTION", None)
+    try:
+        tool.handler({"query": "q"})
+        assert stub.calls[0]["collection"] == "Chunk_current"
+    finally:
+        if prev is not None:
+            os.environ["WEAVIATE_CHUNK_COLLECTION"] = prev
+
+
 def test_search_kb_error_passes_through_to_tool_result() -> None:
     """When Weaviate raises, the tool's result dict carries `error`
     instead of `evidence`. The LLM reads this and may try a different
@@ -229,6 +274,8 @@ def main() -> int:
         test_unknown_intent_skips_boost,
         test_intent_none_skips_boost,
         test_collection_name_passed_through,
+        test_collection_resolves_from_env_when_none,
+        test_collection_defaults_to_chunk_current_when_no_env_no_arg,
         test_search_kb_error_passes_through_to_tool_result,
         test_result_is_json_serializable,
     ]
