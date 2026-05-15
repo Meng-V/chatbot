@@ -99,6 +99,7 @@ class WeaviateSearchAdapter:
     """
 
     client: Any = None
+    embed_query: Any = None  # Optional[Callable[[str], list[float]]]
 
     def __post_init__(self) -> None:
         if self.client is None:
@@ -112,6 +113,19 @@ class WeaviateSearchAdapter:
                     "src/utils/weaviate_client.py."
                 )
             self.client = c
+            # Production path: auto-wire client-side query embedding.
+            # The Chunk collection is created with vectorizer=none (the
+            # ETL writes OpenAI vectors directly -- see etl_adapter.py).
+            # Server-side hybrid therefore CANNOT compute a query vector
+            # ("VectorFromInput was called without vectorizer"). We must
+            # embed client-side with the SAME model the ETL used and pass
+            # vector= to coll.query.hybrid(). Tests inject client=... and
+            # leave embed_query=None -- their fake hybrid() ignores the
+            # extra kwarg, so the existing test suite stays untouched.
+            if self.embed_query is None:
+                from src.config.models import EMBEDDING_MODEL
+                from src.llm.client import embed as _embed
+                self.embed_query = lambda q: _embed(q, model=EMBEDDING_MODEL)
 
     def hybrid_search(
         self,
@@ -161,15 +175,35 @@ class WeaviateSearchAdapter:
                 "filter / metadata (test or sandbox path)"
             )
 
+        # Compute query vector client-side when an embedder is wired
+        # (production). Embedding is best-effort: if it fails we fall
+        # back to BM25-only hybrid (vector=None) rather than crashing
+        # the turn. The vectorizer-none collection will then return
+        # the same "VectorFromInput was called without vectorizer"
+        # error, which we already handle below by returning [].
+        query_vec = None
+        if self.embed_query is not None:
+            try:
+                query_vec = self.embed_query(query)
+            except Exception as e:  # noqa: BLE001
+                logger.warning(
+                    "query embedding failed (%s: %s); proceeding without "
+                    "vector -- vector leg of hybrid will fail server-side",
+                    type(e).__name__, e,
+                )
+
         try:
             coll = self.client.collections.get(collection)
-            resp = coll.query.hybrid(
+            kwargs = dict(
                 query=query,
                 alpha=alpha,
                 limit=limit,
                 filters=filters,
                 return_metadata=return_metadata,
             )
+            if query_vec is not None:
+                kwargs["vector"] = query_vec
+            resp = coll.query.hybrid(**kwargs)
         except Exception as e:  # noqa: BLE001 -- never crash the turn
             logger.warning(
                 "hybrid_search failed for collection=%s query=%r: %s",
