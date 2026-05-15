@@ -31,12 +31,16 @@ _HERE = Path(__file__).resolve().parent
 _AI_CORE = _HERE.parent.parent
 sys.path.insert(0, str(_AI_CORE))
 
+import json  # noqa: E402
+
 from src.agent.tool_registry import (  # noqa: E402
     Tool,
     ToolCall,
     ToolError,
     ToolRegistry,
     ToolResult,
+    _make_nullable,
+    _strictify_schema,
 )
 
 
@@ -200,6 +204,138 @@ def test_tool_result_is_error_property() -> None:
     assert err.is_error
 
 
+# --- strict-mode schema normalization ---
+#
+# Regression coverage for the production OpenAI 400:
+#   "Invalid schema for function 'search_kb': 'required' ... must be an
+#    array including every key in properties. Missing 'k'."
+
+
+def _search_kb_like_params() -> dict:
+    """The exact shape of search_kb's _PARAMETERS that triggered the
+    400: `k` present in properties but absent from `required`."""
+    return {
+        "type": "object",
+        "properties": {
+            "query": {"type": "string", "description": "the query"},
+            "k": {"type": "integer", "description": "top-k", "default": 10},
+        },
+        "required": ["query"],
+        "additionalProperties": False,
+    }
+
+
+def test_strictify_adds_every_property_to_required() -> None:
+    """Rule 1: the exact 400 regression. Every key in properties must
+    appear in required after serialization."""
+    reg = ToolRegistry()
+    reg.register(Tool(
+        name="search_kb", description="kb",
+        parameters=_search_kb_like_params(), handler=lambda _: {},
+    ))
+    params = reg.as_responses_tools()[0]["parameters"]
+    assert set(params["required"]) == {"query", "k"}
+    # Deterministic order = properties insertion order (cache stability).
+    assert params["required"] == ["query", "k"]
+
+
+def test_strictify_makes_optional_param_nullable() -> None:
+    """Rule 2: a param that was NOT in the author's `required` stays
+    answerable-as-absent by becoming a `null` union; a param that WAS
+    required keeps its single type."""
+    out = _strictify_schema(_search_kb_like_params())
+    assert out["properties"]["k"]["type"] == ["integer", "null"]
+    assert out["properties"]["query"]["type"] == "string"  # untouched
+
+
+def test_strictify_sets_additional_properties_false() -> None:
+    """Rule 3."""
+    out = _strictify_schema({
+        "type": "object",
+        "properties": {"a": {"type": "string"}},
+        "required": ["a"],
+    })
+    assert out["additionalProperties"] is False
+
+
+def test_strictify_is_pure_does_not_mutate_input() -> None:
+    """The registry's stored Tool.parameters must be untouched -- it is
+    part of the cached prompt prefix; mutation would corrupt later
+    calls."""
+    original = _search_kb_like_params()
+    snapshot = json.dumps(original, sort_keys=True)
+    _strictify_schema(original)
+    assert json.dumps(original, sort_keys=True) == snapshot
+    assert original["required"] == ["query"]  # unchanged
+
+
+def test_strictify_is_byte_stable_across_calls() -> None:
+    """OpenAI prompt caching needs the serialized tool block to be
+    byte-identical call-to-call. Two serializations must match exactly."""
+    reg = ToolRegistry()
+    reg.register(Tool(
+        name="search_kb", description="kb",
+        parameters=_search_kb_like_params(), handler=lambda _: {},
+    ))
+    a = json.dumps(reg.as_responses_tools())
+    b = json.dumps(reg.as_responses_tools())
+    assert a == b
+
+
+def test_strictify_recurses_into_nested_objects_and_arrays() -> None:
+    """Nested objects and array item schemas must also satisfy strict
+    mode (every nested property required + additionalProperties:false)."""
+    out = _strictify_schema({
+        "type": "object",
+        "properties": {
+            "filters": {
+                "type": "object",
+                "properties": {
+                    "campus": {"type": "string"},
+                    "library": {"type": "string"},
+                },
+                "required": ["campus"],
+            },
+            "tags": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {"name": {"type": "string"}},
+                },
+            },
+        },
+        "required": ["filters"],
+    })
+    nested = out["properties"]["filters"]
+    assert set(nested["required"]) == {"campus", "library"}
+    assert nested["additionalProperties"] is False
+    # `library` was not author-required -> nullable.
+    assert nested["properties"]["library"]["type"] == ["string", "null"]
+    item = out["properties"]["tags"]["items"]
+    assert item["required"] == ["name"]
+    assert item["additionalProperties"] is False
+    # `tags` itself was optional at the top level -> nullable union.
+    assert "null" in out["properties"]["tags"]["type"]
+
+
+def test_make_nullable_handles_str_list_and_anyof() -> None:
+    assert _make_nullable({"type": "string"})["type"] == ["string", "null"]
+    # Already a list: append null, don't duplicate.
+    assert _make_nullable({"type": ["a", "b"]})["type"] == ["a", "b", "null"]
+    assert _make_nullable({"type": ["a", "null"]})["type"] == ["a", "null"]
+    # anyOf branch gets a null option added.
+    out = _make_nullable({"anyOf": [{"type": "string"}]})
+    assert {"type": "null"} in out["anyOf"]
+    # No type/anyOf: wrapped.
+    out2 = _make_nullable({"enum": ["x", "y"]})
+    assert out2["anyOf"] == [{"enum": ["x", "y"]}, {"type": "null"}]
+
+
+def test_strictify_non_dict_passthrough() -> None:
+    assert _strictify_schema("nope") == "nope"
+    assert _strictify_schema(None) is None
+
+
 def main() -> int:
     tests = [
         test_register_and_get,
@@ -215,6 +351,14 @@ def main() -> int:
         test_tool_is_read_only_defaults_true,
         test_tool_is_read_only_overridable,
         test_tool_result_is_error_property,
+        test_strictify_adds_every_property_to_required,
+        test_strictify_makes_optional_param_nullable,
+        test_strictify_sets_additional_properties_false,
+        test_strictify_is_pure_does_not_mutate_input,
+        test_strictify_is_byte_stable_across_calls,
+        test_strictify_recurses_into_nested_objects_and_arrays,
+        test_make_nullable_handles_str_list_and_anyof,
+        test_strictify_non_dict_passthrough,
     ]
     failed = 0
     for t in tests:
