@@ -473,7 +473,26 @@ def _run_bot(q: GoldQuestion, deps: OrchestratorDeps) -> dict:
     try:
         resp = run_turn(request, deps)
     except Exception as e:  # noqa: BLE001
-        logger.warning("turn crashed", extra={"id": q.id, "error": str(e)})
+        # Surface the full exception (incl. OpenAI 400 body) in the
+        # message itself -- extra={} is dropped by the default formatter,
+        # which is why "turn crashed" was previously opaque.
+        body = ""
+        for attr in ("response", "body"):
+            obj = getattr(e, attr, None)
+            if obj is not None:
+                try:
+                    body = f" | {attr}={obj.text if hasattr(obj, 'text') else obj}"
+                except Exception:  # noqa: BLE001
+                    body = f" | {attr}=<unreadable>"
+                break
+        logger.warning(
+            "turn crashed id=%s %s: %s%s",
+            q.id,
+            type(e).__name__,
+            str(e),
+            body,
+            exc_info=True,
+        )
         return {
             "actual_intent": None,
             "intent_match": False,

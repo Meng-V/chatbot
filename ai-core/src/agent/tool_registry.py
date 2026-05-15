@@ -100,6 +100,89 @@ class ToolError(Exception):
         self.message = message
 
 
+# --- Strict-mode schema normalization -------------------------------------
+#
+# OpenAI's Responses API runs function tools with strict=True (set in
+# as_responses_tools()). Strict mode constrains decoding to the JSON
+# schema and imposes three rules the OpenAI docs spell out (verified
+# against the function-calling guide + developer-community guidance,
+# 2026-05 -- see the plan's model/API freshness rule):
+#
+#   1. EVERY key in `properties` must appear in `required`. (This is
+#      the exact 400 the agent hit: "'required' ... must be an array
+#      including every key in properties. Missing 'k'.")
+#   2. A logically-optional parameter stays in `required`, but its
+#      type becomes a union with "null" -- the model emits null to
+#      mean "not supplied".
+#   3. Every object must set `additionalProperties: false`.
+#
+# `default` is NOT honored under strict decoding, so a tool HANDLER
+# must treat a null/absent value as the default itself.
+#
+# Tool authors write natural JSON Schema (optional params simply
+# omitted from `required`). This transformer applies rules 1-3 at the
+# serialization boundary so no tool author has to remember them and
+# every tool is consistent. It is PURE -- returns new structures and
+# never mutates the registry's stored Tool.parameters -- and
+# DETERMINISTIC (`required` emitted in properties insertion order), so
+# the serialized tool block stays byte-identical call-to-call, a hard
+# requirement for OpenAI prompt caching.
+
+
+def _make_nullable(prop_schema: dict) -> dict:
+    """Copy `prop_schema` so its value space includes null. Lets a
+    property be `required` (per strict mode) yet still 'optional' by
+    the model emitting null."""
+    out = dict(prop_schema)
+    t = out.get("type")
+    if isinstance(t, str):
+        out["type"] = [t, "null"] if t != "null" else t
+        return out
+    if isinstance(t, list):
+        out["type"] = list(t) + ([] if "null" in t else ["null"])
+        return out
+    if isinstance(out.get("anyOf"), list):
+        has_null = any(
+            isinstance(s, dict) and s.get("type") == "null"
+            for s in out["anyOf"]
+        )
+        out["anyOf"] = list(out["anyOf"]) + (
+            [] if has_null else [{"type": "null"}]
+        )
+        return out
+    # No `type`/`anyOf` (enum-only, $ref, ...): wrap in anyOf-null.
+    return {"anyOf": [out, {"type": "null"}]}
+
+
+def _strictify_schema(schema: Any) -> Any:
+    """Recursively rewrite a JSON Schema to satisfy OpenAI strict mode.
+
+    Pure + deterministic (see the section comment above).
+    """
+    if not isinstance(schema, dict):
+        return schema
+
+    out = dict(schema)
+
+    if "items" in out:  # array element schema
+        out["items"] = _strictify_schema(out["items"])
+
+    props = out.get("properties")
+    if isinstance(props, dict):
+        original_required = set(out.get("required") or [])
+        new_props: dict = {}
+        for key, sub in props.items():
+            sub_strict = _strictify_schema(sub)
+            if key not in original_required:
+                sub_strict = _make_nullable(sub_strict)
+            new_props[key] = sub_strict
+        out["properties"] = new_props
+        out["required"] = list(props.keys())  # insertion order = stable
+        out["additionalProperties"] = False
+
+    return out
+
+
 # --- Registry -------------------------------------------------------------
 
 
@@ -166,7 +249,7 @@ class ToolRegistry:
                 "type": "function",
                 "name": t.name,
                 "description": t.description,
-                "parameters": t.parameters,
+                "parameters": _strictify_schema(t.parameters),
                 "strict": True,
             }
             for t in self.tools.values()

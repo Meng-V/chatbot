@@ -176,7 +176,13 @@ def make_search_kb_tool(
         query = args.get("query")
         if not isinstance(query, str) or not query.strip():
             raise ToolError("search_kb requires a non-empty `query` string.")
-        k = int(args.get("k", 10))
+        # Strict-mode tools force `k` into `required` as an int|null
+        # union, so the model emits null (not absence) to mean
+        # "default". `default` in the schema is ignored under strict
+        # decoding -- the handler owns the default. (See
+        # tool_registry._strictify_schema.)
+        k_raw = args.get("k")
+        k = 10 if k_raw is None else int(k_raw)
         if k < 1 or k > 50:
             # Bound the requested k -- defends against the LLM passing
             # k=10000 because of a bad chain-of-thought.
