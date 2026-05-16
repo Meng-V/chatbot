@@ -392,14 +392,24 @@ def _build_real_deps(
     scope: "ScopeFilter",
     intent: str,
 ):
-    """Build OrchestratorDeps that use REAL OpenAI LLMs AND real
-    Weaviate retrieval (no stubs, no canned evidence).
+    """Build OrchestratorDeps that use REAL OpenAI LLMs, real Weaviate
+    retrieval, AND the honest-baseline real tool backends (no stubs).
 
-    `search_kb` is wired to `WeaviateSearchAdapter` -> the same
-    `Chunk_v*` collection the production bot reads (selected via the
-    WEAVIATE_CHUNK_COLLECTION env var, defaulting to Chunk_current).
-    Requires the server's Weaviate to be reachable -- run the eval
-    with the SSH tunnel up if you're on a laptop.
+    Tool surface (the user-selected eval scope): search_kb +
+    validate_url + lookup_librarian + get_hours + get_room_availability
+    + point_to_url. `search_kb` is the scope-aware, featured-boost tool
+    from `src/tools/search_kb_tool.py` wired to `WeaviateSearchAdapter`
+    -> the same `Chunk_v*` collection prod reads (WEAVIATE_CHUNK_COLLECTION
+    env, default Chunk_current). validate_url / lookup_librarian /
+    point_to_url use real Postgres + the team's curated URL map (see
+    `src/eval/real_backends.py`). get_hours / get_room_availability are
+    DELIBERATELY left as labeled unwired sentinels -- live LibCal is
+    Gap 10, multi-day work; a sentinel makes `hours` visibly UNMEASURED
+    in the per-case dump rather than silently failing.
+
+    Requires the server's Weaviate reachable AND the shared Postgres
+    reachable (DATABASE_URL) -- run with the SSH tunnel up if on a
+    laptop.
 
     `scope` and `intent` are pre-resolved by the caller (same pattern
     the eval already uses for scope-match checking). The orchestrator
@@ -418,11 +428,24 @@ def _build_real_deps(
     """
     from src.tools.search_kb_tool import make_search_kb_tool
     from src.weaviate_adapters.search_adapter import WeaviateSearchAdapter
+    from src.tools_v2.registry import build_tool_registry
+    from src.eval.real_backends import build_eval_backends
 
-    weav = WeaviateSearchAdapter()  # real v4 client via get_weaviate_client()
-    registry = ToolRegistry()
+    # Full 10-tool registry with honest-baseline real backends.
+    registry = build_tool_registry(build_eval_backends())
+
+    # User-selected eval surface = search_kb + 5 read-only tools. Drop
+    # write/handoff/space tools so the agent's tool-choice distribution
+    # matches exactly what this run measures.
+    for _n in ("book_room", "create_ticket", "handoff_human", "lookup_space"):
+        registry.tools.pop(_n, None)
+
+    # Swap tools_v2's generic arg-driven search_kb for the eval's
+    # scope-aware, featured-service-boosting one (closes over the
+    # resolved turn scope+intent -> strictly better signal).
+    registry.tools.pop("search_kb", None)
     registry.register(make_search_kb_tool(
-        weaviate=weav,
+        weaviate=WeaviateSearchAdapter(),
         scope=scope,
         intent=intent,
         collection=None,  # resolves WEAVIATE_CHUNK_COLLECTION at request time
@@ -921,9 +944,65 @@ def _print_report(report: EvalReport, verbose: bool, scope_only: bool) -> None:
                 print(f"  [{r.question_id}] {', '.join(issues)}")
 
 
+def _dump_results_jsonl(report: "EvalReport", path: Path) -> None:
+    """Write one JSON object per case so failures are inspectable.
+
+    This is the diagnostic spine: `eval.log` only has the aggregate
+    summary, so the actual bot answers / refusal triggers / judge
+    verdicts were unrecoverable after a run. With this, you can
+    `jq 'select(.judge_verdict=="refused_incorrectly" and
+    .bot_refusal_trigger=="model_self_flagged")' eval_results.jsonl`
+    and read the exact answers behind the headline number.
+    """
+    import json
+
+    with path.open("w", encoding="utf-8") as fh:
+        for r in report.results:
+            row = {
+                "question_id": r.question_id,
+                "category": r.category,
+                "scope_match": r.scope_match,
+                "actual_scope_campus": r.actual_scope_campus,
+                "actual_scope_library": r.actual_scope_library,
+                "intent_match": r.intent_match,
+                "actual_intent": r.actual_intent,
+                # frozenset isn't JSON-serializable -> sorted list.
+                "expected_path_set": (
+                    sorted(r.expected_path_set)
+                    if r.expected_path_set is not None
+                    else None
+                ),
+                "actual_path": r.actual_path,
+                "path_match": r.path_match,
+                "bot_was_refusal": r.bot_was_refusal,
+                "bot_refusal_trigger": r.bot_refusal_trigger,
+                "bot_citations_count": r.bot_citations_count,
+                "judge_verdict": r.judge_verdict,
+                "latency_ms": r.latency_ms,
+                "input_tokens": r.input_tokens,
+                "cached_input_tokens": r.cached_input_tokens,
+                "output_tokens": r.output_tokens,
+                # Full answer LAST (longest field) so the line stays
+                # greppable up front even when truncated in a pager.
+                "bot_answer": r.bot_answer,
+            }
+            fh.write(json.dumps(row, ensure_ascii=False) + "\n")
+    logger.info("wrote %d per-case results -> %s", len(report.results), path)
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Run the smart-chatbot eval suite.")
     parser.add_argument("--filter", help="Only run questions in this category.")
+    parser.add_argument(
+        "--results-out",
+        default="eval_results.jsonl",
+        help=(
+            "Path to write per-case JSONL results (one object per "
+            "question: answer, refusal trigger, judge verdict, tokens). "
+            "Default: eval_results.jsonl in the cwd. This is how you "
+            "inspect WHY a number moved -- eval.log is aggregate-only."
+        ),
+    )
     parser.add_argument(
         "--scope-only", action="store_true",
         help="Only check src/scope/resolver.py; don't build the bot.",
@@ -960,6 +1039,9 @@ def main() -> int:
         with_real_llm=args.with_real_llm,
     )
     _print_report(report, verbose=args.verbose, scope_only=args.scope_only)
+
+    if not args.scope_only and report.results:
+        _dump_results_jsonl(report, Path(args.results_out))
 
     # Gates:
     #   - scope_match_rate >= 0.90 (existing).
