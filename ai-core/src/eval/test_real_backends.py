@@ -13,9 +13,9 @@ Tests:
   2. point_to_url ILL is campus-aware and sourced live from ILL_URLS
      (Oxford != Hamilton != Middletown).
   3. point_to_url for an unknown service returns NO url (never a guess).
-  4. build_eval_backends leaves get_hours / get_room_availability (and
-     other unwired) as the labeled sentinel that raises ToolError.
-  5. build_eval_backends wires the three real backends (not sentinels).
+  4. ONLY write/handoff tools + lookup_space stay unwired sentinels
+     (get_hours / get_room_availability are now WIRED to legacy LibCal).
+  5. every read-only backend is wired (none is the unwired sentinel).
 """
 
 from __future__ import annotations
@@ -109,20 +109,20 @@ def test_point_to_url_known_service_shape() -> None:
     assert out["service"] == "course_reserves"
 
 
-# --- 4. Gap-10 + write tools stay unwired (labeled sentinel) ---
+# --- 4. ONLY write/handoff/space tools stay unwired ---
 
 
-def test_build_eval_backends_leaves_gap10_unwired() -> None:
-    """get_hours / get_room_availability MUST raise the tools_v2
-    unwired-sentinel ToolError -- that is what makes `hours` show up as
-    visibly UNMEASURED (Gap 10) in the per-case dump rather than
-    silently scoring as a bot failure."""
+def test_only_write_and_handoff_tools_stay_unwired() -> None:
+    """get_hours / get_room_availability are now WIRED (legacy LibCal
+    reuse) -- they must NOT be the sentinel. Only the write/handoff
+    tools + lookup_space stay unwired (and `_build_real_deps` drops
+    those four from the eval surface anyway)."""
     b = build_eval_backends()
     for name, call in (
-        ("get_hours", lambda: b.get_hours("king")),
-        ("get_room_availability", lambda: b.get_room_availability({})),
         ("book_room", lambda: b.book_room({})),
         ("create_ticket", lambda: b.create_ticket({})),
+        ("handoff_human", lambda: b.handoff_human({})),
+        ("lookup_space", lambda: b.lookup_space({})),
     ):
         try:
             call()
@@ -132,18 +132,23 @@ def test_build_eval_backends_leaves_gap10_unwired() -> None:
         raise AssertionError(f"{name} should raise the unwired ToolError")
 
 
-# --- 5. the three real backends are actually wired ---
+# --- 5. every read-only backend is actually wired (not a sentinel) ---
 
 
-def test_build_eval_backends_wires_the_three() -> None:
+def test_all_readonly_backends_wired() -> None:
     b = build_eval_backends()
     # point_to_url is exercisable offline -> prove it's the real one.
     out = b.point_to_url("ill", {"campus": "hamilton"})
     assert out["url"] == ILL_URLS["hamilton"]["url"]
-    # validate_url / lookup_librarian hit Postgres -> don't call here.
-    # Prove they are NOT the tools_v2 unwired sentinel (whose closure
-    # qualname contains "_make_unwired_sentinel").
-    for name in ("validate_url", "lookup_librarian"):
+    # The rest hit Postgres / LibCal (network) -> don't call here.
+    # Prove none is the tools_v2 unwired sentinel (whose closure
+    # qualname contains "_make_unwired_sentinel" -> "unwired").
+    for name in (
+        "validate_url",
+        "lookup_librarian",
+        "get_hours",
+        "get_room_availability",
+    ):
         backend = getattr(b, name)
         qualname = getattr(backend, "__qualname__", "")
         assert "unwired" not in qualname, (
@@ -159,8 +164,8 @@ def main() -> int:
         test_point_to_url_ill_is_campus_aware_and_live_sourced,
         test_point_to_url_unknown_service_returns_no_url,
         test_point_to_url_known_service_shape,
-        test_build_eval_backends_leaves_gap10_unwired,
-        test_build_eval_backends_wires_the_three,
+        test_only_write_and_handoff_tools_stay_unwired,
+        test_all_readonly_backends_wired,
     ]
     failed = 0
     for t in tests:

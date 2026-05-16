@@ -6,8 +6,7 @@ Context: `tools_v2.build_tool_registry(backends)` wires 10 tools, but
 `search_kb`; every other category was measured with the tool absent.
 That's not a bot failure, it's a measurement gap.
 
-This module wires the subset that is cheap AND correct to wire on the
-eval host:
+This module wires EVERY read-only tool to its real backend:
 
   * validate_url     -> real Postgres `UrlSeen` (the 396-row allowlist
                         we verified on 3.14), reusing the production
@@ -23,23 +22,32 @@ eval host:
                         this whole project fights). Unknown service ->
                         a no-URL result the agent narrates as a
                         handoff, never a guessed link.
+  * get_hours        -> live LibCal via the LEGACY, production-proven
+                        `LibCalWeekHoursTool` (LibCal OAuth + DB
+                        building->location-id map already exist in
+                        src/tools + the shared Postgres). It was a
+                        mistake to call this "Gap 10" -- the
+                        implementation was sitting in src/tools the
+                        whole time; this is reuse, not multi-day work.
+  * get_room_availability -> live LibCal via the legacy
+                        `LibCalEnhancedAvailabilityTool`.
 
-DELIBERATELY left unwired (-> tools_v2's `_make_unwired_sentinel`,
-which raises a clean ToolError the agent narrates and the per-case
-JSONL dump records):
+Only the WRITE/handoff tools (book_room, create_ticket,
+handoff_human) and lookup_space stay unset -> tools_v2's
+`_make_unwired_sentinel`. `_build_real_deps` drops those four from
+the eval surface anyway, so they never reach the agent.
 
-  * get_hours, get_room_availability -> live LibCal. This is Gap 10
-    (live-data integration: LibCal auth + canonical->LibCal-id map +
-    the legacy 1.4k-line libcal module). It is genuinely multi-day
-    work, not eval glue. Leaving it as a labeled sentinel makes the
-    `hours` category visibly UNMEASURED rather than silently failing.
+Two connection models, each matched to its constraint:
 
-Connection model: `prisma-client-py` binds a connection to the event
-loop it was connected on. The agent loop / tools are sync with no
-running loop, so the robust pattern (verified on 3.14.5 earlier this
-session: connect -> query -> disconnect inside ONE `asyncio.run`) is
-used per call via `_db`. Slower than a shared pool, irrelevant for an
-eval, and immune to the cross-loop Prisma footgun.
+  * `_db` (connect-per-call, one fresh client inside one `asyncio.run`)
+    for validate_url / lookup_librarian. Self-contained, cross-loop
+    safe, verified on 3.14.5.
+  * `_bridge` (one persistent background event loop on a daemon
+    thread) for the LibCal tools. They reach the legacy code via the
+    `get_prisma_client()` SINGLETON + a singleton `LocationService`
+    with its own cache; that singleton binds to whatever loop first
+    connected it, so every LibCal call MUST run on one stable loop.
+    `_db`'s per-call fresh loop would bind-then-orphan the singleton.
 """
 
 from __future__ import annotations
@@ -79,6 +87,49 @@ def _db(coro_fn: Callable[[Any], Awaitable[Any]]) -> Any:
             await client.disconnect()
 
     return asyncio.run(_run())
+
+
+# --- Persistent loop for the legacy LibCal tools -------------------------
+
+
+class _AsyncBridge:
+    """One asyncio loop on a daemon thread, alive for the whole eval.
+
+    The legacy LibCal tools reach Postgres through the
+    `get_prisma_client()` singleton and a singleton `LocationService`
+    (with an in-process cache). A prisma client binds to the loop that
+    connected it; `_db`'s connect-per-call pattern would bind the
+    SINGLETON to a loop that then closes, orphaning it on the next
+    call. So every LibCal coroutine runs on this single stable loop --
+    the singleton connects once (lazily, by LocationService itself) and
+    stays valid for the eval's lifetime.
+
+    Lazy + daemon: nothing starts until the first hours/availability
+    question; the thread dies with the process (no shutdown hook to
+    forget).
+    """
+
+    _loop: Optional[asyncio.AbstractEventLoop] = None
+    _thread: Optional[Any] = None
+
+    @classmethod
+    def submit(cls, coro: Awaitable[Any], timeout: float = 30.0) -> Any:
+        if cls._loop is None:
+            import threading
+
+            cls._loop = asyncio.new_event_loop()
+            cls._thread = threading.Thread(
+                target=cls._loop.run_forever,
+                name="eval-libcal-loop",
+                daemon=True,
+            )
+            cls._thread.start()
+        fut = asyncio.run_coroutine_threadsafe(coro, cls._loop)
+        return fut.result(timeout=timeout)
+
+
+def _bridge(coro: Awaitable[Any], timeout: float = 30.0) -> Any:
+    return _AsyncBridge.submit(coro, timeout=timeout)
 
 
 # --- validate_url --------------------------------------------------------
@@ -307,24 +358,121 @@ def _make_point_to_url() -> Callable[[str, dict], dict]:
     return point
 
 
+# --- get_hours / get_room_availability (live LibCal, legacy reuse) -------
+#
+# canonical library id (Weaviate/scope) -> the building NAME the legacy
+# LocationService.get_location_id() resolves (it `contains`-matches
+# Library/LibrarySpace.shortName|name in the shared Postgres -- the
+# same names the production bot has used successfully for years, per
+# the legacy tool descriptions). `sword` (closed regional depository)
+# has no public LibCal hours and is handled before any LibCal call.
+
+_CANON_TO_LIBCAL_NAME = {
+    "king": "king",
+    "wertz": "art",                 # Wertz Art & Architecture
+    "rentschler": "rentschler",
+    "gardner_harvey": "gardner-harvey",
+    "special": "special collections",
+}
+
+
+def _make_get_hours() -> Callable[[str], dict]:
+    from src.tools.libcal_comprehensive_tools import LibCalWeekHoursTool
+
+    tool = LibCalWeekHoursTool()
+
+    def get_hours(library_id: str) -> dict:
+        canon = (library_id or "king").strip().lower()
+        if canon == "sword":
+            return {
+                "success": False,
+                "library": "sword",
+                "hours": (
+                    "SWORD (Southwest Ohio Regional Depository) is a "
+                    "closed-stacks depository with no public walk-in "
+                    "hours. Materials are requested, not browsed."
+                ),
+            }
+        name = _CANON_TO_LIBCAL_NAME.get(canon, canon)
+        try:
+            res = _bridge(tool.execute(query=name, building=name))
+        except Exception as e:  # noqa: BLE001
+            raise ToolError(
+                f"get_hours: LibCal lookup failed for {library_id!r} "
+                f"({e}). The bot should say live hours are unavailable, "
+                f"not guess."
+            ) from e
+        return {
+            "success": bool(res.get("success")),
+            "library": library_id,
+            "hours": res.get("text", ""),
+            "source_url": "https://www.lib.miamioh.edu/about/hours/",
+        }
+
+    return get_hours
+
+
+def _make_get_room_availability() -> Callable[[dict], list]:
+    from src.tools.libcal_comprehensive_tools import (
+        LibCalEnhancedAvailabilityTool,
+    )
+
+    tool = LibCalEnhancedAvailabilityTool()
+
+    def get_room_availability(args: dict) -> list:
+        canon = str(args.get("library") or "king").strip().lower()
+        if canon == "sword":
+            return [{
+                "success": False,
+                "note": "SWORD is a closed depository -- no bookable rooms.",
+            }]
+        name = _CANON_TO_LIBCAL_NAME.get(canon, canon)
+        try:
+            res = _bridge(tool.execute(
+                query=name,
+                building=name,
+                date=args.get("date"),
+                start_time=args.get("start_time"),
+                end_time=args.get("end_time"),
+                capacity=args.get("capacity"),
+            ))
+        except Exception as e:  # noqa: BLE001
+            raise ToolError(
+                f"get_room_availability: LibCal lookup failed "
+                f"({e}). The bot should say live availability is "
+                f"unavailable, not guess."
+            ) from e
+        # Handler does len() on this -> always a list. The legacy tool
+        # returns one formatted block; wrap it as a single "slot" the
+        # LLM narrates (incl. its own missing-params / no-rooms text).
+        return [{
+            "success": bool(res.get("success")),
+            "text": res.get("text", ""),
+        }]
+
+    return get_room_availability
+
+
 # --- assembly ------------------------------------------------------------
 
 
 def build_eval_backends() -> ToolBackends:
-    """ToolBackends for the eval: real validate_url / lookup_librarian /
-    point_to_url; everything else left unset so ToolBackends.__post_init__
-    installs the labeled unwired sentinel (clean ToolError -> narrated ->
-    recorded in the per-case JSONL dump)."""
+    """ToolBackends for the eval: every READ-ONLY tool wired to its real
+    backend (validate_url / lookup_librarian / point_to_url /
+    get_hours / get_room_availability). Only write/handoff tools and
+    lookup_space stay unset -> ToolBackends.__post_init__ installs the
+    labeled unwired sentinel; `_build_real_deps` drops those four from
+    the eval surface anyway."""
     return ToolBackends(
         validate_url=_make_validate_url(),
         lookup_librarian=_make_lookup_librarian(),
         point_to_url=_make_point_to_url(),
+        get_hours=_make_get_hours(),
+        get_room_availability=_make_get_room_availability(),
         # search_kb is intentionally NOT set here: _build_real_deps
         # swaps in the eval's scope-aware, featured-boost search_kb
-        # tool (src/tools/search_kb_tool.py), which is strictly better
-        # than the generic tools_v2 one.
-        # get_hours / get_room_availability: Gap 10 (live LibCal) ->
-        # unwired sentinel on purpose. See module docstring.
+        # tool (src/tools/search_kb_tool.py), strictly better than the
+        # generic tools_v2 one.
     )
 
 
