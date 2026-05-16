@@ -79,6 +79,21 @@ class EvidenceChunk:
     corrected_by: Optional[str] = None
     """Set by a `replace` correction -- surfaced to the UI citation
     chip so users see the text they're reading was librarian-edited."""
+    kind: str = "crawled"
+    """Provenance trust tier:
+      - "crawled"          Weaviate chunk. May be stale/mis-extracted;
+                            the synthesizer paraphrases it.
+      - "live_api"         Fetched live this turn from an authoritative
+                            API (LibCal hours / room availability). The
+                            VALUE is ground truth -- "Closed" is a
+                            correct answer, not an error. Must be quoted
+                            verbatim, never paraphrased or refused-around.
+      - "authoritative_db" Exact entity from Postgres (librarian email/
+                            phone) or a verified canonical URL
+                            (point_to_url). Must be reproduced verbatim.
+    The post-processor enforces verbatim faithfulness for the two
+    trusted tiers (emails/URLs must appear literally); the synthesizer
+    prompt instructs verbatim pass-through. See plan §"tiered data"."""
 
 
 @dataclass(frozen=True)

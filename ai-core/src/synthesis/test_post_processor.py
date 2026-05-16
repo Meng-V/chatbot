@@ -327,8 +327,65 @@ def test_multiple_urls_all_cited_is_ok() -> None:
     assert not result.is_refusal
 
 
+class _Ev:
+    """Minimal evidence stand-in (post-processor only reads .text)."""
+    def __init__(self, text: str) -> None:
+        self.text = text
+
+
+def test_email_not_in_evidence_refuses() -> None:
+    """Trusted-evidence faithfulness: an email the model emits that is
+    NOT verbatim in the evidence is a fabricated/paraphrased contact
+    (bennethm@ -> bennett@). Must refuse, not ship a wrong address."""
+    out = SynthesizerOutput(
+        answer="Contact the biology librarian at bennett@miamioh.edu [1].",
+        citations=[_ok_oxford_citation()],
+        confidence="high",
+    )
+    result = process_synthesizer_output(
+        out, scope_campus="oxford", url_allowlist={KING_URL},
+        evidence=[_Ev("Heather Bennett. Email: bennethm@miamioh.edu.")],
+    )
+    assert result.is_refusal
+    assert result.refusal.trigger == RefusalTrigger.CITATION_INVALID
+    assert any("not present verbatim" in f.detail
+               for f in result.refusal.failures)
+
+
+def test_email_in_evidence_passes() -> None:
+    out = SynthesizerOutput(
+        answer="Email Heather Bennett at bennethm@miamioh.edu [1].",
+        citations=[_ok_oxford_citation()],
+        confidence="high",
+    )
+    result = process_synthesizer_output(
+        out, scope_campus="oxford", url_allowlist={KING_URL},
+        evidence=[_Ev("Heather Bennett, Biology. "
+                      "Email: bennethm@miamioh.edu. Campus: oxford.")],
+    )
+    assert not result.is_refusal, f"unexpected: {result.refusal}"
+
+
+def test_closed_hours_answer_no_false_positive() -> None:
+    """The user's exact concern: a 'Closed' answer from a [LIVE] hours
+    source must NEVER trip the faithfulness check (no '@' in it)."""
+    out = SynthesizerOutput(
+        answer="King Library is closed today, 2026-05-16 [1].",
+        citations=[_ok_oxford_citation()],
+        confidence="high",
+    )
+    result = process_synthesizer_output(
+        out, scope_campus="oxford", url_allowlist={KING_URL},
+        evidence=[_Ev("King — Friday 2026-05-16: Closed")],
+    )
+    assert not result.is_refusal, f"unexpected: {result.refusal}"
+
+
 def main() -> int:
     tests = [
+        test_email_not_in_evidence_refuses,
+        test_email_in_evidence_passes,
+        test_closed_hours_answer_no_false_positive,
         test_happy_path_returns_answer,
         test_confidence_low_refuses,
         test_literal_REFUSAL_token_refuses,

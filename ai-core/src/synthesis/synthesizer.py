@@ -104,13 +104,16 @@ def _format_evidence_block(evidence: list[EvidenceChunk]) -> str:
     if not evidence:
         return "(no evidence)"
 
+    # Trust tag drives synthesizer rule 8 (verbatim, no-refuse).
+    _TAG = {"live_api": " [LIVE]", "authoritative_db": " [DIRECTORY]"}
     lines: list[str] = []
     for i, chunk in enumerate(evidence, start=1):
-        # Truncate snippet for the prompt; the full chunk text is in
-        # the citation chip. 600 chars is roughly 150 tokens, plenty
-        # for context, well under the per-chunk budget.
+        tag = _TAG.get(chunk.kind, "")
         snippet = chunk.text.strip().replace("\n", " ")
-        if len(snippet) > 600:
+        # Crawled chunks: truncate (full text is in the citation chip).
+        # Trusted (LIVE/DIRECTORY): NEVER truncate -- the value must be
+        # reproducible verbatim; a clipped hours block breaks that.
+        if not tag and len(snippet) > 600:
             snippet = snippet[:597] + "..."
         meta = []
         if chunk.library:
@@ -121,7 +124,7 @@ def _format_evidence_block(evidence: list[EvidenceChunk]) -> str:
             meta.append(f"topic={chunk.topic}")
         meta_str = f" [{', '.join(meta)}]" if meta else ""
         lines.append(
-            f"[{i}]{meta_str} {chunk.source_url}\n    {snippet}"
+            f"[{i}]{tag}{meta_str} {chunk.source_url}\n    {snippet}"
         )
     return "\n\n".join(lines)
 
@@ -366,6 +369,9 @@ def synthesize(
         parsed,
         scope_campus=request.scope_campus,
         url_allowlist=request.url_allowlist,
+        # Post-corrections bundle the synthesizer actually saw -> the
+        # email-faithfulness check verifies against the same evidence.
+        evidence=correction_outcome.chunks,
     )
 
     return SynthesisResult(

@@ -155,6 +155,13 @@ angle-bracket, or closing punctuation so we don't greedy-match into
 Markdown syntax. URLs in Markdown links `[text](url)` still match the
 url portion."""
 
+_EMAIL_RE = re.compile(r"[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}")
+"""Matches email addresses. Used for the trusted-evidence faithfulness
+check: every email the model writes MUST appear verbatim in some
+evidence item. Catches the directory-paraphrase bug
+(bennethm@miamioh.edu -> bennett@miamioh.edu) and invented contacts.
+Never false-positives on hours / "Closed" -- those aren't emails."""
+
 
 # --- The main entry point --------------------------------------------------
 
@@ -164,6 +171,7 @@ def process_synthesizer_output(
     scope_campus: str,
     url_allowlist: set[str],
     service_unavailable_trigger: Optional[RefusalContext] = None,
+    evidence: Optional[list] = None,
 ) -> PostProcessorResult:
     """Validate the synthesizer's structured output. Downgrade to a
     refusal if any check fails.
@@ -257,6 +265,29 @@ def process_synthesizer_output(
                 detail=f"URL {url!r} in answer is neither cited nor in the allowlist.",
             )
         )
+
+    # --- 3b. Trusted-evidence email faithfulness ---
+    # Every email the model emits MUST appear verbatim in some evidence
+    # item. The whole point of wiring lookup_librarian was to surface
+    # the EXACT directory address; a paraphrased/typo'd email
+    # (bennethm@ -> bennett@) or an invented one is a fabrication. This
+    # is deterministic, cheap, and structurally cannot false-positive
+    # on hours / "Closed" / room text (none contain an "@"). Skipped
+    # when the caller didn't pass evidence (older callers / unit tests).
+    if evidence:
+        evidence_blob = " ".join(getattr(c, "text", "") or "" for c in evidence)
+        for em in {m.group(0) for m in _EMAIL_RE.finditer(output.answer)}:
+            if em not in evidence_blob:
+                failures.append(
+                    ValidationFailure(
+                        trigger=RefusalTrigger.CITATION_INVALID,
+                        detail=(
+                            f"Email {em!r} in answer is not present "
+                            f"verbatim in any evidence item "
+                            f"(fabricated or paraphrased contact)."
+                        ),
+                    )
+                )
 
     # --- 4. Cross-campus citation check ---
     # Only citations that actually have provenance metadata loaded are

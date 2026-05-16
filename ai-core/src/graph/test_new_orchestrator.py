@@ -27,7 +27,11 @@ Tests:
   6. _extract_evidence: pulls from `evidence` (new shape).
   7. _extract_evidence: also handles legacy `chunks` shape.
   8. _extract_evidence: ignores errored search_kb results.
-  9. _extract_evidence: ignores non-search_kb tool results.
+  9. _extract_evidence: a tool result WITHOUT success is not promoted
+     (preserves the LibCal-down refusal).
+  9b. _tool_fact_evidence: get_hours/lookup_librarian/point_to_url
+      SUCCESS -> trusted EvidenceChunk (kind, campus, source_url);
+      failure / not-found -> []. search_kb crawled chunks come first.
  10. Reasoning intent (cross_campus_comparison) routes to gpt-5.2.
  11. Multi-hop evidence (>5 chunks, multi-topic) promotes to gpt-5.2.
  12. log_turn called with full telemetry payload.
@@ -492,35 +496,98 @@ def test_extract_evidence_skips_errored_search_kb() -> None:
     assert ev == []
 
 
-def test_extract_evidence_ignores_non_search_kb_tools() -> None:
-    """get_hours, lookup_librarian etc. are NOT retrieval evidence;
-    their results are tool messages the LLM quotes from context."""
-    outcome = AgentOutcome(
+def _turn(*results) -> AgentOutcome:
+    return AgentOutcome(
         terminal_message={"role": "assistant", "content": "x"},
-        turns=[
-            AgentTurn(
-                iteration=0,
-                llm_message={"role": "assistant"},
-                tool_calls=[
-                    ToolCall(id="t1", name="get_hours", arguments={}),
-                    ToolCall(id="t2", name="search_kb", arguments={}),
-                ],
-                tool_results=[
-                    ToolResult(
-                        call_id="t1", name="get_hours",
-                        data={"chunks": [_evidence_dict("c-hours")]},  # would be picked if name matched
-                    ),
-                    ToolResult(
-                        call_id="t2", name="search_kb",
-                        data={"evidence": [_evidence_dict("c-search")]},
-                    ),
-                ],
-            ),
-        ],
+        turns=[AgentTurn(
+            iteration=0, llm_message={"role": "assistant"},
+            tool_calls=[], tool_results=list(results),
+        )],
         stopped_reason="clean",
+    )
+
+
+def test_extract_evidence_skips_unsuccessful_tool_results() -> None:
+    """A get_hours result WITHOUT success (e.g. LibCal down) must NOT
+    become evidence -- the bot has to still refuse (gold:
+    hr_libcal_down_refusal). search_kb is still extracted."""
+    outcome = _turn(
+        ToolResult(call_id="t1", name="get_hours",
+                   data={"success": False, "hours": "couldn't retrieve"}),
+        ToolResult(call_id="t2", name="search_kb",
+                   data={"evidence": [_evidence_dict("c-search")]}),
     )
     ev = _extract_evidence(outcome)
     assert [c.chunk_id for c in ev] == ["c-search"]
+
+
+def test_extract_evidence_promotes_get_hours_success() -> None:
+    """The core fix: a successful get_hours becomes a trusted
+    live_api EvidenceChunk with real campus + source_url, so the
+    synthesizer can actually answer 'closed today' instead of
+    refusing for no evidence."""
+    outcome = _turn(ToolResult(
+        call_id="t1", name="get_hours",
+        data={"success": True, "library": "king",
+              "hours": "King — Fri 2026-05-16: Closed",
+              "source_url": "https://www.lib.miamioh.edu/about/hours/"},
+    ))
+    ev = _extract_evidence(outcome)
+    assert len(ev) == 1
+    c = ev[0]
+    assert c.kind == "live_api"
+    assert c.campus == "oxford"            # cross-campus guard tag
+    assert "Closed" in c.text              # "Closed" is a real answer
+    assert c.source_url.endswith("/about/hours/")
+    assert c.chunk_id == "tool:get_hours:king"
+
+
+def test_extract_evidence_promotes_librarian_and_pointer() -> None:
+    outcome = _turn(
+        ToolResult(call_id="t1", name="lookup_librarian", data={
+            "librarians": [{"name": "Ginny Boehme", "title": "Librarian",
+                            "department": "Sciences",
+                            "email": "boehmevm@miamioh.edu",
+                            "phone": "513-529-1234", "campus": "Oxford",
+                            "profile_url": "https://lib/p/ginny"}],
+            "count": 1}),
+        ToolResult(call_id="t2", name="point_to_url", data={
+            "service": "ill", "url": "https://www.lib.miamioh.edu/use/borrow/ill/",
+            "found": True, "description": "ILL form."}),
+    )
+    ev = _extract_evidence(outcome)
+    kinds = {c.chunk_id: c for c in ev}
+    lib = kinds["tool:lookup_librarian:boehmevm@miamioh.edu"]
+    assert lib.kind == "authoritative_db"
+    assert "boehmevm@miamioh.edu" in lib.text   # exact email surfaced
+    assert lib.campus == "oxford"
+    ptr = kinds["tool:point_to_url:ill"]
+    assert ptr.kind == "authoritative_db"
+    assert ptr.campus == "all"                  # university-wide
+    assert ptr.source_url.endswith("/use/borrow/ill/")
+
+
+def test_extract_evidence_pointer_not_found_not_promoted() -> None:
+    outcome = _turn(ToolResult(
+        call_id="t1", name="point_to_url",
+        data={"service": "teleport", "url": None, "found": False},
+    ))
+    assert _extract_evidence(outcome) == []
+
+
+def test_extract_evidence_crawled_first_then_tool_facts() -> None:
+    outcome = _turn(
+        ToolResult(call_id="t1", name="search_kb",
+                   data={"evidence": [_evidence_dict("c-search")]}),
+        ToolResult(call_id="t2", name="get_hours",
+                   data={"success": True, "library": "rentschler",
+                         "hours": "open", "source_url": "https://lib/h"}),
+    )
+    ev = _extract_evidence(outcome)
+    assert [c.chunk_id for c in ev] == [
+        "c-search", "tool:get_hours:rentschler",
+    ]
+    assert ev[1].campus == "hamilton"   # rentschler -> hamilton
 
 
 # --- Model routing ---
@@ -616,7 +683,11 @@ def main() -> int:
         test_extract_evidence_handles_new_evidence_shape,
         test_extract_evidence_falls_back_to_legacy_chunks_shape,
         test_extract_evidence_skips_errored_search_kb,
-        test_extract_evidence_ignores_non_search_kb_tools,
+        test_extract_evidence_skips_unsuccessful_tool_results,
+        test_extract_evidence_promotes_get_hours_success,
+        test_extract_evidence_promotes_librarian_and_pointer,
+        test_extract_evidence_pointer_not_found_not_promoted,
+        test_extract_evidence_crawled_first_then_tool_facts,
         test_reasoning_intent_routes_to_gpt_5_2,
         test_log_turn_called_with_full_payload,
         test_cited_chunk_ids_surfaces_for_librarian_review,
