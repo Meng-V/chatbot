@@ -530,15 +530,15 @@ def _make_get_hours() -> Callable[[str], dict]:
             "success": bool(res.get("success")),
             "library": library_id,
             "hours": res.get("text", ""),
-            # NOT a guessed deep link. /about/hours/ 404s and
-            # /about/locations/ 302-redirects (verified 2026-05-16) --
-            # shipping either as a cited URL would be the exact
-            # dead-link-fabrication this project exists to stop. The
-            # libraries homepage is verified-real AND renders the live
-            # "Today's Hours" widget, so it genuinely supports the
-            # answer. The hours VALUE's authority is the LibCal live
-            # API (the [LIVE] trust tier), not this URL.
-            "source_url": "https://www.lib.miamioh.edu/",
+            # Operator-provided and WebFetch-verified 2026-05-16:
+            # 200, title "Library Hours | Miami University Libraries",
+            # canonical hours hub, no redirect. (Earlier guesses
+            # /about/hours/ -> 404 and /about/locations/ -> 302 were
+            # rejected; never ship an unverified deep link as a cited
+            # URL.) The hours VALUE's authority is still the LibCal
+            # live API (the [LIVE] trust tier); this URL is where a
+            # user verifies it themselves.
+            "source_url": "https://www.lib.miamioh.edu/about/locations/hours/",
         }
 
     return get_hours
