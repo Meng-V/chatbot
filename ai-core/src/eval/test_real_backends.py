@@ -32,7 +32,9 @@ from src.config.capability_scope import ILL_URLS, LIMITATIONS  # noqa: E402
 from src.agent.tool_registry import ToolError  # noqa: E402
 from src.eval.real_backends import (  # noqa: E402
     _POINT_TO_URL,
+    _canonical_service,
     _make_point_to_url,
+    _resolve_subject_terms,
     build_eval_backends,
 )
 
@@ -158,6 +160,62 @@ def test_all_readonly_backends_wired() -> None:
     assert type(b.validate_url).__name__ == "UrlAllowlistValidator"
 
 
+# --- 6. point_to_url synonym widening (the failing circulation cases) ---
+
+
+def test_point_to_url_synonyms_resolve_to_verified_urls() -> None:
+    """The failing `circulation` cases (renew/reserves/holds phrasings)
+    must now resolve -- WITHOUT introducing any new URL."""
+    point = _make_point_to_url()
+    cases = {
+        "renew my books": _POINT_TO_URL["renewals"][0],
+        "extend my loan": _POINT_TO_URL["renewals"][0],
+        "reserves": _POINT_TO_URL["course_reserves"][0],
+        "course reserve": _POINT_TO_URL["course_reserves"][0],
+        "place a hold": _POINT_TO_URL["holds"][0],
+        "pay my overdue fines": _POINT_TO_URL["fines"][0],
+        "ohiolink account": _POINT_TO_URL["account"][0],
+    }
+    for phrasing, expected_url in cases.items():
+        out = point(phrasing, {})
+        assert out["found"] is True, (phrasing, out)
+        assert out["url"] == expected_url, (phrasing, out["url"])
+
+
+def test_canonical_service_maps_and_passthrough() -> None:
+    assert _canonical_service("renew") == "renewals"
+    assert _canonical_service("RESERVES") == "course_reserves"
+    assert _canonical_service("how do I place a hold?") == "holds"
+    assert _canonical_service("ill") == "ill"
+    # genuinely unknown still passes through (-> no-url, no guess)
+    assert _canonical_service("teleportation") == "teleportation"
+
+
+def test_holds_url_is_still_drift_safe() -> None:
+    """The new `holds` entry must use a URL already in a
+    capability_scope LIMITATIONS response (no new fabrication)."""
+    assert _POINT_TO_URL["holds"][0] in _capability_scope_urls()
+
+
+# --- 7. lookup_librarian subject resolution (the reinvention fix) ---
+
+
+def test_resolve_subject_terms_alias_and_course_code() -> None:
+    """The resolution the hand-rolled lookup lacked: alias + course
+    code -> canonical subject names, via the project's own maps."""
+    assert "Biology" in _resolve_subject_terms("biology", "")
+    assert "English" in _resolve_subject_terms("", "who helps with ENG 111")
+    # librarian-name -> their subjects (Ginny Boehme is the bio liaison)
+    assert "Biology" in _resolve_subject_terms("", "ginny boehme")
+    # nothing resolvable -> empty (DB contains-match fallback handles it)
+    assert _resolve_subject_terms("", "") == []
+
+
+def test_resolve_subject_terms_dedupes_preserving_order() -> None:
+    out = _resolve_subject_terms("biology", "biology")
+    assert out == list(dict.fromkeys(out))  # no dupes
+
+
 def main() -> int:
     tests = [
         test_point_to_url_urls_mirror_capability_scope,
@@ -166,6 +224,11 @@ def main() -> int:
         test_point_to_url_known_service_shape,
         test_only_write_and_handoff_tools_stay_unwired,
         test_all_readonly_backends_wired,
+        test_point_to_url_synonyms_resolve_to_verified_urls,
+        test_canonical_service_maps_and_passthrough,
+        test_holds_url_is_still_drift_safe,
+        test_resolve_subject_terms_alias_and_course_code,
+        test_resolve_subject_terms_dedupes_preserving_order,
     ]
     failed = 0
     for t in tests:

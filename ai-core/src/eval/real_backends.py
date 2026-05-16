@@ -57,6 +57,12 @@ import logging
 from typing import Any, Awaitable, Callable, Iterable, Optional
 
 from src.config.capability_scope import ILL_URLS
+from src.tools.subject_aliases import (
+    find_subject_by_alias,
+    find_subject_by_course_code,
+    find_subjects_by_librarian_name,
+)
+from src.tools.enhanced_subject_search import extract_course_codes
 from src.tools.url_allowlist import (
     AllowlistEntry,
     UrlAllowlistValidator,
@@ -205,17 +211,83 @@ def _librarian_dict(row: Any) -> dict:
     }
 
 
+def _resolve_subject_terms(subject: str, name: str) -> list[str]:
+    """Map the user's wording to CANONICAL subject names using the
+    project's OWN curated maps (src/tools/subject_aliases +
+    enhanced_subject_search) -- the exact resolution the hand-rolled
+    lookup lacked. Pure/static: 212 aliases, 64 course-code prefixes,
+    17 librarian-name->subjects entries; no DB, no network. Order:
+    course code (highest precision) -> alias -> librarian-name.
+    Deduped, original order preserved."""
+    out: list[str] = []
+    blob = f"{subject} {name}".strip()
+
+    # Course codes anywhere in the text ("ENG 111", "BIO 161").
+    for code in extract_course_codes(blob):
+        s = find_subject_by_course_code(code)
+        if s:
+            out.append(s)
+
+    # Alias on the subject phrase ("bio" -> "Biology").
+    if subject:
+        a = find_subject_by_alias(subject)
+        if a:
+            out.append(a)
+
+    # "the <name> librarian" / a liaison's own name -> their subjects.
+    if name:
+        out.extend(find_subjects_by_librarian_name(name))
+
+    seen: set[str] = set()
+    deduped: list[str] = []
+    for s in out:
+        if s not in seen:
+            seen.add(s)
+            deduped.append(s)
+    return deduped
+
+
 def _make_lookup_librarian() -> Callable[[dict], list[dict]]:
     def lookup(filters: dict) -> list[dict]:
         name = (filters.get("name") or "").strip()
         subject = (filters.get("subject") or "").strip()
         campus_raw = (filters.get("campus") or "").strip().lower()
         campus = _CAMPUS_DB.get(campus_raw)
+        resolved = _resolve_subject_terms(subject, name)
+
+        def _collect(links: list, acc: dict) -> None:
+            for link in links:
+                lib = getattr(link, "librarian", None)
+                if lib is None or not getattr(lib, "isActive", True):
+                    continue
+                if campus and getattr(lib, "campus", None) != campus:
+                    continue
+                acc[lib.email] = _librarian_dict(lib)
 
         async def _q(client: Any) -> list[dict]:
-            # Subject takes priority: it's the highest-signal filter and
-            # joins via LibrarianSubject -> Librarian.
-            if subject:
+            seen: dict[str, dict] = {}
+
+            # (1) Highest precision: resolved canonical subject names
+            # (exact, case-insensitive) via the curated alias/code maps.
+            if resolved:
+                links = await client.librariansubject.find_many(
+                    where={
+                        "subject": {
+                            "is": {
+                                "OR": [
+                                    {"name": {"equals": s, "mode": "insensitive"}}
+                                    for s in resolved
+                                ]
+                            }
+                        }
+                    },
+                    include={"librarian": True},
+                )
+                _collect(links, seen)
+
+            # (2) Fallback: raw subject contains-match (the original
+            # proven path -- preserved so we cannot regress).
+            if subject and not seen:
                 links = await client.librariansubject.find_many(
                     where={
                         "subject": {
@@ -229,16 +301,12 @@ def _make_lookup_librarian() -> Callable[[dict], list[dict]]:
                     },
                     include={"librarian": True},
                 )
-                seen: dict[str, dict] = {}
-                for link in links:
-                    lib = getattr(link, "librarian", None)
-                    if lib is None or not getattr(lib, "isActive", True):
-                        continue
-                    if campus and getattr(lib, "campus", None) != campus:
-                        continue
-                    seen[lib.email] = _librarian_dict(lib)
+                _collect(links, seen)
+
+            if seen:
                 return list(seen.values())
 
+            # (3) Name / campus direct Librarian lookup (unchanged).
             where: dict = {"isActive": True}
             if name:
                 where["name"] = {"contains": name, "mode": "insensitive"}
@@ -304,6 +372,14 @@ _POINT_TO_URL: dict[str, tuple[str, str]] = {
         "https://libguides.lib.miamioh.edu/reserves-textbooks/",
         "Course reserves & textbooks guide.",
     ),
+    "holds": (
+        # capability_scope LIMITATIONS["place_holds"].response uses this
+        # exact URL -> stays drift-guard-safe.
+        "https://www.lib.miamioh.edu/",
+        "Place and manage holds through your library account "
+        "(start from the Libraries homepage). The bot can't place "
+        "holds for you.",
+    ),
 }
 
 # scope.campus (lowercase canonical) -> ILL_URLS key.
@@ -314,10 +390,58 @@ _CAMPUS_TO_ILL_KEY = {
 }
 _ILL_SERVICES = {"ill", "interlibrary_loan", "interlibrary loan"}
 
+# Phrasing the LLM actually emits -> a canonical key (above, or "ill").
+# This is the gap the failing `circulation` cases hit: the URLs were
+# already correct + verified, but point_to_url only keyed on the exact
+# canonical tokens, so "renew my books" / "reserves" / "place a hold"
+# fell through to a refusal. Synonyms add ZERO new URLs (drift guard
+# stays green) -- they only widen the door to the same verified links.
+_SERVICE_SYNONYMS: dict[str, str] = {
+    "renew": "renewals", "renewal": "renewals", "renew book": "renewals",
+    "renew books": "renewals", "renew my books": "renewals",
+    "extend": "renewals", "extend loan": "renewals",
+    "extend my loan": "renewals", "reborrow": "renewals",
+    "reserve": "course_reserves", "reserves": "course_reserves",
+    "course reserve": "course_reserves",
+    "course reserves": "course_reserves",
+    "e-reserves": "course_reserves", "ereserves": "course_reserves",
+    "textbook": "course_reserves", "textbooks": "course_reserves",
+    "reserve reading": "course_reserves",
+    "fine": "fines", "fee": "fines", "fees": "fines",
+    "overdue": "fines", "pay fine": "fines", "pay fines": "fines",
+    "late fee": "fines",
+    "my account": "account", "library account": "account",
+    "patron account": "account", "ohiolink": "account",
+    "ohiolink account": "account", "primo": "account",
+    "check account": "account", "checkouts": "account",
+    "my checkouts": "account",
+    "hold": "holds", "place hold": "holds", "place a hold": "holds",
+    "place holds": "holds", "request item": "holds",
+    "request a book": "holds",
+    "interlibrary": "ill", "ill request": "ill",
+    "document delivery": "ill",
+    "borrow from another library": "ill",
+}
+
+
+def _canonical_service(raw: str) -> str:
+    """Normalize an LLM-emitted service token to a canonical key.
+    Exact synonym first, then longest substring match so free-text
+    like 'how do I renew my books' still resolves."""
+    key = (raw or "").strip().lower()
+    if key in _SERVICE_SYNONYMS:
+        return _SERVICE_SYNONYMS[key]
+    if key in _POINT_TO_URL or key in _ILL_SERVICES:
+        return key
+    for phrase in sorted(_SERVICE_SYNONYMS, key=len, reverse=True):
+        if phrase in key:
+            return _SERVICE_SYNONYMS[phrase]
+    return key
+
 
 def _make_point_to_url() -> Callable[[str, dict], dict]:
     def point(service: str, scope: dict) -> dict:
-        key = (service or "").strip().lower()
+        key = _canonical_service(service)
 
         if key in _ILL_SERVICES:
             campus = str((scope or {}).get("campus") or "oxford").lower()
