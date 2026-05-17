@@ -35,6 +35,25 @@ _HERE = Path(__file__).resolve().parent
 _AI_CORE = _HERE.parent.parent
 sys.path.insert(0, str(_AI_CORE))
 
+# Load repo-root .env so OPENAI_API_KEY (embeddings) + DATABASE_URL /
+# WEAVIATE_* (upsert) are available in `--phase apply`. Same tiny
+# inline parser run_eval.py uses -- no python-dotenv dependency.
+# Real exported env vars win (only sets keys not already present).
+# Without this, `--phase apply` crashed at `_build_prod_pipeline ->
+# OpenAI()` with "api_key must be set" even though .env had the key.
+_ENV_PATH = _AI_CORE.parent / ".env"
+if _ENV_PATH.exists():
+    import os as _os
+
+    for _line in _ENV_PATH.read_text(encoding="utf-8").splitlines():
+        if not _line or _line.startswith("#") or "=" not in _line:
+            continue
+        _k, _, _v = _line.partition("=")
+        _k = _k.strip()
+        _v = _v.strip().strip('"').strip("'")
+        if _k and _k not in _os.environ:
+            _os.environ[_k] = _v
+
 from scripts.etl import (  # noqa: E402  (sys.path mutation above)
     chunker,
     classify,
