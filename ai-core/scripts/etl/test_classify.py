@@ -49,10 +49,51 @@ def test_middletown_host_resolves_to_middletown() -> None:
 
 
 def test_unknown_host_falls_back_to_oxford() -> None:
-    """Conservative default: a third-party LibGuide URL we forgot to
-    tag falls into Oxford rather than crashing or being campus-less."""
+    """Conservative default: a NON-seed LibGuide URL we forgot to tag
+    falls into Oxford rather than crashing or being campus-less. (The
+    registry override only applies to LIBGUIDE_SEED URLs, so this
+    stays valid.)"""
     out = classify("https://libguides.lib.miamioh.edu/research/", "body")
     assert out.campus == "oxford"
+
+
+# --- Curated LibGuide registry override (the cross-campus landmine) ---
+
+
+def test_libguide_tec_lab_is_middletown_not_host_default_oxford() -> None:
+    """LOAD-BEARING: the Middletown TEC Lab guide MUST tag
+    campus=middletown. Host inference would default it to 'oxford',
+    and the cross-campus guard would then BLOCK it for Middletown
+    queries (the exact reason fs_makerspace_middletown_refusal could
+    not be answered)."""
+    out = classify(
+        "https://libguides.lib.miamioh.edu/middletown_tec_lab/home", ""
+    )
+    assert out.campus == "middletown"
+    assert out.library == "gardner_harvey"
+    assert out.featured_service == "makerspace"
+
+
+def test_libguide_citation_is_university_wide() -> None:
+    out = classify("https://libguides.lib.miamioh.edu/citation", "")
+    assert out.campus == "all"
+    assert out.library == "all"
+    assert out.featured_service is None
+
+
+def test_libguide_create_makerspace_is_oxford_king() -> None:
+    out = classify(
+        "https://libguides.lib.miamioh.edu/create/makerspace", ""
+    )
+    assert out.campus == "oxford"
+    assert out.library == "king"
+    assert out.featured_service == "makerspace"
+
+
+def test_libguide_newspapers_featured_service() -> None:
+    out = classify("https://libguides.lib.miamioh.edu/newspapers", "")
+    assert out.campus == "all"
+    assert out.featured_service == "newspapers"
 
 
 # --- Library inference (URL substring) ---------------------------------
@@ -396,6 +437,10 @@ def main() -> int:
         test_makerspace_full_classification,
         test_rentschler_about_page_full_classification,
         test_special_collections_full_classification,
+        test_libguide_tec_lab_is_middletown_not_host_default_oxford,
+        test_libguide_citation_is_university_wide,
+        test_libguide_create_makerspace_is_oxford_king,
+        test_libguide_newspapers_featured_service,
     ]
     failed = 0
     for t in tests:

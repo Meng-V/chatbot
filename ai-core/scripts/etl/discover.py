@@ -170,6 +170,30 @@ def discover() -> list[DiscoveredUrl]:
                             url=url, campus=campus, source="seed",
                         )
 
+    # --- Curated LibGuide seeds (config.LIBGUIDE_SEED) ---
+    # libguides.lib.miamioh.edu is in NO campus sitemap. We add a
+    # small, canonical-confirmed set here (NOT a bulk libguides crawl
+    # -- see config.LIBGUIDE_SEED for why). The DiscoveredUrl.campus
+    # is the registry's explicit value; classify.py honors the
+    # registry verbatim so the Middletown TEC Lab guide is NOT
+    # host-defaulted to Oxford.
+    libguide_kept = 0
+    for lg_url, lg_campus, _lib, _fs in config.LIBGUIDE_SEED:
+        excluded, reason = _is_excluded(lg_url)
+        if excluded:
+            rejected.append((lg_url, reason or "unknown"))
+            continue
+        if lg_url not in seen:
+            seen[lg_url] = DiscoveredUrl(
+                url=lg_url, campus=lg_campus, source="libguide_seed",
+            )
+            libguide_kept += 1
+    if libguide_kept:
+        logger.info(
+            "added curated LibGuide seeds",
+            extra={"libguide_kept": libguide_kept},
+        )
+
     logger.info(
         "discovery complete",
         extra={

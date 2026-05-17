@@ -29,6 +29,7 @@ from scripts.etl import config, discover as discover_mod  # noqa: E402
 from scripts.etl.discover import (  # noqa: E402
     DiscoveredUrl,
     _is_excluded,
+    _is_library_url,
     discover,
 )
 
@@ -392,8 +393,51 @@ class _Monkeypatch:
         self._undo.clear()
 
 
+def test_libguide_seed_passes_library_filter() -> None:
+    """Pre-fix, _is_library_url rejected libguides.* (host wasn't
+    lib./www.lib., path had no /library/), so seeds would be dropped.
+    The host-prefix add must let every seed through."""
+    for url, *_ in config.LIBGUIDE_SEED:
+        assert _is_library_url(url), f"seed rejected by filter: {url}"
+        excluded, reason = _is_excluded(url)
+        assert not excluded, f"seed excluded ({reason}): {url}"
+
+
+def test_libguide_seed_registry_well_formed() -> None:
+    """Anti-fabrication guard: every seed is a 4-tuple, https, on the
+    libguides host, with a sane campus. Catches a typo'd/garbage URL
+    before it becomes an indexed, citable source."""
+    valid_campus = {"oxford", "hamilton", "middletown", "all"}
+    seen: set[str] = set()
+    for entry in config.LIBGUIDE_SEED:
+        assert len(entry) == 4, entry
+        url, campus, library, fs = entry
+        assert url.startswith("https://libguides.lib.miamioh.edu/"), url
+        assert url not in seen, f"duplicate seed: {url}"
+        seen.add(url)
+        assert campus in valid_campus, (url, campus)
+        assert library, (url, library)
+        assert fs is None or isinstance(fs, str)
+
+
+def test_libguide_seed_emitted_by_discover(monkeypatch) -> None:
+    """discover() must include the curated seeds with
+    source='libguide_seed' and the registry's explicit campus, even
+    when every campus sitemap is empty (network stubbed via the
+    runner's monkeypatch shim -> auto-undone)."""
+    monkeypatch.setattr(discover_mod, "_fetch_sitemap", lambda _u: [])
+    out = {d.url: d for d in discover()}
+    for url, campus, *_ in config.LIBGUIDE_SEED:
+        assert url in out, f"seed missing from discover(): {url}"
+        assert out[url].source == "libguide_seed"
+        assert out[url].campus == campus
+
+
 def main() -> int:
     tests = [
+        test_libguide_seed_passes_library_filter,
+        test_libguide_seed_registry_well_formed,
+        test_libguide_seed_emitted_by_discover,
         test_news_events_path_excluded,
         test_news_path_excluded,
         test_events_path_excluded,
