@@ -38,6 +38,7 @@ See plan:
 
 from __future__ import annotations
 
+import re
 import time
 from dataclasses import dataclass, field
 from typing import Any, Callable, Optional
@@ -192,6 +193,22 @@ def run_turn(
     # --- 2. Classify intent ---
     classification: Classification = deps.classifier.classify(request.user_message)
     bind_request_context(intent=classification.intent, margin=classification.margin)
+
+    # --- 2.1. Long-period hours short-circuit (operator rule B) ---
+    # LibCal's API only covers a limited date window, so a "summer
+    # hours / winter break / this semester" question can't be answered
+    # from it. ALWAYS point the user to the campus hours PAGE instead.
+    # Placed BEFORE the clarify short-circuit so a low-margin
+    # long-period hours question (e.g. "Is Rentschler open during
+    # winter break?") points to the page rather than asking the user
+    # to disambiguate. Deterministic -> reliable, unlike a prompt rule.
+    if classification.intent == "hours" and _is_long_period_hours(
+        request.user_message
+    ):
+        latency_ms = int((time.monotonic() - turn_start) * 1000)
+        record_request(endpoint="/chat", status="point_to_url",
+                       latency_s=latency_ms / 1000)
+        return _long_period_hours_response(classification, scope, latency_ms)
 
     # Clarification short-circuit: if the kNN is too uncertain, hand
     # back a structured "please pick one" response before burning
@@ -578,6 +595,82 @@ def _shape_response(
         agent_stopped_reason=agent_outcome.stopped_reason,
         latency_ms=total_latency_ms,
         cited_chunk_ids=cited_chunk_ids,
+    )
+
+
+# --- Long-period hours (operator rule B) -------------------------------
+#
+# Verified hours PAGES per campus (operator/dev-confirmed + WebFetched):
+#   oxford     /about/locations/hours/  -> 200 "Library Hours"
+#   hamilton   ham.../library/about/hours/  -> dev-confirmed
+#   middletown mid.../library/  -> dev-confirmed (hours live there)
+_HOURS_PAGE_URL = {
+    "oxford": "https://www.lib.miamioh.edu/about/locations/hours/",
+    "hamilton": "https://www.ham.miamioh.edu/library/about/hours/",
+    "middletown": "https://www.mid.miamioh.edu/library/",
+}
+
+# A "short-term" word VETOES long-period (today/tonight/now use LibCal,
+# which is correct and already works). Checked first.
+_SHORT_TERM_HOURS_RE = re.compile(
+    r"\b(today|tonight|right now|open now|"
+    r"currently|at the moment|this week|tomorrow|this morning|"
+    r"this afternoon|this evening)\b",
+    re.IGNORECASE,
+)
+# Clearly multi-week / out-of-LibCal-window phrasing.
+_LONG_PERIOD_HOURS_RE = re.compile(
+    r"\b("
+    r"summer|winter break|spring break|fall break|thanksgiving|"
+    r"winter session|summer session|winter term|spring term|"
+    r"semester|term|intersession|over (the )?break|"
+    r"during (the )?break|holidays?|this year|next month|"
+    r"next semester|next term|"
+    r"january|february|march|april|may|june|july|august|"
+    r"september|october|november|december"
+    r")\b",
+    re.IGNORECASE,
+)
+
+
+def _is_long_period_hours(text: str) -> bool:
+    """True only when the question is about a date range LibCal can't
+    serve. Short-term words win (LibCal handles those, correctly)."""
+    t = text or ""
+    if _SHORT_TERM_HOURS_RE.search(t):
+        return False
+    return bool(_LONG_PERIOD_HOURS_RE.search(t))
+
+
+def _long_period_hours_response(
+    classification: Classification,
+    scope: Scope,
+    latency_ms: int,
+) -> TurnResponse:
+    """Point a long-period hours question at the campus hours PAGE
+    (rule B). Deterministic, zero-LLM, cited -> the URL is real and
+    verified so it passes any downstream URL check."""
+    url = _HOURS_PAGE_URL.get(scope.campus, _HOURS_PAGE_URL["oxford"])
+    msg = (
+        "Library hours vary by term, break, and holiday, so the most "
+        "reliable place to see them for a date range is the hours "
+        f"page: {url} -- it always shows the current and upcoming "
+        "schedule."
+    )
+    return TurnResponse(
+        answer=msg,
+        is_refusal=False,
+        refusal_trigger=None,
+        citations=[{"n": 1, "url": url, "snippet": ""}],
+        confidence="high",
+        intent=classification.intent,
+        scope=scope.as_filter(),
+        model_used="(none -- long-period hours short-circuit)",
+        tokens={"input": 0, "cached_input": 0, "output": 0},
+        fired_corrections=[],
+        agent_stopped_reason="point_to_url",
+        latency_ms=latency_ms,
+        cited_chunk_ids=[],
     )
 
 

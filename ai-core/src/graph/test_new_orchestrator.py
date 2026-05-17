@@ -62,6 +62,7 @@ from src.graph.new_orchestrator import (  # noqa: E402
     TurnRequest,
     TurnResponse,
     _extract_evidence,
+    _is_long_period_hours,
     _is_reasoning_intent,
     run_turn,
 )
@@ -668,8 +669,91 @@ def test_session_origin_url_resolves_campus_default() -> None:
     assert resp.scope["campus"] == "hamilton"
 
 
+# --- Rule B: long-period hours -> hours PAGE, not LibCal ---
+
+
+def test_is_long_period_hours_detector() -> None:
+    LP = _is_long_period_hours
+    assert LP("What are the summer hours at King?")
+    assert LP("Is Rentschler open during winter break?")
+    assert LP("hours this semester?")
+    assert LP("library hours in December")
+    # Short-term words VETO (LibCal handles those correctly):
+    assert not LP("Is the library open right now?")
+    assert not LP("what time does King close today")
+    assert not LP("hours tonight")
+    assert not LP("are you open tomorrow")
+    # No period marker at all -> not long-period:
+    assert not LP("what are the hours")
+
+
+def test_long_period_hours_short_circuits_to_oxford_page() -> None:
+    """Operator rule B: a summer/semester hours question must point to
+    the hours PAGE (LibCal is date-window-limited), zero LLM, before
+    any clarify/agent step."""
+    deps = _build_deps(
+        classification=_classification("hours"),
+        evidence_in_search_kb_result=[_evidence_dict("c1")],
+    )
+    resp = run_turn(
+        TurnRequest(user_message="What are the summer hours at King?",
+                    conversation_id="c1"),
+        deps,
+    )
+    assert not resp.is_refusal
+    assert resp.agent_stopped_reason == "point_to_url"
+    assert resp.tokens == {"input": 0, "cached_input": 0, "output": 0}
+    assert len(resp.citations) == 1
+    assert resp.citations[0]["url"] == (
+        "https://www.lib.miamioh.edu/about/locations/hours/"
+    )
+
+
+def test_long_period_hours_resolves_campus() -> None:
+    """Campus-correct: a Hamilton long-period hours question points to
+    the Hamilton hours page, not Oxford's."""
+    deps = _build_deps(
+        classification=_classification("hours"),
+        evidence_in_search_kb_result=[_evidence_dict("c1")],
+    )
+    resp = run_turn(
+        TurnRequest(
+            user_message="Is Rentschler open during winter break?",
+            conversation_id="c1",
+        ),
+        deps,
+    )
+    assert resp.agent_stopped_reason == "point_to_url"
+    assert resp.scope["campus"] == "hamilton"
+    assert resp.citations[0]["url"] == (
+        "https://www.ham.miamioh.edu/library/about/hours/"
+    )
+
+
+def test_short_term_hours_not_short_circuited() -> None:
+    """'open right now' must still go to the agent/LibCal path, NOT
+    the hours-page short-circuit."""
+    deps = _build_deps(
+        classification=_classification("hours"),
+        evidence_in_search_kb_result=[_evidence_dict("c1")],
+    )
+    resp = run_turn(
+        TurnRequest(user_message="Is the library open right now?",
+                    conversation_id="c1"),
+        deps,
+    )
+    assert resp.agent_stopped_reason != "point_to_url" or any(
+        "about/locations/hours" not in (c.get("url") or "")
+        for c in resp.citations
+    )
+
+
 def main() -> int:
     tests = [
+        test_is_long_period_hours_detector,
+        test_long_period_hours_short_circuits_to_oxford_page,
+        test_long_period_hours_resolves_campus,
+        test_short_term_hours_not_short_circuited,
         test_happy_path_returns_answer,
         test_clarification_short_circuits_before_agent,
         test_databases_intent_short_circuits_to_a_z_page,
