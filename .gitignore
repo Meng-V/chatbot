@@ -207,3 +207,4 @@ docs/az_database_list.csv
 docs/notes.md
 tran_raw_2026_5.csv
 /.claude
+ai-core/eval_results.jsonl

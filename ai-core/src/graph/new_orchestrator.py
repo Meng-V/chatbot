@@ -38,6 +38,7 @@ See plan:
 
 from __future__ import annotations
 
+import re
 import time
 from dataclasses import dataclass, field
 from typing import Any, Callable, Optional
@@ -193,6 +194,22 @@ def run_turn(
     classification: Classification = deps.classifier.classify(request.user_message)
     bind_request_context(intent=classification.intent, margin=classification.margin)
 
+    # --- 2.1. Long-period hours short-circuit (operator rule B) ---
+    # LibCal's API only covers a limited date window, so a "summer
+    # hours / winter break / this semester" question can't be answered
+    # from it. ALWAYS point the user to the campus hours PAGE instead.
+    # Placed BEFORE the clarify short-circuit so a low-margin
+    # long-period hours question (e.g. "Is Rentschler open during
+    # winter break?") points to the page rather than asking the user
+    # to disambiguate. Deterministic -> reliable, unlike a prompt rule.
+    if classification.intent == "hours" and _is_long_period_hours(
+        request.user_message
+    ):
+        latency_ms = int((time.monotonic() - turn_start) * 1000)
+        record_request(endpoint="/chat", status="point_to_url",
+                       latency_s=latency_ms / 1000)
+        return _long_period_hours_response(classification, scope, latency_ms)
+
     # Clarification short-circuit: if the kNN is too uncertain, hand
     # back a structured "please pick one" response before burning
     # agent + synthesizer budget. The UI has an existing
@@ -277,9 +294,13 @@ def run_turn(
     # --- 5. Assemble evidence and run synthesizer ---
     evidence = _extract_evidence(agent_outcome)
 
-    # Promote to reasoning model when evidence is multi-hop: >5 chunks
-    # across multiple topics.
-    if len(evidence) > 5 and len({c.topic for c in evidence if c.topic}) > 1:
+    # Promote to reasoning model when CRAWLED evidence is multi-hop:
+    # >5 chunks across multiple topics. Tool facts (live_api /
+    # authoritative_db) are excluded -- they have no topic and a
+    # single hours/librarian lookup isn't "multi-hop"; counting them
+    # would silently (and expensively) flip model selection.
+    _crawled = [c for c in evidence if c.kind == "crawled"]
+    if len(_crawled) > 5 and len({c.topic for c in _crawled if c.topic}) > 1:
         model = model_reasoning
 
     synthesis_req = SynthesisRequest(
@@ -362,47 +383,155 @@ def _is_reasoning_intent(intent: str) -> bool:
     return intent in _REASONING_INTENTS
 
 
+# canonical library id -> canonical campus, for the cross-campus
+# citation guard on tool-fact evidence (search_kb chunks carry their
+# own campus; tool facts must be tagged here or the guard can't check
+# them -- and that guard is the King-hours-for-Hamilton protection).
+_LIB_CAMPUS = {
+    "king": "oxford", "wertz": "oxford", "special": "oxford",
+    "rentschler": "hamilton",
+    "gardner_harvey": "middletown", "sword": "middletown",
+}
+_LIAISONS_URL = "https://www.lib.miamioh.edu/about/organization/liaisons/"
+_ROOMS_URL = "https://www.lib.miamioh.edu/use/spaces/room-reservations/"
+
+
+def _tool_fact_evidence(result: Any) -> list[EvidenceChunk]:
+    """Map a SUCCESSFUL non-search_kb tool result into trusted
+    evidence so the synthesizer can actually answer from it.
+
+    Before this existed, every tool except search_kb was discarded
+    here, so hours/librarian/point_to_url turns reached the
+    synthesizer with empty evidence and refused by grounding-rule #4.
+
+    Trust tiers (see EvidenceChunk.kind): LibCal -> "live_api"
+    (the value, incl. "Closed", IS ground truth); Postgres directory /
+    verified URLs -> "authoritative_db". FAILURES are intentionally
+    NOT promoted -- a failed get_hours (LibCal down) must stay
+    no-evidence so the bot still refuses (gold: hr_libcal_down_refusal).
+    Synthetic `tool:<name>:<key>` ids never collide with Weaviate
+    chunk_ids or ManualCorrection targets; the post-processor
+    validates citations by NUMBER + verbatim value, not by chunk_id.
+    """
+    name = result.name
+    data = result.data or {}
+    out: list[EvidenceChunk] = []
+
+    if name == "get_hours":
+        if not data.get("success"):
+            return []
+        lib = str(data.get("library") or "").lower()
+        out.append(EvidenceChunk(
+            chunk_id=f"tool:get_hours:{lib or 'unknown'}",
+            source_url=str(data.get("source_url") or ""),
+            text=str(data.get("hours") or ""),
+            campus=_LIB_CAMPUS.get(lib),
+            library=lib or None,
+            kind="live_api",
+        ))
+    elif name == "get_room_availability":
+        for i, slot in enumerate(data.get("slots") or []):
+            if not isinstance(slot, dict) or not slot.get("success"):
+                continue
+            out.append(EvidenceChunk(
+                chunk_id=f"tool:get_room_availability:{i}",
+                source_url=_ROOMS_URL,
+                text=str(slot.get("text") or ""),
+                # The agent only queries availability for the scoped
+                # library, so the result is campus-correct by
+                # construction. "all" satisfies the cross-campus guard
+                # (campus=None would force a spurious refusal and
+                # re-break the fix).
+                campus="all",
+                kind="live_api",
+            ))
+    elif name == "lookup_librarian":
+        # Cap at 5 -- a directory dump floods the prompt; the agent
+        # asks a narrower query if it needs more.
+        for lib in (data.get("librarians") or [])[:5]:
+            if not isinstance(lib, dict) or not lib.get("email"):
+                continue
+            parts = [
+                lib.get("name"), lib.get("title"),
+                lib.get("department"),
+            ]
+            head = ", ".join(p for p in parts if p)
+            text = (
+                f"{head}. Email: {lib.get('email')}. "
+                f"Phone: {lib.get('phone') or 'n/a'}. "
+                f"Campus: {lib.get('campus') or 'n/a'}."
+            )
+            out.append(EvidenceChunk(
+                chunk_id=f"tool:lookup_librarian:{lib.get('email')}",
+                source_url=str(lib.get("profile_url") or _LIAISONS_URL),
+                text=text,
+                # Real campus if the directory row has one; "all" on a
+                # data gap so a genuine contact isn't suppressed by a
+                # missing field (the plan wants exact contact surfaced).
+                campus=str(lib.get("campus") or "").lower() or "all",
+                kind="authoritative_db",
+            ))
+    elif name == "point_to_url":
+        if not data.get("found") or not data.get("url"):
+            return []
+        out.append(EvidenceChunk(
+            chunk_id=f"tool:point_to_url:{data.get('service') or 'svc'}",
+            source_url=str(data.get("url")),
+            text=str(data.get("description") or ""),
+            # ILL/account/renewals/fines/reserves/holds are
+            # university-wide self-service; "all" is the correct
+            # semantic and passes the cross-campus guard.
+            campus="all",
+            kind="authoritative_db",
+        ))
+    return out
+
+
 def _extract_evidence(agent_outcome: AgentOutcome) -> list[EvidenceChunk]:
     """Walk the agent's tool-call trail and collect evidence chunks.
 
-    Each `search_kb` tool result is expected to return
-    `{"evidence": [...]}` (the wire shape from
-    src.tools.search_kb_tool) where each item is
-    `{n, chunk_id, source_url, snippet, library, campus, topic,
-    featured_service, score}`. Other tool results (hours, room
-    availability) aren't retrieval evidence and don't feed the
-    synthesizer's citation bundle.
+    `search_kb` results -> crawled-tier EvidenceChunk (wire shape from
+    src.tools.search_kb_tool: {n, chunk_id, source_url, snippet,
+    library, campus, topic, featured_service, score}; legacy `chunks`
+    + `text` accepted defensively).
 
-    Defensive read: also accepts the legacy `chunks` key with `text`
-    field so any older fixture or alternate tool variant keeps
-    working. The synthesizer expects EvidenceChunk.text -- we map
-    `snippet` -> `text` here so downstream code stays simple.
+    SUCCESSFUL non-search_kb tool results (get_hours,
+    get_room_availability, lookup_librarian, point_to_url) ->
+    trusted-tier EvidenceChunk via `_tool_fact_evidence`. Discarding
+    them here was the bug behind five rounds of false refusals: the
+    synthesizer never saw any tool output but search_kb's, so every
+    hours/librarian/pointer turn refused for "no evidence".
     """
     evidence: list[EvidenceChunk] = []
+    tool_facts: list[EvidenceChunk] = []
     for turn in agent_outcome.turns:
         for result in turn.tool_results:
-            if result.is_error or result.name != "search_kb":
+            if result.is_error:
                 continue
-            data = result.data or {}
-            # Prefer the wire-shape `evidence` key; fall back to
-            # legacy `chunks` so older fixtures keep working.
-            raw_items = data.get("evidence") or data.get("chunks") or []
-            for raw in raw_items:
-                # Wire shape uses `snippet`; legacy uses `text`.
-                text = str(raw.get("snippet", raw.get("text", "")))
-                evidence.append(
-                    EvidenceChunk(
-                        chunk_id=str(raw.get("chunk_id", "")),
-                        source_url=str(raw.get("source_url", raw.get("url", ""))),
-                        text=text,
-                        campus=raw.get("campus"),
-                        library=raw.get("library"),
-                        topic=raw.get("topic"),
-                        featured_service=raw.get("featured_service"),
-                        score=float(raw.get("score", 0.0)),
+            if result.name == "search_kb":
+                data = result.data or {}
+                raw_items = data.get("evidence") or data.get("chunks") or []
+                for raw in raw_items:
+                    text = str(raw.get("snippet", raw.get("text", "")))
+                    evidence.append(
+                        EvidenceChunk(
+                            chunk_id=str(raw.get("chunk_id", "")),
+                            source_url=str(
+                                raw.get("source_url", raw.get("url", ""))
+                            ),
+                            text=text,
+                            campus=raw.get("campus"),
+                            library=raw.get("library"),
+                            topic=raw.get("topic"),
+                            featured_service=raw.get("featured_service"),
+                            score=float(raw.get("score", 0.0)),
+                        )
                     )
-                )
-    return evidence
+            else:
+                tool_facts.extend(_tool_fact_evidence(result))
+    # Crawled evidence first (citation [1..] stays retrieval-anchored),
+    # trusted tool facts appended after.
+    return evidence + tool_facts
 
 
 def _shape_response(
@@ -466,6 +595,82 @@ def _shape_response(
         agent_stopped_reason=agent_outcome.stopped_reason,
         latency_ms=total_latency_ms,
         cited_chunk_ids=cited_chunk_ids,
+    )
+
+
+# --- Long-period hours (operator rule B) -------------------------------
+#
+# Verified hours PAGES per campus (operator/dev-confirmed + WebFetched):
+#   oxford     /about/locations/hours/  -> 200 "Library Hours"
+#   hamilton   ham.../library/about/hours/  -> dev-confirmed
+#   middletown mid.../library/  -> dev-confirmed (hours live there)
+_HOURS_PAGE_URL = {
+    "oxford": "https://www.lib.miamioh.edu/about/locations/hours/",
+    "hamilton": "https://www.ham.miamioh.edu/library/about/hours/",
+    "middletown": "https://www.mid.miamioh.edu/library/",
+}
+
+# A "short-term" word VETOES long-period (today/tonight/now use LibCal,
+# which is correct and already works). Checked first.
+_SHORT_TERM_HOURS_RE = re.compile(
+    r"\b(today|tonight|right now|open now|"
+    r"currently|at the moment|this week|tomorrow|this morning|"
+    r"this afternoon|this evening)\b",
+    re.IGNORECASE,
+)
+# Clearly multi-week / out-of-LibCal-window phrasing.
+_LONG_PERIOD_HOURS_RE = re.compile(
+    r"\b("
+    r"summer|winter break|spring break|fall break|thanksgiving|"
+    r"winter session|summer session|winter term|spring term|"
+    r"semester|term|intersession|over (the )?break|"
+    r"during (the )?break|holidays?|this year|next month|"
+    r"next semester|next term|"
+    r"january|february|march|april|may|june|july|august|"
+    r"september|october|november|december"
+    r")\b",
+    re.IGNORECASE,
+)
+
+
+def _is_long_period_hours(text: str) -> bool:
+    """True only when the question is about a date range LibCal can't
+    serve. Short-term words win (LibCal handles those, correctly)."""
+    t = text or ""
+    if _SHORT_TERM_HOURS_RE.search(t):
+        return False
+    return bool(_LONG_PERIOD_HOURS_RE.search(t))
+
+
+def _long_period_hours_response(
+    classification: Classification,
+    scope: Scope,
+    latency_ms: int,
+) -> TurnResponse:
+    """Point a long-period hours question at the campus hours PAGE
+    (rule B). Deterministic, zero-LLM, cited -> the URL is real and
+    verified so it passes any downstream URL check."""
+    url = _HOURS_PAGE_URL.get(scope.campus, _HOURS_PAGE_URL["oxford"])
+    msg = (
+        "Library hours vary by term, break, and holiday, so the most "
+        "reliable place to see them for a date range is the hours "
+        f"page: {url} -- it always shows the current and upcoming "
+        "schedule."
+    )
+    return TurnResponse(
+        answer=msg,
+        is_refusal=False,
+        refusal_trigger=None,
+        citations=[{"n": 1, "url": url, "snippet": ""}],
+        confidence="high",
+        intent=classification.intent,
+        scope=scope.as_filter(),
+        model_used="(none -- long-period hours short-circuit)",
+        tokens={"input": 0, "cached_input": 0, "output": 0},
+        fired_corrections=[],
+        agent_stopped_reason="point_to_url",
+        latency_ms=latency_ms,
+        cited_chunk_ids=[],
     )
 
 

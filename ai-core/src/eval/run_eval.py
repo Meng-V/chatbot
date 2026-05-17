@@ -392,14 +392,24 @@ def _build_real_deps(
     scope: "ScopeFilter",
     intent: str,
 ):
-    """Build OrchestratorDeps that use REAL OpenAI LLMs AND real
-    Weaviate retrieval (no stubs, no canned evidence).
+    """Build OrchestratorDeps that use REAL OpenAI LLMs, real Weaviate
+    retrieval, AND the honest-baseline real tool backends (no stubs).
 
-    `search_kb` is wired to `WeaviateSearchAdapter` -> the same
-    `Chunk_v*` collection the production bot reads (selected via the
-    WEAVIATE_CHUNK_COLLECTION env var, defaulting to Chunk_current).
-    Requires the server's Weaviate to be reachable -- run the eval
-    with the SSH tunnel up if you're on a laptop.
+    Tool surface (the user-selected eval scope): search_kb +
+    validate_url + lookup_librarian + get_hours + get_room_availability
+    + point_to_url. `search_kb` is the scope-aware, featured-boost tool
+    from `src/tools/search_kb_tool.py` wired to `WeaviateSearchAdapter`
+    -> the same `Chunk_v*` collection prod reads (WEAVIATE_CHUNK_COLLECTION
+    env, default Chunk_current). validate_url / lookup_librarian /
+    point_to_url use real Postgres + the team's curated URL map (see
+    `src/eval/real_backends.py`). get_hours / get_room_availability are
+    DELIBERATELY left as labeled unwired sentinels -- live LibCal is
+    Gap 10, multi-day work; a sentinel makes `hours` visibly UNMEASURED
+    in the per-case dump rather than silently failing.
+
+    Requires the server's Weaviate reachable AND the shared Postgres
+    reachable (DATABASE_URL) -- run with the SSH tunnel up if on a
+    laptop.
 
     `scope` and `intent` are pre-resolved by the caller (same pattern
     the eval already uses for scope-match checking). The orchestrator
@@ -418,11 +428,24 @@ def _build_real_deps(
     """
     from src.tools.search_kb_tool import make_search_kb_tool
     from src.weaviate_adapters.search_adapter import WeaviateSearchAdapter
+    from src.tools_v2.registry import build_tool_registry
+    from src.eval.real_backends import build_eval_backends
 
-    weav = WeaviateSearchAdapter()  # real v4 client via get_weaviate_client()
-    registry = ToolRegistry()
+    # Full 10-tool registry with honest-baseline real backends.
+    registry = build_tool_registry(build_eval_backends())
+
+    # User-selected eval surface = search_kb + 5 read-only tools. Drop
+    # write/handoff/space tools so the agent's tool-choice distribution
+    # matches exactly what this run measures.
+    for _n in ("book_room", "create_ticket", "handoff_human", "lookup_space"):
+        registry.tools.pop(_n, None)
+
+    # Swap tools_v2's generic arg-driven search_kb for the eval's
+    # scope-aware, featured-service-boosting one (closes over the
+    # resolved turn scope+intent -> strictly better signal).
+    registry.tools.pop("search_kb", None)
     registry.register(make_search_kb_tool(
-        weaviate=weav,
+        weaviate=WeaviateSearchAdapter(),
         scope=scope,
         intent=intent,
         collection=None,  # resolves WEAVIATE_CHUNK_COLLECTION at request time
@@ -532,6 +555,7 @@ def run_eval(
     with_judge: bool = False,
     with_real_llm: bool = False,
     judge_llm: Optional[Any] = None,
+    results_out: Optional[Path] = None,
 ) -> EvalReport:
     """Run the eval suite.
 
@@ -562,6 +586,28 @@ def run_eval(
     # Scope-match accuracy is measured EXCLUDING clarify-outcome cases:
     # those are ambiguous by design.
     scope_eligible = [q for q in questions if q.expected_outcome != "clarify"]
+
+    # Preflight: a real-LLM run needs the (tunnelled) Weaviate. Fail
+    # fast with a one-liner rather than load 5k exemplars + embeddings
+    # for a run that will crash on the first retrieval.
+    if with_real_llm and not scope_only and not _weaviate_reachable():
+        raise SystemExit(
+            "Weaviate unreachable -- the SSH tunnel is down. Verify "
+            "with `nc -z -w2 127.0.0.1 8888`, bring the tunnel up, "
+            "then re-run. (Skipped the classifier/embedding load so a "
+            "doomed run doesn't waste your time.)"
+        )
+
+    # Per-turn results stream to disk immediately (flushed each line)
+    # so a mid-run tunnel drop preserves every completed turn instead
+    # of vaporizing a 9-minute run. None -> no streaming (test path).
+    _rfh = results_out.open("w", encoding="utf-8") if results_out else None
+    # Circuit breaker: if the tunnel hard-drops, every subsequent turn
+    # fails. Bail after this many CONSECUTIVE connectivity crashes --
+    # the run exits cleanly with the summary + all prior real results
+    # on disk, instead of grinding through 150 doomed turns.
+    _consec_conn_fail = 0
+    _CONN_FAIL_LIMIT = 8
 
     classifier: Optional[IntentKNN] = None
     if not scope_only:
@@ -609,29 +655,63 @@ def run_eval(
             # evidence and produces spurious no_results refusals.
             # Per-turn construction is cheap (no I/O, no embeddings)
             # so this is the right shape.
-            if with_real_llm:
-                # Pre-resolve scope + intent so the real search_kb
-                # tool filters/boosts to the right campus/library/
-                # featured-service for this turn. The orchestrator
-                # re-resolves both internally (deterministic) and
-                # arrives at the same values -- the pre-resolution
-                # here only configures the tool, which is built once
-                # per turn in deps. One redundant classify + scope
-                # resolve; negligible vs the LLM cost.
-                pre_classification = classifier.classify(q.question)
-                _s = resolve_scope(
-                    q.question,
-                    session_origin_campus=q.needs_session_origin,  # type: ignore[arg-type]
+            # `_build_real_deps` constructs a fresh WeaviateSearchAdapter
+            # whose __post_init__ RAISES if the tunnel is down. That
+            # call sits outside `_run_bot`'s own try/except, so before
+            # this guard a single mid-run tunnel blip propagated out of
+            # run_eval and vaporized every completed (real, paid-for)
+            # result. Now: record the turn as a crash, keep going, and
+            # let the consecutive-failure circuit breaker stop a
+            # hard-down tunnel cleanly with everything-so-far on disk.
+            try:
+                if with_real_llm:
+                    # Pre-resolve scope + intent so the real search_kb
+                    # tool filters/boosts to the right campus/library/
+                    # featured-service for this turn. The orchestrator
+                    # re-resolves both internally (deterministic) and
+                    # arrives at the same values.
+                    pre_classification = classifier.classify(q.question)
+                    _s = resolve_scope(
+                        q.question,
+                        session_origin_campus=q.needs_session_origin,  # type: ignore[arg-type]
+                    )
+                    _scope = ScopeFilter(
+                        campus=_s.campus, library=_s.library
+                    )
+                    deps = _build_real_deps(
+                        classifier,
+                        scope=_scope,
+                        intent=pre_classification.intent,
+                    )
+                else:
+                    deps = _build_stub_deps(classifier)
+                bot_out = _run_bot(q, deps)
+                _consec_conn_fail = 0
+            except Exception as e:  # noqa: BLE001
+                _m = f"{type(e).__name__}: {e}".lower()
+                _is_conn = any(s in _m for s in (
+                    "weaviate", "connection refused", "errno 61",
+                    "errno 54", "client unavailable", "connecterror",
+                    "connection reset",
+                ))
+                logger.warning(
+                    "turn setup crashed id=%s %s: %s",
+                    q.id, type(e).__name__, e,
                 )
-                _scope = ScopeFilter(campus=_s.campus, library=_s.library)
-                deps = _build_real_deps(
-                    classifier,
-                    scope=_scope,
-                    intent=pre_classification.intent,
+                bot_out = {
+                    "actual_intent": None,
+                    "intent_match": False,
+                    "actual_path": f"crash:{type(e).__name__}",
+                    "path_match": False,
+                    "bot_answer": None,
+                    "bot_was_refusal": None,
+                    "bot_refusal_trigger": None,
+                    "bot_citations_count": None,
+                    "latency_ms": None,
+                }
+                _consec_conn_fail = (
+                    _consec_conn_fail + 1 if _is_conn else 0
                 )
-            else:
-                deps = _build_stub_deps(classifier)
-            bot_out = _run_bot(q, deps)
             for k, v in bot_out.items():
                 setattr(result, k, v)
             if result.intent_match:
@@ -687,6 +767,17 @@ def run_eval(
                         )
 
         report.results.append(result)
+        if _rfh is not None:
+            import json
+
+            # Flush every line: completed turns are durable the
+            # instant they finish, so a tunnel drop / kill loses
+            # nothing already done (the whole point of this).
+            _rfh.write(
+                json.dumps(_result_row(result), ensure_ascii=False)
+                + "\n"
+            )
+            _rfh.flush()
         cat = report.by_category.setdefault(
             q.category,
             {
@@ -708,6 +799,23 @@ def run_eval(
             cat["intent_matches"] += 1
         if result.path_match:
             cat["path_matches"] += 1
+
+        # Hard-down tunnel: stop cleanly instead of grinding through
+        # ~150 doomed turns. Everything completed is already flushed
+        # to disk; the summary still prints below.
+        if _consec_conn_fail >= _CONN_FAIL_LIMIT:
+            logger.error(
+                "Weaviate unreachable for %d consecutive turns -- "
+                "aborting. %d completed results preserved%s. Bring "
+                "the SSH tunnel back up and re-run.",
+                _consec_conn_fail,
+                len(report.results),
+                f" in {results_out}" if results_out else " (in memory)",
+            )
+            break
+
+    if _rfh is not None:
+        _rfh.close()
 
     # Top-level scope total is eligible-only; bot total is everything.
     report.total = len(scope_eligible)
@@ -921,9 +1029,86 @@ def _print_report(report: EvalReport, verbose: bool, scope_only: bool) -> None:
                 print(f"  [{r.question_id}] {', '.join(issues)}")
 
 
+def _result_row(r: "EvalResult") -> dict:
+    """One per-case JSON object. Shared by the incremental writer
+    (per-turn, crash-durable) and the final dump so the schema can
+    never drift between them."""
+    return {
+        "question_id": r.question_id,
+        "category": r.category,
+        "scope_match": r.scope_match,
+        "actual_scope_campus": r.actual_scope_campus,
+        "actual_scope_library": r.actual_scope_library,
+        "intent_match": r.intent_match,
+        "actual_intent": r.actual_intent,
+        # frozenset isn't JSON-serializable -> sorted list.
+        "expected_path_set": (
+            sorted(r.expected_path_set)
+            if r.expected_path_set is not None
+            else None
+        ),
+        "actual_path": r.actual_path,
+        "path_match": r.path_match,
+        "bot_was_refusal": r.bot_was_refusal,
+        "bot_refusal_trigger": r.bot_refusal_trigger,
+        "bot_citations_count": r.bot_citations_count,
+        "judge_verdict": r.judge_verdict,
+        "latency_ms": r.latency_ms,
+        "input_tokens": r.input_tokens,
+        "cached_input_tokens": r.cached_input_tokens,
+        "output_tokens": r.output_tokens,
+        # Full answer LAST (longest field) so the line stays greppable
+        # up front even when truncated in a pager.
+        "bot_answer": r.bot_answer,
+    }
+
+
+def _dump_results_jsonl(report: "EvalReport", path: Path) -> None:
+    """Write one JSON object per case so failures are inspectable.
+
+    Kept for non-incremental callers. The hot path (main + real LLM)
+    now streams rows per-turn via `results_out` so a mid-run tunnel
+    drop can't vaporize a 9-minute run -- see `run_eval`.
+    """
+    import json
+
+    with path.open("w", encoding="utf-8") as fh:
+        for r in report.results:
+            fh.write(
+                json.dumps(_result_row(r), ensure_ascii=False) + "\n"
+            )
+    logger.info("wrote %d per-case results -> %s", len(report.results), path)
+
+
+def _weaviate_reachable() -> bool:
+    """Cheap TCP probe of the (tunnelled) Weaviate HTTP port. Used to
+    fail a real-LLM run fast with a one-liner instead of loading 5k
+    exemplars + embeddings for a doomed run."""
+    import os
+    import socket
+
+    host = os.environ.get("WEAVIATE_HOST", "127.0.0.1")
+    port = int(os.environ.get("WEAVIATE_HTTP_PORT", "8888"))
+    try:
+        with socket.create_connection((host, port), timeout=3):
+            return True
+    except OSError:
+        return False
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Run the smart-chatbot eval suite.")
     parser.add_argument("--filter", help="Only run questions in this category.")
+    parser.add_argument(
+        "--results-out",
+        default="eval_results.jsonl",
+        help=(
+            "Path to write per-case JSONL results (one object per "
+            "question: answer, refusal trigger, judge verdict, tokens). "
+            "Default: eval_results.jsonl in the cwd. This is how you "
+            "inspect WHY a number moved -- eval.log is aggregate-only."
+        ),
+    )
     parser.add_argument(
         "--scope-only", action="store_true",
         help="Only check src/scope/resolver.py; don't build the bot.",
@@ -953,13 +1138,25 @@ def main() -> int:
         format="%(asctime)s %(levelname)s %(name)s: %(message)s",
     )
 
+    # Stream per-case rows to disk DURING the run (flushed per turn)
+    # so a mid-run tunnel drop can't vaporize a long real-LLM run.
+    _results_out = (
+        None if args.scope_only else Path(args.results_out)
+    )
     report = run_eval(
         filter_category=args.filter,
         scope_only=args.scope_only,
         with_judge=args.with_judge,
         with_real_llm=args.with_real_llm,
+        results_out=_results_out,
     )
     _print_report(report, verbose=args.verbose, scope_only=args.scope_only)
+
+    if _results_out is not None:
+        logger.info(
+            "wrote %d per-case results -> %s (streamed)",
+            len(report.results), _results_out,
+        )
 
     # Gates:
     #   - scope_match_rate >= 0.90 (existing).

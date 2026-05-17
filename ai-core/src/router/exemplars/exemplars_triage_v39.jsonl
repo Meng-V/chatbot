@@ -1,0 +1,16 @@
+{"intent": "subject_librarian", "utterance": "Who do I talk to about business databases?", "source": "triage_run_d"}
+{"intent": "subject_librarian", "utterance": "Which librarian should I ask about business research?", "source": "triage_run_d"}
+{"intent": "subject_librarian", "utterance": "Who's the subject librarian for business?", "source": "triage_run_d"}
+{"intent": "subject_librarian", "utterance": "Who do I contact for help with finance databases?", "source": "triage_run_d"}
+{"intent": "subject_librarian", "utterance": "Who handles economics research support at the library?", "source": "triage_run_d"}
+{"intent": "subject_librarian", "utterance": "Who can help me find the right databases for my subject?", "source": "triage_run_d"}
+{"intent": "interlibrary_loan", "utterance": "Submit an ILL request for me for a book.", "source": "triage_run_d"}
+{"intent": "interlibrary_loan", "utterance": "Can you request a book through interlibrary loan for me?", "source": "triage_run_d"}
+{"intent": "interlibrary_loan", "utterance": "Please place an interlibrary loan request for the book I need.", "source": "triage_run_d"}
+{"intent": "interlibrary_loan", "utterance": "I want to ILL a book; submit the request on my behalf.", "source": "triage_run_d"}
+{"intent": "printing_wifi", "utterance": "What's the wifi password?", "source": "triage_run_d"}
+{"intent": "printing_wifi", "utterance": "How do I connect to the library wifi?", "source": "triage_run_d"}
+{"intent": "printing_wifi", "utterance": "Is there wifi in the library?", "source": "triage_run_d"}
+{"intent": "printing_wifi", "utterance": "What's the wireless network name?", "source": "triage_run_d"}
+{"intent": "printing_wifi", "utterance": "How do I get on the campus wifi here?", "source": "triage_run_d"}
+{"intent": "printing_wifi", "utterance": "The wifi isn't working, who do I ask?", "source": "triage_run_d"}

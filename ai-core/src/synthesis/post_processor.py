@@ -155,6 +155,13 @@ angle-bracket, or closing punctuation so we don't greedy-match into
 Markdown syntax. URLs in Markdown links `[text](url)` still match the
 url portion."""
 
+_EMAIL_RE = re.compile(r"[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}")
+"""Matches email addresses. Used for the trusted-evidence faithfulness
+check: every email the model writes MUST appear verbatim in some
+evidence item. Catches the directory-paraphrase bug
+(bennethm@miamioh.edu -> bennett@miamioh.edu) and invented contacts.
+Never false-positives on hours / "Closed" -- those aren't emails."""
+
 
 # --- The main entry point --------------------------------------------------
 
@@ -164,6 +171,7 @@ def process_synthesizer_output(
     scope_campus: str,
     url_allowlist: set[str],
     service_unavailable_trigger: Optional[RefusalContext] = None,
+    evidence: Optional[list] = None,
 ) -> PostProcessorResult:
     """Validate the synthesizer's structured output. Downgrade to a
     refusal if any check fails.
@@ -258,6 +266,52 @@ def process_synthesizer_output(
             )
         )
 
+    # --- 3b. Trusted-evidence email faithfulness ---
+    # Every email the model emits MUST appear verbatim in some evidence
+    # item. The whole point of wiring lookup_librarian was to surface
+    # the EXACT directory address; a paraphrased/typo'd email
+    # (bennethm@ -> bennett@) or an invented one is a fabrication. This
+    # is deterministic, cheap, and structurally cannot false-positive
+    # on hours / "Closed" / room text (none contain an "@"). Skipped
+    # when the caller didn't pass evidence (older callers / unit tests).
+    if evidence:
+        evidence_blob = " ".join(getattr(c, "text", "") or "" for c in evidence)
+        for em in {m.group(0) for m in _EMAIL_RE.finditer(output.answer)}:
+            if em not in evidence_blob:
+                failures.append(
+                    ValidationFailure(
+                        trigger=RefusalTrigger.CITATION_INVALID,
+                        detail=(
+                            f"Email {em!r} in answer is not present "
+                            f"verbatim in any evidence item "
+                            f"(fabricated or paraphrased contact)."
+                        ),
+                    )
+                )
+
+    # --- 3c. Staff-privacy roster guard ---
+    # Operator rule (2026-05-16): the bot must NEVER proactively expose
+    # staff contact lists. The demonstrated violation
+    # (hh_chat_with_librarian) dumped 5 librarians' names for a generic
+    # "can I chat with a librarian?". Deterministic, ~zero false
+    # positive: a legitimate single-person lookup ("the history
+    # librarian" -> Jenny Presnell) has exactly ONE email; >=2 distinct
+    # emails in one answer is a roster dump. The prompt rule handles
+    # the behavioral side; this is the load-bearing backstop.
+    distinct_emails = {m.group(0).lower() for m in _EMAIL_RE.finditer(output.answer)}
+    if len(distinct_emails) >= 2:
+        failures.append(
+            ValidationFailure(
+                trigger=RefusalTrigger.STAFF_PRIVACY,
+                detail=(
+                    f"Answer exposes {len(distinct_emails)} staff "
+                    f"contacts ({sorted(distinct_emails)}) -- a roster "
+                    f"dump. Bot must not volunteer staff lists; only a "
+                    f"single specifically-requested person."
+                ),
+            )
+        )
+
     # --- 4. Cross-campus citation check ---
     # Only citations that actually have provenance metadata loaded are
     # checkable. If the caller forgot to join campus metadata on, we
@@ -297,6 +351,10 @@ def process_synthesizer_output(
     # fabrication), then cross-campus (scope violation). Further
     # failures are logged but the user sees one refusal paragraph.
     priority_order = [
+        # Privacy first: a roster dump must surface as the privacy
+        # refusal even if other failures co-occur (PII is the most
+        # trust-damaging thing the bot can emit).
+        RefusalTrigger.STAFF_PRIVACY,
         RefusalTrigger.MODEL_SELF_FLAGGED,
         RefusalTrigger.CITATION_INVALID,
         RefusalTrigger.CROSS_CAMPUS_MISMATCH,
