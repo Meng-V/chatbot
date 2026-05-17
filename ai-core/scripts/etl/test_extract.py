@@ -34,6 +34,7 @@ from scripts.etl.extract import (  # noqa: E402
     ExtractedDoc,
     _strip_html_fallback,
     extract,
+    find_redirect_target,
 )
 
 
@@ -285,8 +286,115 @@ def test_extracted_doc_has_all_documented_fields() -> None:
         assert hasattr(out, field), f"ExtractedDoc missing field: {field}"
 
 
+# --- Redirect-shim resolution (vanity short-URLs: /adobe/, /askus) ---
+
+# The REAL /adobe/ body (226 bytes) -- note the SPACE after `url=`.
+_ADOBE_STUB = (
+    '<!doctype html>\n<html>\n<head>\n'
+    '  <meta http-equiv="refresh" content="0; url= '
+    'https://muohio.libcal.com/equipment/item/61121/">\n'
+    '  <link rel="canonical" '
+    'href="https://muohio.libcal.com/equipment/item/61121/" />\n'
+    '</head>\n</html>\n'
+)
+_ASKUS_STUB = (
+    '<html><head><title>Redirecting…</title>'
+    '<meta http-equiv="refresh" content="0;url='
+    'https://www.lib.miamioh.edu/research/research-support/ask/">'
+    '</head><body>Redirecting…</body></html>'
+)
+# The REAL /illuminant20 body -- an Apache "300 Multiple Choices"
+# page: genuine junk, NO shim -> must stay rejected (return None).
+_APACHE_300 = (
+    '<html><head><title>300 Multiple Choices</title></head><body>'
+    '<h1>Multiple Choices</h1>The document name you requested '
+    '(<code>/illuminant20</code>) could not be found.</body></html>'
+)
+
+
+def test_find_redirect_meta_refresh_with_space() -> None:
+    """The /adobe/ format has `url= https://...` (space). Must still
+    parse -- the original regex missed exactly this."""
+    t = find_redirect_target(_ADOBE_STUB, "https://www.lib.miamioh.edu/adobe/")
+    assert t == "https://muohio.libcal.com/equipment/item/61121/", t
+
+
+def test_find_redirect_meta_refresh_no_space() -> None:
+    t = find_redirect_target(_ASKUS_STUB, "https://www.lib.miamioh.edu/askus")
+    assert t == (
+        "https://www.lib.miamioh.edu/research/research-support/ask/"
+    ), t
+
+
+def test_find_redirect_canonical_only() -> None:
+    html = (
+        '<html><head><link rel="canonical" '
+        'href="https://www.lib.miamioh.edu/software/"></head></html>'
+    )
+    t = find_redirect_target(html, "https://www.lib.miamioh.edu/sw/")
+    assert t == "https://www.lib.miamioh.edu/software/", t
+
+
+def test_find_redirect_relative_resolved_absolute() -> None:
+    html = '<meta http-equiv="refresh" content="0;url=/research/ask/">'
+    t = find_redirect_target(html, "https://www.lib.miamioh.edu/askus")
+    assert t == "https://www.lib.miamioh.edu/research/ask/", t
+
+
+def test_find_redirect_none_on_apache_300_junk() -> None:
+    """No shim -> None, so genuine junk (the /illuminant20 'did you
+    mean' page) stays correctly rejected, not chased."""
+    assert find_redirect_target(
+        _APACHE_300, "https://www.lib.miamioh.edu/illuminant20"
+    ) is None
+
+
+def test_find_redirect_self_canonical_is_none() -> None:
+    """A self-referential canonical is NOT a redirect."""
+    html = (
+        '<link rel="canonical" '
+        'href="https://www.lib.miamioh.edu/x/">'
+    )
+    assert find_redirect_target(
+        html, "https://www.lib.miamioh.edu/x"
+    ) is None
+
+
+def test_extract_stub_sets_redirect_to() -> None:
+    """End of the chain: extract() on the real /adobe/ stub must
+    reject (empty/too_short) AND surface redirect_to so run_etl can
+    re-fetch instead of silently dropping the page."""
+    d = extract(_ADOBE_STUB, "https://www.lib.miamioh.edu/adobe/")
+    assert d.rejection_reason in ("empty", "too_short"), d.rejection_reason
+    assert d.redirect_to == (
+        "https://muohio.libcal.com/equipment/item/61121/"
+    ), d.redirect_to
+
+
+def test_extract_real_page_has_no_redirect_to() -> None:
+    """A normal page must not get a spurious redirect_to (backward
+    compatible: redirect_to defaults None and only the reject paths
+    populate it)."""
+    html = (
+        "<html><head><title>Real</title></head><body><main>"
+        + ("Substantive library content. " * 20)
+        + "</main></body></html>"
+    )
+    d = extract(html, "https://www.lib.miamioh.edu/use/real/")
+    assert d.rejection_reason is None
+    assert d.redirect_to is None
+
+
 def main() -> int:
     tests = [
+        test_find_redirect_meta_refresh_with_space,
+        test_find_redirect_meta_refresh_no_space,
+        test_find_redirect_canonical_only,
+        test_find_redirect_relative_resolved_absolute,
+        test_find_redirect_none_on_apache_300_junk,
+        test_find_redirect_self_canonical_is_none,
+        test_extract_stub_sets_redirect_to,
+        test_extract_real_page_has_no_redirect_to,
         test_fallback_strips_basic_tags,
         test_fallback_strips_nav_footer_sidebar,
         test_fallback_strips_script_and_style,
