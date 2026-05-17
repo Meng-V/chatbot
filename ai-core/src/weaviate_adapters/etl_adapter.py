@@ -190,6 +190,7 @@ class WeaviateETLAdapter:
         chunk_id: str,
         properties: dict,
         vector: list[float],
+        exists: Optional[bool] = None,
     ) -> None:
         """Insert if new, replace if exists. Idempotent on chunk_id.
 
@@ -200,6 +201,19 @@ class WeaviateETLAdapter:
         chunk_id is stored as a property for callers that need to
         look up by it OR join to `ChunkProvenance.chunkId` (Postgres
         uses the original 'c-...' format).
+
+        `exists` lets a caller that already knows the object's state
+        (the ETL `step()` calls `get_chunk` first) pick the correct
+        verb so we don't fire a request that's guaranteed to fail:
+          - exists is True  -> object present -> `replace` (REST PUT)
+          - exists is False -> object absent  -> `insert`  (REST POST)
+          - exists is None  -> unknown -> historical replace-first order
+        This matters on a FRESH collection (every ETL run writes to a
+        brand-new `Chunk_v{version}`): without it, every chunk does a
+        replace-of-nonexistent that some Weaviate builds answer with a
+        500, then falls back to insert -- one wasted failing PUT and a
+        500-spammed log per chunk. The opposite verb is kept only as a
+        race fallback (stale snapshot / concurrent writer / retry).
         """
         self._ensure_collection(collection)
         coll = self.client.collections.get(collection)
@@ -208,29 +222,47 @@ class WeaviateETLAdapter:
         # identifier survives the UUID conversion. Callers may also
         # have set it; if so we overwrite-with-same-value (no-op).
         props_with_chunk_id = {**properties, "chunk_id": chunk_id}
-        # `replace` is the upsert primitive in v4 if you key on UUID.
-        # It creates if not found, replaces if found. Equivalent to
-        # PUT in REST terms.
-        try:
+
+        def _replace() -> None:
+            # `replace` == PUT: full overwrite, requires the object to
+            # exist on builds that don't treat it as upsert-create.
             coll.data.replace(
                 uuid=obj_uuid,
                 properties=props_with_chunk_id,
                 vector=vector,
             )
+
+        def _insert() -> None:
+            # `insert` == POST: create; conflicts if the object exists.
+            coll.data.insert(
+                uuid=obj_uuid,
+                properties=props_with_chunk_id,
+                vector=vector,
+            )
+
+        if exists is False:
+            primary, fallback = _insert, _replace
+            primary_name, fallback_name = "insert", "replace"
+        else:
+            # exists is True or None -> lead with replace (the v4 upsert
+            # primitive when keying on UUID; also the historical order
+            # so callers that pass nothing are unaffected).
+            primary, fallback = _replace, _insert
+            primary_name, fallback_name = "replace", "insert"
+
+        try:
+            primary()
         except Exception as e:  # noqa: BLE001
-            # Some v4 versions raise on replace-of-nonexistent. Fall
-            # back to insert.
+            # Primary verb failed: either the existence snapshot was
+            # stale, or this build raises on replace-of-nonexistent.
+            # The other verb is the correct one in both those cases.
             try:
-                coll.data.insert(
-                    uuid=obj_uuid,
-                    properties=props_with_chunk_id,
-                    vector=vector,
-                )
+                fallback()
             except Exception as e2:  # noqa: BLE001
                 raise RuntimeError(
                     f"Weaviate upsert failed for chunk_id={chunk_id!r} "
                     f"(uuid={obj_uuid}) in {collection!r}: "
-                    f"replace={e!r}, insert={e2!r}"
+                    f"{primary_name}={e!r}, {fallback_name}={e2!r}"
                 ) from e2
 
     def get_chunk(

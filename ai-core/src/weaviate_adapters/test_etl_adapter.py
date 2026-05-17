@@ -54,16 +54,24 @@ class _StubData:
     """Mimics collection.data.{insert, replace, update, delete_many}."""
     def __init__(self, parent: "_StubCollection"):
         self.parent = parent
-        # Track whether the next replace should fail. Tests can flip
-        # this to exercise the insert fallback.
+        # Track whether the next replace/insert should fail. Tests flip
+        # these to exercise the cross-fallback paths.
         self.fail_replace_with: Optional[Exception] = None
+        self.fail_insert_with: Optional[Exception] = None
+        # Ordered record of verbs the adapter actually invoked, so a
+        # test can assert "insert-first, replace never tried".
+        self.calls: list[str] = []
 
     def insert(self, *, uuid, properties, vector):
+        self.calls.append("insert")
+        if self.fail_insert_with is not None:
+            raise self.fail_insert_with
         self.parent.objects[uuid] = {
             "properties": dict(properties), "vector": list(vector),
         }
 
     def replace(self, *, uuid, properties, vector):
+        self.calls.append("replace")
         if self.fail_replace_with is not None:
             raise self.fail_replace_with
         self.parent.objects[uuid] = {
@@ -346,6 +354,81 @@ def test_upsert_chunk_falls_back_to_insert_when_replace_fails() -> None:
     assert coll.objects[stored_uuid]["properties"]["chunk_id"] == "cid-2"
 
 
+def test_upsert_chunk_exists_false_inserts_without_trying_replace() -> None:
+    """The fix: when the caller knows the object is absent (fresh
+    collection), upsert must go straight to insert and NEVER fire the
+    replace-of-nonexistent that some Weaviate builds 500 on. Replace
+    is rigged to succeed here -- the test still requires it to be
+    untouched, proving verb selection, not luck."""
+    a = _adapter()
+    a._ensure_collection("Chunk_v1")
+    coll = a.client.collections._collections["Chunk_v1"]
+    a.upsert_chunk(
+        collection="Chunk_v1",
+        chunk_id="cid-new",
+        properties={"text": "fresh"},
+        vector=[1.0],
+        exists=False,
+    )
+    assert coll.data.calls == ["insert"]
+    stored_uuid = _chunk_uuid("cid-new")
+    assert coll.objects[stored_uuid]["properties"]["text"] == "fresh"
+
+
+def test_upsert_chunk_exists_true_replaces_without_trying_insert() -> None:
+    """When the caller knows the object is present, lead with replace
+    (full PUT overwrite) and don't waste an insert that would conflict."""
+    a = _adapter()
+    a._ensure_collection("Chunk_v1")
+    coll = a.client.collections._collections["Chunk_v1"]
+    a.upsert_chunk(
+        collection="Chunk_v1",
+        chunk_id="cid-upd",
+        properties={"text": "v2"},
+        vector=[2.0],
+        exists=True,
+    )
+    assert coll.data.calls == ["replace"]
+    stored_uuid = _chunk_uuid("cid-upd")
+    assert coll.objects[stored_uuid]["properties"]["text"] == "v2"
+
+
+def test_upsert_chunk_exists_none_preserves_legacy_replace_first() -> None:
+    """Callers that pass no `exists` (every pre-existing call site +
+    test) must keep the historical replace-first order, so this change
+    is strictly backward-compatible."""
+    a = _adapter()
+    a._ensure_collection("Chunk_v1")
+    coll = a.client.collections._collections["Chunk_v1"]
+    a.upsert_chunk(
+        collection="Chunk_v1",
+        chunk_id="cid-legacy",
+        properties={"text": "legacy"},
+        vector=[3.0],
+    )
+    assert coll.data.calls == ["replace"]
+
+
+def test_upsert_chunk_exists_false_falls_back_to_replace_on_insert_conflict() -> None:
+    """Race safety: caller's snapshot said absent, but a concurrent
+    writer created it first so insert conflicts. The adapter must fall
+    back to replace rather than losing the write."""
+    a = _adapter()
+    a._ensure_collection("Chunk_v1")
+    coll = a.client.collections._collections["Chunk_v1"]
+    coll.data.fail_insert_with = RuntimeError("id already exists")
+    a.upsert_chunk(
+        collection="Chunk_v1",
+        chunk_id="cid-race",
+        properties={"text": "won-the-race"},
+        vector=[4.0],
+        exists=False,
+    )
+    assert coll.data.calls == ["insert", "replace"]
+    stored_uuid = _chunk_uuid("cid-race")
+    assert coll.objects[stored_uuid]["properties"]["text"] == "won-the-race"
+
+
 def test_get_chunk_returns_properties_on_hit() -> None:
     a = _adapter()
     a.upsert_chunk(
@@ -457,6 +540,10 @@ def main() -> int:
         test_chunk_uuid_returns_valid_uuid_string,
         test_upsert_then_get_chunk_roundtrip_via_chunk_id,
         test_upsert_chunk_falls_back_to_insert_when_replace_fails,
+        test_upsert_chunk_exists_false_inserts_without_trying_replace,
+        test_upsert_chunk_exists_true_replaces_without_trying_insert,
+        test_upsert_chunk_exists_none_preserves_legacy_replace_first,
+        test_upsert_chunk_exists_false_falls_back_to_replace_on_insert_conflict,
         test_get_chunk_returns_properties_on_hit,
         test_get_chunk_returns_none_for_missing_object,
         test_get_chunk_returns_none_for_missing_collection,

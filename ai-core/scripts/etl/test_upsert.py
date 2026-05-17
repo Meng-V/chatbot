@@ -84,7 +84,11 @@ class StubWeaviate:
     def upsert_chunk(
         self, *, collection: str, chunk_id: str,
         properties: dict, vector: list[float],
+        exists: Optional[bool] = None,
     ) -> None:
+        # `exists` is the caller's create-vs-overwrite hint; the
+        # in-memory store doesn't care (dict assignment is upsert),
+        # but the signature must accept it or step() breaks.
         self._data.setdefault(collection, {})[chunk_id] = {
             "properties": dict(properties),
             "vector": list(vector),

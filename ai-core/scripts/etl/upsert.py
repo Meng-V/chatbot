@@ -75,7 +75,8 @@ class WeaviateLike(Protocol):
     """
 
     def upsert_chunk(
-        self, *, collection: str, chunk_id: str, properties: dict, vector: list[float]
+        self, *, collection: str, chunk_id: str, properties: dict,
+        vector: list[float], exists: Optional[bool] = None,
     ) -> None: ...
     def get_chunk(
         self, *, collection: str, chunk_id: str
@@ -296,11 +297,17 @@ def make_upsert_step(
                 "deleted": False,
                 "ingested_at": dt.datetime.utcnow().isoformat(),
             }
+            # `existing` came from the get_chunk() probe above, so we
+            # already know whether this is a create or an overwrite.
+            # Pass it through so upsert_chunk leads with the correct
+            # verb instead of a guaranteed-to-fail replace-of-nonexistent
+            # on the fresh `Chunk_v{version}` collection.
             weaviate.upsert_chunk(
                 collection=collection,
                 chunk_id=chunk.chunk_id,
                 properties=properties,
                 vector=vector,
+                exists=existing is not None,
             )
             if existing:
                 result.changed_chunk_ids.append(chunk.chunk_id)
