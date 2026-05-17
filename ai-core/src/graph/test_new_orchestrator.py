@@ -748,8 +748,39 @@ def test_short_term_hours_not_short_circuited() -> None:
     )
 
 
+# --- Rule A: bare library-bound question -> King@Oxford, no clarify ---
+
+
+def test_rule_a_bare_question_defaults_king_no_clarify() -> None:
+    """Operator rule A: when no library/campus is named, default to
+    King (Oxford flagship) and ANSWER -- never ask 'which library?'.
+    This is already implemented in resolve_scope; this test LOCKS it
+    so a future clarify-gate change can't silently regress it."""
+    from src.scope.resolver import resolve_scope
+
+    s = resolve_scope("what are the hours")
+    assert s.campus == "oxford"
+    assert s.library is None
+    assert s.source == "default"
+
+    deps = _build_deps(
+        classification=_classification("hours"),
+        evidence_in_search_kb_result=[_evidence_dict("c1")],
+    )
+    resp = run_turn(
+        TurnRequest(user_message="what are the hours",
+                    conversation_id="c1"),
+        deps,
+    )
+    # Did NOT clarify, and resolved to the King/Oxford default.
+    assert resp.agent_stopped_reason != "clarify"
+    assert resp.scope["campus"] == "oxford"
+    assert resp.scope.get("library") in (None, "")
+
+
 def main() -> int:
     tests = [
+        test_rule_a_bare_question_defaults_king_no_clarify,
         test_is_long_period_hours_detector,
         test_long_period_hours_short_circuits_to_oxford_page,
         test_long_period_hours_resolves_campus,
