@@ -381,11 +381,74 @@ def test_closed_hours_answer_no_false_positive() -> None:
     assert not result.is_refusal, f"unexpected: {result.refusal}"
 
 
+def test_two_staff_emails_is_privacy_refusal() -> None:
+    """Roster-dump guard: >=2 distinct staff emails in one answer is
+    the proactive PII exposure the operator forbade. Both emails are
+    verbatim in evidence (so the faithfulness check passes) -- the
+    PRIVACY guard, not fabrication, must be what fires."""
+    out = SynthesizerOutput(
+        answer=(
+            "You can contact bennethm@miamioh.edu or "
+            "bowlina5@miamioh.edu [1]."
+        ),
+        citations=[_ok_oxford_citation()],
+        confidence="high",
+    )
+    result = process_synthesizer_output(
+        out, scope_campus="oxford", url_allowlist={KING_URL},
+        evidence=[_Ev(
+            "Heather Bennett bennethm@miamioh.edu; "
+            "Alyssa Bowling bowlina5@miamioh.edu"
+        )],
+    )
+    assert result.is_refusal
+    assert result.refusal.trigger == RefusalTrigger.STAFF_PRIVACY, (
+        result.refusal.trigger
+    )
+
+
+def test_single_targeted_librarian_email_passes() -> None:
+    """The legitimate case the operator confirmed correct: a user
+    asked for ONE specific subject's librarian -> exactly one contact
+    surfaces. Must NOT trip the roster guard."""
+    out = SynthesizerOutput(
+        answer=(
+            "Jenny Presnell is the History subject librarian; "
+            "email presnejl@miamioh.edu [1]."
+        ),
+        citations=[_ok_oxford_citation()],
+        confidence="high",
+    )
+    result = process_synthesizer_output(
+        out, scope_campus="oxford", url_allowlist={KING_URL},
+        evidence=[_Ev("Jenny Presnell, History. Email: presnejl@miamioh.edu.")],
+    )
+    assert not result.is_refusal, f"unexpected: {result.refusal}"
+
+
+def test_no_email_answer_not_privacy_flagged() -> None:
+    """Zero emails -> the guard is structurally inert (no false
+    positive on ordinary answers)."""
+    out = SynthesizerOutput(
+        answer="King Library is open until 9pm tonight [1].",
+        citations=[_ok_oxford_citation()],
+        confidence="high",
+    )
+    result = process_synthesizer_output(
+        out, scope_campus="oxford", url_allowlist={KING_URL},
+        evidence=[_Ev("King — Friday: 7:30am-9:00pm")],
+    )
+    assert not result.is_refusal, f"unexpected: {result.refusal}"
+
+
 def main() -> int:
     tests = [
         test_email_not_in_evidence_refuses,
         test_email_in_evidence_passes,
         test_closed_hours_answer_no_false_positive,
+        test_two_staff_emails_is_privacy_refusal,
+        test_single_targeted_librarian_email_passes,
+        test_no_email_answer_not_privacy_flagged,
         test_happy_path_returns_answer,
         test_confidence_low_refuses,
         test_literal_REFUSAL_token_refuses,

@@ -87,6 +87,15 @@ class RefusalTrigger(str, Enum):
     Middletown). Refusal names the service, names the campus, points
     to where the service DOES exist."""
 
+    STAFF_PRIVACY = "staff_privacy"
+    """The answer was about to PROACTIVELY expose staff contact info
+    (a roster / multiple librarians' names+emails) when the user did
+    NOT ask for a specific person. Operator rule (2026-05-16): never
+    volunteer subject-librarian names; only surface ONE specific
+    person when the user explicitly asked for that subject's librarian
+    or that named individual. Generic "talk to a librarian" -> Ask Us
+    chat, not a contact list."""
+
 
 @dataclass(frozen=True)
 class RefusalContext:
@@ -184,6 +193,13 @@ _TEMPLATES: dict[RefusalTrigger, str] = {
         "Thanks for flagging that. I can't fix the library website or "
         "chatbot directly -- please describe the problem through Ask "
         "Us so the right person can look at it."
+    ),
+    RefusalTrigger.STAFF_PRIVACY: (
+        "I don't share staff contact lists. To reach a librarian now, "
+        "use the Ask Us chat -- a librarian on duty can help right "
+        "away: https://www.lib.miamioh.edu/research/research-support/ask/ "
+        "If you need a particular subject's librarian, tell me the "
+        "subject and I'll look up that one person."
     ),
 }
 

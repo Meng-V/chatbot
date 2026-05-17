@@ -289,6 +289,29 @@ def process_synthesizer_output(
                     )
                 )
 
+    # --- 3c. Staff-privacy roster guard ---
+    # Operator rule (2026-05-16): the bot must NEVER proactively expose
+    # staff contact lists. The demonstrated violation
+    # (hh_chat_with_librarian) dumped 5 librarians' names for a generic
+    # "can I chat with a librarian?". Deterministic, ~zero false
+    # positive: a legitimate single-person lookup ("the history
+    # librarian" -> Jenny Presnell) has exactly ONE email; >=2 distinct
+    # emails in one answer is a roster dump. The prompt rule handles
+    # the behavioral side; this is the load-bearing backstop.
+    distinct_emails = {m.group(0).lower() for m in _EMAIL_RE.finditer(output.answer)}
+    if len(distinct_emails) >= 2:
+        failures.append(
+            ValidationFailure(
+                trigger=RefusalTrigger.STAFF_PRIVACY,
+                detail=(
+                    f"Answer exposes {len(distinct_emails)} staff "
+                    f"contacts ({sorted(distinct_emails)}) -- a roster "
+                    f"dump. Bot must not volunteer staff lists; only a "
+                    f"single specifically-requested person."
+                ),
+            )
+        )
+
     # --- 4. Cross-campus citation check ---
     # Only citations that actually have provenance metadata loaded are
     # checkable. If the caller forgot to join campus metadata on, we
@@ -328,6 +351,10 @@ def process_synthesizer_output(
     # fabrication), then cross-campus (scope violation). Further
     # failures are logged but the user sees one refusal paragraph.
     priority_order = [
+        # Privacy first: a roster dump must surface as the privacy
+        # refusal even if other failures co-occur (PII is the most
+        # trust-damaging thing the bot can emit).
+        RefusalTrigger.STAFF_PRIVACY,
         RefusalTrigger.MODEL_SELF_FLAGGED,
         RefusalTrigger.CITATION_INVALID,
         RefusalTrigger.CROSS_CAMPUS_MISMATCH,

@@ -55,6 +55,7 @@ SCOPE_FREE_TRIGGERS = [
     RefusalTrigger.ACCOUNT_PRIVACY,
     RefusalTrigger.NEWS_EXCLUDED,
     RefusalTrigger.WEBSITE_FEEDBACK_HANDOFF,
+    RefusalTrigger.STAFF_PRIVACY,
 ]
 
 SCOPED_TRIGGERS = [
@@ -155,6 +156,17 @@ def test_website_feedback_handoff_routes_to_ask_us() -> None:
     )
 
 
+def test_staff_privacy_points_to_ask_us_not_a_roster() -> None:
+    """Operator rule: a generic 'talk to a librarian' must route to
+    the Ask Us chat, never a staff contact list. The copy must carry
+    the Ask Us URL and invite a single specific-subject lookup -- and
+    must not itself contain an '@' (would defeat the whole guard)."""
+    msg = render_refusal(RefusalTrigger.STAFF_PRIVACY)
+    assert "research-support/ask" in msg, msg
+    assert "@" not in msg, f"refusal copy leaks a contact: {msg!r}"
+    assert "subject" in msg.lower()
+
+
 def test_no_placeholders_in_scope_free_outputs() -> None:
     """Defense in depth: even if a scope-free template accidentally
     contains a placeholder, render must not ship it. (test_scope_free_
@@ -179,6 +191,7 @@ def main() -> int:
         test_service_not_at_building_raises_when_service_name_missing,
         test_every_trigger_has_a_template,
         test_website_feedback_handoff_routes_to_ask_us,
+        test_staff_privacy_points_to_ask_us_not_a_roster,
         test_no_placeholders_in_scope_free_outputs,
     ]
     failed = 0
