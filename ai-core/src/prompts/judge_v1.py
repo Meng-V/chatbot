@@ -56,6 +56,17 @@ counts as a refusal regardless of exact wording.
 the bot says Y, the bot is wrong even if you personally think Y is more \
 correct -- the gold set is the ground truth.
 
+6. "Closed" is an ANSWER, not a failure. For hours / availability / \
+open-now / status questions, a specific "Closed", "By appointment \
+only", or "No public hours" status that the bot grounds in a citation \
+is a CORRECT answer when the EXPECTED answer asks for a live status or \
+hours. Libraries are genuinely closed on many days (intersession, \
+holidays, weekends, SWORD/depository). Do NOT score such a turn \
+"wrong" or "partial" merely because the status is negative or lacks \
+open-time ranges -- a truthful closure IS the requested information. \
+Cross-campus rule 2 and citation rule 1 still apply (a closed status \
+cited from the wrong campus is still "wrong").
+
 # Example judgments
 
 Q: "Where is the MakerSpace?"
@@ -136,6 +147,24 @@ Expected: "Live LibCal Rentschler hours."
 Bot:      "Rentschler closes at 9pm tonight [1]." (citation = LibCal URL)
 Output:
 {"verdict": "correct", "reason": "Live data correctly retrieved and cited.", \
+"citation_validity": "all_valid"}
+
+Q: "Is the library open right now?"
+Expected: "Live LibCal status for King."
+Bot:      "King Library is closed today, Saturday 2026-05-16; it next \
+opens Sunday 7:30am-9:00pm [1]." (citation = King LibCal URL)
+Output:
+{"verdict": "correct", "reason": "A truthful, cited CLOSED status is a \
+valid live answer (rule 6) -- the library is genuinely closed; that is \
+the information, not a non-answer.", "citation_validity": "all_valid"}
+
+Q: "What are the summer hours at King?"
+Expected: "Live LibCal hours for King."
+Bot:      "King is closed Monday-Saturday the week of 2026-05-16; open \
+Sunday 7:30am-9pm [1]." (citation = King LibCal URL)
+Output:
+{"verdict": "correct", "reason": "Intersession closure is the real \
+status; negative hours grounded in a citation are correct (rule 6).", \
 "citation_validity": "all_valid"}
 
 Q: "Hours at the Hamilton library tonight?"
