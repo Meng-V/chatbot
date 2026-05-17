@@ -13,7 +13,7 @@ See plan: Data preparation playbook §4 (pipeline) and §7 (featured services).
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Final
+from typing import Final, Optional
 
 
 # --- Path anchor ------------------------------------------------------------
@@ -126,8 +126,10 @@ EXCLUDE_URL_SUBSTRINGS: Final[tuple[str, ...]] = (
 # To allow a new domain or path shape, add to one of the patterns below.
 
 LIBRARY_HOST_PREFIXES: Final[tuple[str, ...]] = (
-    "lib.",      # lib.miamioh.edu
-    "www.lib.",  # www.lib.miamioh.edu
+    "lib.",        # lib.miamioh.edu
+    "www.lib.",    # www.lib.miamioh.edu
+    "libguides.",  # libguides.lib.miamioh.edu -- curated LIBGUIDE_SEED
+                   # only; discover never bulk-crawls this host.
 )
 
 LIBRARY_PATH_SUBSTRINGS: Final[tuple[str, ...]] = (
@@ -174,6 +176,44 @@ FEATURED_SERVICE_PATTERNS: Final[tuple[tuple[str, str], ...]] = (
     ("/research/databases/newspapers", "newspapers"),
     ("/databases/nyt", "newspapers"),
     ("/databases/wsj", "newspapers"),
+)
+
+
+# --- Curated LibGuide registry (plan §1/§7) ---------------------------------
+#
+# libguides.lib.miamioh.edu is NOT in any campus sitemap, and the eval
+# proved this is a MEASURED blocker: fs_makerspace_middletown_refusal
+# can't answer ("couldn't verify my sources") because the Middletown
+# TEC Lab guide isn't in the index.
+#
+# We seed a SMALL, canonical-doc/operator-confirmed set rather than
+# bulk-crawl the libguides sitemap, for TWO reasons:
+#   1. The plan prefers curated > bulk (signal/noise; pollution is the
+#      exact failure this whole project fights).
+#   2. classify._infer_campus host-defaults libguides -> 'oxford', so a
+#      bulk crawl would tag the Middletown TEC Lab guide as Oxford and
+#      the load-bearing cross-campus guard would then BLOCK it for
+#      Middletown queries. Each entry below carries EXPLICIT campus /
+#      library / featured_service; classify.py honors these verbatim
+#      (does NOT re-infer from host).
+#
+# Every URL HEAD-verified 200, no redirect, 2026-05-17. campus/library
+# "all" = university-wide (cross-campus guard passes "all").
+#
+# (url, campus, library, featured_service|None)
+LIBGUIDE_SEED: Final[tuple[tuple[str, str, str, Optional[str]], ...]] = (
+    ("https://libguides.lib.miamioh.edu/middletown_tec_lab/home",
+     "middletown", "gardner_harvey", "makerspace"),
+    ("https://libguides.lib.miamioh.edu/create/makerspace",
+     "oxford", "king", "makerspace"),
+    ("https://libguides.lib.miamioh.edu/newspapers",
+     "all", "all", "newspapers"),
+    ("https://libguides.lib.miamioh.edu/citation",
+     "all", "all", None),
+    ("https://libguides.lib.miamioh.edu/mul-circulation-policies",
+     "all", "all", None),
+    ("https://libguides.lib.miamioh.edu/reserves-textbooks/",
+     "all", "all", None),
 )
 
 

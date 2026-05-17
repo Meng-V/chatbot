@@ -104,11 +104,34 @@ def _infer_audience(url: str, body_text: str) -> list[str]:
     return sorted(audiences) if audiences else ["all"]
 
 
+# Curated LibGuide registry -> explicit (campus, library,
+# featured_service). libguides.lib.miamioh.edu host-defaults to
+# 'oxford' in _infer_campus, which would mis-tag the Middletown TEC
+# Lab guide as Oxford and make the cross-campus guard BLOCK it for
+# Middletown queries. So for these URLs we use the registry's
+# operator/canonical-confirmed values VERBATIM, never host inference.
+_LIBGUIDE_OVERRIDE: dict[str, tuple[str, str, Optional[str]]] = {
+    url: (campus, library, fs)
+    for url, campus, library, fs in config.LIBGUIDE_SEED
+}
+
+
 def classify(url: str, body_text: str) -> DocMetadata:
     """Apply all rule-based metadata inference to a document.
 
     Pure function: same inputs -> same outputs. No I/O. Easy to test.
     """
+    override = _LIBGUIDE_OVERRIDE.get(url)
+    if override is not None:
+        campus, library, featured_service = override
+        return DocMetadata(
+            topic=_infer_topic(url),
+            campus=campus,
+            library=library,
+            audience=_infer_audience(url, body_text),
+            featured_service=featured_service,
+        )
+
     return DocMetadata(
         topic=_infer_topic(url),
         campus=_infer_campus(url),
