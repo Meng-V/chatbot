@@ -155,6 +155,26 @@ TOPIC_BY_URL_PREFIX: Final[tuple[tuple[str, str], ...]] = (
 )
 
 
+# --- Vanity short-URL -> real indexable page --------------------------------
+#
+# Some Miami vanity short-URLs (/adobe/, ...) are <meta refresh> /
+# canonical-only shims whose destination is OFF-HOST and not
+# indexable as prose (e.g. /adobe/ -> muohio.libcal.com LibCal
+# equipment item, a JS app on a different host). extract.find_redirect
+# _target detects the shim; run_etl, when the target fails the
+# library-content filter, looks here for the real same-host page that
+# answers the same question and indexes THAT instead (dedup handles
+# overlap if the page is also in the sitemap).
+#
+# Operator-verified 2026-05-17: /software/ extracts clean (2048 chars,
+# "Software Checkout") and is the page their gold (fs_indesign_faculty)
+# cites for Adobe. Keep tiny + librarian-curated.
+VANITY_CANONICAL: Final[dict[str, str]] = {
+    "https://www.lib.miamioh.edu/adobe/":
+        "https://www.lib.miamioh.edu/software/",
+}
+
+
 # --- Featured services (plan §7) --------------------------------------------
 #
 # Map URL substrings -> featured_service tag. classify.py applies this to

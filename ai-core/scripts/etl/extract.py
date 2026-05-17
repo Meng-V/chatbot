@@ -18,8 +18,10 @@ can call it; concrete extractor invocation is a TODO.
 from __future__ import annotations
 
 import logging
+import re
 from dataclasses import dataclass
 from typing import Optional
+from urllib.parse import urljoin
 
 from . import config
 
@@ -38,6 +40,57 @@ class ExtractedDoc:
     schema_org_json: Optional[dict]  # parsed Schema.org JSON-LD if present
     last_modified: Optional[str]     # HTTP Last-Modified header verbatim
     rejection_reason: Optional[str]  # set if extraction failed quality gates
+    redirect_to: Optional[str] = None
+    """Set when the page is a content-less redirect shim (vanity short
+    URL like /adobe/, /askus). The pipeline re-fetches this target
+    instead of dropping the page. The ETL fetcher follows HTTP 3xx but
+    NOT <meta refresh> / JS / canonical-only shims, so without this a
+    librarian-handed-out short URL silently never reaches the index."""
+
+
+# Miami vanity URLs redirect via <meta http-equiv=refresh> and/or a
+# lone <link rel=canonical> (no <body>). Content may have a space
+# after `url=` (observed: `content="0; url= https://..."`). Both
+# patterns are case-insensitive and quote-tolerant.
+_META_REFRESH_RE = re.compile(
+    r'<meta[^>]+http-equiv=["\']?refresh["\']?[^>]*content=["\']([^"\']+)["\']',
+    re.IGNORECASE,
+)
+_REFRESH_URL_RE = re.compile(r'url\s*=\s*([^\s"\'>]+)', re.IGNORECASE)
+_CANONICAL_RE = re.compile(
+    r'<link[^>]+rel=["\']?canonical["\']?[^>]*href=["\']([^"\']+)["\']',
+    re.IGNORECASE,
+)
+
+
+def _norm_url(u: str) -> str:
+    return (u or "").rstrip("/").lower()
+
+
+def find_redirect_target(html: str, base_url: str) -> Optional[str]:
+    """Return the destination of a redirect SHIM, or None.
+
+    Called only on the empty/too_short path -- a stub page with a
+    `<meta refresh>` or a lone `<link rel=canonical>` pointing
+    elsewhere is a redirect, not real content. Relative targets are
+    resolved against base_url. Returns None if there's no shim (e.g.
+    an Apache "300 Multiple Choices" page is genuine junk -> stays
+    rejected)."""
+    if not html:
+        return None
+    m = _META_REFRESH_RE.search(html)
+    if m:
+        mu = _REFRESH_URL_RE.search(m.group(1))
+        if mu:
+            tgt = urljoin(base_url, mu.group(1).strip())
+            if _norm_url(tgt) != _norm_url(base_url):
+                return tgt
+    m = _CANONICAL_RE.search(html)
+    if m:
+        tgt = urljoin(base_url, m.group(1).strip())
+        if _norm_url(tgt) != _norm_url(base_url):
+            return tgt
+    return None
 
 
 def _strip_html_fallback(html: str) -> tuple[Optional[str], str]:
@@ -159,12 +212,14 @@ def extract(html: str, url: str, last_modified: Optional[str] = None) -> Extract
             url=url, title=title, body_text="", breadcrumbs=[],
             word_count=0, schema_org_json=None, last_modified=last_modified,
             rejection_reason="empty",
+            redirect_to=find_redirect_target(html, url),
         )
     if len(body_text) < config.EXTRACT_MIN_BODY_CHARS:
         return ExtractedDoc(
             url=url, title=title, body_text="", breadcrumbs=[],
             word_count=0, schema_org_json=None, last_modified=last_modified,
             rejection_reason="too_short",
+            redirect_to=find_redirect_target(html, url),
         )
 
     word_count = len(body_text.split())

@@ -233,6 +233,45 @@ def run(
         seen_for_allowlist.append((canon_url, 200, d.source, "text/html"))
 
         doc = extract.extract(html, canon_url, last_modified=last_mod)
+
+        # Vanity-shim resolution (ONE hop). The fetcher follows HTTP 3xx
+        # but not <meta refresh>/canonical-only shims, so /adobe/,
+        # /askus would silently never reach the index. Re-fetch the
+        # real destination: same-host/indexable -> the target itself;
+        # off-host (e.g. /adobe/ -> libcal app) -> the curated
+        # same-host page that answers it; otherwise log a visible
+        # off-host reject (NOT a silent drop).
+        if doc.redirect_to:
+            tgt = doc.redirect_to
+            if discover._is_library_url(tgt):
+                resolved = tgt
+            else:
+                resolved = config.VANITY_CANONICAL.get(
+                    d.url
+                ) or config.VANITY_CANONICAL.get(canon_url)
+            if resolved is None:
+                report.extraction_rejects.append(
+                    (canon_url, f"redirect_offhost:{tgt}")
+                )
+                continue
+            if extract._norm_url(resolved) != extract._norm_url(canon_url):
+                h2, lm2, c2, e2 = pipeline.fetch(resolved)
+                if e2 or h2 is None:
+                    report.extraction_rejects.append(
+                        (canon_url, f"redirect_fetch_failed:{resolved}")
+                    )
+                    continue
+                report.fetched_url_count += 1
+                canon_url = c2 or resolved
+                seen_urls.add(canon_url)
+                seen_for_allowlist.append(
+                    (canon_url, 200, d.source, "text/html")
+                )
+                # One hop only -- do NOT recurse on the re-fetched doc.
+                doc = extract.extract(
+                    h2, canon_url, last_modified=lm2
+                )
+
         if doc.rejection_reason:
             report.extraction_rejects.append((canon_url, doc.rejection_reason))
             continue
