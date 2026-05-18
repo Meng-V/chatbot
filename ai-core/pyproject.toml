@@ -26,7 +26,8 @@ dependencies = [
   "holidays",
   "dateparser",
   "aiohttp",
-  "beautifulsoup4"
+  "beautifulsoup4",
+  "sentry-sdk[fastapi]"
 ]
 
 [tool.pyright]
