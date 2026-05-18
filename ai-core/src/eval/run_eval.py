@@ -92,6 +92,7 @@ from src.router.intent_knn import (  # noqa: E402
 )
 from src.retrieval.scope_filter import ScopeFilter  # noqa: E402
 from src.scope.resolver import resolve_scope  # noqa: E402
+from src.scope.service_availability import build_service_guard  # noqa: E402
 
 logger = logging.getLogger("eval")
 
@@ -467,7 +468,12 @@ def _build_real_deps(
         synthesizer_llm=None,   # ditto
         load_corrections=lambda: [],
         load_url_allowlist=lambda: set(),
-        lookup_service_availability=lambda intent, campus: None,
+        # Real path: wire the cross-campus service guard (plan §8/§9
+        # SERVICE_NOT_AT_BUILDING). Reads the canonical seed SPACES, so
+        # no DB/async needed and it can't be silently disabled. The
+        # cross_campus gold cases (makerspace@hamilton etc.) exercise
+        # this. (The STUB deps above intentionally keep it None.)
+        lookup_service_availability=build_service_guard(),
     )
 
 

@@ -162,6 +162,7 @@ def build_v2_deps() -> OrchestratorDeps:
     from src.eval.run_eval import _build_classifier
     from src.tools_v2.registry import build_tool_registry
     from src.eval.real_backends import build_eval_backends
+    from src.scope.service_availability import build_service_guard
 
     classifier = _build_classifier()
     registry = build_tool_registry(build_eval_backends())
@@ -173,7 +174,10 @@ def build_v2_deps() -> OrchestratorDeps:
         synthesizer_llm=None,  # -> ditto
         load_corrections=lambda: [],
         load_url_allowlist=lambda: set(),
-        lookup_service_availability=lambda intent, campus: None,
+        # Cross-campus service guard (plan §8/§9). Canonical seed
+        # SPACES-backed -> pure/sync, no DB at request time, cannot be
+        # silently disabled. Production serving MUST have this on.
+        lookup_service_availability=build_service_guard(),
     )
 
 

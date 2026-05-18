@@ -238,6 +238,35 @@ model LibrarySpace {
   @@index([libcalBuildingId])
 }
 
+// Smart-chatbot rebuild v2 (plan §8). FLAT per-(campus, library) truth
+// table -- the load-bearing source for the cross-campus
+// "service-not-at-this-building" guard. Deliberately NOT related to the
+// legacy `LibrarySpace`/`Library` (still read by the v1 booking path
+// during the 8-week rollout). Table created idempotently by
+// prisma/migrations/20260518_add_libraryspace_v2.sql; seeded by
+// scripts/seed_library_spaces_v2.py (upsert key = (campus, library)).
+// Field names are snake_case to match that seed's asdict() keys 1:1.
+model LibrarySpace_v2 {
+  id               String   @id @default(uuid())
+  library          String // king|wertz|special|rentschler|gardner_harvey|sword
+  campus           String // oxford|hamilton|middletown
+  name             String
+  building_role    String // main_building|sub_building|department|depository
+  address          String?
+  phone            String?
+  libcal_id        String?
+  capacity         Int?
+  equipment        String[] @default([])
+  services_offered String[] @default([])
+  hours_source     String?
+  source_url       String?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  @@unique([campus, library])
+  @@map("LibrarySpace_v2")
+}
+
 // Librarian/Staff Directory (verified contacts only)
 model Librarian {
   id                String   @id @default(uuid())
