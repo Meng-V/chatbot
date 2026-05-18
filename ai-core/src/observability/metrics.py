@@ -26,6 +26,14 @@ from typing import Optional
 
 _prom_available: Optional[bool] = None
 _metrics: dict = {}
+# Private registry, NOT prometheus_client's implicit global default.
+# Two reasons: (1) isolates the bot's metrics from any library that
+# also registers on the default REGISTRY; (2) makes registration
+# survive a module re-import / uvicorn --reload / the test suite's
+# importlib.reload -- a fresh module load builds a fresh registry, so
+# the same metric names never collide ("Duplicated timeseries" only
+# happens when you register the same name twice on ONE registry).
+_registry = None
 
 
 def _ensure_metrics() -> bool:
@@ -34,62 +42,78 @@ def _ensure_metrics() -> bool:
     Returns True if the lib is available and metrics are defined, False
     otherwise (in which case all record_* calls are no-ops).
     """
-    global _prom_available
+    global _prom_available, _registry
     if _prom_available is not None:
         return _prom_available
 
     try:
-        from prometheus_client import Counter, Histogram  # type: ignore
+        from prometheus_client import (  # type: ignore
+            CollectorRegistry,
+            Counter,
+            Histogram,
+        )
+
+        _registry = CollectorRegistry()
 
         _metrics["request_count"] = Counter(
             "chatbot_request_count",
             "Total chatbot requests",
             ["endpoint", "status"],
+            registry=_registry,
         )
         _metrics["request_latency"] = Histogram(
             "chatbot_request_latency_seconds",
             "Request latency (seconds)",
             ["endpoint"],
+            registry=_registry,
         )
         _metrics["tool_call_count"] = Counter(
             "chatbot_tool_call_count",
             "Tool invocations",
             ["tool", "status"],
+            registry=_registry,
         )
         _metrics["tool_latency"] = Histogram(
             "chatbot_tool_latency_seconds",
             "Tool call latency (seconds)",
             ["tool"],
+            registry=_registry,
         )
         _metrics["llm_call_count"] = Counter(
             "chatbot_llm_call_count",
             "LLM API calls",
             ["model", "call_site", "status"],
+            registry=_registry,
         )
         _metrics["llm_latency"] = Histogram(
             "chatbot_llm_latency_seconds",
             "LLM call latency (seconds)",
             ["model", "call_site"],
+            registry=_registry,
         )
         _metrics["llm_input_tokens"] = Counter(
             "chatbot_llm_input_tokens",
             "Input tokens sent to the LLM",
             ["model", "call_site"],
+            registry=_registry,
         )
         _metrics["llm_cached_input_tokens"] = Counter(
             "chatbot_llm_cached_input_tokens",
             "Input tokens served from the prompt cache",
             ["model", "call_site"],
+            registry=_registry,
         )
         _metrics["llm_output_tokens"] = Counter(
             "chatbot_llm_output_tokens",
             "Output tokens produced by the LLM",
             ["model", "call_site"],
+            registry=_registry,
         )
         _metrics["refusal_count"] = Counter(
             "chatbot_refusal_count",
             "Refusal responses, by trigger",
             ["trigger"],
+            registry=_registry,
         )
         _prom_available = True
     except ImportError:
@@ -184,7 +208,7 @@ def render_latest() -> tuple[bytes, str]:
     worker). Content type is the Prometheus exposition format when
     available so Prometheus parses it correctly.
     """
-    if not _ensure_metrics():
+    if not _ensure_metrics() or _registry is None:
         return _METRICS_UNAVAILABLE, _PLAINTEXT
     try:
         from prometheus_client import (  # type: ignore
@@ -192,7 +216,9 @@ def render_latest() -> tuple[bytes, str]:
             generate_latest,
         )
 
-        return generate_latest(), CONTENT_TYPE_LATEST
+        # Scrape OUR private registry, not prometheus_client's implicit
+        # global default (which `generate_latest()` with no arg uses).
+        return generate_latest(_registry), CONTENT_TYPE_LATEST
     except Exception:  # noqa: BLE001 -- never let a scrape crash the app
         return _METRICS_UNAVAILABLE, _PLAINTEXT
 
