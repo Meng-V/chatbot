@@ -42,6 +42,7 @@ from src.api.readiness_router import (
     make_libcal_probe,
 )
 from src.api.admin.smoketest_router import build_smoketest_router
+from src.observability.request_id_middleware import RequestIdMiddleware
 
 # ---------------------------------------------------------------------------
 # .env loading — MUST NOT follow symlinks on production
@@ -210,6 +211,12 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Op 3: bind one request_id per request so every structlog line in
+# the request carries it. Added LAST -> Starlette makes it the
+# OUTERMOST middleware, so the id is bound before anything else runs
+# and echoed back as X-Request-ID for user-report <-> log correlation.
+app.add_middleware(RequestIdMiddleware)
 
 # Include health/monitoring routers
 app.include_router(health_router)
