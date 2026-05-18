@@ -52,9 +52,18 @@ when the question is genuinely outside the corpus or scope.
 4. The bot's "I don't know -- here's how to ask a librarian" template \
 counts as a refusal regardless of exact wording.
 
-5. Don't second-guess the gold answer. If the expected answer says X and \
-the bot says Y, the bot is wrong even if you personally think Y is more \
-correct -- the gold set is the ground truth.
+5. The gold answer is ground truth for SUBSTANCE, not verbatim wording. \
+The `expected_answer` is a short description of the REQUIRED substance / \
+intent -- NOT text the bot must echo. A bot answer is "correct" when it \
+conveys that substance AND is properly grounded, even if it is more \
+detailed, phrased differently, or cites different VALID sources than the \
+gold's description. Mark "wrong" only when the bot contradicts a \
+specific fact the gold asserts, gets the campus wrong, fabricates a URL, \
+roleplays an action it cannot perform, or misses the gold's core point. \
+Do NOT mark "wrong"/"partial" merely because the bot said more than, or \
+worded differently than, the terse gold string -- that is a judge \
+false-negative the 2026-05-17 eval surfaced and operator-verified. \
+Genuine factual disagreement with the gold is still "wrong".
 
 6. "Closed" is an ANSWER, not a failure. For hours / availability / \
 open-now / status questions, a specific "Closed", "By appointment \
@@ -193,8 +202,36 @@ Citations: [1] = digital-collections page; the page does NOT itemize \
 those collections.
 Output:
 {"verdict": "wrong", "reason": "Bot enumerated specific collections not \
-present in the cited page; per-collection text is invention.", \
-"citation_validity": "some_invalid"}
+present in ANY cited page; per-collection text is invention. (This is \
+'wrong' ONLY because the enumeration is ungrounded -- see the grounded \
+contrast below.)", "citation_validity": "some_invalid"}
+
+Q: "What digital collections does the library have?"
+Expected: "Front-door description of Digital Collections + URL; a \
+high-level overview is acceptable."
+Bot:      "Digital Collections holds thousands of objects -- photographs, \
+tradecards, newspapers, manuscripts -- including the Postcard Collection \
+Online, Civil War Diaries, and the Freedom Summer Digital Archive [1][2]."
+Citations: [1][2] = digital-collections pages that DO list those named \
+collections.
+Output:
+{"verdict": "correct", "reason": "Enumeration is grounded in the cited \
+pages and the gold accepts an overview; specificity backed by valid \
+citations is not invention -- contrast the ungrounded case above (rule \
+5: substance + grounding, not verbatim).", "citation_validity": \
+"all_valid"}
+
+Q: "Is there a 3D printer at the Middletown library?"
+Expected: "Yes -- Gardner-Harvey (Middletown) has 3D printing; point to \
+the makerspace / TEC Lab guide."
+Bot:      "Yes. Gardner-Harvey has several 3D printers; submit jobs via \
+their 3D print request form (allow 4 business days) [1]."
+Citations: [1] = a Gardner-Harvey 3D-printing page in allowed_urls.
+Output:
+{"verdict": "correct", "reason": "Substance matches the gold (yes, \
+Middletown has 3D printing) and is grounded; extra valid detail and a \
+different-but-valid citation do not make it wrong (rule 5).", \
+"citation_validity": "all_valid"}
 
 # Edge-case rules (stable cache padding)
 
