@@ -295,7 +295,7 @@ def make_upsert_step(
                 "featured_service": chunk.featured_service or "",
                 "content_hash": chunk.content_hash,
                 "deleted": False,
-                "ingested_at": dt.datetime.utcnow().isoformat(),
+                "ingested_at": dt.datetime.now(dt.timezone.utc).isoformat(),
             }
             # `existing` came from the get_chunk() probe above, so we
             # already know whether this is a create or an overwrite.
@@ -351,7 +351,7 @@ def make_tombstone_step(
         )
         gc_deleted = weaviate.gc_tombstones(
             collection=collection,
-            older_than=dt.datetime.utcnow() - dt.timedelta(days=gc_age_days),
+            older_than=dt.datetime.now(dt.timezone.utc) - dt.timedelta(days=gc_age_days),
         )
         return UpsertResult(
             tombstoned_urls=list(tombstoned),
@@ -398,7 +398,7 @@ def make_allowlist_step(
                 "http_status": status,
                 "source": source,
                 "content_type": content_type,
-                "last_seen": dt.datetime.utcnow(),
+                "last_seen": dt.datetime.now(dt.timezone.utc),
             }
             for url, status, source, content_type in rows
         ]

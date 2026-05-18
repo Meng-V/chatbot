@@ -219,7 +219,7 @@ def run(
         update_allowlist=_default_allowlist,
     )
 
-    started = dt.datetime.utcnow()
+    started = dt.datetime.now(dt.timezone.utc)
     report = diff_report.DiffReport(
         run_started_at=started,
         run_finished_at=started,  # placeholder; updated at end
@@ -321,7 +321,7 @@ def run(
         report.upsert.new_url_count = pipeline.update_allowlist(seen_for_allowlist)
 
     # 11. Diff report
-    report.run_finished_at = dt.datetime.utcnow()
+    report.run_finished_at = dt.datetime.now(dt.timezone.utc)
     diff_report.write_diff_report(report)
     return report
 
@@ -468,7 +468,7 @@ def main() -> int:
         # Mark the diff as applied so re-running --phase apply on the same
         # diff is a no-op (forced re-prepare for any new run).
         assert decision.token is not None
-        marker = gate.mark_applied(diff_path, decision.token, dt.datetime.utcnow())
+        marker = gate.mark_applied(diff_path, decision.token, dt.datetime.now(dt.timezone.utc))
         logger.info("apply complete; marker written: %s", marker)
         elapsed = time.time() - t0
         logger.info(
@@ -515,7 +515,7 @@ def main() -> int:
         # finished-at timestamp) and emit the approval template.
         diff_dir = Path(config.DIFF_REPORT_DIR)
         latest_md = max(diff_dir.glob("*.md"), key=lambda p: p.stat().st_mtime)
-        token_path = gate.write_approval_template(latest_md, dt.datetime.utcnow())
+        token_path = gate.write_approval_template(latest_md, dt.datetime.now(dt.timezone.utc))
         print()
         print(f"Diff:     {latest_md}")
         print(f"Approval: {token_path}")

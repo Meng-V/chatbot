@@ -334,7 +334,7 @@ class WeaviateETLAdapter:
         # Iterate all objects to find non-seen ones. v4 supports
         # paginated iteration via collections.iterator().
         tombstoned: list[str] = []
-        now_iso = dt.datetime.utcnow().isoformat()
+        now_iso = dt.datetime.now(dt.timezone.utc).isoformat()
         try:
             for obj in coll.iterator(return_properties=["source_url", "deleted"]):
                 url = obj.properties.get("source_url")
