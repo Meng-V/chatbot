@@ -42,6 +42,7 @@ from src.api.readiness_router import (
     make_libcal_probe,
 )
 from src.api.admin.smoketest_router import build_smoketest_router
+from src.observability.request_id_middleware import RequestIdMiddleware
 from src.api.metrics_router import build_metrics_router
 from src.observability.metrics_middleware import MetricsMiddleware
 from src.observability.sentry import init_sentry
@@ -221,6 +222,11 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Op 3: bind one request_id per request so every structlog line in
+# the request carries it. Added LAST -> Starlette makes it the
+# OUTERMOST middleware, so the id is bound before anything else runs
+# and echoed back as X-Request-ID for user-report <-> log correlation.
+app.add_middleware(RequestIdMiddleware)
 # Op 3 (Metrics): time every request -> chatbot_request_* metrics.
 # No-ops invisibly until prometheus-client is installed; excludes the
 # /metrics + /health/live infra polls so they don't skew the signal.
