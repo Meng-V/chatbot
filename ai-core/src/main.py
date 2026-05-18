@@ -43,6 +43,9 @@ from src.api.readiness_router import (
 )
 from src.api.admin.smoketest_router import build_smoketest_router
 from src.observability.request_id_middleware import RequestIdMiddleware
+from src.api.metrics_router import build_metrics_router
+from src.observability.metrics_middleware import MetricsMiddleware
+from src.observability.sentry import init_sentry
 
 # ---------------------------------------------------------------------------
 # .env loading — MUST NOT follow symlinks on production
@@ -74,6 +77,13 @@ print(f"Loading .env from: {env_path}")
 setup_logging()
 logging.info(f"📂 .env loaded from: {env_path}  (root_dir={root_dir})")
 logging.info(f"📂 __file__ resolved WITHOUT symlinks: {_this_file}")
+
+# Op 3 (non-negotiable launch floor): wire Sentry BEFORE the FastAPI
+# app is created so sentry-sdk's auto-enabled FastAPI/Starlette
+# integration instruments the whole request path. No-op unless
+# SENTRY_DSN is set AND sentry-sdk is installed -- merging this is a
+# zero-behavior-change until an operator configures the DSN.
+init_sentry()
 
 
 def json_serializable(obj):
@@ -217,6 +227,10 @@ app.add_middleware(
 # OUTERMOST middleware, so the id is bound before anything else runs
 # and echoed back as X-Request-ID for user-report <-> log correlation.
 app.add_middleware(RequestIdMiddleware)
+# Op 3 (Metrics): time every request -> chatbot_request_* metrics.
+# No-ops invisibly until prometheus-client is installed; excludes the
+# /metrics + /health/live infra polls so they don't skew the signal.
+app.add_middleware(MetricsMiddleware)
 
 # Include health/monitoring routers
 app.include_router(health_router)
@@ -327,6 +341,10 @@ def _smoketest_ask_bot(question: str) -> dict:
 
 
 app.include_router(build_smoketest_router({"ask_bot": _smoketest_ask_bot}))
+
+# Op 3: Prometheus scrape target. Self-describes a 200 when
+# prometheus-client isn't installed (never 500s a scrape).
+app.include_router(build_metrics_router())
 
 
 # Socket.IO server for real-time communication

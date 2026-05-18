@@ -164,9 +164,43 @@ def record_refusal(*, trigger: str) -> None:
     _metrics["refusal_count"].labels(trigger=trigger).inc()
 
 
+# Plaintext shown at /metrics when prometheus_client isn't installed.
+# A 200 with a self-explaining body beats a 500 -- a scrape failure
+# should say WHY, and the endpoint must never take a worker down.
+_METRICS_UNAVAILABLE = (
+    b"# prometheus_client not installed; metrics disabled.\n"
+    b"# `pip install prometheus-client` (declared in pyproject) to enable.\n"
+)
+_PLAINTEXT = "text/plain; charset=utf-8"
+
+
+def render_latest() -> tuple[bytes, str]:
+    """Return `(body, content_type)` for the /metrics endpoint.
+
+    Single lazy-detection point for the prometheus exposition side,
+    mirroring `_ensure_metrics()` for the recording side: if the lib
+    isn't importable we hand back a self-explaining plaintext body
+    (never raise -- a metrics scrape must not be able to 500 a
+    worker). Content type is the Prometheus exposition format when
+    available so Prometheus parses it correctly.
+    """
+    if not _ensure_metrics():
+        return _METRICS_UNAVAILABLE, _PLAINTEXT
+    try:
+        from prometheus_client import (  # type: ignore
+            CONTENT_TYPE_LATEST,
+            generate_latest,
+        )
+
+        return generate_latest(), CONTENT_TYPE_LATEST
+    except Exception:  # noqa: BLE001 -- never let a scrape crash the app
+        return _METRICS_UNAVAILABLE, _PLAINTEXT
+
+
 __all__ = [
     "record_llm_call",
     "record_refusal",
     "record_request",
     "record_tool_call",
+    "render_latest",
 ]
