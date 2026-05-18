@@ -94,8 +94,23 @@ class Classification:
 MARGIN_HIGH = 0.10
 """Above this margin, classifier is confident -- route without warning."""
 
-MARGIN_LOW = 0.05
-"""Below this margin, classifier is uncertain -- ask the user."""
+MARGIN_LOW = 0.03
+"""Below this margin, classifier is uncertain -- ask the user.
+
+Lowered 0.05 -> 0.03 from the 2026-05-17 full eval. 34/184 turns
+(18.5%) hit the clarification chip; in 18 of those the classifier had
+ALREADY picked the gold-correct intent (`actual_intent == gold_intent`)
+and bounced only because the #1/#2 *intent* margin was <0.05. Those
+pairs were semantically ADJACENT library topics (ILL~circulation,
+tech_checkout~adobe, databases~digital_collections, loan_policy~
+account) -- a thin margin there is topic adjacency the single
+tool-calling agent handles fine, not genuine user ambiguity. The plan
+requires clarification to be RARE and scope/building-bound, so 18.5%
+is a defect. 0.03 is a conservative, monotonic step (strictly fewer
+needless chips, no exemplar overfitting). The precise final value /
+a high-confidence-score bypass is to be calibrated from the new
+`clf_score`/`clf_margin`/`clf_candidates` eval telemetry on the next
+run -- this constant stays the single tuning knob, never buried."""
 
 SCORE_FLOOR = 0.50
 """Absolute top-1 cosine-similarity floor. Below this, NO exemplar is
