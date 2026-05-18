@@ -149,6 +149,15 @@ LIBRARY_ALIASES: dict[str, Library] = {
     "regional depository": "sword",
     "the depository": "sword",
     "sword": "sword",
+    # Common student phrasings / misspellings (operator-reported:
+    # students ask about recalls/circulation using these). Bare
+    # "depository" is unambiguous in this domain -> SWORD. "sw deposit"
+    # carries the "sw " prefix so it can't collide with general
+    # "deposit" usage (e.g. thesis deposit).
+    "swod": "sword",
+    "sw depository": "sword",
+    "sw deposit": "sword",
+    "depository": "sword",
 }
 
 CAMPUS_ALIASES: dict[str, Campus] = {

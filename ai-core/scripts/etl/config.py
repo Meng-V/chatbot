@@ -232,6 +232,25 @@ LIBGUIDE_SEED: Final[tuple[tuple[str, str, str, Optional[str]], ...]] = (
      "all", "all", None),
     ("https://libguides.lib.miamioh.edu/mul-circulation-policies",
      "all", "all", None),
+    # Circulation-policy SUBPAGES students actually ask about. The seed
+    # registry is non-recursive (curated > bulk), so seeding the parent
+    # guide above does NOT pull these in -- each subpage is its own URL
+    # and must be listed explicitly. All university-wide ("all"/"all"):
+    # they're Miami circulation policy, not a single campus's content
+    # (recall-request even has a dedicated SWORD/depository section).
+    #   - recall-request: students ask via "SWOD" / "SW deposit" /
+    #     "SW depository" / "recall"; covers SWORD remote-storage
+    #     retrieval (2-3 business days) + hold-shelf timelines.
+    #   - loan-periods-fines / loan-periods-ohiolink-ill: the two
+    #     distinct renewal paths the operator ruled for renew_basic
+    #     (Miami materials vs OhioLINK/ILL); gold #59 cites these.
+    # All three HEAD-verified 200, no redirect, 2026-05-17.
+    ("https://libguides.lib.miamioh.edu/mul-circulation-policies/recall-request",
+     "all", "all", None),
+    ("https://libguides.lib.miamioh.edu/mul-circulation-policies/loan-periods-fines",
+     "all", "all", None),
+    ("https://libguides.lib.miamioh.edu/mul-circulation-policies/loan-periods-ohiolink-ill",
+     "all", "all", None),
     ("https://libguides.lib.miamioh.edu/reserves-textbooks/",
      "all", "all", None),
 )
