@@ -148,6 +148,15 @@ class EvalResult:
     input_tokens: Optional[int] = None
     cached_input_tokens: Optional[int] = None
     output_tokens: Optional[int] = None
+    # Classifier telemetry (FIX #1: clarification-gate calibration).
+    # classify() was previously computed for routing then discarded;
+    # persisting score/margin/candidates lets MARGIN_LOW and a future
+    # high-confidence bypass be tuned from real eval data rather than
+    # guessed. clf_candidates is the top-k [[intent, score], ...].
+    clf_score: Optional[float] = None
+    clf_margin: Optional[float] = None
+    clf_needs_clarification: Optional[bool] = None
+    clf_candidates: Optional[list] = None
 
 
 @dataclass
@@ -664,13 +673,27 @@ def run_eval(
             # let the consecutive-failure circuit breaker stop a
             # hard-down tunnel cleanly with everything-so-far on disk.
             try:
+                # Classify once per turn. Drives routing in the real
+                # branch AND is persisted on `result` as telemetry so
+                # the clarification gate (MARGIN_LOW / a future
+                # high-confidence bypass) can be calibrated from eval
+                # data -- this was previously computed and discarded.
+                pre_classification = classifier.classify(q.question)
+                result.clf_score = pre_classification.score
+                result.clf_margin = pre_classification.margin
+                result.clf_needs_clarification = (
+                    pre_classification.needs_clarification
+                )
+                result.clf_candidates = [
+                    [str(_i), float(_sc)]
+                    for _i, _sc in (pre_classification.candidates or [])
+                ]
                 if with_real_llm:
                     # Pre-resolve scope + intent so the real search_kb
                     # tool filters/boosts to the right campus/library/
                     # featured-service for this turn. The orchestrator
                     # re-resolves both internally (deterministic) and
                     # arrives at the same values.
-                    pre_classification = classifier.classify(q.question)
                     _s = resolve_scope(
                         q.question,
                         session_origin_campus=q.needs_session_origin,  # type: ignore[arg-type]
@@ -1057,6 +1080,10 @@ def _result_row(r: "EvalResult") -> dict:
         "input_tokens": r.input_tokens,
         "cached_input_tokens": r.cached_input_tokens,
         "output_tokens": r.output_tokens,
+        "clf_score": r.clf_score,
+        "clf_margin": r.clf_margin,
+        "clf_needs_clarification": r.clf_needs_clarification,
+        "clf_candidates": r.clf_candidates,
         # Full answer LAST (longest field) so the line stays greppable
         # up front even when truncated in a pager.
         "bot_answer": r.bot_answer,
