@@ -873,6 +873,150 @@ async def provideMoreDetails(sid, data):
         }), to=sid)
 
 # ---------------------------------------------------------------------------
+# Rollout Gap 1: ADDITIVE v2 Socket.IO path (/smartchatbot/v2/socket.io)
+# ---------------------------------------------------------------------------
+# RolloutFlag.js already routes flagged sessions to that path; nothing
+# served it (every entrypoint above calls the legacy library_graph).
+# This serves it with the rebuilt orchestrator via run_turn.
+#
+# SAFETY: the legacy `sio` server, its handlers, and the line-336
+# `socketio.ASGIApp(sio, ...)` object are BYTE-UNCHANGED. We only WRAP
+# that object as the fall-through of a new outer ASGIApp, and register
+# v2 handlers under distinct names (sio_v2.on(...)) so they cannot
+# shadow the legacy module-level connect/message/disconnect. Legacy
+# sessions are provably unaffected; uvicorn still serves
+# `src.main:app_sio`.
+#
+# Deps are built LAZILY on first v2 message (NEVER at import) and
+# cached. A build failure (no OpenAI credit / Weaviate down) degrades
+# ONLY v2 sessions to a graceful error -- it cannot break app boot or
+# the legacy path.
+#
+# OPERATOR LIVE-VERIFY (not offline-testable -- needs real OpenAI +
+# Weaviate + Postgres): with VITE_V2_ROLLOUT_PERCENT=0, open `?v2=1`,
+# confirm a cited answer renders AND a no-flag session is unchanged,
+# BEFORE raising the rollout percentage.
+from src.graph.v2_serving import handle_v2_message, build_v2_deps  # noqa: E402
+
+sio_v2 = socketio.AsyncServer(
+    async_mode="asgi",
+    cors_allowed_origins=socketio_cors,
+    logger=False,
+    engineio_logger=False,
+)
+_v2_deps = None
+_v2_deps_error: Exception | None = None
+
+
+def _get_v2_deps():
+    """Lazy singleton; built on first v2 message, never at import.
+    A prior failure is sticky (don't hammer a down dependency)."""
+    global _v2_deps, _v2_deps_error
+    if _v2_deps is not None:
+        return _v2_deps
+    if _v2_deps_error is not None:
+        raise _v2_deps_error
+    try:
+        _v2_deps = build_v2_deps()
+        return _v2_deps
+    except Exception as e:  # noqa: BLE001
+        _v2_deps_error = e
+        raise
+
+
+async def _v2_connect(sid, environ):
+    logging.info(f"🔌 [v2] Client connected: {sid}")
+    conversation_id = await create_conversation()
+    client_conversations[sid] = conversation_id
+    await sio_v2.emit(
+        "status",
+        {"status": "connected", "conversationId": conversation_id},
+        to=sid,
+    )
+
+
+async def _v2_disconnect(sid):
+    logging.info(f"🔌 [v2] Client disconnected: {sid}")
+    client_conversations.pop(sid, None)
+
+
+async def _v2_message(sid, data):
+    text_input = (
+        data
+        if isinstance(data, str)
+        else (data.get("message", "") if isinstance(data, dict) else "")
+    )
+    conversation_id = client_conversations.get(sid)
+    if not conversation_id:
+        conversation_id = await create_conversation()
+        client_conversations[sid] = conversation_id
+    try:
+        await add_message(conversation_id, "user", text_input)
+        history = await get_conversation_history(conversation_id, limit=10)
+        try:
+            deps = _get_v2_deps()
+        except Exception as e:  # noqa: BLE001
+            logging.error(f"❌ [v2] deps unavailable: {e}", exc_info=True)
+            await sio_v2.emit(
+                "message",
+                json_serializable(
+                    {
+                        "messageId": None,
+                        "message": (
+                            "The v2 assistant is temporarily unavailable. "
+                            "Please try again or contact a librarian."
+                        ),
+                        "conversationId": conversation_id,
+                        "error": "v2_deps_unavailable",
+                    }
+                ),
+                to=sid,
+            )
+            return
+        wire = await handle_v2_message(
+            data,
+            deps,
+            conversation_id=conversation_id,
+            conversation_history=history,
+        )
+        message_id = await add_message(
+            conversation_id, "assistant", wire.get("message", "") or ""
+        )
+        wire["messageId"] = message_id
+        await sio_v2.emit("message", json_serializable(wire), to=sid)
+    except Exception as e:  # noqa: BLE001
+        logging.error(f"❌ [v2] Error: {e}", exc_info=True)
+        await sio_v2.emit(
+            "message",
+            json_serializable(
+                {
+                    "messageId": None,
+                    "message": (
+                        "I encountered an error. Please try again or "
+                        "contact a librarian."
+                    ),
+                    "error": str(e),
+                }
+            ),
+            to=sid,
+        )
+
+
+sio_v2.on("connect", _v2_connect)
+sio_v2.on("disconnect", _v2_disconnect)
+sio_v2.on("message", _v2_message)
+
+# Wrap (never mutate) the legacy ASGIApp. v2 path -> sio_v2; everything
+# else (legacy socket path + FastAPI) -> the untouched line-336 object.
+_legacy_app_sio = app_sio
+app_sio = socketio.ASGIApp(
+    sio_v2,
+    other_asgi_app=_legacy_app_sio,
+    socketio_path="/smartchatbot/v2/socket.io",
+)
+
+
+# ---------------------------------------------------------------------------
 # Programmatic uvicorn entry point  (preferred on production)
 # Usage:  python -m src.main
 # This passes UVICORN_LOG_CONFIG so every log line has a timestamp.
