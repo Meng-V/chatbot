@@ -42,6 +42,8 @@ from src.api.readiness_router import (
     make_libcal_probe,
 )
 from src.api.admin.smoketest_router import build_smoketest_router
+from src.api.metrics_router import build_metrics_router
+from src.observability.metrics_middleware import MetricsMiddleware
 from src.observability.sentry import init_sentry
 
 # ---------------------------------------------------------------------------
@@ -219,6 +221,11 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Op 3 (Metrics): time every request -> chatbot_request_* metrics.
+# No-ops invisibly until prometheus-client is installed; excludes the
+# /metrics + /health/live infra polls so they don't skew the signal.
+app.add_middleware(MetricsMiddleware)
+
 # Include health/monitoring routers
 app.include_router(health_router)
 app.include_router(summarize_router)
@@ -328,6 +335,10 @@ def _smoketest_ask_bot(question: str) -> dict:
 
 
 app.include_router(build_smoketest_router({"ask_bot": _smoketest_ask_bot}))
+
+# Op 3: Prometheus scrape target. Self-describes a 200 when
+# prometheus-client isn't installed (never 500s a scrape).
+app.include_router(build_metrics_router())
 
 
 # Socket.IO server for real-time communication

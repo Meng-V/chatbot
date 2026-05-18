@@ -27,6 +27,7 @@ dependencies = [
   "dateparser",
   "aiohttp",
   "beautifulsoup4",
+  "prometheus-client",
   "sentry-sdk[fastapi]"
 ]
 
