@@ -42,6 +42,7 @@ from src.api.readiness_router import (
     make_libcal_probe,
 )
 from src.api.admin.smoketest_router import build_smoketest_router
+from src.observability.sentry import init_sentry
 
 # ---------------------------------------------------------------------------
 # .env loading — MUST NOT follow symlinks on production
@@ -73,6 +74,13 @@ print(f"Loading .env from: {env_path}")
 setup_logging()
 logging.info(f"📂 .env loaded from: {env_path}  (root_dir={root_dir})")
 logging.info(f"📂 __file__ resolved WITHOUT symlinks: {_this_file}")
+
+# Op 3 (non-negotiable launch floor): wire Sentry BEFORE the FastAPI
+# app is created so sentry-sdk's auto-enabled FastAPI/Starlette
+# integration instruments the whole request path. No-op unless
+# SENTRY_DSN is set AND sentry-sdk is installed -- merging this is a
+# zero-behavior-change until an operator configures the DSN.
+init_sentry()
 
 
 def json_serializable(obj):
