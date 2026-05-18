@@ -6,7 +6,7 @@ import logging
 from decimal import Decimal
 from datetime import datetime, date
 import socketio
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from dotenv import load_dotenv
@@ -46,6 +46,12 @@ from src.observability.request_id_middleware import RequestIdMiddleware
 from src.api.metrics_router import build_metrics_router
 from src.observability.metrics_middleware import MetricsMiddleware
 from src.observability.sentry import init_sentry
+from src.api.rate_limit import (
+    MessageRejected,
+    check_rate,
+    client_ip_from_request,
+    validate_message,
+)
 
 # ---------------------------------------------------------------------------
 # .env loading — MUST NOT follow symlinks on production
@@ -364,10 +370,19 @@ app_sio = socketio.ASGIApp(sio, other_asgi_app=app, socketio_path="/smartchatbot
 client_conversations = {}
 
 @app.post("/ask")
-async def ask_http(payload: dict):
+async def ask_http(payload: dict, request: Request):
     """Main endpoint using LangGraph orchestrator."""
-    message = payload.get("message", "")
     conversation_id = payload.get("conversationId")
+    # Abuse / cost guard. This endpoint is unauthenticated (public
+    # library bot), so bound input size + per-IP rate BEFORE any DB
+    # write or LLM call -- the only thing between a scripted client
+    # and an unbounded OpenAI bill. check_rate fails OPEN internally,
+    # so a limiter bug can't deny a legitimate user.
+    try:
+        message = validate_message(payload.get("message", ""))
+        check_rate(client_ip_from_request(request))
+    except MessageRejected as mr:
+        raise HTTPException(status_code=mr.code, detail=mr.reason)
     
     # Create logger with unique request ID
     logger = AgentLogger(request_id=f"http_{int(time.time()*1000)}")
@@ -506,6 +521,22 @@ async def message(sid, data):
     """
     # Parse message (support both string and dict formats)
     text_input = data if isinstance(data, str) else (data.get("message", "") if isinstance(data, dict) else "")
+
+    # Abuse / cost guard (unauthenticated socket): bound input size +
+    # per-sid rate BEFORE any DB write or LLM call. On reject, surface
+    # the reason in-chat on the same "message" channel the error path
+    # uses, then stop. check_rate fails OPEN so a limiter bug can't
+    # lock out a legitimate user.
+    try:
+        text_input = validate_message(text_input)
+        check_rate(f"ws:{sid}")
+    except MessageRejected as _mr:
+        await sio.emit("message", json_serializable({
+            "message": _mr.reason,
+            "conversationId": client_conversations.get(sid),
+            "error": True,
+        }), to=sid)
+        return
     
     # Get or create conversation
     conversation_id = client_conversations.get(sid)
