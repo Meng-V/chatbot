@@ -651,11 +651,20 @@ def _long_period_hours_response(
     (rule B). Deterministic, zero-LLM, cited -> the URL is real and
     verified so it passes any downstream URL check."""
     url = _HOURS_PAGE_URL.get(scope.campus, _HOURS_PAGE_URL["oxford"])
+    # Operator ruling 2026-05-17 (hr_thanksgiving): for a specific
+    # holiday / far-off date the bot must EXPLAIN that the date is
+    # beyond what it can check live and hand the lookup back to the
+    # user -- not just drop a URL. (The complementary "<=1 month away
+    # -> resolve the date + live LibCal lookup" branch is a deferred
+    # follow-up: it needs a named-date/relative-date resolver and a
+    # LibCal single-date call, which triggers the model/API freshness
+    # rule. No current gold case exercises it; not bundled here.)
     msg = (
-        "Library hours vary by term, break, and holiday, so the most "
-        "reliable place to see them for a date range is the hours "
-        f"page: {url} -- it always shows the current and upcoming "
-        "schedule."
+        "That's further out than I can look up live -- my hours check "
+        "only covers the near term, and the schedule shifts by term, "
+        "break, and holiday, so I can't reliably tell you that date "
+        "myself. The library's hours page always shows the current and "
+        f"upcoming schedule, so please check the date you need there: {url}."
     )
     return TurnResponse(
         answer=msg,
