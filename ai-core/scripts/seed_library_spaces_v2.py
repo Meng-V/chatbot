@@ -112,7 +112,7 @@ SPACES: list[LibrarySpaceRow] = [
         address="151 S. Campus Ave, Oxford, OH 45056",
         phone="513-529-4141",
         libcal_id="8113",
-        capacity=1200,
+        capacity=8000,
         equipment=[
             "study_rooms", "group_study_rooms",
             "computers", "printers", "scanners",
@@ -124,7 +124,7 @@ SPACES: list[LibrarySpaceRow] = [
             "course_reserves", "research_appointments",
             "av_production", "makerspace",
         ],
-        hours_source="https://www.lib.miamioh.edu/about/hours/",
+        hours_source="https://www.lib.miamioh.edu/about/locations/hours/",
         source_url="https://www.lib.miamioh.edu/about/locations/king-library/",
     ),
 
@@ -136,7 +136,7 @@ SPACES: list[LibrarySpaceRow] = [
         address="Alumni Hall, 100 Bishop Cir, Oxford, OH 45056",
         phone="513-529-6638",
         libcal_id="8116",
-        capacity=80,
+        capacity=1000,
         equipment=[
             "study_tables", "computers", "printers", "scanners",
             "art_books", "architecture_drawings",
@@ -147,7 +147,7 @@ SPACES: list[LibrarySpaceRow] = [
             "printing", "ill_pickup", "study_rooms",
             "course_reserves", "research_appointments",
         ],
-        hours_source="https://www.lib.miamioh.edu/about/hours/",
+        hours_source="https://www.lib.miamioh.edu/about/locations/hours/",
         source_url="https://www.lib.miamioh.edu/about/locations/art-arch/",
     ),
 
@@ -162,7 +162,7 @@ SPACES: list[LibrarySpaceRow] = [
         address="King Library, Third Floor, 151 S. Campus Ave, Oxford, OH 45056",
         phone="513-529-3323",
         libcal_id="8424",
-        capacity=20,  # reading room only -- by appointment
+        capacity=40,  # reading room only -- by appointment
         equipment=[
             "rare_books_reading_room", "white_gloves",
             "scanning_station", "microfilm_reader",
@@ -186,7 +186,7 @@ SPACES: list[LibrarySpaceRow] = [
         address="1601 University Blvd, Hamilton, OH 45011",
         phone="513-785-3235",
         libcal_id="9226",
-        capacity=180,
+        capacity=300,
         equipment=[
             "study_rooms", "group_study_rooms",
             "computers", "printers", "scanners", "whiteboards",
@@ -211,7 +211,7 @@ SPACES: list[LibrarySpaceRow] = [
         address="4200 N. University Blvd, Middletown, OH 45042",
         phone="513-727-3222",
         libcal_id="9227",
-        capacity=120,
+        capacity=300,
         equipment=[
             "study_rooms", "group_study_rooms",
             "computers", "printers", "scanners", "whiteboards",
