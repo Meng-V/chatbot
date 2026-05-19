@@ -59,21 +59,21 @@ from scripts.cost_rollup import (  # noqa: E402
 
 
 def test_no_cache_billed_input_plus_output() -> None:
-    # gpt-5.4-mini: input $0.15, output $0.60 per 1M tokens.
+    # gpt-5.4-mini (verified 2026-05-19): input $0.75, output $4.50 /1M.
     cost = compute_cost_usd("gpt-5.4-mini", input_tokens=1_000_000, cached_input_tokens=0, output_tokens=1_000_000)
-    assert abs(cost - (0.15 + 0.60)) < 1e-9
+    assert abs(cost - (0.75 + 4.50)) < 1e-9
 
 
 def test_full_cache_only_cached_rate() -> None:
-    # gpt-5.4-mini: cached_input $0.075 per 1M.
+    # gpt-5.4-mini cached_input $0.08 /1M (verified).
     cost = compute_cost_usd("gpt-5.4-mini", input_tokens=1_000_000, cached_input_tokens=1_000_000, output_tokens=0)
-    assert abs(cost - 0.075) < 1e-9
+    assert abs(cost - 0.08) < 1e-9
 
 
 def test_partial_cache_weighted_blend() -> None:
     # 60% cached, 40% uncached on 1M input tokens; no output.
     cost = compute_cost_usd("gpt-5.4-mini", input_tokens=1_000_000, cached_input_tokens=600_000, output_tokens=0)
-    expected = 0.4 * 0.15 + 0.6 * 0.075
+    expected = 0.4 * 0.75 + 0.6 * 0.08
     assert abs(cost - expected) < 1e-9
 
 
@@ -86,8 +86,8 @@ def test_cached_exceeds_input_caps_at_input() -> None:
     """If telemetry ever reports cached > input (it shouldn't), we
     must NOT bill negative tokens. Cap cached at input."""
     cost = compute_cost_usd("gpt-5.4-mini", input_tokens=100, cached_input_tokens=10_000, output_tokens=0)
-    # Effectively all 100 input tokens are cached.
-    expected = 100 * 0.075 / 1_000_000
+    # Effectively all 100 input tokens are cached (verified $0.08/1M).
+    expected = 100 * 0.08 / 1_000_000
     assert abs(cost - expected) < 1e-12
 
 
@@ -108,19 +108,25 @@ def test_rollup_empty_returns_empty() -> None:
     assert rollup_by_model([], date(2026, 4, 25)) == []
 
 
-def test_rollup_aggregates_across_call_sites() -> None:
+def test_rollup_per_model_callsite() -> None:
+    """Option A: one row per (model, call_site) -- so gpt-5.4-mini
+    used by agent_loop AND synthesizer is TWO rows, not collapsed.
+    call_count = #ModelTokenUsage rows in the bucket."""
     rows = [
         UsageRow(model="gpt-5.4-mini", input_tokens=1000, cached_input_tokens=500, output_tokens=200, call_site="agent_loop"),
+        UsageRow(model="gpt-5.4-mini", input_tokens=900, cached_input_tokens=100, output_tokens=50, call_site="agent_loop"),
         UsageRow(model="gpt-5.4-mini", input_tokens=2000, cached_input_tokens=1500, output_tokens=300, call_site="synthesizer"),
         UsageRow(model="gpt-5.2", input_tokens=500, cached_input_tokens=400, output_tokens=100, call_site="synthesizer"),
     ]
     out = rollup_by_model(rows, date(2026, 4, 25))
-    assert len(out) == 2
-    by_model = {r.model: r for r in out}
-    assert by_model["gpt-5.4-mini"].input_tokens == 3000
-    assert by_model["gpt-5.4-mini"].cached_input_tokens == 2000
-    assert by_model["gpt-5.4-mini"].output_tokens == 500
-    assert by_model["gpt-5.2"].input_tokens == 500
+    assert len(out) == 3  # (mini,agent_loop) (mini,synth) (5.2,synth)
+    by = {(r.model, r.call_site): r for r in out}
+    al = by[("gpt-5.4-mini", "agent_loop")]
+    assert al.input_tokens == 1900 and al.cached_input_tokens == 600
+    assert al.output_tokens == 250 and al.call_count == 2
+    assert by[("gpt-5.4-mini", "synthesizer")].input_tokens == 2000
+    assert by[("gpt-5.4-mini", "synthesizer")].call_count == 1
+    assert by[("gpt-5.2", "synthesizer")].input_tokens == 500
 
 
 def test_rollup_usd_computed_on_aggregates_not_per_row() -> None:
@@ -134,7 +140,9 @@ def test_rollup_usd_computed_on_aggregates_not_per_row() -> None:
         UsageRow(model="gpt-5.4-mini", input_tokens=333_334, cached_input_tokens=0, output_tokens=0),
     ]
     out = rollup_by_model(rows, date(2026, 4, 25))[0]
-    expected = 1_000_000 * 0.15 / 1_000_000  # = 0.15
+    # No call_site set -> all bucket to (gpt-5.4-mini, "unknown").
+    assert out.call_site == "unknown" and out.call_count == 3
+    expected = 1_000_000 * 0.75 / 1_000_000  # verified input $0.75/1M
     assert abs(out.usd - expected) < 1e-12
 
 
@@ -196,15 +204,19 @@ def test_daily_cost_row_serializes_to_dict() -> None:
     row = DailyCostRow(
         the_date=date(2026, 4, 25),
         model="gpt-5.4-mini",
+        call_site="synthesizer",
         input_tokens=1_000_000,
         cached_input_tokens=500_000,
         output_tokens=100_000,
+        call_count=42,
         usd=0.123456789,
     )
     d = row.as_dict()
     assert d["date"] == "2026-04-25"
     assert d["model"] == "gpt-5.4-mini"
+    assert d["call_site"] == "synthesizer"
     assert d["input_tokens"] == 1_000_000
+    assert d["call_count"] == 42
     # USD rounded to 4 decimal places for display.
     assert d["usd"] == 0.1235
 
@@ -219,7 +231,7 @@ def main() -> int:
         test_zero_tokens_returns_zero,
         test_embedding_output_is_free,
         test_rollup_empty_returns_empty,
-        test_rollup_aggregates_across_call_sites,
+        test_rollup_per_model_callsite,
         test_rollup_usd_computed_on_aggregates_not_per_row,
         test_rollup_preserves_date,
         test_anomaly_ratio_zero_avg_returns_zero,
