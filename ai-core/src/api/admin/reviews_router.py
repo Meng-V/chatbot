@@ -24,6 +24,10 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Optional
 
+# review_queries imports only stdlib (prisma is used via the injected
+# db handle), so this is safe to import without the prisma client.
+from src.api.admin.review_queries import conversation_detail, list_flagged
+
 
 @dataclass(frozen=True)
 class ReviewVerdict:
@@ -84,18 +88,41 @@ def build_reviews_router(deps: dict) -> Any:
         offset: int = 0,
         _user=Depends(require_librarian),
     ):
-        """List recent conversations this librarian should review.
+        """List recent messages a librarian should review (newest first).
 
-        Filter presets:
-          - `low_confidence`  -- Message.confidence == 'low'
-          - `thumbs_down`     -- Message.userRating == 'down'
-          - `cross_campus`    -- refusalTrigger == 'cross_campus_mismatch'
+        filter_preset (default `flagged` = the union below):
+          - `flagged`        -- thumbs-down OR refusal OR low-confidence
+          - `thumbs_down`    -- Message.isPositiveRated == False
+          - `refusal`        -- Message.wasRefusal == True
+          - `low_confidence` -- Message.confidence == 'low'
+          - `all`            -- no filter (paginated)
+
+        v1 is global (not subject/campus-scoped): the operator
+        workflow is "spot a bad answer, report its id+time" -- scoping
+        by librarian subject is a deferred enhancement, not needed to
+        find questionable answers.
         """
-        # TODO(week 7): wire Prisma query: Message join ChunkProvenance
-        # join Librarian via subject so we can scope by librarian's
-        # subjects + campus. Returns list of {message_id, question,
-        # answer, citations, confidence, scope, refusal_trigger}.
-        raise HTTPException(status_code=501, detail="Not yet wired (week 7)")
+        rows = await list_flagged(
+            db,
+            filter_preset=(filter_preset or "flagged"),
+            limit=limit,
+            offset=offset,
+        )
+        return {"count": len(rows), "filter": filter_preset or "flagged",
+                "results": rows}
+
+    @router.get("/conversation/{conversation_id}")
+    async def review_conversation(
+        conversation_id: str,
+        _user=Depends(require_librarian),
+    ):
+        """Full read-only drill-down for one conversation: id, time,
+        transcript, token usage, tools called, human-handoff, outcome,
+        feedback. This is what a librarian opens to judge an answer."""
+        detail = await conversation_detail(db, conversation_id)
+        if detail is None:
+            raise HTTPException(status_code=404, detail="conversation not found")
+        return detail
 
     @router.post("")
     async def submit_verdict(
@@ -113,7 +140,13 @@ def build_reviews_router(deps: dict) -> Any:
         if err:
             raise HTTPException(status_code=400, detail=err)
         # TODO(week 7): db.librarianreview.create({...})
-        raise HTTPException(status_code=501, detail="Not yet wired (week 7)")
+        raise HTTPException(
+            status_code=501,
+            detail="v1 is read-only by design: librarians report a bad "
+            "answer's id+time to the maintainer, who changes backend "
+            "behavior. In-UI verdict-writing/digests are a deferred "
+            "enhancement, not part of the v1 review surface.",
+        )
 
     @router.get("/queue-count")
     async def queue_count(
@@ -121,7 +154,13 @@ def build_reviews_router(deps: dict) -> Any:
         _user=Depends(require_librarian),
     ):
         """Count of unreviewed turns for the Monday-morning digest email."""
-        raise HTTPException(status_code=501, detail="Not yet wired (week 7)")
+        raise HTTPException(
+            status_code=501,
+            detail="v1 is read-only by design: librarians report a bad "
+            "answer's id+time to the maintainer, who changes backend "
+            "behavior. In-UI verdict-writing/digests are a deferred "
+            "enhancement, not part of the v1 review surface.",
+        )
 
     return router
 

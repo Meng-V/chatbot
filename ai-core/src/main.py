@@ -352,6 +352,37 @@ app.include_router(build_smoketest_router({"ask_bot": _smoketest_ask_bot}))
 # prometheus-client isn't installed (never 500s a scrape).
 app.include_router(build_metrics_router())
 
+# Op 1: subject-librarian review surface (read-only). FAIL-CLOSED:
+# mounted ONLY when ADMIN_API_TOKEN is set, so a misconfigured deploy
+# can never expose raw conversation logs (user input + PII). The
+# token gates both the JSON API and the HTML pages (header or ?key=).
+_admin_token = os.getenv("ADMIN_API_TOKEN", "").strip()
+if _admin_token:
+    from src.api.admin.reviews_router import build_reviews_router
+    from src.api.admin.review_view_router import (
+        build_review_view_router,
+        make_token_guard,
+    )
+    from src.database.prisma_client import get_prisma_client
+
+    _guard = make_token_guard(_admin_token)
+    _admin_deps = {
+        "db": get_prisma_client(),
+        "require_librarian": _guard,  # reviews_router's auth dep
+        "guard": _guard,              # review_view_router's auth dep
+    }
+    app.include_router(build_reviews_router(_admin_deps))
+    app.include_router(build_review_view_router(_admin_deps))
+    logging.info(
+        "Op1 review surface mounted (ADMIN_API_TOKEN set): "
+        "/admin/review (HTML) + /admin/reviews (JSON)."
+    )
+else:
+    logging.info(
+        "Op1 review surface NOT mounted -- ADMIN_API_TOKEN unset "
+        "(fail-closed; conversation logs stay private)."
+    )
+
 
 # Socket.IO server for real-time communication
 # Allow all origins in development for easier debugging
