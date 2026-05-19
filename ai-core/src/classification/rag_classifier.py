@@ -34,14 +34,15 @@ from src.classification.category_examples import (
     ALL_CATEGORIES,
 )
 
-OPENAI_MODEL = os.getenv("OPENAI_MODEL", "o4-mini")
+from src.config.models import resolve_model, is_reasoning_model  # noqa: E402
+OPENAI_MODEL = resolve_model("basic")  # env: LLM_MODEL_BASIC (default gpt-5.4-mini)
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
 WEAVIATE_HOST = os.getenv("WEAVIATE_HOST", "localhost")
 WEAVIATE_SCHEME = os.getenv("WEAVIATE_SCHEME", "http")
 # No API key needed for local Docker
 
 llm_kwargs = {"model": OPENAI_MODEL, "api_key": OPENAI_API_KEY}
-if not OPENAI_MODEL.startswith("o"):
+if not is_reasoning_model(OPENAI_MODEL):  # reasoning models reject temperature
     llm_kwargs["temperature"] = 0
 llm = ChatOpenAI(**llm_kwargs)
 
