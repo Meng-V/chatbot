@@ -230,10 +230,11 @@ Respond with ONLY valid JSON:
 }}"""
         
         try:
-            model_name = os.getenv("OPENAI_MODEL", "o4-mini")
+            from src.config.models import resolve_model, is_reasoning_model
+            model_name = resolve_model("basic")  # env: LLM_MODEL_BASIC
             api_key = os.getenv("OPENAI_API_KEY", "")
             llm_kwargs = {"model": model_name, "api_key": api_key}
-            if not model_name.startswith("o"):
+            if not is_reasoning_model(model_name):  # reasoning -> no temperature
                 llm_kwargs["temperature"] = 0
             llm = ChatOpenAI(**llm_kwargs)
             

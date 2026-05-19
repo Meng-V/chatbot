@@ -190,7 +190,7 @@ def judge_answer(
     *,
     judge_llm: JudgeLLM,
     prefix_id: str = "judge_v1",
-    model: str = "gpt-5.4-mini",
+    model: str = "",
 ) -> JudgeOutcome:
     """Score one bot answer.
 
@@ -201,9 +201,12 @@ def judge_answer(
             registered in src/prompts/judge_v1.py. Bump only if the
             rubric changes substantively (and update the eval gold
             set's expected verdicts in the same PR).
-        model: which model to use. Default gpt-5.4-mini -- the judge
-            runs once per question per regression run, so cheap is
-            fine; quality matters less than consistency.
+        model: which model to use. Default "" -> resolve_model("cheap")
+            (env LLM_MODEL_CHEAP, default gpt-5.4-nano). The judge is
+            high-volume mechanical rubric scoring once per question per
+            regression run -- nano is ~3.7x cheaper than mini and the
+            single biggest eval-cost line; consistency matters more
+            than reasoning depth here. Pass an explicit id to override.
 
     Returns:
         JudgeOutcome with parsed Verdict + raw response (for logs).
@@ -214,6 +217,9 @@ def judge_answer(
             question, and continues with the next.
     """
     suffix = build_judge_dynamic_suffix(request)
+    if not model:
+        from src.config.models import resolve_model
+        model = resolve_model("cheap")  # nano: cheapest tier for the judge
     raw, _usage = judge_llm(
         prefix_id=prefix_id,
         dynamic_suffix=suffix,
