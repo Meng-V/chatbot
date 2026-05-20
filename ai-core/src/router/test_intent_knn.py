@@ -113,15 +113,36 @@ def test_exact_match_high_score_high_margin() -> None:
 
 
 def test_low_margin_triggers_needs_clarification() -> None:
-    # Two exemplars whose vectors will both light up for the test query.
+    # Two exemplars in DIFFERENT capability tiers, so the
+    # same-capability bypass (intent_knn._capability_signature) does
+    # NOT apply -- this tests the raw low-margin gate.
+    # account = REFUSE; hours = READY -> different capabilities.
     knn = _build([
-        ("hours", "hours room"),       # axis 0 + axis 1
-        ("room_booking", "room hours"),# axis 1 + axis 0 (identical vec!)
+        ("account", "hours room"),       # axis 0 + axis 1
+        ("hours", "room hours"),         # axis 1 + axis 0 (identical vec!)
     ])
     out = knn.classify("hours room")
     # Tied scores -> margin near 0 -> needs_clarification
     assert out.margin < MARGIN_LOW, f"expected low margin; got {out.margin}"
     assert out.needs_clarification is True
+
+
+def test_low_margin_same_capability_skips_clarification() -> None:
+    """Same-capability bypass: when the top-2 intents both produce
+    the same downstream outcome (both READY, or same canonical_url,
+    or same refusal_trigger), don't bother the user. The 2026-05-20
+    full eval surfaced ~10 cases where clarification fired on
+    adjacent READY intents (tech_checkout vs renewal, etc.) when
+    the agent would have answered both the same way."""
+    # Both READY intents -> outcome is "run the agent" either way.
+    knn = _build([
+        ("hours", "hours room"),
+        ("room_booking", "room hours"),  # identical vec -> tied score
+    ])
+    out = knn.classify("hours room")
+    assert out.margin < MARGIN_LOW, f"expected low margin; got {out.margin}"
+    # Bypass kicks in: both READY -> no clarification needed.
+    assert out.needs_clarification is False
 
 
 def test_per_intent_best_score_wins_aggregation() -> None:
@@ -377,6 +398,7 @@ def main() -> int:
         test_empty_exemplars_returns_out_of_scope_clarify,
         test_exact_match_high_score_high_margin,
         test_low_margin_triggers_needs_clarification,
+        test_low_margin_same_capability_skips_clarification,
         test_per_intent_best_score_wins_aggregation,
         test_classification_returns_top_k_candidates,
         test_margin_high_no_clarification,
