@@ -248,13 +248,55 @@ class IntentKNN:
                 candidates=ranked,
             )
 
+        # Same-capability bypass: a thin margin between two intents that
+        # produce the SAME OUTCOME for the user (same templated URL, same
+        # refusal trigger, or both run the agent) is not real ambiguity.
+        # The 2026-05-20 full eval surfaced ~10 cases where the bot
+        # clarified between adjacent intents (tech_checkout vs renewal,
+        # space_info vs room_booking, etc.) when both led to the same
+        # answer. Suppress those clarifications.
+        needs_clarification = margin < MARGIN_LOW
+        if needs_clarification and len(ranked) >= 2:
+            top_cap = _capability_signature(ranked[0][0])
+            runner_cap = _capability_signature(ranked[1][0])
+            if top_cap is not None and top_cap == runner_cap:
+                needs_clarification = False
+
         return Classification(
             intent=top_intent,
             score=top_score,
             margin=margin,
-            needs_clarification=margin < MARGIN_LOW,
+            needs_clarification=needs_clarification,
             candidates=ranked,
         )
+
+
+def _capability_signature(intent: str) -> Optional[tuple]:
+    """Hashable signature of an intent's downstream outcome. Two intents
+    with the same signature produce the same user-facing answer.
+
+    Returns None if intent_capabilities can't be imported (test stubs,
+    early-init) -- the caller treats None as "don't apply the bypass."
+    """
+    try:
+        from src.router.intent_capabilities import (
+            CapabilityTier,
+            get_intent_capability,
+        )
+    except Exception:  # noqa: BLE001 -- defensive; never break classify()
+        return None
+    cap = get_intent_capability(intent)
+    # READY intents: outcome is "run the agent" -- same for any pair of
+    # READY intents (agent disambiguates downstream).
+    if cap.tier == CapabilityTier.READY:
+        return ("ready",)
+    # POINT_TO_URL: same canonical_url means same templated response.
+    if cap.tier == CapabilityTier.POINT_TO_URL:
+        return ("point_to_url", cap.canonical_url)
+    # REFUSE: same refusal_trigger means same templated refusal.
+    if cap.tier == CapabilityTier.REFUSE:
+        return ("refuse", cap.refusal_trigger)
+    return None
 
 
 # --- Builder --------------------------------------------------------------
