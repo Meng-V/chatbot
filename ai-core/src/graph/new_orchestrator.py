@@ -633,12 +633,37 @@ _LONG_PERIOD_HOURS_RE = re.compile(
 )
 
 
-def _is_long_period_hours(text: str) -> bool:
-    """True only when the question is about a date range LibCal can't
-    serve. Short-term words win (LibCal handles those, correctly)."""
+def _is_long_period_hours(text: str, today=None) -> bool:
+    """True only when the hours question can't be served live.
+
+    Operator ruling (hr_thanksgiving): a SPECIFIC date <= ~1 month out
+    IS answerable live (let the agent's get_hours handle that exact
+    date) -> NOT long-period. A specific date further out (e.g.
+    Thanksgiving 6 months away), a past date, or an open-ended range
+    ("summer hours") -> long-period -> point-to-page + "too far ahead"
+    explanation (PR #63).
+
+    `today` is injectable for tests; the call site passes none ->
+    real today.
+    """
     t = text or ""
+    # Short-term words always win (today/tonight/tomorrow -> live).
     if _SHORT_TERM_HOURS_RE.search(t):
         return False
+    # Date-aware window check (the new bit).
+    try:
+        from datetime import date as _date
+        from src.scope.date_window import resolve_target_date, within_window
+
+        ref = today or _date.today()
+        d = resolve_target_date(t, today=ref)
+        if d is not None:
+            # Specific date: live iff within the ~1-month window;
+            # otherwise (far future OR in the past) -> long-period.
+            return not within_window(d, today=ref)
+    except Exception:  # noqa: BLE001 -- never let date logic break routing
+        pass
+    # No resolvable specific date -> fall back to open-ended phrasing.
     return bool(_LONG_PERIOD_HOURS_RE.search(t))
 
 
