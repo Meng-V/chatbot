@@ -196,6 +196,88 @@ If your env doesn't have legacy creds (rare), pass `--skip-legacy`.
 Default question is hours-class because hours questions are the most
 LibCal-grounded and least likely to legitimately refuse; override
 with `--question "..."` if you want to probe a specific intent.
+### Run the full real-LLM + judge eval
+
+This is the load-bearing quality measurement — 184 gold cases through
+the v2 stack (classifier + retrieval + agent + synth + judge). Real
+OpenAI, real Weaviate, real Postgres, real verdicts. ~20–30 minutes,
+~$0.30–$0.50 per run (the per-case cost is ~20× cheaper than originally
+budgeted; verified 2026-05-20).
+
+**Prerequisites (all three must be true or the run dies at startup or
+mid-flight with cryptic errors):**
+
+```bash
+# 1. Tunnels up (Weaviate on ulblwebp20, Postgres on ulblwebt04)
+ssh -fN -L 8888:127.0.0.1:8888 -L 50051:127.0.0.1:50051 qum@ulblwebp20.lib.miamioh.edu
+ssh -fN -L 5432:127.0.0.1:5432 qum@ulblwebt04.lib.miamioh.edu
+
+# 2. Verify
+nc -z -w2 127.0.0.1 8888 && nc -z -w2 127.0.0.1 50051 && nc -z -w2 127.0.0.1 5432 \
+  && echo "ALL TUNNELS UP" || echo "TUNNEL MISSING"
+
+# 3. OPENAI_API_KEY in .env (the project's resolve_model("basic") path will use it)
+```
+
+**Run it (note: `.venv/bin/python`, NOT system `python3` — prisma is
+only installed in the venv):**
+
+```bash
+cd ai-core
+.venv/bin/python -m src.eval.run_eval \
+    --with-real-llm --with-judge \
+    --results-out eval_results/full_eval_$(date +%Y%m%d).jsonl \
+    2>&1 | tee eval_results/full_eval_$(date +%Y%m%d).log
+```
+
+Streams per-case JSONL while it runs, so an interrupted run still
+leaves a partial-but-analyzable file behind.
+
+**Analyze the results:**
+
+```bash
+# Aggregate summary (PASS/PARTIAL/FAIL by judge verdict, cache hit, latency)
+.venv/bin/python -m scripts.analyze_eval_results eval_results/full_eval_YYYYMMDD.jsonl
+
+# Per-category PASS/FAIL table
+.venv/bin/python -m scripts.analyze_eval_results <jsonl> --by category
+
+# Per-intent breakdown
+.venv/bin/python -m scripts.analyze_eval_results <jsonl> --by intent
+
+# List every FAIL case with judge verdict + answer preview
+.venv/bin/python -m scripts.analyze_eval_results <jsonl> --fails
+
+# Drill into one specific case (full bot_answer, classifier candidates, tokens)
+.venv/bin/python -m scripts.analyze_eval_results <jsonl> --id fs_makerspace_3d
+
+# The 20 slowest cases (where latency budget lives)
+.venv/bin/python -m scripts.analyze_eval_results <jsonl> --slowest 20
+```
+
+The analyzer is tolerant of partial files — you can run it WHILE the
+eval is still going to spot-check progress without disturbing the
+streaming write.
+
+**Expected ballpark numbers** (refine as more runs come in):
+
+- PASS (correct + refused_correctly): aim for ≥ 75%
+- Scope-resolver match: ≥ 95% (the resolver is rule-based, ought to be near-perfect)
+- Cache hit rate: ≥ 60% across the whole run (first call cold-misses;
+  steady state warms up after ~3 cases)
+- p95 latency: < 30s per case (one slow case can spike this; spot-check
+  --slowest 5 if it's high)
+
+**Gotchas:**
+
+- If startup errors with `Weaviate unreachable -- the SSH tunnel is
+  down`, the runner is doing its job — re-run after the tunnel comes
+  back. Don't try to bypass.
+- If turn errors with `ModuleNotFoundError: No module named 'prisma'`,
+  you're on system python; rerun with `.venv/bin/python`.
+- A run produces ~$0.40 in OpenAI spend; the DailyCost rollup
+  (`scripts.cost_rollup`) WILL show this as a spike. Tag the date in
+  the cost dashboard so it's not flagged as anomaly.
 
 ### Weekly ETL refresh
 
