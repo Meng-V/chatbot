@@ -50,6 +50,7 @@ OFFLINE=(
   src.api.test_rate_limit
   src.config.test_capability_scope
   src.config.test_models
+  src.database.test_corrections_adapter
   src.database.test_urlseen_adapter
   src.eval.test_calibrate_clarify
   src.eval.test_inspect_turn

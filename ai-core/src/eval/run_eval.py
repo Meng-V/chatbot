@@ -461,12 +461,29 @@ def _build_real_deps(
         collection=None,  # resolves WEAVIATE_CHUNK_COLLECTION at request time
     ))
 
+    # Op 2 corrections loader: same wire as v2_serving so the eval
+    # measures exactly what production sees. Safe-degradation: if
+    # Postgres is unreachable the eval logs a warning and continues
+    # without overrides (won't silently fake correction-applied data).
+    from src.database.corrections_adapter import PrismaCorrectionsStore
+    _corrections_store = PrismaCorrectionsStore()
+
+    def _safe_load_corrections():
+        try:
+            return _corrections_store.load_active()
+        except Exception as e:  # noqa: BLE001
+            logger.warning(
+                "eval: ManualCorrection load failed (%s); continuing without overrides",
+                e,
+            )
+            return []
+
     return OrchestratorDeps(
         classifier=classifier,
         tool_registry=registry,
         agent_llm=None,         # use _default_llm_call -> real OpenAI
         synthesizer_llm=None,   # ditto
-        load_corrections=lambda: [],
+        load_corrections=_safe_load_corrections,
         load_url_allowlist=lambda: set(),
         # Real path: wire the cross-campus service guard (plan §8/§9
         # SERVICE_NOT_AT_BUILDING). Reads the canonical seed SPACES, so

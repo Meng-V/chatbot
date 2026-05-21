@@ -159,20 +159,39 @@ def build_v2_deps() -> OrchestratorDeps:
     rollout flag, not a finished production deps bundle. Verify with
     a real `?v2=1` session before raising VITE_V2_ROLLOUT_PERCENT.
     """
+    import logging
     from src.eval.run_eval import _build_classifier
     from src.tools_v2.registry import build_tool_registry
     from src.eval.real_backends import build_eval_backends
     from src.scope.service_availability import build_service_guard
+    from src.database.corrections_adapter import PrismaCorrectionsStore
 
     classifier = _build_classifier()
     registry = build_tool_registry(build_eval_backends())
+
+    # Wire the Op 2 corrections loader. The store re-queries Postgres
+    # per turn (no caching at this layer), so a librarian's inserted
+    # correction takes effect on the next request. Safe-degradation:
+    # if Postgres is unreachable, return empty -- chat keeps working,
+    # we just lose the override layer for this turn.
+    _corrections_store = PrismaCorrectionsStore()
+    _v2_log = logging.getLogger("v2_serving")
+
+    def _safe_load_corrections():
+        try:
+            return _corrections_store.load_active()
+        except Exception as e:  # noqa: BLE001 -- never break a turn over corrections
+            _v2_log.warning(
+                "ManualCorrection load failed (%s); continuing without overrides", e
+            )
+            return []
 
     return OrchestratorDeps(
         classifier=classifier,
         tool_registry=registry,
         agent_llm=None,        # -> orchestrator real-OpenAI default
         synthesizer_llm=None,  # -> ditto
-        load_corrections=lambda: [],
+        load_corrections=_safe_load_corrections,
         load_url_allowlist=lambda: set(),
         # Cross-campus service guard (plan §8/§9). Canonical seed
         # SPACES-backed -> pure/sync, no DB at request time, cannot be
