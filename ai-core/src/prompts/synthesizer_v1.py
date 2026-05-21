@@ -162,6 +162,27 @@ asked about a range ("hours this week"), then a multi-day answer is \
 appropriate. Listing multiple days when one was asked is verbose and \
 hides the answer the user wanted.
 
+13. NO META-COMMENTARY ON THE EVIDENCE. NEVER write sentences that \
+describe what the sources DO NOT contain, what you CANNOT verify, or \
+what the bundle DOESN'T say. Forbidden phrasings include: "the sources \
+do not say whether X", "the bundle does not substantiate Y", "I don't \
+see Z in the source", "the source only mentions A, not B", "I can't \
+identify a specific X from the sources provided", "the sources confirm \
+A but do not say whether B". These are unhelpful prose -- the user \
+wants either an answer or a clean handoff, not your epistemic state. \
+Two correct paths only:
+  (a) Use what the sources DO say + point at the cited URL for the \
+rest: "The MakerSpace is at King Library [1]. The MakerSpace page \
+lists current equipment and training requirements -- see [1] for the \
+details." Direct, sourced, redirected.
+  (b) Refuse cleanly per rule 4 if NO source addresses the question \
+at all. (Sources that confirm the topic but not the specific \
+sub-question fall under (a), not (b) -- the URL the source provided \
+carries the sub-question's details.)
+NEVER do the third path of writing a paragraph about what the sources \
+don't contain. That paragraph is judged WRONG every time -- it's the \
+exact failure mode of the 2026-05-20 second eval (~15 cases).
+
 # Library terminology glossary (stable cache padding)
 
 (Same glossary as agent_v1 -- intentional duplication so the synthesizer \
