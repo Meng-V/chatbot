@@ -109,14 +109,14 @@ _POINT_TO_URL: dict[str, IntentCapability] = {
     "find_resource": IntentCapability(
         intent="find_resource",
         tier=CapabilityTier.POINT_TO_URL,
-        canonical_url="https://miamioh.primo.exlibrisgroup.com/discovery/search?vid=01OHIOLINK_MIAMI:miami",
+        canonical_url="https://ohiolink-mu.primo.exlibrisgroup.com/discovery/search?vid=01OHIOLINK_MU:MU",
         short_message=(
             "To find a specific book, article, journal, or DVD at "
             "Miami University Libraries, search Primo -- the library "
             "catalog. It searches across our physical collection, "
             "ebooks, journal articles, and OhioLINK partner libraries "
             "in one place.\n\n"
-            "Primo: https://miamioh.primo.exlibrisgroup.com/\n\n"
+            "Primo: https://ohiolink-mu.primo.exlibrisgroup.com/discovery/search?vid=01OHIOLINK_MU:MU\n\n"
             "If Primo says \"no results\" and you think the library "
             "should have it, you can request it through Interlibrary "
             "Loan: https://www.lib.miamioh.edu/use/borrow/ill/"
@@ -150,12 +150,12 @@ _REFUSE: dict[str, IntentCapability] = {
     "account": IntentCapability(
         intent="account",
         tier=CapabilityTier.REFUSE,
-        canonical_url="https://ohiolink-mu.primo.exlibrisgroup.com/discovery/account?vid=01OHIOLINK_MIAMI:miami",
+        canonical_url="https://ohiolink-mu.primo.exlibrisgroup.com/discovery/account?vid=01OHIOLINK_MU:MU&section=overview&lang=en",
         short_message=(
             "I can't access your library account -- only you can. "
             "To see your current checkouts, holds, due dates, or "
             "fines, sign in to MyAccount with your Miami credentials.\n\n"
-            "MyAccount: https://ohiolink-mu.primo.exlibrisgroup.com/discovery/account?vid=01OHIOLINK_MIAMI:miami\n\n"
+            "MyAccount: https://ohiolink-mu.primo.exlibrisgroup.com/discovery/account?vid=01OHIOLINK_MU:MU&section=overview&lang=en\n\n"
             "If you need help with something MyAccount doesn't show "
             "(e.g., a fine you think is wrong), please contact "
             "circulation at (513) 529-4141 or chat with a librarian "

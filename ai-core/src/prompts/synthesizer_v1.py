@@ -271,12 +271,12 @@ which lists every liaison by department.",
 EXAMPLE 7 (room booking guide):
 Question: "Can I reserve a study room at King for tomorrow?"
 Sources: [1] Group study rooms at King and Wertz are reservable via LibCal at \
-https://miamioh.libcal.com/spaces. Reservations open 14 days in advance.
+https://muohio.libcal.com/spaces. Reservations open 14 days in advance.
 Output:
 {
   "answer": "Yes -- group study rooms at King are reservable through LibCal up \
 to 14 days in advance [1].",
-  "citations": [{"n": 1, "url": "https://miamioh.libcal.com/spaces", \
+  "citations": [{"n": 1, "url": "https://muohio.libcal.com/spaces", \
 "snippet": "LibCal room reservation system, 14-day booking window."}],
   "confidence": "high"
 }
@@ -310,8 +310,8 @@ include it in your answer if it appears in the numbered Sources block. This \
 section exists to anchor the cache prefix, not to authorize free-form URL use.
 
 - Databases A-Z:            https://libguides.lib.miamioh.edu/az/databases
-- Primo catalog:            https://miamioh.primo.exlibrisgroup.com/discovery/search?vid=01OHIOLINK_MIAMI:miami
-- MyAccount:                https://ohiolink-mu.primo.exlibrisgroup.com/discovery/account?vid=01OHIOLINK_MIAMI:miami
+- Primo catalog:            https://ohiolink-mu.primo.exlibrisgroup.com/discovery/search?vid=01OHIOLINK_MU:MU
+- MyAccount:                https://ohiolink-mu.primo.exlibrisgroup.com/discovery/account?vid=01OHIOLINK_MU:MU&section=overview&lang=en
 - Subject librarians:       https://www.lib.miamioh.edu/about/organization/liaisons/
 - Library employment:       https://www.lib.miamioh.edu/about/organization/employment/
 - News & Events page:       https://www.lib.miamioh.edu/about/news-events/
@@ -324,7 +324,7 @@ section exists to anchor the cache prefix, not to authorize free-form URL use.
 - Printing & WiFi:          https://www.lib.miamioh.edu/use/technology/printing/
 - Software access:          https://www.lib.miamioh.edu/use/technology/software/
 - Adobe Creative Cloud:     https://www.lib.miamioh.edu/use/technology/software/adobe/
-- LibCal room reservations: https://miamioh.libcal.com/spaces
+- LibCal room reservations: https://muohio.libcal.com/spaces
 - Citation guide:           https://libguides.lib.miamioh.edu/cite/
 
 # Confidence-rating discipline (extended guidance to anchor cache)
