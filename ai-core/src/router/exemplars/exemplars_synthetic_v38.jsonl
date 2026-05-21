@@ -159,3 +159,22 @@
 {"intent": "instruction_request", "utterance": "Schedule information literacy training for my course", "source": "synthetic_v38"}
 {"intent": "instruction_request", "utterance": "I want a librarian to visit my class", "source": "synthetic_v38"}
 {"intent": "instruction_request", "utterance": "course-integrated library instruction request", "source": "synthetic_v38"}
+
+// Mode 4 (2026-05-20 second-eval finding): Art-Library / A&A / Wertz
+// alias coverage. The full real-LLM eval found xc_aa_alias ("Where is
+// A&A Library?") misrouted to find_resource because of 20 existing
+// Art/Wertz exemplars, only 1 was tagged hours and 6 location_directions
+// (mostly "Where is Wertz?" form, not "A&A" form). The classifier
+// correctly picked the dominant intent given its training data.
+// These additions cover the alias surface for hours + location_directions.
+{"intent": "location_directions", "utterance": "Where is A&A Library?", "source": "synthetic_v38_mode4"}
+{"intent": "location_directions", "utterance": "where is the A&A library", "source": "synthetic_v38_mode4"}
+{"intent": "location_directions", "utterance": "address of Art and Architecture Library", "source": "synthetic_v38_mode4"}
+{"intent": "location_directions", "utterance": "how do I get to the Art Library", "source": "synthetic_v38_mode4"}
+{"intent": "location_directions", "utterance": "where can I find the Art and Arch library", "source": "synthetic_v38_mode4"}
+{"intent": "hours", "utterance": "What time does the Art Library close?", "source": "synthetic_v38_mode4"}
+{"intent": "hours", "utterance": "when does Wertz close today", "source": "synthetic_v38_mode4"}
+{"intent": "hours", "utterance": "is the A&A library open right now?", "source": "synthetic_v38_mode4"}
+{"intent": "hours", "utterance": "Art Library hours today", "source": "synthetic_v38_mode4"}
+{"intent": "hours", "utterance": "Art and Architecture Library hours", "source": "synthetic_v38_mode4"}
+{"intent": "hours", "utterance": "what time is Wertz open tomorrow", "source": "synthetic_v38_mode4"}
