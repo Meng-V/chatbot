@@ -143,6 +143,29 @@ run them by hand when their env is set up.
 When you add a new test file, append it to the right list in
 `scripts/run_offline_tests.sh` (sorted, one entry per line).
 
+### Verify prompt caching still works
+
+After editing any `src/prompts/*_v1.py` file (or changing the
+`LLM_MODEL_*` env vars to a new model family), re-verify the cache:
+
+```bash
+cd ai-core
+python -m scripts.verify_prompt_cache --prefix synthesizer_v1
+python -m scripts.verify_prompt_cache --prefix agent_v1 --model gpt-5.4-mini
+python -m scripts.verify_prompt_cache --prefix judge_v1 --model gpt-5.4-nano
+python -m scripts.verify_prompt_cache --prefix clarifier_v1 --model gpt-5.4-mini
+```
+
+Each makes a small number of real OpenAI calls (~$0.005) and exits
+non-zero if cache hit rate falls below 60%. The first call always
+misses (cold start); the rate is computed on calls 2..N.
+
+If a check fails, the byte-stability log in `src/prompts/builder.py`
+will show which prefix changed call-to-call. Fix it before deploying
+or expect the daily cost rollup to flag a regression within 24h.
+
+See findings: `ai-core/src/eval/findings/2026-05-20_cache_hit_verification.md`
+
 ### Live-verify the v2 serving path
 
 The v2 stack (rebuilt orchestrator behind `?v2=1`) is code-complete
