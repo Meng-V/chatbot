@@ -143,6 +143,37 @@ run them by hand when their env is set up.
 When you add a new test file, append it to the right list in
 `scripts/run_offline_tests.sh` (sorted, one entry per line).
 
+### Live-verify the v2 serving path
+
+The v2 stack (rebuilt orchestrator behind `?v2=1`) is code-complete
+but the round-trip is only verifiable against a real OpenAI +
+Weaviate + Postgres. Before you raise `VITE_V2_ROLLOUT_PERCENT` above
+0 for the first time, run:
+
+```bash
+cd ai-core
+.venv/bin/python -m scripts.verify_v2_serving --host http://localhost:8000
+```
+
+What it checks (in order):
+
+1. `GET /health/ready` → 200 (all dep probes pass)
+2. `GET /smoketest` → 200 with citations and not refused
+3. v2 socket connect to `/smartchatbot/v2/socket.io` succeeds
+4. v2 socket send → response has `citations[]` and `confidence` keys
+   (the additive v2 shape — proves the orchestrator wired up, not just
+   the socket transport)
+5. legacy socket still responds (wrap-safety guard — confirms the
+   `socketio.ASGIApp` wrap in `main.py` didn't break the 100% path)
+
+Exit 0 = safe to flip the rollout flag. Exit 1 = do NOT flip; read
+the FAIL lines.
+
+If your env doesn't have legacy creds (rare), pass `--skip-legacy`.
+Default question is hours-class because hours questions are the most
+LibCal-grounded and least likely to legitimately refuse; override
+with `--question "..."` if you want to probe a specific intent.
+
 ### Weekly ETL refresh
 
 See `ai-core/scripts/etl/FIRST_RUN.md` for the full prepare→approve→
