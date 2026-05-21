@@ -310,8 +310,8 @@ include it in your answer if it appears in the numbered Sources block. This \
 section exists to anchor the cache prefix, not to authorize free-form URL use.
 
 - Databases A-Z:            https://libguides.lib.miamioh.edu/az/databases
-- Primo catalog:            https://miamioh.primo.exlibrisgroup.com/discovery/search?vid=01OHIOLINK_MIAMI:miami
-- MyAccount:                https://ohiolink-mu.primo.exlibrisgroup.com/discovery/account?vid=01OHIOLINK_MIAMI:miami
+- Primo catalog:            https://ohiolink-mu.primo.exlibrisgroup.com/discovery/search?vid=01OHIOLINK_MU:MU
+- MyAccount:                https://ohiolink-mu.primo.exlibrisgroup.com/discovery/account?vid=01OHIOLINK_MU:MU&section=overview&lang=en
 - Subject librarians:       https://www.lib.miamioh.edu/about/organization/liaisons/
 - Library employment:       https://www.lib.miamioh.edu/about/organization/employment/
 - News & Events page:       https://www.lib.miamioh.edu/about/news-events/
