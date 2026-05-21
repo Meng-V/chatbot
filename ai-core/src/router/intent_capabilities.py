@@ -166,7 +166,7 @@ _REFUSE: dict[str, IntentCapability] = {
     "events_news": IntentCapability(
         intent="events_news",
         tier=CapabilityTier.REFUSE,
-        canonical_url="https://www.lib.miamioh.edu/about/news-events/",
+        canonical_url="https://www.lib.miamioh.edu/about/news-events/news/",
         short_message=(
             "I don't have information about library events, news, or "
             "exhibits. The bot is intentionally limited to evergreen "
@@ -174,7 +174,7 @@ _REFUSE: dict[str, IntentCapability] = {
             "common source of misleading answers, so they're excluded.\n\n"
             "For current events, exhibits, and library news, please "
             "visit the News & Events page directly: "
-            "https://www.lib.miamioh.edu/about/news-events/"
+            "https://www.lib.miamioh.edu/about/news-events/news/"
         ),
         refusal_trigger="news_excluded",
     ),

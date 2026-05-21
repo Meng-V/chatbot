@@ -314,7 +314,7 @@ section exists to anchor the cache prefix, not to authorize free-form URL use.
 - MyAccount:                https://ohiolink-mu.primo.exlibrisgroup.com/discovery/account?vid=01OHIOLINK_MIAMI:miami
 - Subject librarians:       https://www.lib.miamioh.edu/about/organization/liaisons/
 - Library employment:       https://www.lib.miamioh.edu/about/organization/employment/
-- News & Events page:       https://www.lib.miamioh.edu/about/news-events/
+- News & Events page:       https://www.lib.miamioh.edu/about/news-events/news/
 - Ask Us (chat/email):      https://www.lib.miamioh.edu/research/research-support/ask/
 - ILL request form:         https://www.lib.miamioh.edu/use/borrow/ill/
 - MakerSpace info:          https://www.lib.miamioh.edu/use/spaces/makerspace/
