@@ -5,11 +5,10 @@ _v3 update 2026-05-22 22:45: 3-shot majority judge applied; locker truth fix; ho
 
 ## Headline
 
-- **Cases tested:** 170 of 184 (92%) — was 167; +3 recovered in round-2 recovery
-- **Fully correct:** 100 / 170 = **58.8%** (was 50.3% on single-shot judge / 59.1% post-multi-sample / 59.3% post-round-1-recovery)
-- **Cited at least one source:** ~85%
-- **Refusals fired:** ~16%
-- **Untestable (eval-harness hang):** 14 cases (8%) — Issue #98; mostly librarian-by-subject + a few featured_service. Cases hang past 120s; need a deep `_db` / agent-loop debug to recover.
+- **Cases tested:** **184 of 184 (100%)** ✅ — full gold-set coverage
+- **Fully correct:** **107 / 184 = 58.2%**
+- **3 sections at 100%:** capability_refuse, instruction, staff
+- **Issue #98 root cause FIXED**: `lookup_librarian` was using `_db` (per-call Prisma engine spawn) which deadlocked the agent loop on librarian-by-subject calls. Rewired to use the **production-proven LibGuides API** via `_bridge` (same daemon-loop pattern as `get_hours`). All 14 previously-untestable cases now run cleanly in 4-10s each.
 
 ## What changed in v3
 

@@ -247,7 +247,69 @@ def _resolve_subject_terms(subject: str, name: str) -> list[str]:
     return deduped
 
 
+def _libguide_lib_to_dict(lib_entry: dict) -> dict:
+    """Map a LibGuides API librarian dict to the bot's lookup_librarian shape.
+
+    The LibApps API returns librarians with `first_name`, `last_name`,
+    `email`, `title`, `profile_url`, etc. Our synthesizer reads
+    `name/email/title/department/phone/campus/profile_url`."""
+    first = lib_entry.get("first_name") or ""
+    last = lib_entry.get("last_name") or ""
+    full = f"{first} {last}".strip() or lib_entry.get("name", "")
+    return {
+        "name": full,
+        "email": lib_entry.get("email"),
+        "title": lib_entry.get("title"),
+        "department": lib_entry.get("department"),
+        "phone": lib_entry.get("phone"),
+        "campus": lib_entry.get("campus"),
+        "profile_url": lib_entry.get("profile_url"),
+    }
+
+
 def _make_lookup_librarian() -> Callable[[dict], list[dict]]:
+    """Subject/name librarian lookup.
+
+    DESIGN (2026-05-23): use the LIVE LibGuides API via _bridge for
+    SUBJECT lookups -- the same production-proven path the legacy
+    SubjectLibrarianAgent uses. This avoids the per-call Prisma engine
+    spawn that deadlocks the agent loop on librarian-by-subject
+    questions (Issue #98). Name-only lookups still go through Prisma
+    via _bridge (the prisma singleton on the bridge loop) because the
+    LibGuides API is subject-indexed, not name-indexed.
+
+    Subject path: LibGuideSubjectLookupTool.execute(subject_name=...)
+    Name path:    prisma singleton via _bridge (NOT _db's per-call
+                  fresh engine — that's what hung on case 33 every
+                  time)."""
+    from src.tools.libguide_comprehensive_tools import LibGuideSubjectLookupTool
+
+    libguide_tool = LibGuideSubjectLookupTool()
+
+    def _lookup_by_subject_via_libguides(subject_term: str, campus: Optional[str]) -> list[dict]:
+        """Call the LibApps API. Returns a list of librarian dicts in our
+        canonical shape."""
+        try:
+            res = _bridge(libguide_tool.execute(query=subject_term, subject_name=subject_term))
+        except Exception as e:  # noqa: BLE001
+            raise ToolError(
+                f"lookup_librarian (LibGuides API): {e}. The bot should "
+                f"hand off rather than guess a name."
+            ) from e
+        if not res or not res.get("success"):
+            return []
+        librarians = res.get("librarians") or []
+        out: list[dict] = []
+        for lib in librarians:
+            d = _libguide_lib_to_dict(lib)
+            # Optional campus filter (LibGuides API doesn't always tag
+            # campus; if we can't tell, include the librarian).
+            if campus and d.get("campus") and d["campus"] != campus:
+                continue
+            if d.get("email"):
+                out.append(d)
+        return out
+
     def lookup(filters: dict) -> list[dict]:
         name = (filters.get("name") or "").strip()
         subject = (filters.get("subject") or "").strip()
@@ -255,58 +317,32 @@ def _make_lookup_librarian() -> Callable[[dict], list[dict]]:
         campus = _CAMPUS_DB.get(campus_raw)
         resolved = _resolve_subject_terms(subject, name)
 
-        def _collect(links: list, acc: dict) -> None:
-            for link in links:
-                lib = getattr(link, "librarian", None)
-                if lib is None or not getattr(lib, "isActive", True):
-                    continue
-                if campus and getattr(lib, "campus", None) != campus:
-                    continue
-                acc[lib.email] = _librarian_dict(lib)
+        # (1) Highest-precision subject path: every resolved canonical
+        # subject is queried against the LIVE LibGuides API. First hit
+        # with results wins (the API returns ALL librarians for that
+        # subject, so we don't have to merge).
+        if resolved:
+            for s in resolved:
+                rows = _lookup_by_subject_via_libguides(s, campus)
+                if rows:
+                    return rows
 
-        async def _q(client: Any) -> list[dict]:
-            seen: dict[str, dict] = {}
+        # (2) Raw subject fallback (no alias resolution). Still goes
+        # through the LibGuides API.
+        if subject:
+            rows = _lookup_by_subject_via_libguides(subject, campus)
+            if rows:
+                return rows
 
-            # (1) Highest precision: resolved canonical subject names
-            # (exact, case-insensitive) via the curated alias/code maps.
-            if resolved:
-                links = await client.librariansubject.find_many(
-                    where={
-                        "subject": {
-                            "is": {
-                                "OR": [
-                                    {"name": {"equals": s, "mode": "insensitive"}}
-                                    for s in resolved
-                                ]
-                            }
-                        }
-                    },
-                    include={"librarian": True},
-                )
-                _collect(links, seen)
+        # (3) Name / campus direct lookup via the bridge'd Prisma
+        # singleton (NOT _db). Used for staff-directory cases
+        # ("the dean of the libraries"). Subject is empty here.
+        if not name and not campus:
+            return []
 
-            # (2) Fallback: raw subject contains-match (the original
-            # proven path -- preserved so we cannot regress).
-            if subject and not seen:
-                links = await client.librariansubject.find_many(
-                    where={
-                        "subject": {
-                            "is": {
-                                "name": {
-                                    "contains": subject,
-                                    "mode": "insensitive",
-                                }
-                            }
-                        }
-                    },
-                    include={"librarian": True},
-                )
-                _collect(links, seen)
-
-            if seen:
-                return list(seen.values())
-
-            # (3) Name / campus direct Librarian lookup (unchanged).
+        async def _q_by_name() -> list[dict]:
+            from src.database.prisma_client import get_prisma_client
+            client = await get_prisma_client()
             where: dict = {"isActive": True}
             if name:
                 where["name"] = {"contains": name, "mode": "insensitive"}
@@ -316,11 +352,11 @@ def _make_lookup_librarian() -> Callable[[dict], list[dict]]:
             return [_librarian_dict(r) for r in rows]
 
         try:
-            return _db(_q)
+            return _bridge(_q_by_name())
         except Exception as e:  # noqa: BLE001
             raise ToolError(
-                f"lookup_librarian: directory query failed ({e}). "
-                f"The bot should hand off rather than guess a name."
+                f"lookup_librarian (name/campus): {e}. The bot should "
+                f"hand off rather than guess a name."
             ) from e
 
     return lookup
