@@ -346,7 +346,44 @@ def _smoketest_ask_bot(question: str) -> dict:
     return box.get("result") or {"answer": "", "citations": [], "is_refusal": False}
 
 
-app.include_router(build_smoketest_router({"ask_bot": _smoketest_ask_bot}))
+def _smoketest_ask_v2_bot(question: str) -> dict:
+    """Sync wrapper around the rebuilt orchestrator (run_turn) for
+    /smoketest/v2. Used by the external pinger to keep the v2 path's
+    health independently observable from the legacy /smoketest result.
+
+    Mirrors the legacy _smoketest_ask_bot's run-on-dedicated-thread
+    pattern (we're called from inside a running FastAPI event loop,
+    but run_turn is sync, so we just call it directly here -- no
+    nested asyncio.run needed). Returns the same shape the
+    legacy `ask_bot` does: {answer, citations, is_refusal}.
+
+    Deps are reused from the same lazy `_get_v2_deps()` singleton the
+    socket handler uses -- one build per process, not per smoketest
+    hit. A deps-build failure short-circuits to a clearly-labeled
+    error dict so the smoketest reports `passed=False` rather than
+    raising 500.
+    """
+    try:
+        deps = _get_v2_deps()
+    except Exception as e:  # noqa: BLE001
+        return {"answer": "", "citations": [], "is_refusal": False, "error": f"deps_unavailable: {e}"}
+    from src.graph.new_orchestrator import TurnRequest, run_turn  # noqa: WPS433
+    req = TurnRequest(
+        user_message=question,
+        conversation_id="smoketest-v2",
+    )
+    resp = run_turn(req, deps)
+    return {
+        "answer": resp.answer or "",
+        "citations": resp.citations or [],
+        "is_refusal": bool(resp.is_refusal),
+    }
+
+
+app.include_router(build_smoketest_router({
+    "ask_bot": _smoketest_ask_bot,
+    "ask_bot_v2": _smoketest_ask_v2_bot,
+}))
 
 # Op 3: Prometheus scrape target. Self-describes a 200 when
 # prometheus-client isn't installed (never 500s a scrape).

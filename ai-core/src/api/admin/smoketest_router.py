@@ -25,10 +25,19 @@ from src.observability.smoketest import (
 def build_smoketest_router(deps: dict) -> Any:
     """Build the FastAPI router.
 
-    `deps` must include `ask_bot`, a callable that runs one canned
-    question through the full orchestrator (`(question: str) -> dict`).
-    The orchestrator isn't wired yet, so in prod the app's startup
-    will supply the real function; in dev this stays a stub.
+    `deps` must include `ask_bot` (legacy orchestrator) and optionally
+    `ask_bot_v2` (the rebuilt v2 orchestrator via `run_turn`). Each
+    callable runs one canned question through the full path and
+    returns a dict; `run_smoketest` checks the shape + citation
+    presence + latency.
+
+    Endpoints registered:
+      GET /smoketest      -- always; legacy path
+      GET /smoketest/v2   -- registered only if `ask_bot_v2` is provided
+
+    The split lets the external pinger (UptimeRobot / BetterStack)
+    poll each path independently so a v2-only outage doesn't mask the
+    legacy fallback's health, and vice versa.
     """
     try:
         from fastapi import APIRouter  # type: ignore
@@ -38,15 +47,15 @@ def build_smoketest_router(deps: dict) -> Any:
 
     router = APIRouter(tags=["ops"])
     ask_bot: Callable[[str], dict] = deps["ask_bot"]
+    ask_bot_v2: Callable[[str], dict] | None = deps.get("ask_bot_v2")
     latency_budget_ms = deps.get(
         "latency_budget_ms", DEFAULT_LATENCY_BUDGET_MS
     )
     question = deps.get("question", DEFAULT_QUESTION)
 
-    @router.get("/smoketest")
-    async def smoketest() -> Any:
+    def _run(ask: Callable[[str], dict]) -> Any:
         result: SmoketestResult = run_smoketest(
-            ask_bot=ask_bot,
+            ask_bot=ask,
             question=question,
             latency_budget_ms=latency_budget_ms,
         )
@@ -61,6 +70,15 @@ def build_smoketest_router(deps: dict) -> Any:
             content=payload,
             status_code=200 if result.passed else 503,
         )
+
+    @router.get("/smoketest")
+    async def smoketest() -> Any:
+        return _run(ask_bot)
+
+    if ask_bot_v2 is not None:
+        @router.get("/smoketest/v2")
+        async def smoketest_v2() -> Any:
+            return _run(ask_bot_v2)
 
     return router
 
