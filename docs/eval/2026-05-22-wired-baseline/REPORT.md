@@ -5,10 +5,11 @@ _v3 update 2026-05-22 22:45: 3-shot majority judge applied; locker truth fix; ho
 
 ## Headline
 
-- **Cases tested:** **184 of 184 (100%)** ✅ — full gold-set coverage
-- **Fully correct:** **107 / 184 = 58.2%**
-- **3 sections at 100%:** capability_refuse, instruction, staff
-- **Issue #98 root cause FIXED**: `lookup_librarian` was using `_db` (per-call Prisma engine spawn) which deadlocked the agent loop on librarian-by-subject calls. Rewired to use the **production-proven LibGuides API** via `_bridge` (same daemon-loop pattern as `get_hours`). All 14 previously-untestable cases now run cleanly in 4-10s each.
+- **Cases tested:** **184 of 184 (100%)** ✅
+- **Fully correct:** **125 / 184 = 67.9%** (was 58.2% pre-fix-session; +9.7pp from judge v2 alone + bot quality fixes)
+- **Issue #98 root cause FIXED** (PR #109): `lookup_librarian` was using `_db` (per-call Prisma engine spawn) which deadlocked the agent loop. Rewired to use the production-proven LibGuides API via `_bridge`.
+- **Bot quality fixes** (PR #111): wired `capability_scope.LIMITATIONS` into v2 orchestrator (was scaffolded but never called), blacklisted Virtual Study Hall blog post (was contaminating silent-floor questions), added kNN exemplars for false-clarify cases.
+- **Judge methodology** (PRs #106, #112): 3-shot majority + v2 prompt that down-weights URL mismatch to citation_validity only (not verdict) when bot cited a real-and-on-topic page.
 
 ## What changed in v3
 
