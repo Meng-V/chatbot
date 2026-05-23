@@ -483,3 +483,46 @@ def main() -> int:
 
 if __name__ == "__main__":
     sys.exit(main())
+
+
+# --- 2026-05-23: department inbox allowance -----------------------------
+
+
+def test_two_department_inboxes_is_not_privacy_refusal():
+    """archives@ + speccoll@ are public dept inboxes documented on the
+    website. Answering 'the archivist's email is archives@miamioh.edu;
+    for Special Collections specifically use speccoll@miamioh.edu' is
+    NOT a roster dump and must not refuse. Was a false positive before
+    the 2026-05-23 dept-inbox exemption."""
+    out = SynthesizerOutput(
+        answer="Use Archives@MiamiOH.edu or SpecColl@MiamiOH.edu [1].",
+        citations=[Citation(n=1, url="https://spec.lib.miamioh.edu/home/",
+                            snippet="Archives@MiamiOH.edu", chunk_id="chunk-1",
+                            campus="oxford", library="special")],
+        confidence="high",
+    )
+    result = process_synthesizer_output(
+        out, scope_campus="oxford",
+        url_allowlist={"https://spec.lib.miamioh.edu/home/"},
+        evidence=[_Ev("Archives@MiamiOH.edu and SpecColl@MiamiOH.edu")],
+    )
+    assert not result.is_refusal, f"unexpected refusal: {result.refusal}"
+
+
+def test_one_dept_inbox_plus_one_individual_is_not_privacy_refusal():
+    """Bot says 'the archivist Jane Doe (jdoe@miamioh.edu) — also try
+    the general archives@miamioh.edu inbox' — that's the single-person
+    lookup case PLUS a fallback dept inbox. Individual count = 1, dept
+    count = 1; refusal should NOT fire."""
+    KING_URL = "https://www.lib.miamioh.edu/about/locations/king-library/"
+    out = SynthesizerOutput(
+        answer="Jane Doe is the archivist: jdoe23@miamioh.edu. You can also try the general archives@miamioh.edu inbox [1].",
+        citations=[Citation(n=1, url=KING_URL, snippet="archivist",
+                            chunk_id="chunk-1", campus="oxford", library="king")],
+        confidence="high",
+    )
+    result = process_synthesizer_output(
+        out, scope_campus="oxford", url_allowlist={KING_URL},
+        evidence=[_Ev("Jane Doe jdoe23@miamioh.edu archives@miamioh.edu")],
+    )
+    assert not result.is_refusal, f"unexpected refusal: {result.refusal}"
