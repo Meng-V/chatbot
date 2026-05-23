@@ -38,16 +38,25 @@ Score the bot's answer as one of:
 
 # Rules
 
-1. Be strict on URLs. If the bot's answer mentions a URL not in the \
-expected answer's allowed URLs, mark citation_validity="some_invalid" \
-even if the prose is roughly correct.
+1. URL mismatch downgrades CITATION_VALIDITY ONLY, NEVER the verdict. \
+If the bot cites a URL not in the gold's allowed_urls, set \
+citation_validity="some_invalid". The verdict label is determined by \
+PROSE SUBSTANCE per Rule 5 and is INDEPENDENT of URL exactness when \
+the cited URL is a real-and-on-topic Miami Libraries page. Bot's \
+allowed_urls list is the AUTHORITATIVE list of equivalent valid \
+sources; the gold's allowed_urls list is one PREFERRED form. EXCEPT: \
+fabricated URLs (not a real Miami Libraries page) DO downgrade verdict \
+to "wrong" — that's the core invariant the rebuild is fighting.
 
 2. Be strict on campus. If the question names a specific campus and the \
 bot's answer cites a different campus's evidence, that's "wrong" -- not \
 "partial."
 
 3. Refusals are FIRST-CLASS correct outcomes. Do not penalize a refusal \
-when the question is genuinely outside the corpus or scope.
+when the question is genuinely outside the corpus or scope. A refusal \
+that names an authoritative URL (e.g. "I can't renew your book — use \
+the OhioLINK account at <URL>") is the EXPECTED form when gold says \
+"REFUSAL of action + point to URL."
 
 4. The bot's "I don't know -- here's how to ask a librarian" template \
 counts as a refusal regardless of exact wording.
@@ -64,6 +73,27 @@ Do NOT mark "wrong"/"partial" merely because the bot said more than, or \
 worded differently than, the terse gold string -- that is a judge \
 false-negative the 2026-05-17 eval surfaced and operator-verified. \
 Genuine factual disagreement with the gold is still "wrong".
+
+5b. META-PHRASE EXPECTED ANSWERS resolve to CONCRETE bot answers. When \
+the gold expected_answer is a META-DESCRIPTION of what the bot should \
+DO ("Live LibCal hours for X", "Cite the printing page", "Point to \
+Primo", "Use lookup_space tool"), and the bot delivered a CONCRETE \
+ANSWER consistent with that description (a real time, a real URL, a \
+real librarian email, a real equipment list), the verdict is "correct" \
+— NOT "partial" or "wrong" just because the bot returned the substance \
+the meta-phrase described rather than echoing the meta-phrase itself. \
+The 2026-05-22 eval surfaced this pattern across hours, find_resource, \
+and capability_point_to_url intents (xc_wertz_alias, find_book_specific, \
+hr_today_king, etc.) where the bot did the right thing and the judge \
+penalized format mismatch.
+
+5c. REFUSAL with REDIRECT URL satisfies "REFUSAL with point_to_url" \
+expected_answers verbatim. When gold says "REFUSAL of action + point \
+to renewal URL" or similar and the bot's answer is "I can't <action>. \
+Please use <URL>", that IS the expected response — verdict "correct" \
+(or "refused_correctly" if also a refusal). Do not mark "wrong" \
+because the bot phrased it as a refusal rather than a positive \
+instruction; the gold explicitly asked for a refusal.
 
 6. "Closed" is an ANSWER, not a failure. For hours / availability / \
 open-now / status questions, a specific "Closed", "By appointment \
