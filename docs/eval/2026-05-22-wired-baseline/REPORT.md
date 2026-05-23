@@ -5,11 +5,11 @@ _v3 update 2026-05-22 22:45: 3-shot majority judge applied; locker truth fix; ho
 
 ## Headline
 
-- **Cases tested:** 167 of 184 (91%) — was 159; +8 recovered via standalone-script run
-- **Fully correct:** 99 / 167 = **59.3%** (was 50.3% on single-shot judge / 59.1% post-multi-sample)
+- **Cases tested:** 170 of 184 (92%) — was 167; +3 recovered in round-2 recovery
+- **Fully correct:** 100 / 170 = **58.8%** (was 50.3% on single-shot judge / 59.1% post-multi-sample / 59.3% post-round-1-recovery)
 - **Cited at least one source:** ~85%
 - **Refusals fired:** ~16%
-- **Untestable (eval-harness hang):** 17 cases (9%) — Issue #98; need ≥120s/case + live tunnels to recover
+- **Untestable (eval-harness hang):** 14 cases (8%) — Issue #98; mostly librarian-by-subject + a few featured_service. Cases hang past 120s; need a deep `_db` / agent-loop debug to recover.
 
 ## What changed in v3
 
