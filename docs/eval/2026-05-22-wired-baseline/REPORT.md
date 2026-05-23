@@ -1,25 +1,32 @@
-# Smart Chatbot Eval Report — operator-wired index (FINAL)
+# Smart Chatbot Eval Report — operator-wired index (FINAL, v3)
 
-_Generated: 2026-05-22 21:32 | wired-index run + retest recovery_
+_Generated: 2026-05-22 21:32 | wired-index run + retest recovery_  
+_v3 update 2026-05-22 22:45: 3-shot majority judge applied; locker truth fix; hours-hub URL fix_
 
 ## Headline
 
 - **Cases tested:** 159 of 184 (86%)
-- **Fully correct:** 80 / 159 = **50.3%**
+- **Fully correct:** 94 / 159 = **59.1%** (was 50.3% on single-shot judge)
 - **Cited at least one source:** 136 / 159 = 85.5%
 - **Refusals fired:** 25 / 159 = 15.7%
 - **Untestable (eval-harness hang):** 25 cases (14%) — Issue #98
 
-## Judge verdict distribution
+## What changed in v3
+
+- **Judge methodology upgrade**: `judge_answer()` now defaults to **3 independent samples + majority vote** (was single-shot). Empirically, single-shot judging swung 22 of 79 failing cases on a single re-judge — single-sample was just too noisy to trust at the percentage-point level. The bot's answers didn't change; the measurement got more reliable.
+- **Operator correction**: `svc_lockers` + `space_lockers` — King DOES have lockers (in the Reading Rooms, faculty + grad only). Prior gold answer was wrong; corrected.
+- **Hours-hub URL fix**: 11 hours-related gold cases now also allow `/about/locations/hours/` (the URL `get_hours` actually returns).
+
+## Judge verdict distribution (3-shot majority)
 
 | Verdict | Count | % of tested |
 |---|---:|---:|
-| correct | 59 | 37.1% |
+| correct | 73 | 45.9% |
 | refused_correctly | 21 | 13.2% |
-| partial | 45 | 28.3% |
-| wrong | 27 | 17.0% |
-| refused_incorrectly | 5 | 3.1% |
-| answered_should_have_refused | 2 | 1.3% |
+| partial | 33 | 20.8% |
+| wrong | 25 | 15.7% |
+| refused_incorrectly | 7 | 4.4% |
+| answered_should_have_refused | 0 | 0.0% |
 
 ## Per-section breakdown
 

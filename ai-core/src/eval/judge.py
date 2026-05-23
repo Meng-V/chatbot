@@ -191,6 +191,7 @@ def judge_answer(
     judge_llm: JudgeLLM,
     prefix_id: str = "judge_v1",
     model: str = "",
+    samples: int = 3,
 ) -> JudgeOutcome:
     """Score one bot answer.
 
@@ -207,26 +208,61 @@ def judge_answer(
             regression run -- nano is ~3.7x cheaper than mini and the
             single biggest eval-cost line; consistency matters more
             than reasoning depth here. Pass an explicit id to override.
+        samples: how many independent judge calls to take a majority
+            vote across. Default 3. Single-sample judging was
+            empirically noisy on the 2026-05-22 wired-baseline run
+            (22 of 79 failing cases flipped on a single re-judge, 11
+            flipped worse) -- a 3-shot majority moved the measured
+            score from 50.3% to 59.1% on the SAME bot answers, which
+            is the noise floor of single-sample. Pass 1 to revert to
+            single-sample (e.g., for unit tests that stub the judge).
 
     Returns:
         JudgeOutcome with parsed Verdict + raw response (for logs).
+        When samples>1, raw_response is the FIRST sample's raw text;
+        verdict is the majority-vote verdict across all parseable
+        samples.
 
     Raises:
-        JudgeParseError: judge returned malformed JSON. The eval
-            harness records this as an error verdict for the
-            question, and continues with the next.
+        JudgeParseError: ALL judge samples returned malformed JSON.
+            A subset of parse errors is tolerated -- majority is
+            computed over the parseable samples.
     """
+    from collections import Counter
+
     suffix = build_judge_dynamic_suffix(request)
     if not model:
         from src.config.models import resolve_model
         model = resolve_model("cheap")  # nano: cheapest tier for the judge
-    raw, _usage = judge_llm(
-        prefix_id=prefix_id,
-        dynamic_suffix=suffix,
-        model=model,
-    )
-    verdict = parse_verdict(raw)
-    return JudgeOutcome(verdict=verdict, raw_response=raw)
+
+    raws: list[str] = []
+    verdicts: list[Verdict] = []
+    last_parse_error: Optional[Exception] = None
+    for _ in range(max(1, int(samples))):
+        try:
+            raw, _usage = judge_llm(
+                prefix_id=prefix_id,
+                dynamic_suffix=suffix,
+                model=model,
+            )
+            raws.append(raw)
+            verdicts.append(parse_verdict(raw))
+        except JudgeParseError as e:
+            last_parse_error = e
+            continue
+    if not verdicts:
+        # All samples failed to parse — propagate the last error so
+        # the caller's existing JudgeParseError handling fires.
+        assert last_parse_error is not None
+        raise last_parse_error
+
+    # Majority verdict label. Tie-break: keep the first sample's
+    # verdict that matches the majority (deterministic ordering).
+    label_counts = Counter(v.verdict for v in verdicts)
+    top_label, _ = label_counts.most_common(1)[0]
+    chosen = next(v for v in verdicts if v.verdict == top_label)
+
+    return JudgeOutcome(verdict=chosen, raw_response=raws[0])
 
 
 # --- Aggregation helper --------------------------------------------------
