@@ -187,11 +187,17 @@ async def insert_urlseen():
         if existing:
             n_existing += 1
             continue
+        # Prisma uses camelCase column names; updatedAt is NOT NULL with no default.
+        now = datetime.now(timezone.utc).replace(tzinfo=None)
         await conn.execute(
-            """INSERT INTO "UrlSeen" (url, http_status, last_seen, content_type, source, is_active, is_blacklisted)
-               VALUES ($1, 200, $2, 'text/html', $3, true, false)
-               ON CONFLICT (url) DO NOTHING""",
-            url, datetime.now(timezone.utc), SOURCE_TAG,
+            """INSERT INTO "UrlSeen" (
+                url, "httpStatus", "contentType", source, priority,
+                "isActive", "isBlacklisted", "lastSeen", "createdAt", "updatedAt"
+              ) VALUES (
+                $1, 200, 'text/html', $2, 'normal',
+                true, false, $3, $3, $3
+              ) ON CONFLICT (url) DO NOTHING""",
+            url, SOURCE_TAG, now,
         )
         n_added += 1
     await conn.close()
