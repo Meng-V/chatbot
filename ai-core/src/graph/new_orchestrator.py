@@ -219,6 +219,55 @@ def run_turn(
         record_request(endpoint="/chat", status="clarify", latency_s=latency_ms / 1000)
         return _clarify_response(classification, scope, latency_ms)
 
+    # --- 2.4. Per-PATTERN limitation pre-check (capability_scope) ---
+    # Some user messages match an ACTION the bot cannot perform
+    # regardless of the kNN-routed intent — "renew my book", "submit
+    # an ILL request for me", "pay my fine". The bot must explicitly
+    # say "I can't do that" with a redirect URL. Without this short-
+    # circuit, the agent answers helpfully ("here's how to renew") but
+    # omits the refusal preamble, which the eval (and a real user
+    # whose item is overdue) reads as the bot saying it WILL do it.
+    # See `src/config/capability_scope.py` LIMITATIONS table.
+    #
+    # Wired 2026-05-23 after eval failure analysis showed cap_renew_book
+    # and fs_ill_no_submit failing on this exact missing-preamble issue
+    # (PR-TBD). Placed BEFORE the intent-capability check so a regex
+    # match always wins — the LIMITATIONS table is the operator's
+    # explicit "do not roleplay this action" list.
+    from src.config.capability_scope import (
+        detect_limitation_request,
+        get_limitation_response,
+    )
+    limitation = detect_limitation_request(request.user_message)
+    if limitation.get("is_limitation"):
+        ltype = limitation["limitation_type"]
+        response_text = get_limitation_response(ltype)
+        # Pull the redirect URL out of the response text so we render
+        # a citation chip (UI relies on `citations[0].url`).
+        import re as _re
+        url_match = _re.search(r"(https?://[^\s)\"]+)", response_text)
+        cite_url = url_match.group(1) if url_match else ""
+        citations = [{"n": 1, "url": cite_url, "snippet": ""}] if cite_url else []
+        latency_ms = int((time.monotonic() - turn_start) * 1000)
+        record_request(endpoint="/chat", status="refusal",
+                       latency_s=latency_ms / 1000)
+        record_refusal(trigger=f"capability_limitation:{ltype}")
+        return TurnResponse(
+            answer=response_text,
+            is_refusal=True,
+            refusal_trigger=f"capability_limitation:{ltype}",
+            citations=citations,
+            confidence="high",
+            intent=classification.intent,
+            scope=scope.as_filter(),
+            model_used="(none — capability_scope limitation)",
+            tokens={"input": 0, "cached_input": 0, "output": 0},
+            fired_corrections=[],
+            agent_stopped_reason="capability_limitation",
+            latency_ms=latency_ms,
+            cited_chunk_ids=[],
+        )
+
     # --- 2.5. Per-intent capability check ---
     # Some intents (account, events_news, find_resource, databases) are
     # deliberately not LLM-answerable: the answer is an authoritative

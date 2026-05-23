@@ -5256,3 +5256,13 @@
 {"intent": "website_feedback", "utterance": "I can't get the website to work: is there a preferred browser for your site? I'm very frustrated", "source": "tran_raw_2026_5"}
 {"intent": "website_feedback", "utterance": "The cite search button in the top right corner is not working for me and my group partner. Every time we click it, it shows up and then goes away.", "source": "tran_raw_2026_5"}
 {"intent": "website_feedback", "utterance": "The page keeps refreshing when I'm looking for articles - it then starts from the beginning and sometimes says \"no results found\" despite having a list of results previously. Is there a way I can stop this from happening?", "source": "tran_raw_2026_5"}
+{"intent": "databases", "utterance": "What databases does the library have?", "source": "eval_fix_2026-05-23"}
+{"intent": "databases", "utterance": "What databases do you have?", "source": "eval_fix_2026-05-23"}
+{"intent": "databases", "utterance": "List of databases", "source": "eval_fix_2026-05-23"}
+{"intent": "databases", "utterance": "Library databases", "source": "eval_fix_2026-05-23"}
+{"intent": "databases", "utterance": "Database list", "source": "eval_fix_2026-05-23"}
+{"intent": "databases", "utterance": "Show me all databases", "source": "eval_fix_2026-05-23"}
+{"intent": "databases", "utterance": "Databases A to Z", "source": "eval_fix_2026-05-23"}
+{"intent": "databases", "utterance": "Which databases are available?", "source": "eval_fix_2026-05-23"}
+{"intent": "cross_campus_comparison", "utterance": "Tell me about the regional library.", "source": "eval_fix_2026-05-23"}
+{"intent": "cross_campus_comparison", "utterance": "Information about the regional library", "source": "eval_fix_2026-05-23"}
