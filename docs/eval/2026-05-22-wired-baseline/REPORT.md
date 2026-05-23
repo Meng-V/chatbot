@@ -6,7 +6,7 @@ _v3 update 2026-05-22 22:45: 3-shot majority judge applied; locker truth fix; ho
 ## Headline
 
 - **Cases tested:** **184 of 184 (100%)** ✅
-- **Fully correct:** **136 / 184 = 73.9%** (was 58.2% pre-fix-session; +15.7pp from operator-approved gold rewrites + judge v2 + bot quality fixes + operator review batch 2026-05-23)
+- **Fully correct:** **140 / 184 = 76.1%** (was 58.2% pre-fix-session; +17.9pp tonight)
 - **Issue #98 root cause FIXED** (PR #109): `lookup_librarian` was using `_db` (per-call Prisma engine spawn) which deadlocked the agent loop. Rewired to use the production-proven LibGuides API via `_bridge`.
 - **Bot quality fixes** (PR #111): wired `capability_scope.LIMITATIONS` into v2 orchestrator (was scaffolded but never called), blacklisted Virtual Study Hall blog post (was contaminating silent-floor questions), added kNN exemplars for false-clarify cases.
 - **Judge methodology** (PRs #106, #112): 3-shot majority + v2 prompt that down-weights URL mismatch to citation_validity only (not verdict) when bot cited a real-and-on-topic page.
