@@ -166,6 +166,18 @@ def build_v2_deps() -> OrchestratorDeps:
     from src.scope.service_availability import build_service_guard
     from src.database.corrections_adapter import PrismaCorrectionsStore
 
+    # Register the agent + synthesizer prompt prefixes BEFORE the
+    # first run_turn fires. The prefix registry is module-import
+    # driven: `prompts/agent_v1.py` calls `register_prefix()` at its
+    # module level, so the prefix only exists after the module is
+    # imported once. Without these imports, `run_turn`'s first LLM
+    # call raises `PromptBuildError: unknown prefix_id 'agent_v1'`
+    # and the whole v2 endpoint 500s on its first user turn.
+    # Verified 2026-05-22 live: hitting /smoketest/v2 reproduces
+    # the failure without these two lines.
+    import src.prompts.agent_v1        # noqa: F401 -- registers prefix
+    import src.prompts.synthesizer_v1  # noqa: F401 -- registers prefix
+
     classifier = _build_classifier()
     registry = build_tool_registry(build_eval_backends())
 
