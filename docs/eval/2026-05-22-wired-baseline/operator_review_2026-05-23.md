@@ -33,7 +33,7 @@ These are `wrong` / `refused_incorrectly` / `answered_should_have_refused`. Chec
 > Search for the book in Primo, click "Place Hold," and sign in [5]. Choose Oxford Campus / King Library as the pickup location, then wait for the notification that it is ready for pickup [2][4].
 
 **Decision:**
-- [ ] ✅ ACCEPT — bot's answer is fine; broaden gold to accept it
+- [x] ✅ ACCEPT — bot's answer is fine; broaden gold to accept it
 - [ ] ❌ REJECT — bot is actually wrong; needs real bot fix
 - [ ] 📝 NEW EXPECTED → write below:
 
@@ -57,10 +57,10 @@ These are `wrong` / `refused_incorrectly` / `answered_should_have_refused`. Chec
 **Decision:**
 - [ ] ✅ ACCEPT — bot's answer is fine; broaden gold to accept it
 - [ ] ❌ REJECT — bot is actually wrong; needs real bot fix
-- [ ] 📝 NEW EXPECTED → write below:
+- [x] 📝 NEW EXPECTED → write below:
 
   ```
-  (operator: paste a better expected_answer here if needed)
+  Gold was right. Bot should have cited the circulation policies page.
   ```
 
 ---
@@ -79,10 +79,10 @@ These are `wrong` / `refused_incorrectly` / `answered_should_have_refused`. Chec
 **Decision:**
 - [ ] ✅ ACCEPT — bot's answer is fine; broaden gold to accept it
 - [ ] ❌ REJECT — bot is actually wrong; needs real bot fix
-- [ ] 📝 NEW EXPECTED → write below:
+- [x] 📝 NEW EXPECTED → write below:
 
   ```
-  (operator: paste a better expected_answer here if needed)
+  Bot was right about providing the circulation policies page as the source. But renew book should guide user to log in to their Library account:  https://ohiolink-mu.primo.exlibrisgroup.com/discovery/account?vid=01OHIOLINK_MU:MU
   ```
 
 ---
@@ -101,10 +101,10 @@ These are `wrong` / `refused_incorrectly` / `answered_should_have_refused`. Chec
 **Decision:**
 - [ ] ✅ ACCEPT — bot's answer is fine; broaden gold to accept it
 - [ ] ❌ REJECT — bot is actually wrong; needs real bot fix
-- [ ] 📝 NEW EXPECTED → write below:
+- [x] 📝 NEW EXPECTED → write below:
 
   ```
-  (operator: paste a better expected_answer here if needed)
+  Gold was right. Bot should hand out the staff page.
   ```
 
 ---
@@ -123,10 +123,10 @@ These are `wrong` / `refused_incorrectly` / `answered_should_have_refused`. Chec
 **Decision:**
 - [ ] ✅ ACCEPT — bot's answer is fine; broaden gold to accept it
 - [ ] ❌ REJECT — bot is actually wrong; needs real bot fix
-- [ ] 📝 NEW EXPECTED → write below:
+- [x] 📝 NEW EXPECTED → write below:
 
   ```
-  (operator: paste a better expected_answer here if needed)
+  Gold was right. Bot should hand out the King Library study room reservation tool (LibCal allspaces).
   ```
 
 ---
@@ -145,10 +145,10 @@ These are `wrong` / `refused_incorrectly` / `answered_should_have_refused`. Chec
 **Decision:**
 - [ ] ✅ ACCEPT — bot's answer is fine; broaden gold to accept it
 - [ ] ❌ REJECT — bot is actually wrong; needs real bot fix
-- [ ] 📝 NEW EXPECTED → write below:
+- [x] 📝 NEW EXPECTED → write below:
 
   ```
-  (operator: paste a better expected_answer here if needed)
+  Gold was right. Bot should hand out the Special Collections & University Archives page and the staff page.
   ```
 
 ---
@@ -167,10 +167,10 @@ These are `wrong` / `refused_incorrectly` / `answered_should_have_refused`. Chec
 **Decision:**
 - [ ] ✅ ACCEPT — bot's answer is fine; broaden gold to accept it
 - [ ] ❌ REJECT — bot is actually wrong; needs real bot fix
-- [ ] 📝 NEW EXPECTED → write below:
+- [x] 📝 NEW EXPECTED → write below:
 
   ```
-  (operator: paste a better expected_answer here if needed)
+  User is asking policy but not yet asking for the ILL log in page. Bot should hand out the Interlibrary Loan policy page https://libguides.lib.miamioh.edu/mul-circulation-policies/loan-periods-ohiolink-ill
   ```
 
 ---
@@ -187,7 +187,7 @@ These are `wrong` / `refused_incorrectly` / `answered_should_have_refused`. Chec
 > Yes. The library’s Adobe Creative Cloud access includes Premiere Pro among the available products, and it is available through the software checkout page [1][5].
 
 **Decision:**
-- [ ] ✅ ACCEPT — bot's answer is fine; broaden gold to accept it
+- [x] ✅ ACCEPT — bot's answer is fine; broaden gold to accept it
 - [ ] ❌ REJECT — bot is actually wrong; needs real bot fix
 - [ ] 📝 NEW EXPECTED → write below:
 
@@ -211,10 +211,10 @@ These are `wrong` / `refused_incorrectly` / `answered_should_have_refused`. Chec
 **Decision:**
 - [ ] ✅ ACCEPT — bot's answer is fine; broaden gold to accept it
 - [ ] ❌ REJECT — bot is actually wrong; needs real bot fix
-- [ ] 📝 NEW EXPECTED → write below:
+- [x] 📝 NEW EXPECTED → write below:
 
   ```
-  (operator: paste a better expected_answer here if needed)
+  Gold was right.
   ```
 
 ---
@@ -233,10 +233,10 @@ These are `wrong` / `refused_incorrectly` / `answered_should_have_refused`. Chec
 **Decision:**
 - [ ] ✅ ACCEPT — bot's answer is fine; broaden gold to accept it
 - [ ] ❌ REJECT — bot is actually wrong; needs real bot fix
-- [ ] 📝 NEW EXPECTED → write below:
+- [x] 📝 NEW EXPECTED → write below:
 
   ```
-  (operator: paste a better expected_answer here if needed)
+  Gold was right.
   ```
 
 ---
@@ -255,10 +255,10 @@ These are `wrong` / `refused_incorrectly` / `answered_should_have_refused`. Chec
 **Decision:**
 - [ ] ✅ ACCEPT — bot's answer is fine; broaden gold to accept it
 - [ ] ❌ REJECT — bot is actually wrong; needs real bot fix
-- [ ] 📝 NEW EXPECTED → write below:
+- [x] 📝 NEW EXPECTED → write below:
 
   ```
-  (operator: paste a better expected_answer here if needed)
+  Gold was right.
   ```
 
 ---
@@ -277,10 +277,10 @@ These are `wrong` / `refused_incorrectly` / `answered_should_have_refused`. Chec
 **Decision:**
 - [ ] ✅ ACCEPT — bot's answer is fine; broaden gold to accept it
 - [ ] ❌ REJECT — bot is actually wrong; needs real bot fix
-- [ ] 📝 NEW EXPECTED → write below:
+- [x] 📝 NEW EXPECTED → write below:
 
   ```
-  (operator: paste a better expected_answer here if needed)
+  Gold was right.
   ```
 
 ---
@@ -301,10 +301,10 @@ Options: library employment, databases
 **Decision:**
 - [ ] ✅ ACCEPT — bot's answer is fine; broaden gold to accept it
 - [ ] ❌ REJECT — bot is actually wrong; needs real bot fix
-- [ ] 📝 NEW EXPECTED → write below:
+- [x] 📝 NEW EXPECTED → write below:
 
   ```
-  (operator: paste a better expected_answer here if needed)
+  Gold was right.
   ```
 
 ---
@@ -323,10 +323,10 @@ Options: library employment, databases
 **Decision:**
 - [ ] ✅ ACCEPT — bot's answer is fine; broaden gold to accept it
 - [ ] ❌ REJECT — bot is actually wrong; needs real bot fix
-- [ ] 📝 NEW EXPECTED → write below:
+- [x] 📝 NEW EXPECTED → write below:
 
   ```
-  (operator: paste a better expected_answer here if needed)
+  Gold was right.
   ```
 
 ---
@@ -343,12 +343,12 @@ Options: library employment, databases
 > Yes — Oxford Library data services offers consultations, and the GIS article says library staff are happy to help with GIS projects [1][2]. The data services page also says it provides data services support, including GIS help and data visualization support [4].
 
 **Decision:**
-- [ ] ✅ ACCEPT — bot's answer is fine; broaden gold to accept it
+- [x] ✅ ACCEPT — bot's answer is fine; broaden gold to accept it
 - [ ] ❌ REJECT — bot is actually wrong; needs real bot fix
 - [ ] 📝 NEW EXPECTED → write below:
 
   ```
-  (operator: paste a better expected_answer here if needed)
+  Also you can provide this link: https://libguides.lib.miamioh.edu/dataservices
   ```
 
 ---
@@ -365,7 +365,7 @@ Options: library employment, databases
 > Use the Printing & WiFi page for Oxford printing policy information [1][3]. The page is the canonical printing page for the library’s current printing details [3][4].
 
 **Decision:**
-- [ ] ✅ ACCEPT — bot's answer is fine; broaden gold to accept it
+- [x] ✅ ACCEPT — bot's answer is fine; broaden gold to accept it
 - [ ] ❌ REJECT — bot is actually wrong; needs real bot fix
 - [ ] 📝 NEW EXPECTED → write below:
 
@@ -387,12 +387,12 @@ Options: library employment, databases
 > Use the Ask Us email/LibAnswers ticket flow to email your question to the library [1]. You can also reach Miami University Libraries through the Contact Us page, which lists email contact options [2].
 
 **Decision:**
-- [ ] ✅ ACCEPT — bot's answer is fine; broaden gold to accept it
+- [x] ✅ ACCEPT — bot's answer is fine; broaden gold to accept it
 - [ ] ❌ REJECT — bot is actually wrong; needs real bot fix
 - [ ] 📝 NEW EXPECTED → write below:
 
   ```
-  (operator: paste a better expected_answer here if needed)
+  MU doesn't use "Contact Us" - it uses "Ask Us" or "Ask a Librarian".
   ```
 
 ---
@@ -409,7 +409,7 @@ Options: library employment, databases
 > The sources point to the Oxford library food/drink policy page for the current rules on bringing food into the library [1][2][3]. One Oxford library event announcement also shows food can be present in King Library during a special program, but it does not state the general policy [4].
 
 **Decision:**
-- [ ] ✅ ACCEPT — bot's answer is fine; broaden gold to accept it
+- [x] ✅ ACCEPT — bot's answer is fine; broaden gold to accept it
 - [ ] ❌ REJECT — bot is actually wrong; needs real bot fix
 - [ ] 📝 NEW EXPECTED → write below:
 
@@ -431,7 +431,7 @@ Options: library employment, databases
 > Yes. The software page says additional titles such as MATLAB can be added to library computers using Software Center on campus Windows PCs and Self-Service on campus Macs [3][5].
 
 **Decision:**
-- [ ] ✅ ACCEPT — bot's answer is fine; broaden gold to accept it
+- [x] ✅ ACCEPT — bot's answer is fine; broaden gold to accept it
 - [ ] ❌ REJECT — bot is actually wrong; needs real bot fix
 - [ ] 📝 NEW EXPECTED → write below:
 
@@ -455,10 +455,10 @@ Options: library employment, databases
 **Decision:**
 - [ ] ✅ ACCEPT — bot's answer is fine; broaden gold to accept it
 - [ ] ❌ REJECT — bot is actually wrong; needs real bot fix
-- [ ] 📝 NEW EXPECTED → write below:
+- [x] 📝 NEW EXPECTED → write below:
 
   ```
-  (operator: paste a better expected_answer here if needed)
+  Bot is right but the answer is too long. Giving the link to https://www.lib.miamioh.edu/use/technology/software/ is good enough. Gold is more preferred.
   ```
 
 ---
@@ -475,7 +475,7 @@ Options: library employment, databases
 > Alea Henle was named the new head of the Access & Borrow department, which encompasses circulation [2]. The staff directory page is the place to look up the current head of circulation [1].
 
 **Decision:**
-- [ ] ✅ ACCEPT — bot's answer is fine; broaden gold to accept it
+- [x] ✅ ACCEPT — bot's answer is fine; broaden gold to accept it
 - [ ] ❌ REJECT — bot is actually wrong; needs real bot fix
 - [ ] 📝 NEW EXPECTED → write below:
 
@@ -499,7 +499,7 @@ These are cases where the bot gave the right idea but the judge wanted slightly 
 > Search for the book in Primo, click "Place Hold," and sign in [5]. Choose Oxford Campus / King Library as the pickup location, then wait for the notification that it is ready for pickup [2][4].
 
 **Decision:**
-- [ ] ✅ ACCEPT — bot's answer is good enough; broaden gold
+- [x] ✅ ACCEPT — bot's answer is good enough; broaden gold
 - [ ] ❌ REJECT — bot missed something important; keep as partial
 
 ---
@@ -514,7 +514,7 @@ These are cases where the bot gave the right idea but the judge wanted slightly 
 > Same-day for in-stock items; it can take longer if the book comes from storage or another campus, and you’ll get an email when it’s ready [1].
 
 **Decision:**
-- [ ] ✅ ACCEPT — bot's answer is good enough; broaden gold
+- [x] ✅ ACCEPT — bot's answer is good enough; broaden gold
 - [ ] ❌ REJECT — bot missed something important; keep as partial
 
 ---
@@ -529,7 +529,7 @@ These are cases where the bot gave the right idea but the judge wanted slightly 
 > Search for the book in Primo, then click "Place Hold" on the title and sign in [1][2]. You can choose Oxford Campus / King Library as the pickup location when placing the hold [4].
 
 **Decision:**
-- [ ] ✅ ACCEPT — bot's answer is good enough; broaden gold
+- [x] ✅ ACCEPT — bot's answer is good enough; broaden gold
 - [ ] ❌ REJECT — bot missed something important; keep as partial
 
 ---
@@ -544,7 +544,7 @@ These are cases where the bot gave the right idea but the judge wanted slightly 
 > Use Miami University Libraries’ Primo search to look for journal articles about climate change [1]. If you’d rather search within specific subject databases, use the Databases A–Z list to pick an appropriate database for your topic [6]. If you get stuck, contact a librarian through the Ask Us page for chat/email/appointment help [9].
 
 **Decision:**
-- [ ] ✅ ACCEPT — bot's answer is good enough; broaden gold
+- [x] ✅ ACCEPT — bot's answer is good enough; broaden gold
 - [ ] ❌ REJECT — bot missed something important; keep as partial
 
 ---
@@ -559,8 +559,9 @@ These are cases where the bot gave the right idea but the judge wanted slightly 
 > Catalog search is currently unavailable. Please search directly at https://www.lib.miamioh.edu/ or chat with a librarian who can help find materials.
 
 **Decision:**
-- [ ] ✅ ACCEPT — bot's answer is good enough; broaden gold
+- [x] ✅ ACCEPT — bot's answer is good enough; broaden gold
 - [ ] ❌ REJECT — bot missed something important; keep as partial
+- [x] Note from operator: The bot should say that catalog search is currently not avalible in the bot. So this answer is more accurate to reflect the functionality of the bot.
 
 ---
 
@@ -578,7 +579,7 @@ Primo: https://ohiolink-mu.primo.exlibrisgroup.com/discovery/search?vid=01OHIOLI
 If Primo says "no results" and you think the library should have it, you can request it through Interlibrary Loan: https://www.lib.miamioh.edu/use/borrow/ill/
 
 **Decision:**
-- [ ] ✅ ACCEPT — bot's answer is good enough; broaden gold
+- [x] ✅ ACCEPT — bot's answer is good enough; broaden gold
 - [ ] ❌ REJECT — bot missed something important; keep as partial
 
 ---
@@ -593,7 +594,7 @@ If Primo says "no results" and you think the library should have it, you can req
 > Catalog search is currently unavailable. Please search directly at https://www.lib.miamioh.edu/ or chat with a librarian who can help find materials.
 
 **Decision:**
-- [ ] ✅ ACCEPT — bot's answer is good enough; broaden gold
+- [x] ✅ ACCEPT — bot's answer is good enough; broaden gold
 - [ ] ❌ REJECT — bot missed something important; keep as partial
 
 ---
