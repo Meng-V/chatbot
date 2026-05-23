@@ -179,6 +179,8 @@ def test_judge_answer_calls_llm_with_right_inputs() -> None:
         "reason": "right URL cited",
         "citation_validity": "all_valid",
     })
+    # Pin samples=1 here so we're asserting call SHAPE, not the
+    # multi-sample-majority behavior (which has its own tests below).
     out = judge_answer(
         JudgeRequest(
             question="Where can I print?",
@@ -187,12 +189,73 @@ def test_judge_answer_calls_llm_with_right_inputs() -> None:
             allowed_urls=["https://lib.miamioh.edu/use/technology/printing/"],
         ),
         judge_llm=canned,
+        samples=1,
     )
     assert canned.calls == 1
     assert isinstance(out, JudgeOutcome)
     assert out.verdict.verdict == "correct"
     # Suffix should carry through unchanged.
     assert "Where can I print?" in canned.last_suffix
+
+
+def test_judge_answer_default_samples_is_three() -> None:
+    """Default samples bumped to 3 on 2026-05-22 after empirical evidence
+    that single-shot judging was noisy enough to swing the eval score
+    by ~9pp on the same bot answers. Lock the default in so a future
+    refactor doesn't silently regress it."""
+    canned = CannedJudge({
+        "verdict": "correct", "reason": "ok", "citation_validity": "n_a",
+    })
+    judge_answer(
+        JudgeRequest(question="Q?", expected_answer="A.", bot_answer="A.", allowed_urls=[]),
+        judge_llm=canned,
+    )
+    assert canned.calls == 3, "default samples should be 3"
+
+
+def test_judge_answer_majority_vote() -> None:
+    """3 samples; 2 say wrong, 1 says correct -> majority 'wrong'."""
+    import json as _j
+    class StubMaj:
+        def __init__(self):
+            self.idx = 0
+            self.responses = [
+                {"verdict": "wrong", "reason": "1", "citation_validity": "n_a"},
+                {"verdict": "wrong", "reason": "2", "citation_validity": "n_a"},
+                {"verdict": "correct", "reason": "3", "citation_validity": "n_a"},
+            ]
+        def __call__(self, *, prefix_id, dynamic_suffix, model):
+            r = self.responses[self.idx]; self.idx += 1
+            return _j.dumps(r), {}
+    stub = StubMaj()
+    out = judge_answer(
+        JudgeRequest(question="Q?", expected_answer="A.", bot_answer="A.", allowed_urls=[]),
+        judge_llm=stub,
+    )
+    assert stub.idx == 3
+    assert out.verdict.verdict == "wrong"
+
+
+def test_judge_answer_tolerates_subset_parse_errors() -> None:
+    """If 1 of 3 samples is malformed JSON, take majority of the parseable 2."""
+    import json as _j
+    class StubPartial:
+        def __init__(self):
+            self.idx = 0
+            self.responses = [
+                {"verdict": "correct", "reason": "ok", "citation_validity": "n_a"},
+                "not-json-at-all",  # parse_verdict will raise
+                {"verdict": "correct", "reason": "ok2", "citation_validity": "n_a"},
+            ]
+        def __call__(self, *, prefix_id, dynamic_suffix, model):
+            r = self.responses[self.idx]; self.idx += 1
+            return (r if isinstance(r, str) else _j.dumps(r)), {}
+    stub = StubPartial()
+    out = judge_answer(
+        JudgeRequest(question="Q?", expected_answer="A.", bot_answer="A.", allowed_urls=[]),
+        judge_llm=stub,
+    )
+    assert out.verdict.verdict == "correct"
 
 
 def test_judge_answer_propagates_parse_error() -> None:
