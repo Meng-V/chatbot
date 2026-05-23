@@ -5266,3 +5266,11 @@
 {"intent": "databases", "utterance": "Which databases are available?", "source": "eval_fix_2026-05-23"}
 {"intent": "cross_campus_comparison", "utterance": "Tell me about the regional library.", "source": "eval_fix_2026-05-23"}
 {"intent": "cross_campus_comparison", "utterance": "Information about the regional library", "source": "eval_fix_2026-05-23"}
+{"intent": "staff_lookup", "utterance": "Who is the archivist?", "source": "eval_fix_2026-05-23"}
+{"intent": "staff_lookup", "utterance": "Who is the university archivist?", "source": "eval_fix_2026-05-23"}
+{"intent": "staff_lookup", "utterance": "What's the archivist's email?", "source": "eval_fix_2026-05-23"}
+{"intent": "staff_lookup", "utterance": "What's the email of the university archivist?", "source": "eval_fix_2026-05-23"}
+{"intent": "staff_lookup", "utterance": "How do I contact Special Collections?", "source": "eval_fix_2026-05-23"}
+{"intent": "staff_lookup", "utterance": "How do I contact the archives?", "source": "eval_fix_2026-05-23"}
+{"intent": "staff_lookup", "utterance": "Special Collections contact info", "source": "eval_fix_2026-05-23"}
+{"intent": "staff_lookup", "utterance": "Email of someone in Special Collections", "source": "eval_fix_2026-05-23"}

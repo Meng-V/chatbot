@@ -295,19 +295,47 @@ def process_synthesizer_output(
     # (hh_chat_with_librarian) dumped 5 librarians' names for a generic
     # "can I chat with a librarian?". Deterministic, ~zero false
     # positive: a legitimate single-person lookup ("the history
-    # librarian" -> Jenny Presnell) has exactly ONE email; >=2 distinct
-    # emails in one answer is a roster dump. The prompt rule handles
-    # the behavioral side; this is the load-bearing backstop.
+    # librarian" -> Jenny Presnell) has exactly ONE individual email;
+    # >=2 distinct INDIVIDUAL emails in one answer is a roster dump.
+    #
+    # IMPORTANT (2026-05-23): department inbox emails (archives@,
+    # speccoll@, refdesk@, library@, ill@, etc.) are NOT individual
+    # staff. They are public group inboxes documented on the website.
+    # Treat them as zero-count for the roster check so questions like
+    # "what's the archivist's email" can return both archives@ AND
+    # speccoll@ without falsely tripping the privacy guard.
+    #
+    # Explicit allowlist rather than a regex because individual emails
+    # like "bennethm@miamioh.edu" (lastname+initial) would otherwise
+    # match a permissive regex. Department inboxes are a small, known
+    # set documented on the library website.
+    _DEPT_INBOX_LOCALPARTS = frozenset({
+        "archives", "speccoll", "specialcollections", "library",
+        "libraries", "refdesk", "reference", "circulation", "circ",
+        "ill", "interlibraryloan", "reserves", "askus", "ask",
+        "info", "contact", "feedback", "webmaster",
+        "music", "wertz", "arts", "art", "king", "best",
+        "rentschler", "gardnerharvey", "hamilton", "middletown",
+        "makerspace", "digital", "digitalcollections",
+    })
     distinct_emails = {m.group(0).lower() for m in _EMAIL_RE.finditer(output.answer)}
-    if len(distinct_emails) >= 2:
+    individual_emails = {
+        e for e in distinct_emails
+        if e.split("@", 1)[0] not in _DEPT_INBOX_LOCALPARTS
+    }
+    if len(individual_emails) >= 2:
         failures.append(
             ValidationFailure(
                 trigger=RefusalTrigger.STAFF_PRIVACY,
                 detail=(
-                    f"Answer exposes {len(distinct_emails)} staff "
-                    f"contacts ({sorted(distinct_emails)}) -- a roster "
-                    f"dump. Bot must not volunteer staff lists; only a "
-                    f"single specifically-requested person."
+                    f"Answer exposes {len(individual_emails)} "
+                    f"individual staff contacts "
+                    f"({sorted(individual_emails)}) -- a roster "
+                    f"dump. Bot must not volunteer staff lists; only "
+                    f"a single specifically-requested person. "
+                    f"(Total distinct emails: {len(distinct_emails)} "
+                    f"of which {len(distinct_emails)-len(individual_emails)} "
+                    f"are department inboxes, allowed.)"
                 ),
             )
         )
