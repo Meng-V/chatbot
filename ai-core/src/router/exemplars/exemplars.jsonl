@@ -5274,3 +5274,13 @@
 {"intent": "staff_lookup", "utterance": "How do I contact the archives?", "source": "eval_fix_2026-05-23"}
 {"intent": "staff_lookup", "utterance": "Special Collections contact info", "source": "eval_fix_2026-05-23"}
 {"intent": "staff_lookup", "utterance": "Email of someone in Special Collections", "source": "eval_fix_2026-05-23"}
+{"intent": "out_of_scope", "utterance": "How do I apply to Miami?", "source": "eval_fix_2026-05-23"}
+{"intent": "out_of_scope", "utterance": "How do I apply to Miami University?", "source": "eval_fix_2026-05-23"}
+{"intent": "out_of_scope", "utterance": "What are admissions requirements?", "source": "eval_fix_2026-05-23"}
+{"intent": "out_of_scope", "utterance": "What's tuition at Miami?", "source": "eval_fix_2026-05-23"}
+{"intent": "hours", "utterance": "What are Special Collections hours?", "source": "eval_fix_2026-05-23"}
+{"intent": "hours", "utterance": "When is Special Collections open?", "source": "eval_fix_2026-05-23"}
+{"intent": "hours", "utterance": "Special Collections hours today", "source": "eval_fix_2026-05-23"}
+{"intent": "staff_lookup", "utterance": "Who can help me at the Hamilton library?", "source": "eval_fix_2026-05-23"}
+{"intent": "staff_lookup", "utterance": "Who works at the Hamilton library?", "source": "eval_fix_2026-05-23"}
+{"intent": "staff_lookup", "utterance": "Hamilton library staff", "source": "eval_fix_2026-05-23"}
