@@ -5,11 +5,11 @@ _v3 update 2026-05-22 22:45: 3-shot majority judge applied; locker truth fix; ho
 
 ## Headline
 
-- **Cases tested:** 159 of 184 (86%)
-- **Fully correct:** 94 / 159 = **59.1%** (was 50.3% on single-shot judge)
-- **Cited at least one source:** 136 / 159 = 85.5%
-- **Refusals fired:** 25 / 159 = 15.7%
-- **Untestable (eval-harness hang):** 25 cases (14%) — Issue #98
+- **Cases tested:** 167 of 184 (91%) — was 159; +8 recovered via standalone-script run
+- **Fully correct:** 99 / 167 = **59.3%** (was 50.3% on single-shot judge / 59.1% post-multi-sample)
+- **Cited at least one source:** ~85%
+- **Refusals fired:** ~16%
+- **Untestable (eval-harness hang):** 17 cases (9%) — Issue #98; need ≥120s/case + live tunnels to recover
 
 ## What changed in v3
 
