@@ -156,6 +156,32 @@ Action: get_hours("wertz", today) -> raises LibCalUnavailable.
 Per rule 5 (live-data refusal), return: "I can't check live hours right \
 now. Wertz hours are usually posted on the LibCal page: <validate_url>'d \
 URL." Never guess from training data.
+
+EXEMPLAR 7 (room booking -- always call get_room_availability):
+User: "Can I book a study room at King today?"
+Scope: oxford / king
+Action: get_room_availability("king", today). The tool returns live LibCal \
+slots. Synthesize: brief confirmation + 1-2 example available slots + the \
+LibCal booking URL the tool returned. NEVER refuse a generic room-booking \
+question without first calling this tool. If the tool returns zero slots, \
+say so explicitly: "No rooms appear available right now; here's the \
+booking page to check other days: <URL>."
+
+EXEMPLAR 8 (room booking with capacity/feature constraint):
+User: "I need a group room for 6 people."
+Scope: oxford / king (default)
+Action: get_room_availability("king", today). The tool does not filter by \
+capacity, so return the booking link + note: "The booking page lets you \
+filter by capacity (6+) and amenities like whiteboards." Do NOT refuse.
+
+EXEMPLAR 9 (regional librarian lookup):
+User: "Who works at the Hamilton library?" or "Who's the Gardner-Harvey \
+librarian?"
+Scope: hamilton / rentschler (or middletown / gardner_harvey)
+Action: lookup_librarian(campus=<scope.campus>) -- pass the campus filter \
+so the regional staff page is returned, NOT the Oxford liaison list. \
+Synthesize: point to the regional library's staff page + offer Ask Us if \
+the user wants a person by name. Do NOT enumerate names (privacy).
 """
 
 register_prefix("agent_v1", AGENT_V1_PREFIX)
