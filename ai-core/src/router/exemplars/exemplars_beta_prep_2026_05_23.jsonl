@@ -1,0 +1,26 @@
+// Beta-prep exemplar supplement, 2026-05-23.
+// Loader globs exemplars*.jsonl lexicographically; this file is appended
+// to the main labeled set without code changes. Source tag identifies it
+// for rollback (delete this file -> drops these exemplars).
+//
+// Targets four kNN classification misses from eval_results_after.jsonl:
+//   - ds_general / ds_gis  -> data_services
+//   - fs_sc_finding_aid    -> special_collections
+//   - fs_alexander_hamilton_blocked -> find_resource
+//
+// All utterances are paraphrases of either the gold question itself or
+// of common real-user phrasings the librarian-labeled set under-samples.
+{"intent": "data_services", "utterance": "Do you have data services?", "source": "manual_2026-05-23_beta_prep"}
+{"intent": "data_services", "utterance": "Does the library have data services?", "source": "manual_2026-05-23_beta_prep"}
+{"intent": "data_services", "utterance": "Can someone help me with GIS?", "source": "manual_2026-05-23_beta_prep"}
+{"intent": "data_services", "utterance": "I need GIS help -- who do I talk to?", "source": "manual_2026-05-23_beta_prep"}
+{"intent": "data_services", "utterance": "Where can I get help with data analysis?", "source": "manual_2026-05-23_beta_prep"}
+{"intent": "data_services", "utterance": "Do you offer data consultations?", "source": "manual_2026-05-23_beta_prep"}
+{"intent": "special_collections", "utterance": "How do I find a finding aid?", "source": "manual_2026-05-23_beta_prep"}
+{"intent": "special_collections", "utterance": "How do I find a finding aid for the Walter Havighurst papers?", "source": "manual_2026-05-23_beta_prep"}
+{"intent": "special_collections", "utterance": "Where are the finding aids for Special Collections?", "source": "manual_2026-05-23_beta_prep"}
+{"intent": "special_collections", "utterance": "How do I find a finding aid for a collection in the archives?", "source": "manual_2026-05-23_beta_prep"}
+{"intent": "find_resource", "utterance": "Do you have biographies of Alexander Hamilton?", "source": "manual_2026-05-23_beta_prep"}
+{"intent": "find_resource", "utterance": "Where can I find biographies of historical figures?", "source": "manual_2026-05-23_beta_prep"}
+{"intent": "find_resource", "utterance": "Do you have any biographies of George Washington?", "source": "manual_2026-05-23_beta_prep"}
+{"intent": "find_resource", "utterance": "Where can I find books about famous historical people?", "source": "manual_2026-05-23_beta_prep"}
