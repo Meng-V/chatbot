@@ -119,6 +119,29 @@ def test_website_feedback_is_refuse_with_handoff_trigger() -> None:
     )
 
 
+def test_out_of_scope_is_refuse_with_oos_trigger() -> None:
+    """out_of_scope intents (sports scores, weather, dining, parking,
+    transcripts, admissions) must short-circuit to a templated refusal
+    that points to Ask Us. Running the agent on these wastes tokens
+    and risks LLM hallucination on topics the bot has no corpus for.
+
+    Wired 2026-05-23 after eval failure analysis: 19 gold out_of_scope
+    refusal cases were being answered by the agent (stub) because
+    out_of_scope was READY-tier. Flipping to REFUSE fixes those + saves
+    real-LLM tokens in production for the same traffic class."""
+    cap = get_intent_capability("out_of_scope")
+    assert cap.tier == CapabilityTier.REFUSE
+    assert cap.refusal_trigger == "out_of_scope"
+    assert cap.canonical_url is not None
+    # Must direct the user to Ask Us for off-topic asks.
+    assert "Ask Us" in cap.short_message or "ask" in cap.canonical_url.lower()
+    # Must explain the scope boundary so the user knows why we declined.
+    assert (
+        "library" in cap.short_message.lower()
+        and "outside" in cap.short_message.lower()
+    )
+
+
 # --- READY default ------------------------------------------------------
 
 
@@ -262,6 +285,7 @@ def main() -> int:
         test_account_is_refuse_with_privacy_trigger,
         test_events_news_is_refuse_with_news_excluded_trigger,
         test_website_feedback_is_refuse_with_handoff_trigger,
+        test_out_of_scope_is_refuse_with_oos_trigger,
         test_unregistered_intent_defaults_to_ready,
         test_makerspace_is_ready,
         test_subject_librarian_is_ready,

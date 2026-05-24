@@ -123,7 +123,14 @@ LIMITATION_PATTERNS = {
         r'\bcheck.*renewal\b',
     ],
     "check_account": [
-        r'\b(my|check)\s*(library)?\s*(account|fines?|fees?|balance|checkouts?|loans?|items?)\b',
+        # Tightened 2026-05-23: was `\b(my|check)\s*(library)?\s*(account|fines?|...|checkouts?|loans?|items?)\b`
+        # which fired on "my checkout" -- catching `renew_extend`
+        # ("How do I extend my checkout?") as a false-positive
+        # check_account refusal. The narrower split below keeps
+        # `cap_check_my_account` covered (regex 2 + 4) while letting
+        # info phrasings about checkouts pass through to the agent loop.
+        r'\bmy\s*(library)?\s*(account|fines?|fees?|balance)\b',
+        r'\bcheck\s*(library)?\s*(my\s*)?(account|fines?|fees?|balance|checkouts?|loans?|items?)\b',
         r'\bwhat (do i|books|items).*\b(owe|checked out|have out|borrowed)\b',
         r'\bhow much do i owe\b',
         r'\bwhat.*checked out\b',
@@ -173,12 +180,72 @@ LIMITATION_PATTERNS = {
 # HELPER FUNCTIONS
 # ============================================================================
 
+# Action signals: phrases that mark the user as asking the BOT to perform
+# the action (vs asking informationally how to do it themselves). The
+# action-vs-info distinction is critical: "How do I renew my book?" should
+# get an answer pointing to MyAccount, while "Can you renew my book?"
+# should refuse with the same URL but an explicit "I can't do that for
+# you" preamble.
+#
+# Without this gate, the topic regexes below were over-firing on ALL
+# 27 ILL/catalog/place_holds/renew gold cases that the eval expects to
+# answer (see eval failure analysis 2026-05-23). The intent-capability
+# registry (router/intent_capabilities.py) handles the info case via
+# READY (agent + synth) or POINT_TO_URL (Primo / A-Z).
+_ACTION_SIGNALS: List[str] = [
+    # Bot-directive: "can/could/would/will you [do X]"
+    r"\b(can|could|would|will)\s+you\b",
+    # "for me" / "for us" -- explicit personal request to the bot
+    r"\bfor\s+(me|us)\b",
+    # Sentence-initial imperative: "Renew my book", "Submit ILL...".
+    # Allows leading "please ".
+    r"^\s*(please\s+)?(renew|submit|file|place|cancel|pay|extend|process|hold|find\s+me|get\s+me|pull\s+up)\b",
+    # "please [action verb]" anywhere in the message.
+    r"\bplease\s+(renew|submit|file|place|cancel|pay|extend|process|hold)\b",
+]
+
+# Limitations gated on action signals -- the bot only refuses these when
+# the user phrased it as an action request. Info-style phrasings fall
+# through to the intent-capability registry, which routes them to
+# POINT_TO_URL (find_resource -> Primo, databases -> A-Z) or to the
+# normal agent loop (interlibrary_loan / renew / holds = READY; the
+# synthesizer composes a "here's how + here's the URL" answer).
+#
+# `check_account` and `pay_fines` are NOT gated: their existing topic
+# patterns are already personal-account-specific ("my fines", "what do
+# I owe") so info-style phrasings don't match them in the first place.
+_REQUIRES_ACTION_SIGNAL: Set[str] = {
+    "renew_books",
+    "place_holds",
+    "interlibrary_loan",
+    "catalog_search",
+    "course_reserves",
+}
+
+
+def _has_action_signal(user_msg_lower: str) -> bool:
+    """True if the message contains any bot-directive / for-me / imperative
+    marker. Lowercased input expected (cheaper to lowercase once at the
+    caller than re-lower in each pattern)."""
+    for pattern in _ACTION_SIGNALS:
+        if re.search(pattern, user_msg_lower, re.IGNORECASE):
+            return True
+    return False
+
+
 def detect_limitation_request(user_message: str) -> Dict[str, any]:
     """Check if user is asking for something the bot cannot do.
-    
+
+    Action-vs-info gating: for limitation types in `_REQUIRES_ACTION_SIGNAL`,
+    we ONLY trigger the refusal when the user's phrasing carries an
+    action signal (bot-directive, "for me", or imperative). Info-style
+    phrasings ("How do I renew?", "Where do I pick up ILL?") fall
+    through so the intent-capability registry can serve them via
+    POINT_TO_URL or the agent loop.
+
     Args:
         user_message: The user's message
-        
+
     Returns:
         Dict with:
         - is_limitation: True if this is something bot cannot do
@@ -187,8 +254,12 @@ def detect_limitation_request(user_message: str) -> Dict[str, any]:
         - redirect_to: Where to redirect the user
     """
     user_msg_lower = user_message.lower()
-    
+    has_action = _has_action_signal(user_msg_lower)
+
     for limitation_type, patterns in LIMITATION_PATTERNS.items():
+        # Action-gated limitations: skip if the user asked an info question.
+        if limitation_type in _REQUIRES_ACTION_SIGNAL and not has_action:
+            continue
         for pattern in patterns:
             if re.search(pattern, user_msg_lower, re.IGNORECASE):
                 limitation = LIMITATIONS.get(limitation_type, {})

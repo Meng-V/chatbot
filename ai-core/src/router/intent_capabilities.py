@@ -195,6 +195,35 @@ _REFUSE: dict[str, IntentCapability] = {
         ),
         refusal_trigger="website_feedback_handoff",
     ),
+    # out_of_scope: kNN classifier landed here (sports scores, weather,
+    # admissions, dining, transcripts, etc.). The agent can't help and
+    # running the full agent loop wastes tokens + risks hallucination.
+    # Short-circuit to a templated "I only handle library questions"
+    # response and point to Ask Us for everything else.
+    #
+    # Wired 2026-05-23 after eval failure analysis showed 19 gold
+    # out_of_scope refusals being answered by the stub agent (since
+    # out_of_scope was READY-tier, the agent ran). Even with a real
+    # synth, the safer behavior is "decline politely, redirect to a
+    # human" rather than risk an LLM-fabricated answer about parking
+    # passes or Bengals scores.
+    "out_of_scope": IntentCapability(
+        intent="out_of_scope",
+        tier=CapabilityTier.REFUSE,
+        canonical_url="https://www.lib.miamioh.edu/research/research-support/ask/",
+        short_message=(
+            "I'm focused on Miami University Libraries questions -- "
+            "hours, services, spaces, research help, and policies. "
+            "The question you asked is outside that scope, so I don't "
+            "have a reliable answer for it.\n\n"
+            "If this IS a library question I'm misreading, try "
+            "rephrasing more specifically. For anything else (campus "
+            "logistics, course questions, news, etc.), the librarians "
+            "on Ask Us can usually point you to the right office:\n\n"
+            "Ask Us: https://www.lib.miamioh.edu/research/research-support/ask/"
+        ),
+        refusal_trigger="out_of_scope",
+    ),
 }
 
 
