@@ -60,16 +60,23 @@ from src.config.capability_scope import (  # noqa: E402
 # --- Limitation detection ------------------------------------------------
 
 
-def test_renew_books_detected() -> None:
+def test_renew_books_detected_action_phrasing() -> None:
+    """Action-style requests (bot-directive, imperative, 'for me')
+    must trigger renew_books refusal. Info phrasings ('How do I renew?',
+    'Can I renew my book?') are handled by the intent-capability
+    registry / agent loop -- see test_renew_info_phrasings_pass_through.
+    Updated 2026-05-23 with action-vs-info gate; previously this test
+    asserted info phrasings refused, which over-fired on every gold
+    'how do I renew' question."""
     msgs = [
-        "Can I renew my books?",
-        "How do I renew this book?",
-        "I need to extend my checkout",
-        "renewal eligibility",
+        "Can you renew my book?",            # bot-directive
+        "Renew my checkout for me",          # imperative + for me
+        "Please renew my book",              # please + imperative
+        "Extend my checkout for me",         # imperative possessive + for me
     ]
     for m in msgs:
         out = detect_limitation_request(m)
-        assert out["is_limitation"], f"missed: {m!r}"
+        assert out["is_limitation"], f"missed action phrasing: {m!r}"
         assert out["limitation_type"] == "renew_books"
 
 
@@ -90,39 +97,55 @@ def test_check_account_detected() -> None:
         assert out["limitation_type"] in ("check_account", "pay_fines")
 
 
-def test_place_holds_detected() -> None:
-    out = detect_limitation_request("Place a hold on this book")
-    assert out["is_limitation"]
-    assert out["limitation_type"] == "place_holds"
-
-
-def test_interlibrary_loan_detected() -> None:
-    """ILL is in LIMITATION_PATTERNS so the bot doesn't try to do the
-    submission itself -- it points to the form. Per plan §"Action vs
-    guidance distinction"."""
+def test_place_holds_detected_action_phrasing() -> None:
+    """Imperative 'Place a hold...' triggers refusal. Info phrasings
+    ('How do I place a hold?') are READY-tier and answer normally."""
     msgs = [
-        "How do I do an interlibrary loan?",
-        "Can I get a book from another library?",
-        # NB: "I need to borrow a book Miami doesn't have" falsely
-        # routes to catalog_search because the catalog_search regex
-        # `\b(need|want|get)...book` is too greedy. Documented gap.
+        "Place a hold on this book",          # sentence-initial imperative
+        "Can you place a hold on Hamlet?",    # bot-directive
+        "Please place a hold for me",         # please + for me
     ]
     for m in msgs:
         out = detect_limitation_request(m)
-        assert out["is_limitation"], f"missed: {m!r}"
+        assert out["is_limitation"], f"missed action phrasing: {m!r}"
+        assert out["limitation_type"] == "place_holds"
+
+
+def test_interlibrary_loan_detected_action_phrasing() -> None:
+    """ILL refuses ONLY for action requests where the user is asking
+    the bot to submit/process an ILL on their behalf. Info questions
+    ("How do I do ILL?", "Where do I pick up at Hamilton?") fall through
+    to the agent loop -- ILL is READY in intent_capabilities.py and
+    the agent composes a "here's how + here's the form URL" answer.
+
+    See gold cases `fs_ill_no_submit` (refusal-expected, has "for me")
+    vs `fs_ill_oxford` / `fs_ill_hamilton` / `ill_turnaround_no_guess`
+    (answer-expected, all info phrasings)."""
+    msgs = [
+        "Submit an ILL request for The Great Gatsby for me.",  # gold fs_ill_no_submit
+        "Can you file an ILL request for Hamlet?",
+        "Please submit an interlibrary loan request",
+    ]
+    for m in msgs:
+        out = detect_limitation_request(m)
+        assert out["is_limitation"], f"missed action phrasing: {m!r}"
         assert out["limitation_type"] == "interlibrary_loan"
 
 
-def test_catalog_search_detected() -> None:
-    """The bot doesn't do catalog searches -- redirects to Primo."""
+def test_catalog_search_detected_action_phrasing() -> None:
+    """Catalog-search refusal fires ONLY when the user asks the bot to
+    do the search for them. Info phrasings ("Do you have Hamlet?",
+    "Where can I find books on Ohio history?") are POINT_TO_URL via
+    `intent_capabilities.find_resource` -> Primo -- see
+    test_catalog_info_phrasings_pass_through."""
     msgs = [
-        "Find me 5 articles about climate change",
-        "Look for books on World War 2",
-        "Do you have a copy of Hamlet?",
+        "Find me 5 articles about climate change",  # "find me" = imperative + topic match (find...articles)
+        "Pull up books on World War 2 for me",      # "for me" + topic match (books...on)
+        "Could you search the catalog for World War 2?",  # "could you" + topic match (catalog search)
     ]
     for m in msgs:
         out = detect_limitation_request(m)
-        assert out["is_limitation"], f"missed: {m!r}"
+        assert out["is_limitation"], f"missed action phrasing: {m!r}"
         assert out["limitation_type"] == "catalog_search"
 
 
@@ -132,17 +155,18 @@ def test_pay_fines_detected() -> None:
     assert out["limitation_type"] in ("pay_fines", "check_account")
 
 
-def test_course_reserves_detected() -> None:
+def test_course_reserves_detected_action_phrasing() -> None:
+    """Course-reserves refusal fires ONLY for action requests. Info
+    phrasings ("Where are my course reserves?", "How do I find course
+    reserves?") fall through to the agent loop / point_to_url."""
     msgs = [
-        "Where are my course reserves?",
-        "Reserves for my class",
-        # NB: "My professor put a book on reserve" falsely matches
-        # catalog_search because `\bbooks?\b.*\b(about|on|regarding)\b`
-        # treats "book on reserve" as "book on [topic]". Documented gap.
+        "Pull up my course reserves",                  # imperative phrasing
+        "Can you find my course reserves for me?",     # bot-directive + for me
+        "Please pull up reserves for my class",        # please + imperative
     ]
     for m in msgs:
         out = detect_limitation_request(m)
-        assert out["is_limitation"], f"missed: {m!r}"
+        assert out["is_limitation"], f"missed action phrasing: {m!r}"
         assert out["limitation_type"] == "course_reserves"
 
 
@@ -162,6 +186,46 @@ def test_non_limitation_messages_pass_through() -> None:
         out = detect_limitation_request(m)
         assert not out["is_limitation"], (
             f"false positive on legitimate question: {m!r} "
+            f"-> {out.get('limitation_type')}"
+        )
+
+
+def test_renew_info_phrasings_pass_through() -> None:
+    """Info-style renew/holds/ILL/catalog/reserves questions must NOT
+    refuse -- the agent loop or point_to_url tier handles them.
+
+    These are gold answer-expected cases (renew_basic, fs_ill_oxford,
+    circ_place_hold, find_book_specific, reserves_find) that previously
+    refused with `capability_limitation:*` -- the action-vs-info gate
+    fixes all 27 false positives. Eval failure analysis 2026-05-23."""
+    info_phrasings = [
+        # Renew
+        "Can I renew my book?",                          # gold renew_basic
+        "How many times can I renew a book?",            # gold renew_how_many
+        "How do I extend my checkout?",                  # gold renew_extend
+        # Place holds
+        "How do I place a hold on a book at Miami?",     # gold circ_place_hold
+        "Will I get a confirmation when I place a hold on a book?",  # gold circ_confirmation
+        # ILL
+        "How do I request an interlibrary loan?",        # gold fs_ill_oxford
+        "How do I get a book from another library to Hamilton?",   # gold fs_ill_hamilton
+        "Where do I pick up an ILL request at Hamilton?",  # gold ill_hamilton_pickup
+        "Can I pick up ILL at Gardner-Harvey?",          # gold ill_middletown_pickup
+        "How long does ILL take?",                       # gold ill_turnaround_no_guess
+        "Where do I return an interlibrary loan book?",  # gold fs_ill_return
+        "Are there fees for interlibrary loan?",         # gold fs_ill_fee
+        # Catalog (find_resource is POINT_TO_URL via intent_capabilities)
+        "Do you have a copy of Hamlet?",                 # gold find_book_specific
+        "I'm looking for an article about climate change",  # gold find_article_topic
+        "Where can I find books on Ohio history?",       # gold find_books_topic
+        # Course reserves
+        "How do I find course reserves?",                # gold reserves_find
+        "Where are my course reserves?",                 # gold reserves_my_class
+    ]
+    for m in info_phrasings:
+        out = detect_limitation_request(m)
+        assert not out["is_limitation"], (
+            f"info phrasing wrongly triggered limitation: {m!r} "
             f"-> {out.get('limitation_type')}"
         )
 
@@ -398,10 +462,12 @@ def test_known_regex_gaps_documented() -> None:
     out = detect_policy_question("When are my books due?")
     assert not out["is_policy_question"], "regex now catches 'my books due' -- update test"
 
-    # catalog_search greedily steals 'book on reserve':
+    # 'book on reserve' no longer false-positives because catalog_search
+    # is now action-gated and "My professor put..." has no action signal.
+    # Updated 2026-05-23 -- the over-firing this documented is fixed.
     out = detect_limitation_request("My professor put a book on reserve")
-    assert out.get("limitation_type") == "catalog_search", (
-        "regex no longer false-positives 'book on reserve' -- update test"
+    assert not out["is_limitation"], (
+        "action-vs-info gate should suppress catalog_search here"
     )
 
 
@@ -410,14 +476,15 @@ def test_known_regex_gaps_documented() -> None:
 
 def main() -> int:
     tests = [
-        test_renew_books_detected,
+        test_renew_books_detected_action_phrasing,
         test_check_account_detected,
-        test_place_holds_detected,
-        test_interlibrary_loan_detected,
-        test_catalog_search_detected,
+        test_place_holds_detected_action_phrasing,
+        test_interlibrary_loan_detected_action_phrasing,
+        test_catalog_search_detected_action_phrasing,
         test_pay_fines_detected,
-        test_course_reserves_detected,
+        test_course_reserves_detected_action_phrasing,
         test_non_limitation_messages_pass_through,
+        test_renew_info_phrasings_pass_through,
         test_limitation_response_includes_redirect,
         test_get_limitation_response_returns_string,
         test_get_limitation_response_unknown_returns_fallback,
