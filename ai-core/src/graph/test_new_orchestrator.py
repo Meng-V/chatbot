@@ -319,8 +319,14 @@ def test_account_intent_short_circuits_with_privacy_refusal() -> None:
         "capability_limitation:check_account",
     )
     assert resp.tokens["input"] == 0
-    assert "MyAccount" in resp.answer
-    assert "can't access" in resp.answer.lower()
+    # Both refusal templates point to the same Primo MyAccount URL
+    # ("MyAccount" link text on the intent_capabilities side; bare URL
+    # on the capability_scope side). The URL is what matters.
+    assert "ohiolink-mu.primo.exlibrisgroup.com/discovery/account" in resp.answer
+    # Either "can't access" (intent_capabilities) or "don't have access"
+    # (capability_scope) -- both express "I can't see your account".
+    answer_lower = resp.answer.lower()
+    assert ("can't access" in answer_lower) or ("don't have access" in answer_lower)
 
 
 def test_events_news_intent_short_circuits_with_news_refusal() -> None:
