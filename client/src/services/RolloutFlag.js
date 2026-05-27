@@ -95,10 +95,24 @@ export function resolveV2Flag() {
 
 /**
  * Socket.IO path for this session's assigned stack.
- * Legacy stays at `/smartchatbot/socket.io`; v2 users hit `/smartchatbot/v2/socket.io`.
+ *
+ * 2026-05-27 cutover: v2 was promoted to the PRIMARY (and only) Socket.IO
+ * handler at the original `/smartchatbot/socket.io` path -- see
+ * `ai-core/src/main.py` `app_sio = socketio.ASGIApp(sio_v2, ...,
+ * socketio_path="/smartchatbot/socket.io")`. The previous `/smartchatbot/v2/
+ * socket.io` mount was removed.
+ *
+ * That broke any browser whose localStorage was sticky-assigned `"on"` from
+ * before the cutover (reported in production by Rachel: Firefox failed to
+ * connect to `wss://app.lib.miamioh.edu/smartchatbot/v2/socket.io/...`). The
+ * `flag` argument is now ignored -- both legacy and v2 sessions hit the
+ * single canonical path. The rest of `resolveV2Flag` is left intact so the
+ * console "routing to v2 stack" log keeps surfacing for telemetry, but the
+ * routing decision no longer affects the socket URL.
+ *
+ * Rollback: if v2 is reverted and the dual-path mount is restored, change
+ * this back to a flag-conditional return.
  */
-export function socketIoPathForFlag(flag) {
-  return flag === 'on'
-    ? '/smartchatbot/v2/socket.io'
-    : '/smartchatbot/socket.io';
+export function socketIoPathForFlag(_flag) {
+  return '/smartchatbot/socket.io';
 }
