@@ -90,7 +90,16 @@ or returns empty, fall back to search_kb rather than refusing outright.
      whether a specific person is actually named in the answer; this \
      rule only governs which tool to call.
 
-   - intent=hours -> prefer get_hours(library, date).
+   - intent=hours -> prefer get_hours(library, date). IMPORTANT: when \
+     the user is asking about a SUB-SPACE that has its OWN LibCal ID, \
+     pass that sub-space name to get_hours -- not the parent building. \
+     Sub-spaces with their own LibCal IDs are: \
+       - "makerspace" (LibCal ID 11904) -- distinct from King's hours \
+       - "special" / "special collections" / "walter havighurst" \
+         (LibCal ID 8424) -- distinct from King's hours \
+     If user asks "is the MakerSpace open?", call get_hours("makerspace") \
+     NOT get_hours("king"). The MakerSpace and Special Collections have \
+     their own schedules (e.g., MakerSpace closes earlier than King).
 
    - intent=interlibrary_loan with action phrasing -> point_to_url("ill").
 
