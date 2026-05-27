@@ -21,9 +21,12 @@ const useServerHealth = (checkInterval = 30000) => {
 
     try {
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
+      const timeoutId = setTimeout(() => controller.abort(), 5000); // 5s — trivial liveness probe
 
-      const response = await fetch('/health', {
+      // 2026-05-27: switched from /health (6 external checks, regularly
+      // >10s) to /health/live (trivial). See SocketContextProvider for
+      // the full rationale.
+      const response = await fetch('/health/live', {
         signal: controller.signal,
         headers: {
           'Cache-Control': 'no-cache',
@@ -38,13 +41,16 @@ const useServerHealth = (checkInterval = 30000) => {
       }
 
       const healthData = await response.json();
-      setServerStatus(healthData.status || 'healthy');
+      // /health/live returns {status: "alive"}; treat any 200 as healthy.
+      setServerStatus('healthy');
       setLastHealthCheck(new Date());
       setErrorDetails(null);
       setRetryCount(0);
 
-      // Check for degraded services
-      if (healthData.status === 'degraded') {
+      // /health/live has no `degraded` concept (it's only liveness).
+      // The downstream-health UI signal is dropped here -- the bot
+      // surfaces its own service-unavailable refusals when needed.
+      if (false) {
         setErrorDetails({
           type: 'degraded',
           message: 'Some services are experiencing issues',
