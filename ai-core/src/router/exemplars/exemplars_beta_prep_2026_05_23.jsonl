@@ -24,3 +24,18 @@
 {"intent": "find_resource", "utterance": "Where can I find biographies of historical figures?", "source": "manual_2026-05-23_beta_prep"}
 {"intent": "find_resource", "utterance": "Do you have any biographies of George Washington?", "source": "manual_2026-05-23_beta_prep"}
 {"intent": "find_resource", "utterance": "Where can I find books about famous historical people?", "source": "manual_2026-05-23_beta_prep"}
+{"intent": "subject_librarian", "utterance": "Who can help me with a computer question?", "source": "manual_2026-05-25_round5"}
+{"intent": "subject_librarian", "utterance": "Who do I talk to about computer science research?", "source": "manual_2026-05-25_round5"}
+{"intent": "subject_librarian", "utterance": "Who is the IT or computing librarian?", "source": "manual_2026-05-25_round5"}
+{"intent": "human_handoff", "utterance": "Can I put a ticket in for help?", "source": "manual_2026-05-25_round5"}
+{"intent": "human_handoff", "utterance": "How do I submit a help request?", "source": "manual_2026-05-25_round5"}
+{"intent": "human_handoff", "utterance": "Is there a help desk ticket system?", "source": "manual_2026-05-25_round5"}
+{"intent": "location_directions", "utterance": "What is the library phone number?", "source": "manual_2026-05-25_round5"}
+{"intent": "location_directions", "utterance": "What is the Hamilton library phone number?", "source": "manual_2026-05-25_round5"}
+{"intent": "location_directions", "utterance": "How do I call the library?", "source": "manual_2026-05-25_round5"}
+{"intent": "subject_librarian", "utterance": "Who is the librarian for Special Collections?", "source": "manual_2026-05-25_round5"}
+{"intent": "subject_librarian", "utterance": "Who is the librarian for the Makerspace?", "source": "manual_2026-05-25_round5"}
+{"intent": "subject_librarian", "utterance": "Who is the subject librarian for geography?", "source": "manual_2026-05-25_round5"}
+{"intent": "subject_librarian", "utterance": "Who is the subject librarian for marketing?", "source": "manual_2026-05-25_round5"}
+{"intent": "instruction_request", "utterance": "Is there a class guide for BUS217?", "source": "manual_2026-05-25_round5"}
+{"intent": "instruction_request", "utterance": "Is there a libguide for my course?", "source": "manual_2026-05-25_round5"}
