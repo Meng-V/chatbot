@@ -310,7 +310,14 @@ def test_account_intent_short_circuits_with_privacy_refusal() -> None:
     )
     resp = run_turn(request, deps)
     assert resp.is_refusal
-    assert resp.refusal_trigger == "account_privacy"
+    # Either trigger is acceptable -- both produce the same user-facing
+    # refusal (MyAccount pointer). capability_scope's check_account
+    # regex (added 2026-05-23) fires before intent_capabilities' account
+    # tier; for "how much do I owe?" it's now the canonical path.
+    assert resp.refusal_trigger in (
+        "account_privacy",
+        "capability_limitation:check_account",
+    )
     assert resp.tokens["input"] == 0
     assert "MyAccount" in resp.answer
     assert "can't access" in resp.answer.lower()

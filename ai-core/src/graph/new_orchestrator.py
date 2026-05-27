@@ -533,6 +533,48 @@ def _tool_fact_evidence(result: Any) -> list[EvidenceChunk]:
             campus="all",
             kind="authoritative_db",
         ))
+    elif name == "lookup_space":
+        # Wired 2026-05-27: lookup_space results were being silently
+        # dropped here, which caused the synth to refuse address/phone
+        # questions for Middletown / Hamilton / Wertz (regions Weaviate
+        # has thin coverage on — without lookup_space evidence reaching
+        # the synth, agent had nothing to cite -> "no evidence" refusal).
+        # King worked only because search_kb happened to find King's
+        # location page in Weaviate; the regional sites are not indexed
+        # as densely. This handler converts the LibrarySpace row into
+        # a single [DIRECTORY]-tier EvidenceChunk so the synth can cite
+        # address/phone/services_offered verbatim.
+        space = data.get("space") if isinstance(data, dict) else None
+        if not space or not data.get("found", True):
+            return []
+        # Render the structured row as a citable text block. The synth
+        # is instructed to quote verbatim from [DIRECTORY] sources.
+        parts: list[str] = []
+        if space.get("name"):
+            parts.append(f"Name: {space['name']}")
+        if space.get("address"):
+            parts.append(f"Address: {space['address']}")
+        if space.get("phone"):
+            parts.append(f"Phone: {space['phone']}")
+        if space.get("capacity"):
+            parts.append(f"Capacity: {space['capacity']}")
+        if space.get("equipment"):
+            parts.append(f"Equipment: {', '.join(space['equipment'])}")
+        if space.get("services_offered"):
+            parts.append(
+                f"Services offered: {', '.join(space['services_offered'])}"
+            )
+        text = ". ".join(parts)
+        if not text:
+            return []
+        out.append(EvidenceChunk(
+            chunk_id=f"tool:lookup_space:{space.get('library') or 'unknown'}",
+            source_url=str(space.get("source_url") or ""),
+            text=text,
+            campus=str(space.get("campus") or "").lower() or "all",
+            library=str(space.get("library") or "") or None,
+            kind="authoritative_db",
+        ))
     return out
 
 
