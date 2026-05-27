@@ -1105,13 +1105,21 @@ sio_v2.on("connect", _v2_connect)
 sio_v2.on("disconnect", _v2_disconnect)
 sio_v2.on("message", _v2_message)
 
-# Wrap (never mutate) the legacy ASGIApp. v2 path -> sio_v2; everything
-# else (legacy socket path + FastAPI) -> the untouched line-336 object.
+# 2026-05-27: v2 promoted to PRIMARY at the original /smartchatbot/socket.io
+# path (was /smartchatbot/v2/socket.io). Operator decision per ship plan:
+# skip the 10%-flag gradual rollout, deploy v2 as the only serving handler.
+# The v1 sio object still exists in memory (line 435) but never receives
+# socket.io traffic — the outer ASGIApp captures every request to
+# /smartchatbot/socket.io and routes to sio_v2. Non-socket.io HTTP requests
+# still fall through to _legacy_app_sio -> FastAPI.
+#
+# Rollback: revert this commit, or change socketio_path back to
+# "/smartchatbot/v2/socket.io" and turn the frontend ?v2=1 flag back on.
 _legacy_app_sio = app_sio
 app_sio = socketio.ASGIApp(
     sio_v2,
     other_asgi_app=_legacy_app_sio,
-    socketio_path="/smartchatbot/v2/socket.io",
+    socketio_path="/smartchatbot/socket.io",
 )
 
 
