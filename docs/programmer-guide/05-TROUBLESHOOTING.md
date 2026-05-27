@@ -49,7 +49,7 @@ sudo tail -100 /var/log/smartchatbot_backend.error.log
 | `ModuleNotFoundError: No module named 'prisma'` | Prisma Python client not generated | `cd ai-core && prisma generate` |
 | `ImportError: cannot import name 'X' from 'src.Y'` | Stale `__pycache__/` from old code, or missing migration | `find . -name __pycache__ -exec rm -rf {} +`, then restart |
 | `asyncpg.exceptions.UndefinedColumnError` | Postgres schema doesn't match Prisma schema | Run `npx prisma migrate deploy`; if that fails, see Section 9 |
-| `OSError: [Errno 98] Address already in use` | Another process is on the port | `sudo ss -tlnp \| grep 8000` to find it, then kill it |
+| `OSError: [Errno 98] Address already in use` | Another process is on the port | `sudo ss -tlnp \| grep 8081` to find it, then kill it (prod port is 8081; local dev default is 8000) |
 
 ---
 
@@ -81,7 +81,7 @@ Check: in DevTools Network tab, look for the periodic XHR call. URL should be `/
 If for some reason you intentionally call `/health` (ops dashboard, etc.) and it's slow, identify which downstream is slow:
 
 ```bash
-time curl -s http://localhost:8000/health | python3 -m json.tool
+time curl -s http://localhost:8081/health | python3 -m json.tool
 ```
 
 The response will tell you which service is `"unhealthy"`. Most common culprits:

@@ -39,7 +39,7 @@ sudo systemctl list-units --type=service | grep -iE 'chatbot|smart'
 
 # 4. Confirm backend currently running + healthy
 sudo systemctl status <service-name> --no-pager | head -10
-curl -s http://localhost:8000/health/live
+curl -s http://localhost:8081/health/live
 # Expected: Active: active (running); {"status":"alive"}
 ```
 
@@ -82,7 +82,7 @@ sudo systemctl status <service-name> --no-pager | head -10
 # Expected: Active: active (running), recent start time
 
 # 7. Verify it's serving
-curl -s http://localhost:8000/health/live
+curl -s http://localhost:8081/health/live
 # Expected: {"status":"alive"}
 
 # 8. Watch live log for a few seconds
@@ -205,7 +205,7 @@ sudo ln -sfn /opt/chatbot/builds/<PREVIOUS_TIMESTAMP>/ /opt/chatbot/current
 sudo systemctl restart <service-name>
 
 # Verify
-curl -s http://localhost:8000/health/live
+curl -s http://localhost:8081/health/live
 ```
 
 Use this for: "the new deploy broke something, get prod working immediately, debug later."
@@ -317,10 +317,10 @@ Don't trust `Active: active (running)` alone. Do a real end-to-end test:
 
 ```bash
 # 1. From the prod server, test the local API
-curl -s http://localhost:8000/health/live
+curl -s http://localhost:8081/health/live
 # Expected: {"status":"alive"}
 
-curl -s http://localhost:8000/health/ready
+curl -s http://localhost:8081/health/ready
 # Expected: 200 + JSON with all probes passing
 
 # 2. From your laptop browser (incognito), hit the public URL

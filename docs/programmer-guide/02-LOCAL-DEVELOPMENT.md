@@ -144,6 +144,8 @@ cd ai-core
 .venv/bin/uvicorn src.main:app_sio --host 0.0.0.0 --port 8000 --reload
 ```
 
+> **Port note:** local dev defaults to **8000** (uvicorn's default). Production listens on **8081**. Other docs (deployment, troubleshooting) are written for the prod port — substitute if you're testing locally.
+
 You should see something like:
 ```
 INFO:     Started server process [12345]

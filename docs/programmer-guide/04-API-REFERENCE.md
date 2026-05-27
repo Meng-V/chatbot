@@ -9,7 +9,7 @@ The bot is primarily a Socket.IO server. The React UI in `client/` is the canoni
 ## Socket.IO endpoint
 
 **URL:** `https://app.lib.miamioh.edu/smartchatbot/socket.io/` (production)
-**URL:** `http://localhost:8000/smartchatbot/socket.io/` (local dev)
+**URL:** `http://localhost:8081/smartchatbot/socket.io/` (local dev)
 
 **Transport:** WebSocket primary, long-polling fallback. Engine.IO v4.
 
@@ -135,7 +135,7 @@ The UI typically doesn't show these labels to the user, but they're useful for l
 **Trivial liveness probe.** Use this for synthetic monitoring, load balancer health checks, and frontend "is the bot up" polling.
 
 ```bash
-curl -s http://localhost:8000/health/live
+curl -s http://localhost:8081/health/live
 # {"status":"alive"}
 ```
 
@@ -146,7 +146,7 @@ Response: 200 with `{"status":"alive"}` if the FastAPI worker is responsive. Doe
 **Readiness probe.** Hits configured dependency probes (Weaviate, Postgres, OpenAI). Returns 200 if all probes pass, else 503.
 
 ```bash
-curl -s http://localhost:8000/health/ready
+curl -s http://localhost:8081/health/ready
 ```
 
 ### `GET /health`
@@ -154,7 +154,7 @@ curl -s http://localhost:8000/health/ready
 **Full external-API health check.** Pings OpenAI, Weaviate, LibCal, LibGuides, Google CSE, LibAnswers in parallel. Returns detailed status per service.
 
 ```bash
-curl -s http://localhost:8000/health
+curl -s http://localhost:8081/health
 ```
 
 **⚠️ Can be slow (>5s) when downstream services are warming up.** Don't use for frontend polling; use `/health/live` instead.
@@ -191,7 +191,7 @@ Returns 200 if all asserts pass. Used by external pingers (UptimeRobot / BetterS
 **HTTP-only chat endpoint** (no streaming). Same shape as Socket.IO `message`, returns the same response shape synchronously.
 
 ```bash
-curl -sX POST http://localhost:8000/ask \
+curl -sX POST http://localhost:8081/ask \
   -H "Content-Type: application/json" \
   -d '{"message":"What time does King Library close?","conversation_id":"test-001"}'
 ```

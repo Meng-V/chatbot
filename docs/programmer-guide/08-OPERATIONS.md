@@ -266,7 +266,7 @@ sudo journalctl -t etl-prepare --since "30 days ago" --no-pager | tail -20
 1. Get new client_id/client_secret from Springshare admin
 2. Update `LIBCAL_CLIENT_*` / `LIBAPPS_CLIENT_*` in `.env`
 3. Restart backend (OAuth tokens are cached in-process)
-4. Verify with `curl http://localhost:8000/health` — LibCal section should be `"healthy"`
+4. Verify with `curl http://localhost:8081/health` — LibCal section should be `"healthy"`
 
 ### Postgres password
 

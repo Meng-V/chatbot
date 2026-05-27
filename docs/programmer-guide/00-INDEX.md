@@ -60,6 +60,8 @@ If a sysadmin asks "how do I deploy?" — send them [03-DEPLOYMENT.md](03-DEPLOY
    sword         → (no LibCal tracking; not in API)
    ```
 
+7. **Backend listens on port 8081 in production, 8000 in local dev (uvicorn default).** When commands in these docs say `http://localhost:8081`, that's prod. If you're on your laptop and uvicorn picked 8000, substitute. Health-check curl commands are written for prod (`:8081`).
+
 ---
 
 ## Repository layout (the parts that matter)
