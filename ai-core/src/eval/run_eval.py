@@ -598,6 +598,7 @@ def run_eval(
     with_real_llm: bool = False,
     judge_llm: Optional[Any] = None,
     results_out: Optional[Path] = None,
+    skip_ids_in: Optional[Path] = None,
 ) -> EvalReport:
     """Run the eval suite.
 
@@ -623,6 +624,36 @@ def run_eval(
     questions = load_golden_set()
     if filter_category:
         questions = [q for q in questions if q.category == filter_category]
+
+    # Resume support: skip questions whose IDs already appear in an
+    # existing results jsonl. Lets a tunnel-dropped or OOM-killed run
+    # be continued from where it stopped without re-paying for the
+    # cases that already completed. Added 2026-05-27 after the merged-271
+    # run aborted at 141 cases due to a tunnel drop.
+    if skip_ids_in is not None:
+        import json as _json
+        skip = set()
+        if skip_ids_in.exists():
+            for _line in skip_ids_in.read_text(encoding="utf-8").splitlines():
+                _s = _line.strip()
+                if not _s:
+                    continue
+                try:
+                    skip.add(_json.loads(_s).get("question_id"))
+                except _json.JSONDecodeError:
+                    pass
+            before = len(questions)
+            questions = [q for q in questions if q.id not in skip]
+            logger.info(
+                "resume: skipping %d already-completed ids from %s -> "
+                "%d remaining (was %d)",
+                len(skip), skip_ids_in, len(questions), before,
+            )
+        else:
+            logger.warning(
+                "resume: --skip-ids-in %s does not exist; running all "
+                "%d questions", skip_ids_in, len(questions),
+            )
 
     report = EvalReport(total=len(questions))
     # Scope-match accuracy is measured EXCLUDING clarify-outcome cases:
@@ -1190,6 +1221,19 @@ def main() -> int:
             "to score real LLM behavior instead of stub output."
         ),
     )
+    parser.add_argument(
+        "--skip-ids-in",
+        type=Path,
+        default=None,
+        help=(
+            "Resume: skip questions whose IDs already appear in this "
+            "existing results jsonl. Lets you continue a tunnel-dropped "
+            "or OOM-killed run without re-paying for the cases that "
+            "already finished. Typical use: --skip-ids-in beta_run.jsonl "
+            "--results-out beta_run_part2.jsonl, then concatenate "
+            "the two files."
+        ),
+    )
     parser.add_argument("--verbose", "-v", action="store_true")
     args = parser.parse_args()
 
@@ -1207,6 +1251,7 @@ def main() -> int:
         filter_category=args.filter,
         scope_only=args.scope_only,
         with_judge=args.with_judge,
+        skip_ids_in=args.skip_ids_in,
         with_real_llm=args.with_real_llm,
         results_out=_results_out,
     )
