@@ -633,6 +633,28 @@ def _make_get_room_availability() -> Callable[[dict], list]:
 # (529-4141). Now the agent calls lookup_space("king") and gets the
 # canonical phone from the truth table.
 
+# Shared pool for lookup_space queries -- lazily created on first call
+# inside the _bridge daemon-thread loop. asyncpg pools are bound to the
+# loop that created them, and _bridge always uses the same loop for the
+# eval's lifetime, so a single module-level reference is safe. max_size=5
+# is plenty for sequential lookup_space calls and caps the connection
+# count regardless of how many lookups fire during a long eval.
+_LOOKUP_SPACE_POOL: Any = None
+
+
+async def _get_lookup_space_pool() -> Any:
+    global _LOOKUP_SPACE_POOL
+    if _LOOKUP_SPACE_POOL is None:
+        import asyncpg
+        import os as _os
+        _LOOKUP_SPACE_POOL = await asyncpg.create_pool(
+            _os.environ["DATABASE_URL"],
+            min_size=1,
+            max_size=5,
+            command_timeout=10.0,
+        )
+    return _LOOKUP_SPACE_POOL
+
 
 def _make_lookup_space() -> Callable[[dict], Any]:
     """Look up a LibrarySpace_v2 row by canonical library id or by name.
@@ -704,16 +726,21 @@ def _make_lookup_space() -> Callable[[dict], Any]:
     }
 
     async def _q(canonical: str) -> Optional[dict]:
-        # Direct asyncpg connect-per-call -- Prisma's Python generator
-        # hasn't been regenerated since LibrarySpace_v2 was added, so
-        # the model attr (`client.libraryspacev2`) doesn't exist on
-        # the generated client. Raw SQL via asyncpg sidesteps that
-        # entirely and matches the connect-per-call pattern that
-        # _ConnectPerCallUrlSeenStore already uses successfully.
-        import asyncpg
-        import os
-        conn = await asyncpg.connect(os.environ["DATABASE_URL"])
-        try:
+        # POOLED asyncpg query (vs the earlier per-call connect). Pool
+        # is lazily created on first call inside the _bridge loop and
+        # cached for the life of the eval. WHY POOLING: the merged-271
+        # run on 2026-05-27 crashed 10 cases with RuntimeError /
+        # AttributeError that had worked fine in R4 (smaller per-call
+        # eval). Theory was connection exhaustion -- each lookup_space
+        # call was opening a fresh socket; over 140 cases x N calls/case
+        # we accumulated CLOSE_WAIT sockets faster than Postgres
+        # released them, and downstream cases that hit *any* DB-touching
+        # codepath (capability_scope check_account, account/loan/renew
+        # short-circuits) failed because the bridge loop's connection
+        # attempts errored. Pool with max_size=5 caps the concurrent
+        # connection count regardless of how many lookups fire.
+        pool = await _get_lookup_space_pool()
+        async with pool.acquire() as conn:
             # Column names per prisma/schema.prisma model LibrarySpace_v2:
             #   library, campus, name, building_role, address, phone,
             #   libcal_id, capacity, equipment, services_offered,
@@ -725,8 +752,6 @@ def _make_lookup_space() -> Callable[[dict], Any]:
                 'FROM "LibrarySpace_v2" WHERE library = $1',
                 canonical,
             )
-        finally:
-            await conn.close()
         if not row:
             return None
         return {
