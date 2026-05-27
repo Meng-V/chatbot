@@ -13,12 +13,19 @@ const ErrorBoundaryComponent = ({ children, onLibrarianHelp }) => {
   const [retryCount, setRetryCount] = useState(0);
 
   // Health check function
+  //
+  // 2026-05-27: switched from `/health` (6 parallel external API checks)
+  // to `/health/live` (trivial liveness probe). See SocketContextProvider
+  // for the full rationale. `degraded` status from the heavy endpoint is
+  // no longer surfaced here -- if a downstream is slow but the worker is
+  // alive, the UI should still render and the bot will surface its own
+  // refusal templates when it can't reach a service.
   const checkServerHealth = async () => {
     try {
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 5000); // 5 second timeout
 
-      const response = await fetch('/health', {
+      const response = await fetch('/health/live', {
         signal: controller.signal,
         headers: {
           'Cache-Control': 'no-cache',
@@ -34,19 +41,11 @@ const ErrorBoundaryComponent = ({ children, onLibrarianHelp }) => {
       }
 
       const healthData = await response.json();
-      setServerStatus(healthData.status || 'healthy');
+      // /health/live returns {status: "alive"}; treat any 200 as healthy.
+      setServerStatus('healthy');
       setLastHealthCheck(new Date());
       setErrorDetails(null);
       setRetryCount(0);
-
-      // Check for degraded services
-      if (healthData.status === 'degraded') {
-        setErrorDetails({
-          type: 'degraded',
-          message: 'Some services are experiencing issues',
-          services: healthData.services,
-        });
-      }
 
       return healthData;
     } catch (error) {

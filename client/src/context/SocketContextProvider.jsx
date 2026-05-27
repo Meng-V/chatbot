@@ -135,28 +135,29 @@ const SocketContextProvider = ({ children }) => {
   }, [connectionErrors]);
 
   // Health check monitoring
+  //
+  // 2026-05-27: switched from `/health` (heavy: 6 parallel external API
+  // checks -- OpenAI, Weaviate, LibCal, LibGuides, Google CSE, LibAnswers)
+  // to `/health/live` (trivial: returns 200 if the FastAPI worker is up).
+  // The heavy endpoint regularly timed out >10s when any single external
+  // probe was slow, which caused the chat UI to render "Health check
+  // failed" even when the bot itself worked fine. Liveness is the right
+  // signal for "should the UI render"; a slow downstream is the
+  // downstream's problem, not a reason to fail the whole page.
   useEffect(() => {
     const checkServiceHealth = async () => {
       try {
-        const response = await axios.get('/health', {
-          timeout: 10000, // 10 second timeout
+        const response = await axios.get('/health/live', {
+          timeout: 5000, // 5s -- plenty for a trivial liveness probe
         });
 
-        if (response.status === 200 && response.data.status === 'healthy') {
+        if (response.status === 200) {
           setServiceHealthy(true);
           setConnectionErrors(0);
           // Hide librarian widget if service is healthy and connected
           if (isConnected) {
             setShowLibrarianWidget(false);
           }
-        } else if (
-          response.status === 503 ||
-          response.data.status === 'degraded'
-        ) {
-          // Service is degraded/unhealthy
-          setServiceHealthy(false);
-          setShowLibrarianWidget(true);
-          console.warn('Service is degraded:', response.data);
         }
       } catch (error) {
         console.error('Health check failed:', error);
