@@ -219,6 +219,14 @@ def classify_response_path(resp: TurnResponse) -> str:
         return "point_to_url"
     if resp.agent_stopped_reason == "refuse":
         return "refuse"
+    if resp.agent_stopped_reason == "capability_limitation":
+        # capability_scope.LIMITATIONS short-circuit (e.g., check_account
+        # firing on "how much do I owe"). Like "refuse", this happens
+        # BEFORE the agent runs -- semantically a refusal path, not an
+        # agent-then-refusal path. Added 2026-05-27 after R2 regex split
+        # routed account/renew/etc. through check_account instead of the
+        # intent_capabilities REFUSE tier.
+        return "refuse"
     # The agent ran (clean / max_iters / loop_detected / tool_failures).
     if resp.is_refusal:
         return "agent_then_refusal"
