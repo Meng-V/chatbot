@@ -495,9 +495,10 @@ def _tool_fact_evidence(result: Any) -> list[EvidenceChunk]:
                 kind="live_api",
             ))
     elif name == "lookup_librarian":
+        librarians = data.get("librarians") or []
         # Cap at 5 -- a directory dump floods the prompt; the agent
         # asks a narrower query if it needs more.
-        for lib in (data.get("librarians") or [])[:5]:
+        for lib in librarians[:5]:
             if not isinstance(lib, dict) or not lib.get("email"):
                 continue
             parts = [
@@ -518,6 +519,48 @@ def _tool_fact_evidence(result: Any) -> list[EvidenceChunk]:
                 # data gap so a genuine contact isn't suppressed by a
                 # missing field (the plan wants exact contact surfaced).
                 campus=str(lib.get("campus") or "").lower() or "all",
+                kind="authoritative_db",
+            ))
+        # Empty-result fallback: if lookup_librarian found nothing, emit
+        # an evidence chunk pointing to the appropriate staff/directory
+        # page so the synth can give a useful "see the directory" answer
+        # instead of refusing with model_self_flagged. Especially matters
+        # for regional librarian queries -- the LibGuides API doesn't
+        # always return Hamilton/Middletown staff by subject, but those
+        # libraries DO have public staff pages we can surface.
+        #
+        # Wired 2026-05-27 after R8/R9 retests showed lib_hamilton_general,
+        # lib_middletown_general, lib_hamilton_librarian all refusing
+        # when they could have pointed to the regional staff page.
+        if not librarians:
+            # Best-effort: pull the original tool call args (if available)
+            # to figure out which campus was queried; fall back to Oxford.
+            args = (result.tool_call.args if hasattr(result, "tool_call") else None) or {}
+            queried_campus = str(args.get("campus") or "").strip().lower()
+            fallback_url, fallback_campus, fallback_text = {
+                "hamilton": (
+                    "https://www.ham.miamioh.edu/library/about/rentschler-library-staff/",
+                    "hamilton",
+                    "Rentschler Library (Hamilton) staff directory. The page "
+                    "lists Hamilton campus library staff and contact options.",
+                ),
+                "middletown": (
+                    "https://www.mid.miamioh.edu/library/",
+                    "middletown",
+                    "Gardner-Harvey Library (Middletown) main page. The page "
+                    "links to staff contacts and the campus library directory.",
+                ),
+            }.get(queried_campus, (
+                _LIAISONS_URL,
+                "oxford",
+                "Miami University Libraries subject liaisons directory. The "
+                "page lists librarians by subject area.",
+            ))
+            out.append(EvidenceChunk(
+                chunk_id=f"tool:lookup_librarian:empty_fallback:{fallback_campus}",
+                source_url=fallback_url,
+                text=fallback_text,
+                campus=fallback_campus,
                 kind="authoritative_db",
             ))
     elif name == "point_to_url":
