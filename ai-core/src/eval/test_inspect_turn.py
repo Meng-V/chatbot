@@ -115,7 +115,13 @@ def test_inspect_account_question_short_circuits_to_refusal() -> None:
     with redirect_stdout(buf):
         resp, _ = inspect("How much do I owe?", print_trace=False)
     assert resp.is_refusal
-    assert resp.refusal_trigger == "account_privacy"
+    # capability_scope.check_account regex (added 2026-05-23) now fires
+    # earlier than intent_capabilities.account; both produce the same
+    # MyAccount-pointer refusal.
+    assert resp.refusal_trigger in (
+        "account_privacy",
+        "capability_limitation:check_account",
+    )
     # No LLM tokens because of the capability-registry short-circuit.
     assert resp.tokens["input"] == 0
 

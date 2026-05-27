@@ -621,19 +621,213 @@ def _make_get_room_availability() -> Callable[[dict], list]:
     return get_room_availability
 
 
+# --- lookup_space --------------------------------------------------------
+#
+# Reads from the LibrarySpace_v2 Postgres table (canonical building data:
+# canonical_id, name, campus, address, phone, libcal_id, capacity,
+# equipment[], services_offered[]). Wiring this was the fix for the
+# 2026-05-25 phone-number hallucination bug: without lookup_space, the
+# agent had no structured source for "what is the library phone number?"
+# and search_kb returned a chunk from the Dean's bio page with his
+# personal office number (529-3934) instead of the main number
+# (529-4141). Now the agent calls lookup_space("king") and gets the
+# canonical phone from the truth table.
+
+# Shared pool for lookup_space queries -- lazily created on first call
+# inside the _bridge daemon-thread loop. asyncpg pools are bound to the
+# loop that created them, and _bridge always uses the same loop for the
+# eval's lifetime, so a single module-level reference is safe. max_size=5
+# is plenty for sequential lookup_space calls and caps the connection
+# count regardless of how many lookups fire during a long eval.
+_LOOKUP_SPACE_POOL: Any = None
+
+
+async def _get_lookup_space_pool() -> Any:
+    global _LOOKUP_SPACE_POOL
+    if _LOOKUP_SPACE_POOL is None:
+        import asyncpg
+        import os as _os
+        _LOOKUP_SPACE_POOL = await asyncpg.create_pool(
+            _os.environ["DATABASE_URL"],
+            min_size=1,
+            max_size=5,
+            command_timeout=10.0,
+        )
+    return _LOOKUP_SPACE_POOL
+
+
+def _make_lookup_space() -> Callable[[dict], Any]:
+    """Look up a LibrarySpace_v2 row by canonical library id or by name.
+
+    Returns a dict with the structured building info (address, phone,
+    services_offered, equipment, capacity, libcal_id). Returns None if
+    no matching row -- handler narrates that as `{found: false}`.
+    """
+    # Canonical-id direct map + alias resolution for the common phrasings
+    # the agent / kNN classifier produces. R5 retest showed the agent often
+    # passes the FULL building name ("King Library", "Wertz Art Library",
+    # "Gardner-Harvey Library") rather than the short canonical id; missing
+    # those compound forms made the bot refuse address questions when
+    # lookup_space had the data right there. Aliases are matched lowercase.
+    _ALIASES = {
+        # king
+        "king": "king",
+        "king library": "king",
+        "edward king": "king",
+        "edward king library": "king",
+        "main library": "king",
+        "the library": "king",  # ambiguous default -> king (Oxford flagship)
+        "miami university libraries": "king",
+        # wertz
+        "wertz": "wertz",
+        "wertz library": "wertz",
+        "wertz art": "wertz",
+        "wertz art library": "wertz",
+        "wertz art & architecture": "wertz",
+        "wertz art & architecture library": "wertz",
+        "wertz art and architecture library": "wertz",
+        "art library": "wertz",
+        "art and architecture": "wertz",
+        "art and architecture library": "wertz",
+        "art & architecture": "wertz",
+        "art & architecture library": "wertz",
+        "a&a": "wertz",
+        "a&a library": "wertz",
+        # special collections
+        "special": "special",
+        "special collections": "special",
+        "special collections and university archives": "special",
+        "special collections & university archives": "special",
+        "walter havighurst": "special",
+        "walter havighurst special collections": "special",
+        "scua": "special",
+        "archives": "special",
+        "university archives": "special",
+        # rentschler / hamilton
+        "rentschler": "rentschler",
+        "rentschler library": "rentschler",
+        "hamilton": "rentschler",
+        "hamilton library": "rentschler",
+        "the hamilton library": "rentschler",
+        # gardner-harvey / middletown
+        "gardner-harvey": "gardner_harvey",
+        "gardner harvey": "gardner_harvey",
+        "gardner-harvey library": "gardner_harvey",
+        "gardner harvey library": "gardner_harvey",
+        "middletown": "gardner_harvey",
+        "middletown library": "gardner_harvey",
+        "the middletown library": "gardner_harvey",
+        # sword
+        "sword": "sword",
+        "sword depository": "sword",
+        "depository": "sword",
+        "regional depository": "sword",
+        "southwest ohio regional depository": "sword",
+    }
+
+    async def _q(canonical: str) -> Optional[dict]:
+        # POOLED asyncpg query (vs the earlier per-call connect). Pool
+        # is lazily created on first call inside the _bridge loop and
+        # cached for the life of the eval. WHY POOLING: the merged-271
+        # run on 2026-05-27 crashed 10 cases with RuntimeError /
+        # AttributeError that had worked fine in R4 (smaller per-call
+        # eval). Theory was connection exhaustion -- each lookup_space
+        # call was opening a fresh socket; over 140 cases x N calls/case
+        # we accumulated CLOSE_WAIT sockets faster than Postgres
+        # released them, and downstream cases that hit *any* DB-touching
+        # codepath (capability_scope check_account, account/loan/renew
+        # short-circuits) failed because the bridge loop's connection
+        # attempts errored. Pool with max_size=5 caps the concurrent
+        # connection count regardless of how many lookups fire.
+        pool = await _get_lookup_space_pool()
+        async with pool.acquire() as conn:
+            # Column names per prisma/schema.prisma model LibrarySpace_v2:
+            #   library, campus, name, building_role, address, phone,
+            #   libcal_id, capacity, equipment, services_offered,
+            #   hours_source, source_url. All snake_case in SQL.
+            row = await conn.fetchrow(
+                'SELECT library, name, campus, address, phone, '
+                'libcal_id, capacity, equipment, services_offered, '
+                'building_role, source_url '
+                'FROM "LibrarySpace_v2" WHERE library = $1',
+                canonical,
+            )
+        if not row:
+            return None
+        return {
+            "library": row["library"],
+            "name": row["name"],
+            "campus": row["campus"],
+            "address": row["address"],
+            "phone": row["phone"],
+            "libcal_id": row["libcal_id"],
+            "capacity": row["capacity"],
+            "equipment": list(row["equipment"] or []),
+            "services_offered": list(row["services_offered"] or []),
+            "building_role": row["building_role"],
+            # Provenance for synthesizer to cite. Prefer the row's own
+            # source_url; fall back to the per-building map. Either way
+            # the URL is in the allowlist so citation_invalid won't fire.
+            "source_url": (
+                row["source_url"]
+                or _SPACE_SOURCE_URL.get(
+                    row["library"] or "",
+                    "https://www.lib.miamioh.edu/about/locations/",
+                )
+            ),
+        }
+
+    def handler(filters: dict) -> Optional[dict]:
+        library = (filters.get("library") or "").strip().lower()
+        name = (filters.get("name") or "").strip().lower()
+        # Try direct canonical id first, then alias resolution from
+        # either field (LLM may put a human name in either slot).
+        candidates: list[str] = []
+        if library:
+            candidates.append(_ALIASES.get(library, library))
+        if name:
+            candidates.append(_ALIASES.get(name, name))
+        for canon in candidates:
+            if not canon:
+                continue
+            try:
+                space = _bridge(_q(canon))
+            except Exception as e:  # noqa: BLE001
+                raise ToolError(
+                    f"lookup_space: Postgres query failed ({e}). "
+                    f"The bot should hand off rather than guess."
+                ) from e
+            if space:
+                return space
+        return None
+
+    return handler
+
+
+_SPACE_SOURCE_URL = {
+    "king": "https://www.lib.miamioh.edu/about/locations/king-library/",
+    "wertz": "https://www.lib.miamioh.edu/about/locations/art-arch/",
+    "special": "https://www.lib.miamioh.edu/about/locations/special-collections-archives/",
+    "rentschler": "https://www.ham.miamioh.edu/library/about/",
+    "gardner_harvey": "https://www.mid.miamioh.edu/library/",
+    "sword": "https://www.lib.miamioh.edu/about/locations/regional/sword/",
+}
+
+
 # --- assembly ------------------------------------------------------------
 
 
 def build_eval_backends() -> ToolBackends:
     """ToolBackends for the eval: every READ-ONLY tool wired to its real
-    backend (validate_url / lookup_librarian / point_to_url /
-    get_hours / get_room_availability). Only write/handoff tools and
-    lookup_space stay unset -> ToolBackends.__post_init__ installs the
-    labeled unwired sentinel; `_build_real_deps` drops those four from
+    backend (validate_url / lookup_librarian / lookup_space /
+    point_to_url / get_hours / get_room_availability). Only write /
+    handoff tools stay unset -> ToolBackends.__post_init__ installs the
+    labeled unwired sentinel; `_build_real_deps` drops those from
     the eval surface anyway."""
     return ToolBackends(
         validate_url=_make_validate_url(),
         lookup_librarian=_make_lookup_librarian(),
+        lookup_space=_make_lookup_space(),
         point_to_url=_make_point_to_url(),
         get_hours=_make_get_hours(),
         get_room_availability=_make_get_room_availability(),

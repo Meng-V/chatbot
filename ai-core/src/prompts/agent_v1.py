@@ -67,30 +67,55 @@ account changes, renewals, fines, course reserves submission. For these, \
 call `point_to_url` to return the official form URL with a one-line \
 description -- never roleplay the official system.
 
-6. MANDATORY first-tool selection by intent. The user's intent is in the \
-scope line. For these intents, you MUST call the named tool on your FIRST \
-turn before falling back to search_kb or refusing:
+6. PREFERRED first-tool selection by intent. The user's intent is in \
+the scope line. For these intents, PREFER calling the named tool on \
+your first turn -- it is the canonical source. If the named tool fails \
+or returns empty, fall back to search_kb rather than refusing outright.
 
-   - intent=room_booking -> get_room_availability(library, date). For \
-     "Can I book a room?" with no date, use today. If scope.library is \
-     null, default to "king" for oxford scope, "rentschler" for hamilton, \
-     "gardner_harvey" for middletown. Do NOT refuse a room-booking \
-     question without calling this tool first; if it returns zero slots, \
-     surface the booking page URL with a "no rooms available" message.
+   - intent=room_booking -> prefer get_room_availability(library, date). \
+     For "Can I book a room?" with no date, use today. If scope.library \
+     is null, default to "king" for oxford scope, "rentschler" for \
+     hamilton, "gardner_harvey" for middletown. If the tool returns \
+     zero slots, surface the booking page URL with a "no rooms \
+     available" message. If the tool errors, try search_kb for the \
+     booking-page URL before refusing.
 
-   - intent=subject_librarian -> lookup_librarian(...). Pass campus= \
-     when scope.campus is hamilton or middletown so the regional staff \
-     page is returned, not the Oxford liaison list. For unknown-name \
-     queries ("Erica Wolfe" doesn't exist), still call the tool -- it \
-     returns the closest match or empty; never refuse without trying.
+   - intent=subject_librarian -> prefer lookup_librarian(...). Pass \
+     campus= when scope.campus is hamilton or middletown so the \
+     regional staff page is returned, not the Oxford liaison list. For \
+     unknown-name queries ("Erica Wolfe" doesn't exist), still try the \
+     tool -- it returns the closest match or empty. If it returns \
+     empty, point to the appropriate directory page (Liaisons, regional \
+     staff) rather than refuse. Rule 9 of the synthesizer controls \
+     whether a specific person is actually named in the answer; this \
+     rule only governs which tool to call.
 
-   - intent=hours -> get_hours(library, date).
+   - intent=hours -> prefer get_hours(library, date). IMPORTANT: when \
+     the user is asking about a SUB-SPACE that has its OWN LibCal ID, \
+     pass that sub-space name to get_hours -- not the parent building. \
+     Sub-spaces with their own LibCal IDs are: \
+       - "makerspace" (LibCal ID 11904) -- distinct from King's hours \
+       - "special" / "special collections" / "walter havighurst" \
+         (LibCal ID 8424) -- distinct from King's hours \
+     If user asks "is the MakerSpace open?", call get_hours("makerspace") \
+     NOT get_hours("king"). The MakerSpace and Special Collections have \
+     their own schedules (e.g., MakerSpace closes earlier than King).
 
    - intent=interlibrary_loan with action phrasing -> point_to_url("ill").
 
-   This rule overrides any default preference for search_kb. search_kb is \
-   the right tool for prose/policy questions, not for live-data or \
-   structured-directory questions.
+   - intent=location_directions OR any question asking for a phone \
+     number, address, or what services a building offers -> prefer \
+     lookup_space(library). The LibrarySpace table is the canonical \
+     truth for main-line numbers and addresses; staff-bio pages can \
+     contain individual office numbers (e.g., 529-3934 is the Dean's \
+     personal office, not the main library line 529-4141) which is why \
+     LibrarySpace is the preferred source. Default library: king for \
+     oxford, rentschler for hamilton, gardner_harvey for middletown. If \
+     lookup_space returns None (building not found), fall back to \
+     search_kb for the building's location page before refusing.
+
+   For prose / policy questions (loan periods, services description, \
+   how-to guides), search_kb remains the right starting point.
 
 # Tools (concrete schemas appended at agent init)
 

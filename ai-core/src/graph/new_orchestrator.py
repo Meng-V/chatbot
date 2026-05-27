@@ -495,9 +495,10 @@ def _tool_fact_evidence(result: Any) -> list[EvidenceChunk]:
                 kind="live_api",
             ))
     elif name == "lookup_librarian":
+        librarians = data.get("librarians") or []
         # Cap at 5 -- a directory dump floods the prompt; the agent
         # asks a narrower query if it needs more.
-        for lib in (data.get("librarians") or [])[:5]:
+        for lib in librarians[:5]:
             if not isinstance(lib, dict) or not lib.get("email"):
                 continue
             parts = [
@@ -520,6 +521,48 @@ def _tool_fact_evidence(result: Any) -> list[EvidenceChunk]:
                 campus=str(lib.get("campus") or "").lower() or "all",
                 kind="authoritative_db",
             ))
+        # Empty-result fallback: if lookup_librarian found nothing, emit
+        # an evidence chunk pointing to the appropriate staff/directory
+        # page so the synth can give a useful "see the directory" answer
+        # instead of refusing with model_self_flagged. Especially matters
+        # for regional librarian queries -- the LibGuides API doesn't
+        # always return Hamilton/Middletown staff by subject, but those
+        # libraries DO have public staff pages we can surface.
+        #
+        # Wired 2026-05-27 after R8/R9 retests showed lib_hamilton_general,
+        # lib_middletown_general, lib_hamilton_librarian all refusing
+        # when they could have pointed to the regional staff page.
+        if not librarians:
+            # Best-effort: pull the original tool call args (if available)
+            # to figure out which campus was queried; fall back to Oxford.
+            args = (result.tool_call.args if hasattr(result, "tool_call") else None) or {}
+            queried_campus = str(args.get("campus") or "").strip().lower()
+            fallback_url, fallback_campus, fallback_text = {
+                "hamilton": (
+                    "https://www.ham.miamioh.edu/library/about/rentschler-library-staff/",
+                    "hamilton",
+                    "Rentschler Library (Hamilton) staff directory. The page "
+                    "lists Hamilton campus library staff and contact options.",
+                ),
+                "middletown": (
+                    "https://www.mid.miamioh.edu/library/",
+                    "middletown",
+                    "Gardner-Harvey Library (Middletown) main page. The page "
+                    "links to staff contacts and the campus library directory.",
+                ),
+            }.get(queried_campus, (
+                _LIAISONS_URL,
+                "oxford",
+                "Miami University Libraries subject liaisons directory. The "
+                "page lists librarians by subject area.",
+            ))
+            out.append(EvidenceChunk(
+                chunk_id=f"tool:lookup_librarian:empty_fallback:{fallback_campus}",
+                source_url=fallback_url,
+                text=fallback_text,
+                campus=fallback_campus,
+                kind="authoritative_db",
+            ))
     elif name == "point_to_url":
         if not data.get("found") or not data.get("url"):
             return []
@@ -531,6 +574,48 @@ def _tool_fact_evidence(result: Any) -> list[EvidenceChunk]:
             # university-wide self-service; "all" is the correct
             # semantic and passes the cross-campus guard.
             campus="all",
+            kind="authoritative_db",
+        ))
+    elif name == "lookup_space":
+        # Wired 2026-05-27: lookup_space results were being silently
+        # dropped here, which caused the synth to refuse address/phone
+        # questions for Middletown / Hamilton / Wertz (regions Weaviate
+        # has thin coverage on — without lookup_space evidence reaching
+        # the synth, agent had nothing to cite -> "no evidence" refusal).
+        # King worked only because search_kb happened to find King's
+        # location page in Weaviate; the regional sites are not indexed
+        # as densely. This handler converts the LibrarySpace row into
+        # a single [DIRECTORY]-tier EvidenceChunk so the synth can cite
+        # address/phone/services_offered verbatim.
+        space = data.get("space") if isinstance(data, dict) else None
+        if not space or not data.get("found", True):
+            return []
+        # Render the structured row as a citable text block. The synth
+        # is instructed to quote verbatim from [DIRECTORY] sources.
+        parts: list[str] = []
+        if space.get("name"):
+            parts.append(f"Name: {space['name']}")
+        if space.get("address"):
+            parts.append(f"Address: {space['address']}")
+        if space.get("phone"):
+            parts.append(f"Phone: {space['phone']}")
+        if space.get("capacity"):
+            parts.append(f"Capacity: {space['capacity']}")
+        if space.get("equipment"):
+            parts.append(f"Equipment: {', '.join(space['equipment'])}")
+        if space.get("services_offered"):
+            parts.append(
+                f"Services offered: {', '.join(space['services_offered'])}"
+            )
+        text = ". ".join(parts)
+        if not text:
+            return []
+        out.append(EvidenceChunk(
+            chunk_id=f"tool:lookup_space:{space.get('library') or 'unknown'}",
+            source_url=str(space.get("source_url") or ""),
+            text=text,
+            campus=str(space.get("campus") or "").lower() or "all",
+            library=str(space.get("library") or "") or None,
             kind="authoritative_db",
         ))
     return out
