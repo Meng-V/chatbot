@@ -641,20 +641,66 @@ def _make_lookup_space() -> Callable[[dict], Any]:
     services_offered, equipment, capacity, libcal_id). Returns None if
     no matching row -- handler narrates that as `{found: false}`.
     """
-    # Canonical-id direct map + simple alias resolution for the most
-    # common phrasings ("King" -> "king", "Hamilton" -> "rentschler", etc).
+    # Canonical-id direct map + alias resolution for the common phrasings
+    # the agent / kNN classifier produces. R5 retest showed the agent often
+    # passes the FULL building name ("King Library", "Wertz Art Library",
+    # "Gardner-Harvey Library") rather than the short canonical id; missing
+    # those compound forms made the bot refuse address questions when
+    # lookup_space had the data right there. Aliases are matched lowercase.
     _ALIASES = {
-        "king": "king", "edward king": "king", "main library": "king",
+        # king
+        "king": "king",
+        "king library": "king",
+        "edward king": "king",
+        "edward king library": "king",
+        "main library": "king",
         "the library": "king",  # ambiguous default -> king (Oxford flagship)
-        "wertz": "wertz", "art": "wertz", "art and architecture": "wertz",
-        "art & architecture": "wertz", "a&a": "wertz",
-        "special": "special", "special collections": "special",
-        "scua": "special", "archives": "special",
-        "rentschler": "rentschler", "hamilton": "rentschler",
+        "miami university libraries": "king",
+        # wertz
+        "wertz": "wertz",
+        "wertz library": "wertz",
+        "wertz art": "wertz",
+        "wertz art library": "wertz",
+        "wertz art & architecture": "wertz",
+        "wertz art & architecture library": "wertz",
+        "wertz art and architecture library": "wertz",
+        "art library": "wertz",
+        "art and architecture": "wertz",
+        "art and architecture library": "wertz",
+        "art & architecture": "wertz",
+        "art & architecture library": "wertz",
+        "a&a": "wertz",
+        "a&a library": "wertz",
+        # special collections
+        "special": "special",
+        "special collections": "special",
+        "special collections and university archives": "special",
+        "special collections & university archives": "special",
+        "walter havighurst": "special",
+        "walter havighurst special collections": "special",
+        "scua": "special",
+        "archives": "special",
+        "university archives": "special",
+        # rentschler / hamilton
+        "rentschler": "rentschler",
+        "rentschler library": "rentschler",
+        "hamilton": "rentschler",
         "hamilton library": "rentschler",
-        "gardner-harvey": "gardner_harvey", "gardner harvey": "gardner_harvey",
-        "middletown": "gardner_harvey", "middletown library": "gardner_harvey",
-        "sword": "sword", "depository": "sword",
+        "the hamilton library": "rentschler",
+        # gardner-harvey / middletown
+        "gardner-harvey": "gardner_harvey",
+        "gardner harvey": "gardner_harvey",
+        "gardner-harvey library": "gardner_harvey",
+        "gardner harvey library": "gardner_harvey",
+        "middletown": "gardner_harvey",
+        "middletown library": "gardner_harvey",
+        "the middletown library": "gardner_harvey",
+        # sword
+        "sword": "sword",
+        "sword depository": "sword",
+        "depository": "sword",
+        "regional depository": "sword",
+        "southwest ohio regional depository": "sword",
     }
 
     async def _q(canonical: str) -> Optional[dict]:
