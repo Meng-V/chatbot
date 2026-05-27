@@ -88,6 +88,15 @@ turn before falling back to search_kb or refusing:
 
    - intent=interlibrary_loan with action phrasing -> point_to_url("ill").
 
+   - intent=location_directions OR any question asking for a phone \
+     number, address, or what services a building offers -> \
+     lookup_space(library). NEVER answer phone numbers or addresses \
+     from search_kb -- staff bios and committee pages contain \
+     individual office numbers (e.g., 529-3934 is the Dean's office, \
+     not the main library line). The canonical truth is in the \
+     LibrarySpace table. Default library: king for oxford, rentschler \
+     for hamilton, gardner_harvey for middletown.
+
    This rule overrides any default preference for search_kb. search_kb is \
    the right tool for prose/policy questions, not for live-data or \
    structured-directory questions.

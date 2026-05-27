@@ -115,16 +115,20 @@ def test_point_to_url_known_service_shape() -> None:
 
 
 def test_only_write_and_handoff_tools_stay_unwired() -> None:
-    """get_hours / get_room_availability are now WIRED (legacy LibCal
-    reuse) -- they must NOT be the sentinel. Only the write/handoff
-    tools + lookup_space stay unwired (and `_build_real_deps` drops
-    those four from the eval surface anyway)."""
+    """get_hours / get_room_availability / lookup_space are now WIRED.
+    Only write/handoff tools stay unwired (and `_build_real_deps` drops
+    them from the eval surface anyway).
+
+    lookup_space was wired 2026-05-25 to fix the phone-number
+    hallucination bug: the agent had no structured source for
+    "what is the library phone number?" so search_kb returned the
+    Dean's personal office number (529-3934) from a staff bio chunk
+    instead of the main library line (529-4141)."""
     b = build_eval_backends()
     for name, call in (
         ("book_room", lambda: b.book_room({})),
         ("create_ticket", lambda: b.create_ticket({})),
         ("handoff_human", lambda: b.handoff_human({})),
-        ("lookup_space", lambda: b.lookup_space({})),
     ):
         try:
             call()
@@ -148,6 +152,7 @@ def test_all_readonly_backends_wired() -> None:
     for name in (
         "validate_url",
         "lookup_librarian",
+        "lookup_space",
         "get_hours",
         "get_room_availability",
     ):

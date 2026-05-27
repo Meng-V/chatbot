@@ -621,19 +621,142 @@ def _make_get_room_availability() -> Callable[[dict], list]:
     return get_room_availability
 
 
+# --- lookup_space --------------------------------------------------------
+#
+# Reads from the LibrarySpace_v2 Postgres table (canonical building data:
+# canonical_id, name, campus, address, phone, libcal_id, capacity,
+# equipment[], services_offered[]). Wiring this was the fix for the
+# 2026-05-25 phone-number hallucination bug: without lookup_space, the
+# agent had no structured source for "what is the library phone number?"
+# and search_kb returned a chunk from the Dean's bio page with his
+# personal office number (529-3934) instead of the main number
+# (529-4141). Now the agent calls lookup_space("king") and gets the
+# canonical phone from the truth table.
+
+
+def _make_lookup_space() -> Callable[[dict], Any]:
+    """Look up a LibrarySpace_v2 row by canonical library id or by name.
+
+    Returns a dict with the structured building info (address, phone,
+    services_offered, equipment, capacity, libcal_id). Returns None if
+    no matching row -- handler narrates that as `{found: false}`.
+    """
+    # Canonical-id direct map + simple alias resolution for the most
+    # common phrasings ("King" -> "king", "Hamilton" -> "rentschler", etc).
+    _ALIASES = {
+        "king": "king", "edward king": "king", "main library": "king",
+        "the library": "king",  # ambiguous default -> king (Oxford flagship)
+        "wertz": "wertz", "art": "wertz", "art and architecture": "wertz",
+        "art & architecture": "wertz", "a&a": "wertz",
+        "special": "special", "special collections": "special",
+        "scua": "special", "archives": "special",
+        "rentschler": "rentschler", "hamilton": "rentschler",
+        "hamilton library": "rentschler",
+        "gardner-harvey": "gardner_harvey", "gardner harvey": "gardner_harvey",
+        "middletown": "gardner_harvey", "middletown library": "gardner_harvey",
+        "sword": "sword", "depository": "sword",
+    }
+
+    async def _q(canonical: str) -> Optional[dict]:
+        # Direct asyncpg connect-per-call -- Prisma's Python generator
+        # hasn't been regenerated since LibrarySpace_v2 was added, so
+        # the model attr (`client.libraryspacev2`) doesn't exist on
+        # the generated client. Raw SQL via asyncpg sidesteps that
+        # entirely and matches the connect-per-call pattern that
+        # _ConnectPerCallUrlSeenStore already uses successfully.
+        import asyncpg
+        import os
+        conn = await asyncpg.connect(os.environ["DATABASE_URL"])
+        try:
+            # Column names per prisma/schema.prisma model LibrarySpace_v2:
+            #   library, campus, name, building_role, address, phone,
+            #   libcal_id, capacity, equipment, services_offered,
+            #   hours_source, source_url. All snake_case in SQL.
+            row = await conn.fetchrow(
+                'SELECT library, name, campus, address, phone, '
+                'libcal_id, capacity, equipment, services_offered, '
+                'building_role, source_url '
+                'FROM "LibrarySpace_v2" WHERE library = $1',
+                canonical,
+            )
+        finally:
+            await conn.close()
+        if not row:
+            return None
+        return {
+            "library": row["library"],
+            "name": row["name"],
+            "campus": row["campus"],
+            "address": row["address"],
+            "phone": row["phone"],
+            "libcal_id": row["libcal_id"],
+            "capacity": row["capacity"],
+            "equipment": list(row["equipment"] or []),
+            "services_offered": list(row["services_offered"] or []),
+            "building_role": row["building_role"],
+            # Provenance for synthesizer to cite. Prefer the row's own
+            # source_url; fall back to the per-building map. Either way
+            # the URL is in the allowlist so citation_invalid won't fire.
+            "source_url": (
+                row["source_url"]
+                or _SPACE_SOURCE_URL.get(
+                    row["library"] or "",
+                    "https://www.lib.miamioh.edu/about/locations/",
+                )
+            ),
+        }
+
+    def handler(filters: dict) -> Optional[dict]:
+        library = (filters.get("library") or "").strip().lower()
+        name = (filters.get("name") or "").strip().lower()
+        # Try direct canonical id first, then alias resolution from
+        # either field (LLM may put a human name in either slot).
+        candidates: list[str] = []
+        if library:
+            candidates.append(_ALIASES.get(library, library))
+        if name:
+            candidates.append(_ALIASES.get(name, name))
+        for canon in candidates:
+            if not canon:
+                continue
+            try:
+                space = _bridge(_q(canon))
+            except Exception as e:  # noqa: BLE001
+                raise ToolError(
+                    f"lookup_space: Postgres query failed ({e}). "
+                    f"The bot should hand off rather than guess."
+                ) from e
+            if space:
+                return space
+        return None
+
+    return handler
+
+
+_SPACE_SOURCE_URL = {
+    "king": "https://www.lib.miamioh.edu/about/locations/king-library/",
+    "wertz": "https://www.lib.miamioh.edu/about/locations/art-arch/",
+    "special": "https://www.lib.miamioh.edu/about/locations/special-collections-archives/",
+    "rentschler": "https://www.ham.miamioh.edu/library/about/",
+    "gardner_harvey": "https://www.mid.miamioh.edu/library/",
+    "sword": "https://www.lib.miamioh.edu/about/locations/regional/sword/",
+}
+
+
 # --- assembly ------------------------------------------------------------
 
 
 def build_eval_backends() -> ToolBackends:
     """ToolBackends for the eval: every READ-ONLY tool wired to its real
-    backend (validate_url / lookup_librarian / point_to_url /
-    get_hours / get_room_availability). Only write/handoff tools and
-    lookup_space stay unset -> ToolBackends.__post_init__ installs the
-    labeled unwired sentinel; `_build_real_deps` drops those four from
+    backend (validate_url / lookup_librarian / lookup_space /
+    point_to_url / get_hours / get_room_availability). Only write /
+    handoff tools stay unset -> ToolBackends.__post_init__ installs the
+    labeled unwired sentinel; `_build_real_deps` drops those from
     the eval surface anyway."""
     return ToolBackends(
         validate_url=_make_validate_url(),
         lookup_librarian=_make_lookup_librarian(),
+        lookup_space=_make_lookup_space(),
         point_to_url=_make_point_to_url(),
         get_hours=_make_get_hours(),
         get_room_availability=_make_get_room_availability(),
