@@ -218,6 +218,37 @@ def process_synthesizer_output(
             )
         )
 
+    # --- 0. Domain-typo normalizer (Miami University email domain) ---
+    # The synth occasionally writes typo'd variants of the Miami domain
+    # ("miamiohio.edu" instead of "miamioh.edu", "muohio.edu" — the old
+    # pre-2013 domain — etc). Caught in R8 retest: bot told a student to
+    # activate NYT with "your miamiohio.edu email". None of these typo
+    # forms are valid; rewrite to the canonical "miamioh.edu" rather
+    # than refuse — the answer is otherwise correct and a refusal here
+    # would be worse for the user than a quiet correction.
+    #
+    # Cheap, deterministic, and structurally cannot break a legitimate
+    # answer: no real string we'd want to keep contains "miamiohio.edu"
+    # or "muohio.edu" (the old domain has been gone since 2013).
+    _NORMALIZE_DOMAINS = {
+        "miamiohio.edu": "miamioh.edu",
+        "miamiohio.org": "miamioh.edu",
+        "muohio.edu": "miamioh.edu",
+    }
+    import re as _re
+    from dataclasses import replace as _dc_replace
+    for typo, canonical in _NORMALIZE_DOMAINS.items():
+        if typo in output.answer.lower():
+            output = _dc_replace(
+                output,
+                answer=_re.sub(
+                    _re.escape(typo),
+                    canonical,
+                    output.answer,
+                    flags=_re.IGNORECASE,
+                ),
+            )
+
     failures: list[ValidationFailure] = []
 
     # --- 1. Confidence gate ---
