@@ -1,0 +1,37 @@
+// Out-of-scope exemplar supplement, 2026-05-27.
+//
+// Targets the parking-pass hallucination bug found in R10 retest:
+//   oos2_parking_pass → kNN classified as 'location_directions' (low margin,
+//   tied with other intents), so OOS REFUSE tier didn't fire and the agent
+//   answered from search_kb chunks that mentioned parking in passing.
+//
+// Adds 12 paraphrased non-library university questions that students
+// commonly ask but are NOT library-handled. None are verbatim copies of
+// the test cases (no test-set leakage). All represent the kind of "is
+// this our job?" boundary the bot must hold cleanly.
+//
+// None of these have library-specific keywords, so they should not
+// inappropriately catch valid library questions like "do you have a
+// book about parking?" (that would still classify as find_resource).
+
+// parking
+{"intent": "out_of_scope", "utterance": "How do I buy a parking pass?", "source": "manual_2026-05-27_oos"}
+{"intent": "out_of_scope", "utterance": "Where do I get a parking permit?", "source": "manual_2026-05-27_oos"}
+{"intent": "out_of_scope", "utterance": "Is there visitor parking on campus?", "source": "manual_2026-05-27_oos"}
+
+// dining / food services (the library is NOT dining)
+{"intent": "out_of_scope", "utterance": "What time does the dining hall close?", "source": "manual_2026-05-27_oos"}
+{"intent": "out_of_scope", "utterance": "When does the dining hall open for breakfast?", "source": "manual_2026-05-27_oos"}
+
+// registrar / records / transcripts
+{"intent": "out_of_scope", "utterance": "How do I request my official transcript?", "source": "manual_2026-05-27_oos"}
+{"intent": "out_of_scope", "utterance": "How do I get a copy of my transcript?", "source": "manual_2026-05-27_oos"}
+{"intent": "out_of_scope", "utterance": "How do I add a class for next semester?", "source": "manual_2026-05-27_oos"}
+{"intent": "out_of_scope", "utterance": "How do I register for classes?", "source": "manual_2026-05-27_oos"}
+
+// dorm / housing / wayfinding
+{"intent": "out_of_scope", "utterance": "How do I get to McBride Hall?", "source": "manual_2026-05-27_oos"}
+{"intent": "out_of_scope", "utterance": "Where is the residence hall office?", "source": "manual_2026-05-27_oos"}
+
+// tuition / financial aid
+{"intent": "out_of_scope", "utterance": "How much is tuition this year?", "source": "manual_2026-05-27_oos"}
