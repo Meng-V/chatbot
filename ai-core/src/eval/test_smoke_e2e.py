@@ -310,8 +310,19 @@ def test_account_path_response_is_refusal_with_myaccount_link() -> None:
         deps,
     )
     assert resp.is_refusal
-    assert resp.refusal_trigger == "account_privacy"
-    assert "MyAccount" in resp.answer
+    # capability_scope.check_account regex (added 2026-05-23) now fires
+    # earlier than intent_capabilities.account; either trigger is fine,
+    # both produce the same MyAccount-pointer refusal.
+    assert resp.refusal_trigger in (
+        "account_privacy",
+        "capability_limitation:check_account",
+    )
+    # capability_scope template uses bare Primo URL; intent_capabilities
+    # uses "MyAccount" link text. Check the URL (structurally invariant).
+    assert (
+        "MyAccount" in resp.answer
+        or "ohiolink-mu.primo.exlibrisgroup.com/discovery/account" in resp.answer
+    )
 
 
 def test_makerspace_hamilton_path_refuses_with_service_not_at_building() -> None:
