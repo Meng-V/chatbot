@@ -444,10 +444,20 @@ def _build_real_deps(
     # Full 10-tool registry with honest-baseline real backends.
     registry = build_tool_registry(build_eval_backends())
 
-    # User-selected eval surface = search_kb + 5 read-only tools. Drop
-    # write/handoff/space tools so the agent's tool-choice distribution
-    # matches exactly what this run measures.
-    for _n in ("book_room", "create_ticket", "handoff_human", "lookup_space"):
+    # User-selected eval surface = search_kb + 6 read-only tools.
+    # Drop write/handoff tools (book_room, create_ticket, handoff_human)
+    # so the agent can't accidentally fire side-effects during eval.
+    #
+    # lookup_space was REMOVED from this drop list 2026-05-27: it had
+    # been dropped historically because the backend wasn't wired, but
+    # the R5 fix in real_backends.py wired it against LibrarySpace_v2
+    # (Postgres truth-table for address/phone/services_offered). Keeping
+    # it dropped here was the bug behind R7's 27% retest: agent
+    # followed Rule 6 ("MUST call lookup_space for location_directions
+    # intent") but the tool literally wasn't in the registry it saw, so
+    # every address / phone / services query ended in refusal even
+    # though the data + the orchestrator evidence path were both ready.
+    for _n in ("book_room", "create_ticket", "handoff_human"):
         registry.tools.pop(_n, None)
 
     # Swap tools_v2's generic arg-driven search_kb for the eval's
