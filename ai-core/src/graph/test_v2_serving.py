@@ -159,6 +159,89 @@ def test_build_v2_deps_importable_not_invoked() -> None:
     assert callable(V.build_v2_deps)
 
 
+def test_normalize_history_translates_legacy_shape() -> None:
+    # The legacy conversation_store returns `{type, content, timestamp}`.
+    # Without translation the Responses API rejects input[0] with
+    # `Invalid value: 'user'`. Verify we translate `type` -> `role`,
+    # drop timestamps, and skip junk rows without raising.
+    legacy = [
+        {"type": "user", "content": "hi", "timestamp": "2026-05-28T..."},
+        {"type": "assistant", "content": "hello!", "timestamp": "..."},
+        {"type": "system", "content": "ignored — unknown role"},
+        "garbage row",
+        {"type": "user", "content": "what time do you close",
+         "timestamp": "..."},
+    ]
+    out = V._normalize_history_for_agent(legacy, "what time do you close")
+    # Last user item dropped (matches current turn). System row dropped.
+    # Junk skipped.
+    assert out == [
+        {"role": "user", "content": "hi"},
+        {"role": "assistant", "content": "hello!"},
+    ]
+
+
+def test_normalize_history_idempotent_for_openai_shape() -> None:
+    # Already in `{role, content}` form -> pass through. Existing test
+    # `test_handle_v2_message_builds_request_and_maps` depends on this.
+    history = [
+        {"role": "user", "content": "hi"},
+        {"role": "assistant", "content": "yo"},
+    ]
+    # Current user message doesn't match the tail -> nothing dropped.
+    assert V._normalize_history_for_agent(history, "different question") == [
+        {"role": "user", "content": "hi"},
+        {"role": "assistant", "content": "yo"},
+    ]
+
+
+def test_normalize_history_drops_trailing_duplicate() -> None:
+    # main.py persists the user turn BEFORE reading history, so the
+    # tail of `history` IS the current turn. run_agent re-adds it
+    # with a scope prefix, so we must drop it from history to avoid
+    # feeding the LLM two copies.
+    history = [
+        {"type": "user", "content": "earlier turn", "timestamp": "..."},
+        {"type": "assistant", "content": "earlier reply", "timestamp": "..."},
+        {"type": "user", "content": "  current  ", "timestamp": "..."},
+    ]
+    out = V._normalize_history_for_agent(history, "current")
+    # Whitespace-tolerant match.
+    assert out[-1] == {"role": "assistant", "content": "earlier reply"}
+    assert len(out) == 2
+
+
+def test_handle_v2_message_translates_legacy_history() -> None:
+    # End-to-end: handle_v2_message must translate before building the
+    # TurnRequest. Without this, the Responses API rejects input[0].
+    captured = {}
+
+    def stub_run_turn(req, deps):
+        captured["history"] = req.conversation_history
+        return _resp()
+
+    asyncio.run(
+        V.handle_v2_message(
+            {"message": "what time do you close"},
+            deps=object(),
+            conversation_id="c",
+            conversation_history=[
+                {"type": "user", "content": "earlier", "timestamp": "..."},
+                {"type": "assistant", "content": "earlier reply",
+                 "timestamp": "..."},
+                {"type": "user", "content": "what time do you close",
+                 "timestamp": "..."},
+            ],
+            run_turn_fn=stub_run_turn,
+        )
+    )
+    # Translated to OpenAI shape; trailing duplicate dropped.
+    assert captured["history"] == [
+        {"role": "user", "content": "earlier"},
+        {"role": "assistant", "content": "earlier reply"},
+    ]
+
+
 def main() -> int:
     tests = [
         test_extract_message_parity,
@@ -170,6 +253,10 @@ def main() -> int:
         test_handle_v2_message_builds_request_and_maps,
         test_handle_v2_message_accepts_bare_string,
         test_build_v2_deps_importable_not_invoked,
+        test_normalize_history_translates_legacy_shape,
+        test_normalize_history_idempotent_for_openai_shape,
+        test_normalize_history_drops_trailing_duplicate,
+        test_handle_v2_message_translates_legacy_history,
     ]
     failed = 0
     for t in tests:

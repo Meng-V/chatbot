@@ -59,6 +59,71 @@ def _extract_message(data: Any) -> str:
     return ""
 
 
+def _normalize_history_for_agent(
+    history: list[dict],
+    current_user_message: str,
+) -> list[dict]:
+    """Translate the legacy `conversation_store` shape into Responses-API
+    message items, and drop the trailing duplicate of the current turn.
+
+    Why this exists: `_v2_message` in main.py writes the incoming user
+    turn to Postgres FIRST, then reads back `get_conversation_history`
+    so the agent can see context. The store returns rows shaped
+    `{type, content, timestamp}` (legacy v1 contract — see
+    `memory/conversation_store.py::get_conversation_history`). The
+    Responses API treats `type` as an item-kind discriminator: valid
+    values are `"message"` / `"function_call"` / ..., NOT `"user"` /
+    `"assistant"`. Passing the raw history through results in a 400
+    `Invalid value: 'user'` on `input[0]`.
+
+    Translation rules:
+      - `{type: "user"/"assistant", content, ...}` → `{role: ..., content}`
+        (legacy DB shape). Timestamp dropped — the agent doesn't use it.
+      - `{role: "user"/"assistant", content}` → passed through unchanged
+        (already in Responses-API message shape; lets unit tests stub
+         history without going through the legacy translator).
+      - Anything else is skipped defensively rather than raising — a
+        single malformed row should not 500 a user turn.
+
+    Duplicate-suppression: `_v2_message` writes the user turn BEFORE
+    fetching history, so the last item in `history` IS the current
+    turn. `run_agent` will append the same user message with a scope
+    prefix on its own, so leaving the raw duplicate at the tail would
+    feed the LLM two copies of the same message. Drop the trailing
+    user item iff its content matches `current_user_message`.
+    """
+    normalized: list[dict] = []
+    for raw in history:
+        if not isinstance(raw, dict):
+            continue
+        # Already OpenAI-format → pass through (preserve only the two
+        # keys the Responses API expects; strip anything else).
+        if "role" in raw and raw.get("role") in ("user", "assistant"):
+            normalized.append(
+                {"role": raw["role"], "content": raw.get("content", "") or ""}
+            )
+            continue
+        # Legacy store shape — translate `type` → `role`.
+        legacy_type = raw.get("type")
+        if legacy_type in ("user", "assistant"):
+            normalized.append(
+                {"role": legacy_type, "content": raw.get("content", "") or ""}
+            )
+            continue
+        # Unknown shape — skip rather than raise.
+
+    # Drop trailing duplicate of the current turn (see docstring).
+    if (
+        normalized
+        and normalized[-1].get("role") == "user"
+        and (normalized[-1].get("content") or "").strip()
+        == (current_user_message or "").strip()
+    ):
+        normalized = normalized[:-1]
+
+    return normalized
+
+
 def turnresponse_to_wire(
     resp: TurnResponse,
     *,
@@ -123,11 +188,20 @@ async def handle_v2_message(
     like the legacy handler -- this function is the pure middle.
     """
     text = _extract_message(data)
+    # Legacy conversation_store returns `{type, content, timestamp}`;
+    # the Responses API needs `{role, content}` and rejects the legacy
+    # shape with `Invalid value: 'user'` on input[0]. Also drops the
+    # trailing duplicate of the current user turn (main.py persists it
+    # before reading history). Idempotent for already-OpenAI-format
+    # input — unit tests stay green.
+    normalized_history = _normalize_history_for_agent(
+        conversation_history or [], text
+    )
     req = TurnRequest(
         user_message=text,
         conversation_id=conversation_id,
         session_origin_url=session_origin_url,
-        conversation_history=conversation_history or [],
+        conversation_history=normalized_history,
     )
     # run_turn is SYNC and a turn takes seconds; calling it directly in
     # this async handler would block the whole event loop (every other
