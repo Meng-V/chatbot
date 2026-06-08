@@ -44,7 +44,8 @@ def _ev(chunk_id: str, source_url: str = "https://x.com/", **kw) -> EvidenceChun
                          campus=kw.get("campus", "oxford"),
                          library=kw.get("library", "king"),
                          topic=kw.get("topic"),
-                         featured_service=kw.get("featured_service"))
+                         featured_service=kw.get("featured_service"),
+                         kind=kw.get("kind", "crawled"))
 
 
 # --- _format_evidence_block ---
@@ -226,6 +227,119 @@ def test_parse_missing_url_falls_back_to_chunk_url() -> None:
     evidence = [_ev("c1", source_url="https://lib.miamioh.edu/king/")]
     out = parse_synthesizer_response(raw, evidence)
     assert out.citations[0].url == "https://lib.miamioh.edu/king/"
+
+
+def test_parse_backfills_orphan_marker_from_evidence() -> None:
+    """REGRESSION: the synthesizer LLM intermittently writes an `[n]`
+    marker but returns an empty citations[] (observed on the hours
+    intent). The orphan marker rendered an un-clickable `[1]` in the UI
+    and the post-processor would refuse an otherwise-correct answer.
+    parse_synthesizer_response must reconstruct the citation from the
+    positional evidence chunk it points at -- url + campus + library so
+    the chip is clickable AND the cross-campus guard still has metadata."""
+    raw = {
+        "answer": "King Library closes today at 9:00pm [1].",
+        "citations": [],  # <- model omitted it
+        "confidence": "high",
+    }
+    evidence = [_ev("tool:get_hours:king",
+                    source_url="https://www.lib.miamioh.edu/about/locations/hours/",
+                    text="King Library Hours: Monday 7:30am to 9:00pm",
+                    campus="oxford", library="king")]
+    out = parse_synthesizer_response(raw, evidence)
+    assert len(out.citations) == 1, "orphan [1] not back-filled"
+    c = out.citations[0]
+    assert c.n == 1
+    assert c.url == "https://www.lib.miamioh.edu/about/locations/hours/"
+    assert c.snippet  # snippet derived from evidence text, non-empty
+    # Cross-campus guard needs these; a None campus would force a refusal.
+    assert c.campus == "oxford"
+    assert c.library == "king"
+    assert c.chunk_id == "tool:get_hours:king"
+
+
+def test_parse_live_api_citation_gets_honest_snippet_not_page_quote() -> None:
+    """Option-1 honest-snippet: a LIVE-API citation (hours) must NOT
+    echo the API value as if it were a verbatim page quote. The chip
+    text is labeled as live, and the URL still points at the canonical
+    page for verification. Applies whether the model filled the
+    citation or it was back-filled."""
+    hours_ev = _ev("tool:get_hours:king",
+                   source_url="https://www.lib.miamioh.edu/about/locations/hours/",
+                   text="King Library Hours: Monday 7:30am to 9:00pm",
+                   kind="live_api")
+    # (a) model filled the citation with the API string as snippet:
+    raw_filled = {
+        "answer": "Closes 9pm [1].",
+        "citations": [{"n": 1, "url": hours_ev.source_url,
+                       "snippet": "King Library Hours: Monday 7:30am to 9:00pm"}],
+        "confidence": "high",
+    }
+    c = parse_synthesizer_response(raw_filled, [hours_ev]).citations[0]
+    assert "LibCal" in c.snippet and "real-time" in c.snippet.lower()
+    assert "7:30am" not in c.snippet  # API value NOT masquerading as a quote
+    assert c.url == "https://www.lib.miamioh.edu/about/locations/hours/"
+    # (b) back-filled orphan marker -> same honest snippet:
+    raw_orphan = {"answer": "Closes 9pm [1].", "citations": [], "confidence": "high"}
+    c2 = parse_synthesizer_response(raw_orphan, [hours_ev]).citations[0]
+    assert "LibCal" in c2.snippet
+
+
+def test_parse_prose_citation_keeps_real_excerpt() -> None:
+    """Counterpart: a CRAWLED (prose) citation keeps the model's real
+    excerpt -- the honest-snippet relabel is live-API-only."""
+    prose_ev = _ev("chunk-ill", source_url="https://lib/ill/",
+                   text="Interlibrary loan lets you borrow from other libraries.",
+                   kind="crawled")
+    raw = {
+        "answer": "ILL [1].",
+        "citations": [{"n": 1, "url": "https://lib/ill/",
+                       "snippet": "Interlibrary loan lets you borrow"}],
+        "confidence": "high",
+    }
+    c = parse_synthesizer_response(raw, [prose_ev]).citations[0]
+    assert c.snippet == "Interlibrary loan lets you borrow"  # untouched
+
+
+def test_parse_backfill_does_not_duplicate_existing_citation() -> None:
+    """If the model already cited [1], the back-fill must not add a
+    second [1]."""
+    raw = {
+        "answer": "Open till 9pm [1].",
+        "citations": [{"n": 1, "url": "https://lib/hours/", "snippet": "s"}],
+        "confidence": "high",
+    }
+    out = parse_synthesizer_response(raw, [_ev("c1", source_url="https://lib/hours/")])
+    assert len(out.citations) == 1
+    assert out.citations[0].url == "https://lib/hours/"  # model's, not overwritten
+
+
+def test_parse_backfill_skips_out_of_range_marker() -> None:
+    """An `[5]` marker with only 1 evidence chunk must NOT be
+    reconstructed (there's nothing authoritative to point at). Leaving
+    it absent lets the post-processor's CITATION_INVALID guard refuse,
+    which is the correct outcome for a fabricated reference."""
+    raw = {"answer": "See [5].", "citations": [], "confidence": "high"}
+    out = parse_synthesizer_response(raw, [_ev("c1")])
+    assert out.citations == []
+
+
+def test_parse_backfill_multiple_orphans_sorted_by_n() -> None:
+    """Two evidence chunks, model writes [2] then [1], omits both
+    citations. Both get back-filled, sorted ascending by n."""
+    raw = {
+        "answer": "Wertz [2] and King [1] both open.",
+        "citations": [],
+        "confidence": "high",
+    }
+    evidence = [
+        _ev("king-c", source_url="https://lib/king/", library="king"),
+        _ev("wertz-c", source_url="https://lib/wertz/", library="wertz"),
+    ]
+    out = parse_synthesizer_response(raw, evidence)
+    assert [c.n for c in out.citations] == [1, 2]
+    assert out.citations[0].url == "https://lib/king/"
+    assert out.citations[1].url == "https://lib/wertz/"
 
 
 def test_parse_defaults_confidence_to_medium() -> None:

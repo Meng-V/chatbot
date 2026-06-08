@@ -27,6 +27,7 @@ See plan:
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from typing import Optional, Protocol
 
@@ -158,6 +159,39 @@ def _build_dynamic_suffix(
 # bump (v2 fields) is a one-function change.
 
 
+_ANSWER_CITATION_RE = re.compile(r"\[(\d+)\]")
+"""Matches `[n]` citation markers in synthesized answer text. Mirrors
+post_processor._CITATION_REF_RE; kept local so the synthesizer carries no
+dependency on a post_processor private name."""
+
+_LIVE_API_SNIPPET = (
+    "Live from the library's LibCal calendar (real-time) — open the "
+    "source page to confirm current information."
+)
+"""Honest chip text for LIVE-API evidence. See `_citation_snippet`."""
+
+
+def _citation_snippet(chunk: Optional[EvidenceChunk], model_snippet: str) -> str:
+    """The text shown in a citation chip's expand-popover.
+
+    For LIVE-API evidence (hours, room availability) there is no static
+    source document: the value came from a real-time LibCal call, and the
+    canonical URL is a live widget -- NOT a page that contains this exact
+    text. Labeling the chip as live, rather than echoing the API value as
+    if it were a verbatim page quote, keeps it honest; the cited URL still
+    lets the user verify against the live page. Prose / authoritative-DB
+    evidence keeps its real excerpt (the model's snippet, else chunk text).
+
+    Design note (2026-06-08): this is the "Option 1" honest-snippet fix.
+    The richer "Option 3" -- a typed `kind` field plumbed through to the
+    frontend so the chip renders a styled 'Live' badge -- is deferred; see
+    docs/programmer-guide/09-BACKLOG.md (Citations & UX).
+    """
+    if chunk is not None and chunk.kind == "live_api":
+        return _LIVE_API_SNIPPET
+    return (model_snippet or (chunk.text if chunk else "") or "")[:150]
+
+
 def parse_synthesizer_response(
     raw: dict,
     evidence: list[EvidenceChunk],
@@ -169,24 +203,62 @@ def parse_synthesizer_response(
     metadata it needs. Citations whose `n` is out of range are kept
     with campus=None, which the post-processor flags as a failure --
     fail-loud rather than silently dropping.
+
+    Citation back-fill: the synthesizer LLM intermittently (~low
+    single-digit % of turns, confirmed on the hours intent) writes an
+    `[n]` marker in `answer` but returns an empty / incomplete
+    `citations[]` array. Left as-is the UI renders an orphan,
+    un-clickable `[n]` and the post-processor would (correctly, by its
+    own rule) refuse an otherwise-correct answer. The evidence bundle is
+    1-indexed and positional -- the prompt shows "[1] <url> <snippet>",
+    "[2] ..." -- so an `[n]` marker maps unambiguously to
+    `evidence[n-1]`. We reconstruct any referenced-but-omitted citation
+    from that chunk; this is authoritative (the exact source the model
+    was pointing at), not a guess. Out-of-range `n` (the model cited
+    evidence that doesn't exist) is deliberately NOT reconstructed so
+    the post-processor's CITATION_INVALID guard still fires and refuses.
     """
+    answer = str(raw.get("answer", ""))
     citations: list[Citation] = []
+    seen_ns: set[int] = set()
     for c in raw.get("citations", []):
         n = int(c["n"])
+        seen_ns.add(n)
         # Index back to the evidence chunk by position (1-indexed).
         chunk = evidence[n - 1] if 1 <= n <= len(evidence) else None
         citations.append(
             Citation(
                 n=n,
                 url=str(c.get("url", chunk.source_url if chunk else "")),
-                snippet=str(c.get("snippet", "")),
+                snippet=_citation_snippet(chunk, str(c.get("snippet", ""))),
                 chunk_id=chunk.chunk_id if chunk else None,
                 campus=chunk.campus if chunk else None,
                 library=chunk.library if chunk else None,
             )
         )
+
+    # Back-fill citations for [n] markers present in the answer but
+    # missing from citations[] (see docstring). Only in-range n.
+    for m in _ANSWER_CITATION_RE.finditer(answer):
+        n = int(m.group(1))
+        if n in seen_ns or not (1 <= n <= len(evidence)):
+            continue
+        chunk = evidence[n - 1]
+        citations.append(
+            Citation(
+                n=n,
+                url=chunk.source_url,
+                snippet=_citation_snippet(chunk, ""),
+                chunk_id=chunk.chunk_id,
+                campus=chunk.campus,
+                library=chunk.library,
+            )
+        )
+        seen_ns.add(n)
+
+    citations.sort(key=lambda c: c.n)
     return SynthesizerOutput(
-        answer=str(raw.get("answer", "")),
+        answer=answer,
         citations=citations,
         confidence=raw.get("confidence", "medium"),
     )
