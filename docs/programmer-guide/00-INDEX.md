@@ -20,6 +20,7 @@ Read in this order if you're new:
 | [06-EVAL-AND-QUALITY.md](06-EVAL-AND-QUALITY.md) | You changed bot behavior and want to measure impact | 20 min |
 | [07-DATA-PIPELINE.md](07-DATA-PIPELINE.md) | You need to refresh the knowledge base from the library website, or add a new building to the truth table | 25 min |
 | [08-OPERATIONS.md](08-OPERATIONS.md) | A librarian flagged a wrong answer; you're handling the ManualCorrection workflow | 10 min |
+| [09-BACKLOG.md](09-BACKLOG.md) | "What's left to make this great?" — deferred enhancements, prioritized, with enough context to act on each cold | 10 min |
 
 ---
 
