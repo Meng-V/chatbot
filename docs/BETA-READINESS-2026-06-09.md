@@ -146,12 +146,43 @@ conftest baseline). Pinning the last one is tracked as test debt.
 
 ---
 
-## 6. Gold-set eval (real LLM + LLM-judge, 234 cases)
+## 6. Gold-set eval (real LLM + LLM-judge) — PARTIAL, infra-interrupted
 
-**[PENDING — running overnight; numbers inserted here on completion, with the
-caveat that the LLM-judge mismarks ~15–30% of answers, so read it as a trend /
-floor, not an absolute. The §1 deterministic audit is the more reliable signal
-for "does it answer correctly / does it ever fabricate".]**
+**The full 234-case run did not finish.** It froze at **68/234** around 02:00
+and hung (0% CPU) — the overnight SSH tunnel kept dropping the Postgres
+connection (`Error in PostgreSQL connection: Closed`), and the eval's async DB
+bridge deadlocked on a drop instead of failing-and-continuing. Killed and not
+auto-resumed (the flaky tunnel would likely re-hang).
+
+**Judge verdicts on the 68 completed cases:**
+
+| Verdict | Count | |
+|---|---|---|
+| correct | 23 | ✅ |
+| refused_correctly | 7 | ✅ |
+| partial (answered, incomplete) | 15 | 🟡 |
+| wrong | 18 | ❌ |
+| refused_incorrectly | 5 | ❌ |
+
+→ at-least-helpful **45/68 (66%)**, judged-wrong **23/68 (34%)**.
+
+**Read this with three heavy caveats — it understates true quality:**
+1. **Non-representative slice.** The gold set is ordered `featured_service`
+   first (54 of the first 68). That is the single hardest category *and* the
+   one most exposed to the retrieval-recall gaps (§4a) — the easy tool-backed
+   categories (hours, librarians, OOS) that score near-perfect in the §1 audit
+   hadn't been reached yet.
+2. **Infra-contaminated.** Postgres dropped repeatedly during these exact
+   cases, so some `wrong` verdicts are failed `lookup_librarian` / `lookup_space`
+   calls — infrastructure, not bot logic.
+3. **Judge noise.** The LLM-judge mismarks ~15–30% (it marks correct-but-
+   differently-worded answers `wrong`).
+
+**Net:** treat the §1 deterministic audit (0 fabrication, 0 dead URLs, ~52/55
+correct behaviour) as the reliable beta signal. This judge slice is a noisy,
+pessimistic, partial lower bound. A clean full run needs a stable tunnel (or
+the eval's DB bridge hardened against connection drops — worth doing, since the
+hang is itself a robustness finding for any long-running batch job).
 
 ---
 
