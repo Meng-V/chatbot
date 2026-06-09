@@ -42,6 +42,20 @@ To render a styled badge the frontend must *know* the kind, so you add a `kind` 
 
 **Effort.** ~0.5 day. **Touches:** `synthesis/post_processor.py`, `graph/new_orchestrator.py` (`deps.log_turn`).
 
+### A3. 🔴 Post-processor doesn't verify a cited URL came from real evidence
+**What.** The post-processor's URL check (`post_processor.validate`, rule 3) accepts any URL that appears in `citations[].url` OR the (currently empty, see D4) `UrlSeen` allowlist. It does NOT cross-check that the cited URL is actually the `source_url` of an evidence chunk the agent retrieved. So the synthesizer LLM can fabricate a citation from the **hardcoded reference-URL list in `prompts/synthesizer_v1.py`** even when retrieval returned zero evidence — the model writes `...[1].` + `citations:[{n:1,url:<a prompt URL>}]`, and every post-processor check passes because the URL is "cited."
+
+**How it surfaced (2026-06-08).** A user asked "where to checkout Adobe." Retrieval returned no Adobe evidence on most turns, yet the bot confidently answered citing `…/use/technology/software/adobe/` — a **404** that lived in the synthesizer prompt's reference list. Probed 5×: 4 refusals, 1 answer whose citation URL was a *prompt* URL, not an evidence `source_url`. This is exactly the "fabricated URL" failure the whole project exists to prevent, slipping through the citation contract.
+
+**Fix direction.** In `post_processor.validate`, add: every URL the answer cites must equal the `source_url` of some chunk in the `evidence` bundle passed in (the function already receives `evidence`). A cited URL with no backing evidence chunk → `CITATION_INVALID` refusal. Consider also dropping the hardcoded URL list from the synthesizer prompt entirely (it's the enabler) — or keeping it only as a cache-anchor that the post-processor will still reject if used without evidence.
+
+**Effort.** ~1 day incl. test + refusal-rate check (this WILL raise refusals on thin-evidence turns — that's correct, but measure it). **Touches:** `synthesis/post_processor.py`, `prompts/synthesizer_v1.py`.
+
+### A4. 🟠 Hardcoded prompt URLs rot silently — wire the validator into deploy/CI
+**What.** `scripts/validate_prompt_urls.py` (added 2026-06-08) extracts every URL from the prompt/source files and HTTP-checks it; it found 3 dead URLs in `synthesizer_v1.py` (Adobe, citation guide, technology checkout) that had been served to users. It's not yet run automatically. Wire it into the pre-deploy check (see C1) and a weekly cron so a rotted URL fails CI instead of reaching a user. `python scripts/validate_prompt_urls.py` exits non-zero on any non-200.
+
+**Effort.** ~0.5 day (cron + pre-deploy hook). Also retrieval-quality sibling: the Adobe **Weaviate chunk exists** (`source_url=…/adobe/`, 200) but retrieval surfaced it only ~1/5 for "where to checkout Adobe" — featured-service retrieval is under-boosting; revisit the `featured_service` rank boost in `retrieval/scope_filter.py`.
+
 ---
 
 ## B. Telemetry & cost observability
