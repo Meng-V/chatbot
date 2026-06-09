@@ -1,37 +1,71 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import { ExternalLink } from 'lucide-react';
 
 /**
  * Inline citation pill: renders `[n]` in answer text as a clickable chip
  * that expands to show {snippet, source_url}. Click outside to dismiss.
  *
- * The synthesizer emits answers like "King opens at 7am [1] and closes at
- * 2am [2]." with a parallel `citations: [{n, url, snippet}]` array. This
- * component is what makes those numbers verifiable -- one click and the
- * user sees the exact passage the bot was reading from. That's the
- * trust-loop the rebuild plan is built around.
+ * The popover is rendered through a PORTAL to document.body and positioned
+ * with `position: fixed` against the chip's on-screen rect, clamped into
+ * the viewport. This is the fix for the embedded narrow-widget clipping:
+ * an inline `absolute` popover got cut off by the chat scroll container's
+ * overflow no matter which side it anchored to. A portal escapes the
+ * overflow entirely, and the clamp keeps it on-screen left AND right.
  *
  * Degrades cleanly: if `citation` is missing (number with no matching
- * entry, e.g. backend bug or stale message), renders as plain text so
- * we don't drop information silently.
+ * entry, e.g. backend bug or stale message), renders as plain text so we
+ * don't drop information silently.
  */
+const POPOVER_WIDTH = 288; // px
+
 const CitationChip = ({ n, citation }) => {
   const [open, setOpen] = useState(false);
-  const containerRef = useRef(null);
+  const [pos, setPos] = useState(null);
+  const buttonRef = useRef(null);
+  const popoverRef = useRef(null);
 
-  // Dismiss on outside click. Listening at document scope rather than
-  // a portal because the popover is positioned inline -- click within
-  // the chip's wrapper shouldn't close.
+  const computePos = useCallback(() => {
+    const btn = buttonRef.current;
+    if (!btn) return;
+    const r = btn.getBoundingClientRect();
+    const margin = 8;
+    const width = Math.min(POPOVER_WIDTH, window.innerWidth - margin * 2);
+    let left = r.left;
+    // Clamp so the popover never spills off either edge of the viewport.
+    if (left + width > window.innerWidth - margin) {
+      left = window.innerWidth - margin - width;
+    }
+    if (left < margin) left = margin;
+    setPos({ top: r.bottom + 4, left, width });
+  }, []);
+
+  // While open: position under the chip, and close on outside click /
+  // scroll / resize (re-anchoring a fixed popover on scroll is fiddly and
+  // closing is the expected UX for a click-tooltip).
   useEffect(() => {
     if (!open) return;
-    const handler = (e) => {
-      if (containerRef.current && !containerRef.current.contains(e.target)) {
+    computePos();
+    const onDocPointer = (e) => {
+      if (
+        buttonRef.current &&
+        !buttonRef.current.contains(e.target) &&
+        popoverRef.current &&
+        !popoverRef.current.contains(e.target)
+      ) {
         setOpen(false);
       }
     };
-    document.addEventListener('mousedown', handler);
-    return () => document.removeEventListener('mousedown', handler);
-  }, [open]);
+    const onScrollOrResize = () => setOpen(false);
+    document.addEventListener('mousedown', onDocPointer);
+    window.addEventListener('scroll', onScrollOrResize, true);
+    window.addEventListener('resize', onScrollOrResize);
+    return () => {
+      document.removeEventListener('mousedown', onDocPointer);
+      window.removeEventListener('scroll', onScrollOrResize, true);
+      window.removeEventListener('resize', onScrollOrResize);
+    };
+  }, [open, computePos]);
 
   // Missing citation -- render the original `[n]` so info is preserved.
   if (!citation) {
@@ -47,8 +81,9 @@ const CitationChip = ({ n, citation }) => {
       : snippet || '';
 
   return (
-    <span ref={containerRef} className="relative inline-block align-baseline">
+    <>
       <button
+        ref={buttonRef}
         type="button"
         onClick={() => setOpen((v) => !v)}
         title={snippet ? `Source ${n}: ${snippet.slice(0, 200)}` : `Source ${n}`}
@@ -62,30 +97,41 @@ const CitationChip = ({ n, citation }) => {
       >
         {n}
       </button>
-      {open && (
-        <span
-          role="tooltip"
-          className="absolute z-20 right-0 top-full mt-1 w-64 max-w-[calc(100vw-2rem)] block px-3 py-2 text-xs text-left text-gray-800 bg-white border border-gray-300 rounded-md shadow-lg break-words"
-        >
-          {displaySnippet && (
-            <span className="block mb-2 whitespace-pre-wrap break-words">
-              “{displaySnippet}”
-            </span>
-          )}
-          {url && (
-            <a
-              href={url}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="flex items-start gap-1 text-blue-600 hover:underline"
-            >
-              <ExternalLink size={12} className="shrink-0 mt-0.5" />
-              <span className="min-w-0 break-all">{url}</span>
-            </a>
-          )}
-        </span>
-      )}
-    </span>
+      {open &&
+        pos &&
+        createPortal(
+          <span
+            ref={popoverRef}
+            role="tooltip"
+            style={{
+              position: 'fixed',
+              top: pos.top,
+              left: pos.left,
+              width: pos.width,
+              zIndex: 9999,
+            }}
+            className="block px-3 py-2 text-xs text-left text-gray-800 bg-white border border-gray-300 rounded-md shadow-lg break-words"
+          >
+            {displaySnippet && (
+              <span className="block mb-2 whitespace-pre-wrap break-words">
+                “{displaySnippet}”
+              </span>
+            )}
+            {url && (
+              <a
+                href={url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-start gap-1 text-blue-600 hover:underline"
+              >
+                <ExternalLink size={12} className="shrink-0 mt-0.5" />
+                <span className="min-w-0 break-all">{url}</span>
+              </a>
+            )}
+          </span>,
+          document.body,
+        )}
+    </>
   );
 };
 

@@ -830,15 +830,41 @@ def _make_search_kb() -> Callable[[str, dict], list[dict]]:
 
     Signature matches `tools_v2.registry._make_search_kb`'s backend call:
     `search_kb(query, scope_dict) -> list[{chunk_id, source_url, snippet,
-    campus, library, topic}]`. The adapter is built once and reused.
+    campus, library, topic}]`.
+
+    Fault-tolerance: the WeaviateSearchAdapter is built LAZILY on first use,
+    not here. Building it touches Weaviate, and `build_eval_backends()` runs
+    at deps-construction time -- if we built it eagerly, a Weaviate outage
+    (or a dropped SSH tunnel on a dev laptop) would raise and crash the
+    ENTIRE deps build, taking down every intent (hours, librarians, etc.),
+    not just search. Lazy + try/except means a Weaviate hiccup degrades
+    search_kb to "no results" (the agent refuses that one prose turn) while
+    the rest of the bot keeps working. The adapter is cached after the first
+    successful build.
     """
-    from src.weaviate_adapters.search_adapter import WeaviateSearchAdapter
     from src.retrieval.search import RetrievalRequest, search_kb as _retrieval
     from src.retrieval.scope_filter import ScopeFilter
 
-    adapter = WeaviateSearchAdapter()
+    _holder: dict = {}
+
+    def _adapter():
+        a = _holder.get("a")
+        if a is None:
+            from src.weaviate_adapters.search_adapter import WeaviateSearchAdapter
+            a = WeaviateSearchAdapter()
+            _holder["a"] = a
+        return a
 
     def search_kb(query: str, scope: dict) -> list[dict]:
+        try:
+            adapter = _adapter()
+        except Exception as e:  # noqa: BLE001 -- Weaviate down must not crash the turn
+            logger.warning(
+                "search_kb: Weaviate adapter unavailable (%s: %s); returning "
+                "no results (this prose turn will refuse, rest of bot is fine)",
+                type(e).__name__, e,
+            )
+            return []
         scope = scope or {}
         sf = ScopeFilter(
             campus=scope.get("campus") or "oxford",

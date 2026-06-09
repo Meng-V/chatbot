@@ -668,6 +668,47 @@ def _extract_evidence(agent_outcome: AgentOutcome) -> list[EvidenceChunk]:
     return evidence + tool_facts
 
 
+def _renumber_citations_for_display(
+    answer: str, citations: list[dict]
+) -> tuple[str, list[dict]]:
+    """Renumber `[n]` markers + citations to sequential 1..N in order of
+    first appearance in the answer.
+
+    The synthesizer numbers citations by evidence-bundle position, so an
+    answer can read "...[5]...[2]...[10]". Users expect [1],[2],[3]. We
+    rewrite the markers and the citations[].n together so they stay in
+    sync. Citations not referenced by any marker are dropped (they'd
+    render as nothing anyway). Idempotent when already 1..N.
+    """
+    order: list[int] = []
+    seen: set[int] = set()
+    for m in re.finditer(r"\[(\d+)\]", answer or ""):
+        n = int(m.group(1))
+        if n not in seen:
+            seen.add(n)
+            order.append(n)
+    if not order:
+        return answer, citations
+    remap = {old: i + 1 for i, old in enumerate(order)}
+    new_answer = re.sub(
+        r"\[(\d+)\]",
+        lambda mm: f"[{remap.get(int(mm.group(1)), mm.group(1))}]",
+        answer,
+    )
+    by_n: dict[int, dict] = {}
+    for c in citations:
+        # keep the first citation seen for a given original n
+        by_n.setdefault(c.get("n"), c)
+    new_citations: list[dict] = []
+    for old in order:
+        c = by_n.get(old)
+        if c is not None:
+            nc = dict(c)
+            nc["n"] = remap[old]
+            new_citations.append(nc)
+    return new_answer, new_citations
+
+
 def _shape_response(
     *,
     synth_result: SynthesisResult,
@@ -710,8 +751,18 @@ def _shape_response(
     cited_chunk_ids = [
         c.chunk_id for c in pp.answer.citations if c.chunk_id is not None
     ]
+    # Renumber citations to sequential [1],[2],[3]... in order of first
+    # appearance. The synthesizer cites evidence by its position in the
+    # retrieval bundle, so a real answer can read "...[5]...[2]...[10]",
+    # which looks broken to a user. We renumber the answer markers AND the
+    # citation numbers together for display. Done HERE, after all
+    # validation, so the post-processor ran its [n]<->citations checks on
+    # the original numbers.
+    answer_text, citations_wire = _renumber_citations_for_display(
+        pp.answer.answer, citations_wire
+    )
     return TurnResponse(
-        answer=pp.answer.answer,
+        answer=answer_text,
         is_refusal=False,
         refusal_trigger=None,
         citations=citations_wire,
