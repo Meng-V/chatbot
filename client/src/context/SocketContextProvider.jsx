@@ -72,11 +72,26 @@ const SocketContextProvider = ({ children }) => {
       messageContextValues.stopThinking();
     });
 
-    socket.current.on('message', ({ messageId, message }) => {
+    socket.current.on('message', ({ messageId, message, citations, confidence }) => {
       console.log('Message received:', message);
       // Stop thinking timer and get elapsed time
       const responseTime = messageContextValues.stopThinking();
-      messageContextValues.addMessage(message, 'chatbot', messageId, responseTime);
+      // v2 emits the answer text in `message` with `citations` + `confidence`
+      // as SIBLING fields on the payload. addMessage reads those off the
+      // message object, so when structured fields are present we wrap the
+      // text into { answer, citations, confidence }. Without this wrap the
+      // citations were destructured away here and never reached the renderer
+      // -- the inline [n] chips + Sources footer silently never showed.
+      // Legacy payloads (a bare string, or { response: [...] }) pass through.
+      const payload =
+        citations !== undefined || confidence !== undefined
+          ? {
+              answer: typeof message === 'string' ? message : '',
+              citations,
+              confidence,
+            }
+          : message;
+      messageContextValues.addMessage(payload, 'chatbot', messageId, responseTime);
     });
 
     socket.current.on('messageIdUpdate', ({ tempMessageId, realMessageId }) => {

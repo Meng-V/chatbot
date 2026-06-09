@@ -65,10 +65,10 @@ const CitationChip = ({ n, citation }) => {
       {open && (
         <span
           role="tooltip"
-          className="absolute z-10 left-0 top-full mt-1 w-80 max-w-[90vw] block px-3 py-2 text-xs text-left text-gray-800 bg-white border border-gray-300 rounded-md shadow-lg"
+          className="absolute z-20 right-0 top-full mt-1 w-64 max-w-[calc(100vw-2rem)] block px-3 py-2 text-xs text-left text-gray-800 bg-white border border-gray-300 rounded-md shadow-lg break-words"
         >
           {displaySnippet && (
-            <span className="block mb-2 whitespace-pre-wrap">
+            <span className="block mb-2 whitespace-pre-wrap break-words">
               “{displaySnippet}”
             </span>
           )}
@@ -77,10 +77,10 @@ const CitationChip = ({ n, citation }) => {
               href={url}
               target="_blank"
               rel="noopener noreferrer"
-              className="inline-flex items-center gap-1 text-blue-600 hover:underline break-all"
+              className="flex items-start gap-1 text-blue-600 hover:underline"
             >
-              <ExternalLink size={12} className="shrink-0" />
-              <span>{url}</span>
+              <ExternalLink size={12} className="shrink-0 mt-0.5" />
+              <span className="min-w-0 break-all">{url}</span>
             </a>
           )}
         </span>

@@ -228,15 +228,9 @@ const ChatBotComponent = ({ askUsStatus = { isOpen: false, hoursToday: null } })
                 ? message.text.response.join('')
                 : message.text;
 
-            // Split out References block if present to render nicer citations
-            const parts = adjustedMessage.split(/\nReferences:\n/i);
-            const bodyText = parts[0] || '';
-            const refsBlock = parts[1] || '';
-            const references = refsBlock
-              .split('\n')
-              .map((l) => l.trim())
-              .filter((l) => l.length > 0)
-              .slice(0, 5);
+            // Strip any legacy "References:" tail from the body text (the
+            // structured citations array supersedes it).
+            const bodyText = adjustedMessage.split(/\nReferences:\n/i)[0] || '';
 
             // Structured confidence (v2) wins over text heuristic (legacy).
             const lowConfidenceHint =
@@ -244,6 +238,15 @@ const ChatBotComponent = ({ askUsStatus = { isOpen: false, hoursToday: null } })
               /No strong matches found|Institutional knowledge service is temporarily unavailable|ask a clarifying question/i.test(
                 adjustedMessage,
               );
+            // Reliability gate: when the answer is uncertain or a refusal,
+            // do NOT surface sources -- strip inline [n] markers and drop the
+            // citations so no clickable "evidence" appears under an answer the
+            // bot itself flagged as unreliable.
+            const showSources = !lowConfidenceHint;
+            const renderBody = showSources
+              ? bodyText
+              : bodyText.replace(/\s*\[\d+\]/g, '');
+            const renderCitations = showSources ? message.citations : undefined;
             return (
               <div
                 key={index}
@@ -270,66 +273,18 @@ const ChatBotComponent = ({ askUsStatus = { isOpen: false, hoursToday: null } })
                   >
                     {typeof message.text === 'object' ? (
                       <div className="half-line-height">
-                        <MessageComponents msg={bodyText} citations={message.citations} />
+                        <MessageComponents msg={renderBody} citations={renderCitations} />
                       </div>
                     ) : (
-                      <MessageComponents msg={bodyText} citations={message.citations} />
+                      <MessageComponents msg={renderBody} citations={renderCitations} />
                     )}
                   </div>
                 </div>
-                {/* Sources footer.
-                    v2 path: render from message.citations (structured),
-                    matching the inline [n] chips above.
-                    Legacy path: parse the "References:" tail from message text. */}
-                {message.sender !== 'user' &&
-                  ((message.citations && message.citations.length > 0) ||
-                    references.length > 0) && (
-                    <div className="max-w-md mt-2 px-4 py-3 border border-gray-300 rounded-md bg-gray-50">
-                      <h4 className="text-xs font-semibold mb-2 text-gray-700">
-                        Sources
-                      </h4>
-                      <ul className="list-disc pl-4 space-y-1">
-                        {message.citations && message.citations.length > 0
-                          ? message.citations.map((c, i) => (
-                              <li key={i} className="text-gray-700 text-xs">
-                                <span className="font-semibold mr-1">[{c.n}]</span>
-                                {c.url ? (
-                                  <a
-                                    href={c.url}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                    className="text-blue-600 hover:underline break-all"
-                                  >
-                                    {c.url}
-                                  </a>
-                                ) : (
-                                  <span>{c.snippet || ''}</span>
-                                )}
-                              </li>
-                            ))
-                          : references.map((line, i) => {
-                              const urlMatch = line.match(/https?:\/\/\S+/);
-                              const url = urlMatch ? urlMatch[0] : undefined;
-                              return (
-                                <li key={i} className="text-gray-700">
-                                  {url ? (
-                                    <a
-                                      href={url}
-                                      target="_blank"
-                                      rel="noopener noreferrer"
-                                      className="text-blue-600 hover:underline"
-                                    >
-                                      {url}
-                                    </a>
-                                  ) : (
-                                    <span>{line}</span>
-                                  )}
-                                </li>
-                              );
-                            })}
-                      </ul>
-                    </div>
-                  )}
+                {/* Sources footer REMOVED (operator request 2026-06-08):
+                    the big bordered box that listed full source URLs was
+                    redundant with the inline [n] chips and visually heavy.
+                    Source access now lives entirely on the inline CitationChip
+                    pill -- click [n] to expand snippet + link. */}
                 {/* Render clarification choices if present */}
                 {message.sender !== 'user' && message.clarificationChoices && (
                   <ClarificationChoices
@@ -342,37 +297,14 @@ const ChatBotComponent = ({ askUsStatus = { isOpen: false, hoursToday: null } })
                     disabled={messageContextValues.isTyping}
                   />
                 )}
-                {/* Suggest human librarian or ticket when confidence appears low */}
-                {message.sender !== 'user' && lowConfidenceHint && (
-                  <div className="mt-2">
-                    <Alert variant="info" className="flex items-center">
-                      <AlertTriangle className="h-4 w-4" />
-                      <span className="text-sm flex-1">
-                        This answer may be uncertain. 
-                        {askUsStatus.isOpen 
-                          ? ' Talk to a human librarian for faster help.'
-                          : ' Submit a ticket during off-hours or check back during business hours.'}
-                      </span>
-                      {askUsStatus.isOpen ? (
-                        <Button
-                          size="xs"
-                          variant="default"
-                          onClick={() => setWidgetVisible(true)}
-                        >
-                          Chat with Human Librarian
-                        </Button>
-                      ) : (
-                        <Button
-                          size="xs"
-                          variant="default"
-                          onClick={() => setShowTicketForm(true)}
-                        >
-                          Submit a Ticket
-                        </Button>
-                      )}
-                    </Alert>
-                  </div>
-                )}
+                {/* Low-confidence handoff prompt REMOVED (operator request
+                    2026-06-08): the auto-injected "This answer may be
+                    uncertain / Submit a Ticket / Chat with Librarian" alert
+                    is no longer shown under uncertain answers. The refusal
+                    answer text itself already points the user to Ask Us, and
+                    the operator runs a separate, user-initiated escalation
+                    path. To restore, re-add an `Alert` gated on
+                    `lowConfidenceHint` here. */}
                 {message.sender !== 'user' && index !== 0 && (
                   <MessageRatingComponent message={message} />
                 )}

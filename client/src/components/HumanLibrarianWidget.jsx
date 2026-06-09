@@ -16,8 +16,6 @@ const UserInfoForm = ({ onFormSubmit, chatHistory }) => {
   const [copied, setCopied] = useState(false);
   const [summaryCopied, setSummaryCopied] = useState(false);
   const [generatingSummary, setGeneratingSummary] = useState(false);
-  const [previewText, setPreviewText] = useState(null);
-  const [copySource, setCopySource] = useState(null);
 
   // Copy full chat transcript to clipboard
   const handleCopyHistory = async () => {
@@ -31,8 +29,6 @@ const UserInfoForm = ({ onFormSubmit, chatHistory }) => {
 
     try {
       await navigator.clipboard.writeText(historyText);
-      setPreviewText(historyText);
-      setCopySource('transcript');
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     } catch {
@@ -65,8 +61,6 @@ const UserInfoForm = ({ onFormSubmit, chatHistory }) => {
 
       const data = await response.json();
       await navigator.clipboard.writeText(data.summary);
-      setPreviewText(data.summary);
-      setCopySource('summary');
       setSummaryCopied(true);
       setTimeout(() => setSummaryCopied(false), 2000);
     } catch (error) {
@@ -134,18 +128,6 @@ const UserInfoForm = ({ onFormSubmit, chatHistory }) => {
               </TooltipTrigger>
               <TooltipContent className="bg-gray-900/80 text-white text-xs">Generate AI summary and copy to clipboard</TooltipContent>
             </Tooltip>
-          </div>
-          <div className="rounded-md border border-gray-200 bg-gray-100 p-2 max-h-40 overflow-y-auto">
-            <p className="text-xs text-gray-500 mb-1 font-medium">
-              {copySource === 'transcript' ? '✅ Transcript copied to clipboard:' : copySource === 'summary' ? '✅ AI Summary copied to clipboard:' : 'Preview — click a button above to copy:'}
-            </p>
-            <pre className="text-xs text-gray-600 whitespace-pre-wrap break-words font-sans">
-              {previewText || chatHistory.map((msg) => {
-                const sender = msg.sender === 'user' ? 'You' : 'Chatbot';
-                const text = typeof msg.text === 'object' ? msg.text.response?.join('') || '' : msg.text;
-                return `${sender}: ${text}`;
-              }).join('\n\n')}
-            </pre>
           </div>
         </div>
       )}
