@@ -103,6 +103,12 @@ const CitationChip = ({ n, citation }) => {
           <span
             ref={popoverRef}
             role="tooltip"
+            // Stop the pointer event from reaching the document-level
+            // outside-click handler: without this, clicking the link could
+            // tear down the popover before the click navigates, so the URL
+            // felt "unclickable".
+            onMouseDown={(e) => e.stopPropagation()}
+            onClick={(e) => e.stopPropagation()}
             style={{
               position: 'fixed',
               top: pos.top,
