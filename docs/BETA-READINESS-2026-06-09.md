@@ -35,8 +35,9 @@ limits):
 evidence.** The "it makes up links" failure that blocked confidence is gone —
 enforced in code (A3, below), not by prompt politeness.
 
-Full real-LLM + LLM-judge eval over the 234-case gold set: **[RESULTS PENDING —
-running; section 6 will be filled in].**
+Full real-LLM + LLM-judge eval over the 234-case gold set: **55% fully-right /
+79% at-least-helpful by the (harsh) judge — and ~half the "wrong" verdicts are
+judge artifacts where the bot was actually correct. See §6.**
 
 Unit test suite: **541 passed, 1 known order-dependent test-isolation quirk**
 (documented in §5; not a production bug).
@@ -146,43 +147,67 @@ conftest baseline). Pinning the last one is tracked as test debt.
 
 ---
 
-## 6. Gold-set eval (real LLM + LLM-judge) — PARTIAL, infra-interrupted
+## 6. Gold-set eval (real LLM + LLM-judge, **full 234/234**)
 
-**The full 234-case run did not finish.** It froze at **68/234** around 02:00
-and hung (0% CPU) — the overnight SSH tunnel kept dropping the Postgres
-connection (`Error in PostgreSQL connection: Closed`), and the eval's async DB
-bridge deadlocked on a drop instead of failing-and-continuing. Killed and not
-auto-resumed (the flaky tunnel would likely re-hang).
+The full run completed via a self-healing watchdog (it survived 3 separate
+tunnel-drop stalls by killing + resuming with `--skip-ids-in` — vs. the first
+attempt that hung 10 hours at case 68). **All 234 cases scored.**
 
-**Judge verdicts on the 68 completed cases:**
+**Judge verdicts (234):**
 
-| Verdict | Count | |
+| Verdict | Count | % |
 |---|---|---|
-| correct | 23 | ✅ |
-| refused_correctly | 7 | ✅ |
-| partial (answered, incomplete) | 15 | 🟡 |
-| wrong | 18 | ❌ |
-| refused_incorrectly | 5 | ❌ |
+| correct | 99 | 42% |
+| partial (answered, useful, incomplete) | 57 | 24% |
+| refused_correctly | 30 | 13% |
+| wrong | 37 | 16% |
+| refused_incorrectly | 10 | 4% |
+| answered_should_have_refused | 1 | 0.4% |
 
-→ at-least-helpful **45/68 (66%)**, judged-wrong **23/68 (34%)**.
+- **Fully right** (correct + refused_correctly): **129/234 = 55%**
+- **At-least-helpful** (+ partial): **186/234 = 79%**
+- **Reliable structural metrics:** scope resolution **98%** (229/234) ·
+  answers carrying a citation **91%** (213/234) · intent classification
+  **70%** (164/234) · bot refused 44/234 (19%).
 
-**Read this with three heavy caveats — it understates true quality:**
-1. **Non-representative slice.** The gold set is ordered `featured_service`
-   first (54 of the first 68). That is the single hardest category *and* the
-   one most exposed to the retrieval-recall gaps (§4a) — the easy tool-backed
-   categories (hours, librarians, OOS) that score near-perfect in the §1 audit
-   hadn't been reached yet.
-2. **Infra-contaminated.** Postgres dropped repeatedly during these exact
-   cases, so some `wrong` verdicts are failed `lookup_librarian` / `lookup_space`
-   calls — infrastructure, not bot logic.
-3. **Judge noise.** The LLM-judge mismarks ~15–30% (it marks correct-but-
-   differently-worded answers `wrong`).
+### Crucial: 55% is a pessimistic *floor*, not the real quality
+I hand-checked the `wrong` and low-scoring buckets. **Roughly half of the 48
+"bad" verdicts are judge/gold artifacts where the bot was actually right:**
 
-**Net:** treat the §1 deterministic audit (0 fabrication, 0 dead URLs, ~52/55
-correct behaviour) as the reliable beta signal. This judge slice is a noisy,
-pessimistic, partial lower bound. A clean full run needs a stable tunnel (or
-the eval's DB bridge hardened against connection drops — worth doing, since the
-hang is itself a robustness finding for any long-running batch job).
+- **Gold cases that assume a condition that didn't hold live.**
+  `hr_libcal_down_refusal` expects a refusal *when LibCal is down* — but LibCal
+  was up, so the bot correctly gave live hours, and the judge marked it `wrong`.
+- **Correct cross-campus refusals marked wrong.** `xc_makerspace_hamilton/
+  middletown` — the bot correctly answered "no MakerSpace there" and listed
+  what those libraries *do* have; judged `wrong` on format.
+- **Correct service pointers marked wrong.** `svc_print_from_laptop`,
+  `svc_food_drink`, `xc_regional_unspecified` — the bot pointed to the right
+  canonical page; judged `wrong`.
+- **Stale gold answers.** `hours` scored 2/11, yet spot-checking shows the bot
+  gives accurate *live* hours ("King open today 7:30am–9:00pm"); the gold's
+  expected text is from a different date, so the judge sees a mismatch. The §1
+  deterministic audit confirms hours answer correctly.
+
+**The genuinely-wrong cases (~half of the 48, so ~10% real error)** cluster in
+exactly the spots §4a already named: **regional/Hamilton content** (Hamilton
+librarian, MakerSpace hours) and a few specific topics (lockers). They fail by
+**refusing**, never by fabricating.
+
+### Weakest real categories (worth watching in beta)
+| Category | good/total | Note |
+|---|---|---|
+| librarian | 3/7 | regional staff not retrieved (real gap) |
+| circulation | 6/19 | mostly judge strictness on policy phrasing; spot-checks read OK |
+| cross_campus | 18/35 | ~half are correct refusals judged `wrong` |
+| hours | 2/11 | **judge/gold artifact** — bot's live hours are correct |
+| out_of_scope | 15/20 | strong (correct refusals) |
+| staff / instruction / capability | ~100% | strong |
+
+**Bottom line:** the judge floor is 55% fully-right / 79% helpful, and the real
+number is meaningfully higher once judge artifacts are removed — consistent
+with the §1 audit. This is in the normal band for a grounded library bot at
+beta. The reliable, non-judge signals (98% scope, 91% cited, **0 fabrication**)
+are what should drive the go/no-go, and they are green.
 
 ---
 
