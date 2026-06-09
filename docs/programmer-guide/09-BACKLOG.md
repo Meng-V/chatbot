@@ -56,6 +56,34 @@ To render a styled badge the frontend must *know* the kind, so you add a `kind` 
 
 **Effort.** ~0.5 day (cron + pre-deploy hook). Also retrieval-quality sibling: the Adobe **Weaviate chunk exists** (`source_url=…/adobe/`, 200) but retrieval surfaced it only ~1/5 for "where to checkout Adobe" — featured-service retrieval is under-boosting; revisit the `featured_service` rank boost in `retrieval/scope_filter.py`.
 
+### A5. 🟢 Index is 95% un-extracted-PDF binary — bloat, NOT a retrieval killer (measured)
+**What.** 19,672 of the 20,608 live chunks (95%) are under `/sites/`, `/assets/`,
+`/files/` and contain raw PDF/asset **bytes** (`\x00…`, mojibake) — the ETL
+ingested binary files as "text" and never tombstoned them. Only ~936 chunks
+are real content pages. 98.7% are tagged `topic=about` (the default, since
+these paths match no `TOPIC_BY_URL_PREFIX`).
+
+**Measured 2026-06-09 — do NOT chase this as a recall fix.** Hypothesis was
+"binary garbage crowds the top-k and causes the recall gaps." Tested it: across
+9 diverse prose queries, junk occupied **0/90** of the raw top-10 slots — the
+hybrid search scores binary embeddings low, so real pages already win. A
+retrieval-time junk filter was written, measured as a **no-op**, and reverted.
+The Weaviate index was **not** mutated (a mass tombstone was correctly blocked
+as an unauthorized production-data change).
+
+**The real opportunity is content GAIN, not deletion.** Those 19,672 files are
+real documents (policies, org charts, planning PDFs) that are currently
+**invisible** because their text was never extracted. The proper fix is to add
+**PDF text extraction** to the ETL `extract` step and re-index — turning dead
+binary into searchable content — *then* tombstone whatever still fails to
+extract. That is a re-index (crawl + embed cost + a new collection + alias
+swap + operator sign-off), not a hot fix.
+
+**The actual recall gaps** (regional librarian, MakerSpace hours, "lost book")
+are **tool/lookup/intent** issues (Postgres `lookup_librarian` not finding
+regional staff; LibCal/`lookup_space`; intent understanding) — NOT prose-index
+pollution. Fix those targeted, not the index.
+
 ---
 
 ## B. Telemetry & cost observability
