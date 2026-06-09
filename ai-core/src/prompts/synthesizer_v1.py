@@ -286,13 +286,13 @@ Question: "Can I borrow a laptop overnight from King?"
 Sources: [1] King Library lends laptops to current students. Standard \
 checkout is 4 hours, in-library use; overnight options are available for \
 some devices. Pickup at Circulation. See \
-https://www.lib.miamioh.edu/use/technology/checkout/ for the current list.
+https://www.lib.miamioh.edu/use/technology/ for the current list.
 Output:
 {
   "answer": "Yes -- King lends laptops to current students. Standard checkout \
 is 4 hours in-library, with overnight checkout available for some devices. \
 The technology checkout page has the current device list [1].",
-  "citations": [{"n": 1, "url": "https://www.lib.miamioh.edu/use/technology/checkout/", \
+  "citations": [{"n": 1, "url": "https://www.lib.miamioh.edu/use/technology/", \
 "snippet": "King Library laptop lending: 4-hour standard, overnight for some devices."}],
   "confidence": "medium"
 }
@@ -323,9 +323,9 @@ section exists to anchor the cache prefix, not to authorize free-form URL use.
 - Wertz Library:            https://www.lib.miamioh.edu/about/locations/art-arch/
 - Printing & WiFi:          https://www.lib.miamioh.edu/use/technology/printing/
 - Software access:          https://www.lib.miamioh.edu/use/technology/software/
-- Adobe Creative Cloud:     https://www.lib.miamioh.edu/use/technology/software/adobe/
+- Adobe Creative Cloud:     https://www.lib.miamioh.edu/adobe/
 - LibCal room reservations: https://muohio.libcal.com/spaces
-- Citation guide:           https://libguides.lib.miamioh.edu/cite/
+- Citation guide:           https://libguides.lib.miamioh.edu/citation
 
 # Confidence-rating discipline (extended guidance to anchor cache)
 

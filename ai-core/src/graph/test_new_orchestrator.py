@@ -153,7 +153,14 @@ def _stub_synth_llm(
             {
                 "answer": answer_text,
                 "citations": [
-                    {"n": n, "url": f"https://lib/{n}", "snippet": "..."}
+                    # No url -> parse_synthesizer_response back-fills it from
+                    # evidence[n-1].source_url, mirroring how the real
+                    # synthesizer cites a retrieved chunk's URL. Keeps the
+                    # citation evidence-backed so the post-processor's A3
+                    # "cited URL must be a real evidence source_url" check
+                    # passes (a hardcoded https://lib/{n} would not match the
+                    # evidence's https://lib/{chunk_id}).
+                    {"n": n, "snippet": "..."}
                     for n in (citations_n or [1])
                 ],
                 "confidence": confidence,

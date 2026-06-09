@@ -282,6 +282,45 @@ def process_synthesizer_output(
             )
         )
 
+    # --- 2b. Citation must be backed by retrieved evidence ---
+    # A cited URL MUST be the source_url of a chunk the agent actually
+    # retrieved. Without this, the synthesizer LLM can fabricate a citation
+    # straight from its prompt's hard-coded reference-URL list even when
+    # retrieval returned nothing -- the exact "made-up URL" failure the
+    # citation contract exists to prevent (2026-06-08 Adobe-404 incident:
+    # bot served `/use/technology/software/adobe/` with [1] while evidence
+    # was empty). Empty evidence => every cited URL is unbacked => refuse,
+    # which is the correct outcome for a no-sources turn. Normalize trailing
+    # slash + case so a cosmetic mismatch isn't a spurious refusal.
+    #
+    # Only enforced when the caller passes `evidence` (None = legacy / unit
+    # callers that don't supply it; an explicit [] = a real turn with zero
+    # evidence, which SHOULD fail any citation). The production synthesizer
+    # always passes the post-corrections bundle.
+    if evidence is not None:
+        def _norm_url(u: str) -> str:
+            return (u or "").strip().rstrip("/").lower()
+
+        evidence_urls = {
+            _norm_url(getattr(c, "source_url", "")) for c in evidence
+        }
+        evidence_urls.discard("")
+        for c in output.citations:
+            if not c.url:
+                continue
+            if _norm_url(c.url) not in evidence_urls:
+                failures.append(
+                    ValidationFailure(
+                        trigger=RefusalTrigger.CITATION_INVALID,
+                        detail=(
+                            f"Citation [{c.n}] URL {c.url!r} is not the "
+                            f"source_url of any retrieved evidence chunk "
+                            f"-- fabricated or pulled from the prompt's "
+                            f"reference list rather than a real source."
+                        ),
+                    )
+                )
+
     # --- 3. URL validation ---
     urls_in_answer = {m.group(0).rstrip(".,);:") for m in _URL_RE.finditer(output.answer)}
     cited_urls = {c.url for c in output.citations}

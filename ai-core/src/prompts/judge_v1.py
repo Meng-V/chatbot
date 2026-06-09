@@ -165,10 +165,10 @@ perform. Action vs guidance boundary violated.", "citation_validity": "n_a"}
 
 Q: "How do I get Photoshop as a student?"
 Expected: "Student Adobe Creative Cloud access via Adobe site, cite \
-software/adobe page."
+the library software page."
 Bot:      "Photoshop is part of Adobe Creative Cloud. As a student you \
 can install it at no cost via your university account [1]."
-Citations: [1] = software/adobe page (in expected allowed_urls).
+Citations: [1] = library software page (in expected allowed_urls).
 Output:
 {"verdict": "correct", "reason": "Audience path correctly identified; \
 citation matches expected URL.", "citation_validity": "all_valid"}

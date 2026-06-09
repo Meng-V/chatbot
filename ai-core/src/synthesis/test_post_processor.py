@@ -328,9 +328,12 @@ def test_multiple_urls_all_cited_is_ok() -> None:
 
 
 class _Ev:
-    """Minimal evidence stand-in (post-processor only reads .text)."""
-    def __init__(self, text: str) -> None:
+    """Minimal evidence stand-in. Carries .text (email-faithfulness check)
+    and .source_url (A3: a cited URL must match an evidence source_url).
+    Defaults source_url to KING_URL so it matches `_ok_oxford_citation()`."""
+    def __init__(self, text: str, source_url: str = KING_URL) -> None:
         self.text = text
+        self.source_url = source_url
 
 
 def test_email_not_in_evidence_refuses() -> None:
@@ -504,7 +507,84 @@ def test_two_department_inboxes_is_not_privacy_refusal():
     result = process_synthesizer_output(
         out, scope_campus="oxford",
         url_allowlist={"https://spec.lib.miamioh.edu/home/"},
-        evidence=[_Ev("Archives@MiamiOH.edu and SpecColl@MiamiOH.edu")],
+        evidence=[_Ev("Archives@MiamiOH.edu and SpecColl@MiamiOH.edu",
+                      source_url="https://spec.lib.miamioh.edu/home/")],
+    )
+    assert not result.is_refusal, f"unexpected refusal: {result.refusal}"
+
+
+# --- A3: cited URL must be backed by retrieved evidence -------------------
+
+def test_a3_cited_url_not_in_evidence_refuses():
+    """A3 regression: a citation whose URL is not the source_url of any
+    retrieved evidence chunk is a fabrication -- e.g. pulled from the
+    synthesizer prompt's hard-coded reference list. This is the
+    2026-06-08 Adobe-404 failure mode (bot served a prompt URL with [1]
+    while evidence was empty/unrelated). Must refuse."""
+    out = SynthesizerOutput(
+        answer="Check out Adobe here [1].",
+        citations=[Citation(
+            n=1,
+            url="https://www.lib.miamioh.edu/use/technology/software/adobe/",
+            snippet="Adobe", chunk_id=None, campus="oxford", library="king",
+        )],
+        confidence="high",
+    )
+    result = process_synthesizer_output(
+        out, scope_campus="oxford", url_allowlist=set(),
+        evidence=[_Ev("Unrelated hours text", source_url=KING_URL)],
+    )
+    assert result.is_refusal
+    assert result.refusal.trigger == RefusalTrigger.CITATION_INVALID
+    assert any("not the source_url of any retrieved evidence" in f.detail
+               for f in result.refusal.failures)
+
+
+def test_a3_empty_evidence_with_citation_refuses():
+    """A3: zero evidence + a cited URL = nothing backs the citation.
+    The no-sources turn must refuse rather than ship a prompt-list URL."""
+    out = SynthesizerOutput(
+        answer="Here you go [1].",
+        citations=[_ok_oxford_citation()],
+        confidence="high",
+    )
+    result = process_synthesizer_output(
+        out, scope_campus="oxford", url_allowlist=set(), evidence=[],
+    )
+    assert result.is_refusal
+    assert result.refusal.trigger == RefusalTrigger.CITATION_INVALID
+
+
+def test_a3_trailing_slash_and_case_normalized():
+    """A3 must not spuriously refuse on a cosmetic URL difference: the
+    cited URL and the evidence source_url are compared with trailing
+    slash stripped and lowercased."""
+    out = SynthesizerOutput(
+        answer="King hours [1].",
+        citations=[_ok_oxford_citation(
+            url="https://www.lib.miamioh.edu/about/locations/KING-library",  # no slash, mixed case
+        )],
+        confidence="high",
+    )
+    result = process_synthesizer_output(
+        out, scope_campus="oxford", url_allowlist=set(),
+        evidence=[_Ev("King hours", source_url=KING_URL)],  # canonical w/ slash
+    )
+    assert not result.is_refusal, f"unexpected refusal: {result.refusal}"
+
+
+def test_a3_not_enforced_when_evidence_is_none():
+    """Legacy / unit callers that don't pass evidence (None) are NOT
+    subject to A3 -- the check only fires when the caller supplies the
+    evidence bundle (the production synthesizer always does)."""
+    out = SynthesizerOutput(
+        answer="Answer [1].",
+        citations=[_ok_oxford_citation(url="https://anything.example.com/x")],
+        confidence="high",
+    )
+    result = process_synthesizer_output(
+        out, scope_campus="oxford", url_allowlist={"https://anything.example.com/x"},
+        # evidence omitted -> None
     )
     assert not result.is_refusal, f"unexpected refusal: {result.refusal}"
 
