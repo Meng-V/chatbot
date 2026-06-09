@@ -814,6 +814,61 @@ _SPACE_SOURCE_URL = {
 }
 
 
+def _make_search_kb() -> Callable[[str, dict], list[dict]]:
+    """Generic search_kb backend for the v2 SERVING path.
+
+    CRITICAL (2026-06-08): without this, `ToolBackends.search_kb` was the
+    unwired sentinel in production v2 -- every search_kb call raised
+    "Backend 'search_kb' is not wired", so the agent got zero evidence and
+    the bot refused (or, pre-A3, fabricated a URL from the synth prompt's
+    reference list -> the Adobe-404 incident). The eval path swaps in the
+    scope-aware tool in `run_eval._build_real_deps`, but the serving path
+    (`build_v2_deps`) never did the equivalent swap. This wires the real
+    Weaviate hybrid retrieval so prose questions (printing, special
+    collections, room-booking how-to, policies, service descriptions) can
+    actually be answered.
+
+    Signature matches `tools_v2.registry._make_search_kb`'s backend call:
+    `search_kb(query, scope_dict) -> list[{chunk_id, source_url, snippet,
+    campus, library, topic}]`. The adapter is built once and reused.
+    """
+    from src.weaviate_adapters.search_adapter import WeaviateSearchAdapter
+    from src.retrieval.search import RetrievalRequest, search_kb as _retrieval
+    from src.retrieval.scope_filter import ScopeFilter
+
+    adapter = WeaviateSearchAdapter()
+
+    def search_kb(query: str, scope: dict) -> list[dict]:
+        scope = scope or {}
+        sf = ScopeFilter(
+            campus=scope.get("campus") or "oxford",
+            # NOTE: the agent sometimes over-specifies library (e.g. passes
+            # library="king" for a generic "how do I print" query). Many
+            # service chunks carry library="" and would be hard-filtered
+            # out by a library clause. The orchestrator's resolved scope is
+            # the authority on whether a building was actually named; the
+            # agent's guess is not, so we drop library here and let campus
+            # + ranking decide. (Building-specific facts go through
+            # lookup_space / get_hours, not prose search.)
+            library=None,
+            featured_service=scope.get("featured_service"),
+        )
+        result = _retrieval(RetrievalRequest(query=query, scope=sf), weaviate=adapter)
+        out: list[dict] = []
+        for c in result.chunks:
+            out.append({
+                "chunk_id": getattr(c, "chunk_id", None),
+                "source_url": getattr(c, "source_url", ""),
+                "snippet": getattr(c, "text", ""),
+                "campus": getattr(c, "campus", None),
+                "library": getattr(c, "library", None),
+                "topic": getattr(c, "topic", None),
+            })
+        return out
+
+    return search_kb
+
+
 # --- assembly ------------------------------------------------------------
 
 
@@ -831,10 +886,13 @@ def build_eval_backends() -> ToolBackends:
         point_to_url=_make_point_to_url(),
         get_hours=_make_get_hours(),
         get_room_availability=_make_get_room_availability(),
-        # search_kb is intentionally NOT set here: _build_real_deps
-        # swaps in the eval's scope-aware, featured-boost search_kb
-        # tool (src/tools/search_kb_tool.py), strictly better than the
-        # generic tools_v2 one.
+        # search_kb: wired here so the v2 SERVING path (build_v2_deps,
+        # which calls build_eval_backends) gets real prose retrieval --
+        # previously it was the unwired sentinel in production. The EVAL
+        # path (run_eval._build_real_deps) still pops this and swaps in
+        # its scope-aware, featured-boost tool, so eval behavior is
+        # unchanged; only serving gains a working search_kb.
+        search_kb=_make_search_kb(),
     )
 
 
