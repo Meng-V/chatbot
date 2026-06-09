@@ -128,7 +128,15 @@ const CitationChip = ({ n, citation }) => {
                 href={url}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="flex items-start gap-1 text-blue-600 hover:underline"
+                onClick={(e) => {
+                  // Bulletproof navigation: keep the popover from eating the
+                  // event, and open explicitly. Relying on the anchor's
+                  // default alone proved flaky inside the portal popover.
+                  e.stopPropagation();
+                  e.preventDefault();
+                  window.open(url, '_blank', 'noopener,noreferrer');
+                }}
+                className="flex items-start gap-1 text-blue-600 hover:underline cursor-pointer"
               >
                 <ExternalLink size={12} className="shrink-0 mt-0.5" />
                 <span className="min-w-0 break-all">{url}</span>
