@@ -18,8 +18,11 @@ Tests:
 
 from __future__ import annotations
 
+import importlib
 import sys
 from pathlib import Path
+
+import pytest
 
 # Allow running from ai-core/ as `python -m src.prompts.test_builder`.
 _HERE = Path(__file__).resolve().parent
@@ -53,6 +56,24 @@ CACHE_THRESHOLD_TOKENS = 1300
 def _reset_registry() -> None:
     """Clean the module-level registry between tests so they don't bleed."""
     builder._REGISTRY.clear()
+
+
+@pytest.fixture(autouse=True)
+def _isolate_prefix_registry():
+    """Snapshot + restore the GLOBAL builder._REGISTRY around every test.
+
+    Tests here call `_reset_registry()` (clearing the module-level
+    registry). Without restoration that cleared state LEAKED into other
+    test modules -- test_cache_health depends on the shipped prefixes
+    being registered -- producing order-dependent failures in the full
+    suite (passed in isolation, failed under `pytest src/`). Production
+    is unaffected: prefixes register at import time and nothing clears
+    the registry in the running app.
+    """
+    snapshot = dict(builder._REGISTRY)
+    yield
+    builder._REGISTRY.clear()
+    builder._REGISTRY.update(snapshot)
 
 
 def test_register_and_build_round_trip() -> None:
@@ -157,13 +178,14 @@ def test_all_shipped_prefixes_clear_cache_threshold() -> None:
     PR that trims a prompt below threshold will fail here in CI.
     """
     _reset_registry()
-    # Trigger registration of every shipped prefix.
-    from src.prompts import (  # noqa: F401
-        agent_v1,
-        clarifier_v1,
-        judge_v1,
-        synthesizer_v1,
-    )
+    # Force (re-)registration of every shipped prefix. A plain `import`
+    # is a no-op once the module is in sys.modules (it is, in the full
+    # suite), so registration -- which runs at module-execution time --
+    # wouldn't re-fire after _reset_registry() cleared the registry.
+    # importlib.reload re-executes the module body, re-registering.
+    from src.prompts import agent_v1, clarifier_v1, judge_v1, synthesizer_v1
+    for _m in (agent_v1, clarifier_v1, judge_v1, synthesizer_v1):
+        importlib.reload(_m)
 
     expected_ids = {"agent_v1", "synthesizer_v1", "clarifier_v1", "judge_v1"}
     actual_ids = set(registered_prefix_ids())
