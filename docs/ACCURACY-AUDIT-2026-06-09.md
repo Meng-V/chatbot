@@ -146,10 +146,59 @@ states it"). **Effort: opportunistic.**
 - The overnight run survived 3 tunnel drops via watchdog resume; a small
   number of refusals near those windows may be infra-flavored
   (`hr2_weekend_king` is a suspect).
-- The 62-case colleague set (the set that blocked v1) is **queued to run
-  automatically** the moment the Weaviate tunnel returns
-  (`/tmp/colleague_watcher.sh`, results → `/tmp/colleague_eval.jsonl`);
-  numbers to be appended here.
+- The 62-case colleague set ran in two tunnel-interrupted batches; 37/62
+  scored as of this update (remainder resuming under the watchdog). See §6.
+
+---
+
+## 6. Colleague set (the set that blocked v1) — 37/62 scored, hand-audited
+
+Judge verdicts on 37: correct 12 · partial 16 · refused_correctly 1 ·
+wrong 6 · refused_incorrectly 2 → judge floor **35% fully-right / 78%
+helpful**. Hand audit of all 24 non-good verdicts:
+
+- **6 of the 8 "bad" are judge artifacts** — including all four hours
+  cases (`r1_hours_wertz/_named/_special_collections/_hamilton`): the bot
+  returned correct live LibCal hours with a citation, exactly what the
+  gold asks, and the judge still marked them wrong. `r1_book_frankenstein`
+  (Primo handoff, no invented titles) and `r1_ill` (form URL, submit
+  yourself) also did precisely what the gold demands.
+- **4 of 16 partials are actually complete** (full Middletown weekly
+  hours; NYT activation; renewal incl. material-type nuance + MyAccount;
+  MakerSpace-librarian pointer).
+
+**Hand-audited colleague numbers (37 scored):**
+
+| | |
+|---|---|
+| Fully right | **≈23/37 = 62%** |
+| At-least-helpful | **≈34/37 = 92%** |
+| Truly unhelpful | 3 (two room-booking refusals, one clarify-instead-of-answer) |
+| Fabricated content / dead URLs | **0** |
+
+**The historical comparison that matters:** v1 failed this set so badly it
+blocked the launch — it *invented* Frankenstein-adjacent titles, fake NYT
+activation steps, and nonexistent renewal kiosks. v2's failures on the
+same set are refusals and pointer-only answers; **the fabrication class of
+failure did not occur once.**
+
+**Colleague-set real-failure clusters (consistent with §2):**
+- **Pointer-only answers dominate** (~8 of 11 genuine partials: printing
+  steps, loan periods, PC checkout nuance, food policy specifics, class
+  guides ×2, chat hours, marketing-librarian name) → strengthens C2
+  (600-char evidence truncation + "state the fact" synth rule) and adds
+  two lookup gaps: `lookup_librarian(subject="marketing")` returned
+  nothing, and there's no LibGuide-by-course lookup.
+- **Room booking** (`r1_reserve_room_king_action`): the action refusal
+  carries no LibCal booking URL — needs a `room_booking` POINT_TO_URL
+  template (same C-rooms cluster). `r1_reserve_room_farmer` additionally
+  wants "Farmer = business school, not a library" recognition.
+- `r1_overdue_fine` clarify-instead-of-answer is the C5 cluster — the
+  exemplar fix (`580c48a`) landed mid-run; later batches run with it.
+
+*Caveat: rows 1–21 ran pre-`580c48a` (before the C4/C5/C6 fixes), the
+resumed remainder runs post-fix — a mixed-version eval. The §2 clusters
+were measured pre-fix in both sets.*
 
 ## 5. Recommended order of work
 
