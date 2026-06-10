@@ -189,10 +189,13 @@ failure did not occur once.**
   (600-char evidence truncation + "state the fact" synth rule) and adds
   two lookup gaps: `lookup_librarian(subject="marketing")` returned
   nothing, and there's no LibGuide-by-course lookup.
-- **Room booking** (`r1_reserve_room_king_action`): the action refusal
-  carries no LibCal booking URL — needs a `room_booking` POINT_TO_URL
-  template (same C-rooms cluster). `r1_reserve_room_farmer` additionally
-  wants "Farmer = business school, not a library" recognition.
+- **Room booking** (`r1_reserve_room_king_action`): ~~needs a POINT_TO_URL
+  template~~ → **RESOLVED beyond the ask, 2026-06-10 (`1034ed8`)**: real
+  LibCal booking is live in v2 (v1 reservation tool revived + confirm
+  gate + flow-continuation); live-verified end-to-end (booked King 029,
+  confirmation `ce5f36e9766c`, cancelled). Remaining niceties: `Farmer`
+  gets a safe generic refusal rather than a "that's the business school"
+  explanation, and the v1 tool's debug `print()`s still write to stdout.
 - `r1_overdue_fine` clarify-instead-of-answer is the C5 cluster — the
   exemplar fix (`580c48a`) landed mid-run; later batches run with it.
 
