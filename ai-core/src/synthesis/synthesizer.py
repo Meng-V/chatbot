@@ -114,8 +114,17 @@ def _format_evidence_block(evidence: list[EvidenceChunk]) -> str:
         # Crawled chunks: truncate (full text is in the citation chip).
         # Trusted (LIVE/DIRECTORY): NEVER truncate -- the value must be
         # reproducible verbatim; a clipped hours block breaks that.
-        if not tag and len(snippet) > 600:
-            snippet = snippet[:597] + "..."
+        #
+        # 600 -> 1200 (2026-06-10, audit cluster C2): at 600 the middle of
+        # a policy chunk -- loan-period tables, step lists, eligibility
+        # rules -- was cut before the synthesizer ever saw it, which
+        # produced pointer-only answers ("see the policies page") for
+        # facts that WERE in the retrieved chunk. Rule 14 now requires
+        # extracting the fact; it can only comply if the fact survives
+        # truncation. ~10 chunks x 600 extra chars ≈ +1.5k tokens per
+        # prose turn on the DYNAMIC (uncached) suffix -- acceptable.
+        if not tag and len(snippet) > 1200:
+            snippet = snippet[:1197] + "..."
         meta = []
         if chunk.library:
             meta.append(f"library={chunk.library}")

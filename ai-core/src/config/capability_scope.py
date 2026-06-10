@@ -71,6 +71,20 @@ LIMITATIONS = {
         "redirect_to": "human_help",
         "response": "I don't have access to your library account. Please check your account at https://ohiolink-mu.primo.exlibrisgroup.com/discovery/account?vid=01OHIOLINK_MU:MU&section=overview&lang=en or contact us at (513) 529-4141.",
     },
+    "book_room_action": {
+        "description": "Book/reserve a study room on the user's behalf",
+        "reason": (
+            "v1's LibCal booking flow (libcal_comprehensive_tools.py) is not "
+            "yet migrated to v2 -- book_room is an unwired backend, and an "
+            "action tool also needs the confirm-before-POST UX the plan "
+            "requires. Until that lands, refuse the ACTION but hand the user "
+            "the LibCal booking page so they self-serve in two clicks. "
+            "Info-style questions (how do I book a room?) are NOT gated -- "
+            "the agent answers those with the room-reservations page."
+        ),
+        "redirect_to": "human_help",
+        "response": "I can't book rooms for you yet -- reservations go through LibCal so they're tied to your account. Book yours at https://muohio.libcal.com/spaces (pick your library, room, and time -- takes about a minute). Bookings are capped at 2 hours.",
+    },
     "place_holds": {
         "description": "Place holds on books or materials",
         "reason": "No integration with patron account system",
@@ -128,9 +142,20 @@ LIMITATIONS = {
 # ============================================================================
 
 LIMITATION_PATTERNS = {
+    # Action-gated (see _REQUIRES_ACTION_SIGNAL): only "book it FOR me" /
+    # "can you book" / imperative "Book a room..." phrasings refuse here.
+    # "How do I book a study room?" carries no action signal and flows to
+    # the agent, which answers with the room-reservations page.
+    "book_room_action": [
+        r'\b(book|reserve)\b.*\b(study\s*|group\s*)?room\b',
+        r'\broom\b.*\b(book|booking|reserve|reservation)\b',
+    ],
     "renew_books": [
-        r'\b(renew|renewal|extend|extension)\b.*\b(book|item|material|checkout|loan)\b',
-        r'\b(book|item|material)\b.*\b(renew|renewal|due|extend)\b',
+        # Plurals added 2026-06-10: `\bbook\b` does not match "books", so
+        # "Can you renew my books for me?" never hit this template and fell
+        # through to the agent (pre-existing gap, found by regression probe).
+        r'\b(renew|renewal|extend|extension)\b.*\b(books?|items?|materials?|checkouts?|loans?)\b',
+        r'\b(books?|items?|materials?)\b.*\b(renew|renewal|due|extend)\b',
         r'\bcan i renew\b',
         r'\bhow (do|can) i renew\b',
         r'\brenewal eligibility\b',
@@ -223,11 +248,11 @@ _ACTION_SIGNALS: List[str] = [
     r"\b(can|could|would|will)\s+you\b",
     # "for me" / "for us" -- explicit personal request to the bot
     r"\bfor\s+(me|us)\b",
-    # Sentence-initial imperative: "Renew my book", "Submit ILL...".
-    # Allows leading "please ".
-    r"^\s*(please\s+)?(renew|submit|file|place|cancel|pay|extend|process|hold|find\s+me|get\s+me|pull\s+up)\b",
+    # Sentence-initial imperative: "Renew my book", "Submit ILL...",
+    # "Book a room at Rentschler tomorrow". Allows leading "please ".
+    r"^\s*(please\s+)?(renew|submit|file|place|cancel|pay|extend|process|hold|book|reserve|find\s+me|get\s+me|pull\s+up)\b",
     # "please [action verb]" anywhere in the message.
-    r"\bplease\s+(renew|submit|file|place|cancel|pay|extend|process|hold)\b",
+    r"\bplease\s+(renew|submit|file|place|cancel|pay|extend|process|hold|book|reserve)\b",
 ]
 
 # Limitations gated on action signals -- the bot only refuses these when
@@ -246,6 +271,7 @@ _REQUIRES_ACTION_SIGNAL: Set[str] = {
     "interlibrary_loan",
     "catalog_search",
     "course_reserves",
+    "book_room_action",
 }
 
 

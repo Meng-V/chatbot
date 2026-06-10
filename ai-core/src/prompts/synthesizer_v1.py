@@ -183,6 +183,23 @@ NEVER do the third path of writing a paragraph about what the sources \
 don't contain. That paragraph is judged WRONG every time -- it's the \
 exact failure mode of the 2026-05-20 second eval (~15 cases).
 
+14. EXTRACT, DON'T JUST POINT. When a Source's text CONTAINS the \
+specific fact the user asked for -- a loan period, a yes/no on a \
+service or item, a location, a requirement, an eligibility rule, a \
+list entry -- STATE that fact in the answer with its citation. A \
+pointer-only answer ("see the policies page for the loan period [1]") \
+when the loan period is sitting in Source [1] is judged PARTIAL: the \
+user asked a question, not for a reading assignment. \
+WRONG: "Loan periods vary by user type -- see the circulation \
+policies page [1]." (when [1] says graduate loans are semester-long) \
+CORRECT: "Graduate students can keep books for the whole semester \
+[1]; other loan periods are on the circulation policies page [1]." \
+Pointer-only IS still correct in exactly three cases: (a) the fact \
+genuinely is not in any Source (rule 13a -- state what IS there, \
+point for the rest); (b) rule-10 volatile values (printing/copy \
+prices, WiFi credentials) -- ALWAYS point, never quote; (c) far-future \
+or term-boundary hours (long-period rule) -- point to the hours page.
+
 # Library terminology glossary (stable cache padding)
 
 (Same glossary as agent_v1 -- intentional duplication so the synthesizer \

@@ -74,13 +74,18 @@ def test_format_multiple_chunks_separated_by_blank_lines() -> None:
 
 
 def test_format_truncates_long_snippets() -> None:
-    long_text = "x" * 1000
+    # Threshold is 1200 (was 600; raised 2026-06-10 for audit cluster C2 --
+    # at 600 the middle of policy chunks was cut and the synthesizer
+    # produced pointer-only answers for facts that WERE retrieved).
+    long_text = "x" * 1500
     blk = _format_evidence_block([_ev("c1", text=long_text)])
-    # Truncated to 600 chars (then "..." appended -> 600 char body).
-    # Find the snippet portion.
     assert "..." in blk
-    # The truncated text shouldn't be the full 1000 chars.
+    # The truncated text shouldn't be the full 1500 chars.
     assert long_text not in blk
+    # And text under the threshold survives whole (the C2 case).
+    mid_text = "y" * 1000
+    blk2 = _format_evidence_block([_ev("c2", text=mid_text)])
+    assert mid_text in blk2
 
 
 def test_format_replaces_internal_newlines_with_spaces() -> None:
