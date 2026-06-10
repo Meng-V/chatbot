@@ -604,10 +604,15 @@ class LocationService:
             display_name = await self.get_building_display_name(building_id)
             return True, building_id, display_name
         
-        # Not found - get list of valid libraries
-        libraries = await self._client.library.find_many(
-            where={"libcalBuildingId": {"not": None}}
-        )
+        # Not found - get list of valid libraries.
+        # NOTE: no `where={"libcalBuildingId": {"not": None}}` -- the
+        # prisma-client-py version in use rejects `{"not": None}`
+        # (MissingRequiredValueError: "A value is required but not set"),
+        # which made every invalid-building reply CRASH instead of
+        # listing the valid options (found 2026-06-10 by the book-at-OSU
+        # probe). The table is ~6 rows; the comprehension below already
+        # drops null-ID rows.
+        libraries = await self._client.library.find_many()
         
         valid_names = [lib.displayName for lib in libraries if lib.libcalBuildingId]
         valid_list = "\n".join([f"• {name}" for name in valid_names])

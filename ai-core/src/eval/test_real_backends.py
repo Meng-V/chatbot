@@ -114,10 +114,12 @@ def test_point_to_url_known_service_shape() -> None:
 # --- 4. ONLY write/handoff/space tools stay unwired ---
 
 
-def test_only_write_and_handoff_tools_stay_unwired() -> None:
-    """get_hours / get_room_availability / lookup_space are now WIRED.
-    Only write/handoff tools stay unwired (and `_build_real_deps` drops
-    them from the eval surface anyway).
+def test_only_ticket_and_handoff_tools_stay_unwired() -> None:
+    """get_hours / get_room_availability / lookup_space are WIRED, and as
+    of 2026-06-10 so is book_room (the v1 LibCal reservation tool revived
+    behind a confirm gate -- see _make_book_room). Only create_ticket /
+    handoff_human stay unwired; `_build_real_deps` still drops book_room
+    from the EVAL surface so no eval run can ever fire a write.
 
     lookup_space was wired 2026-05-25 to fix the phone-number
     hallucination bug: the agent had no structured source for
@@ -126,7 +128,6 @@ def test_only_write_and_handoff_tools_stay_unwired() -> None:
     instead of the main library line (529-4141)."""
     b = build_eval_backends()
     for name, call in (
-        ("book_room", lambda: b.book_room({})),
         ("create_ticket", lambda: b.create_ticket({})),
         ("handoff_human", lambda: b.handoff_human({})),
     ):
@@ -136,6 +137,10 @@ def test_only_write_and_handoff_tools_stay_unwired() -> None:
             assert "not wired" in str(e).lower(), (name, str(e))
             continue
         raise AssertionError(f"{name} should raise the unwired ToolError")
+    # book_room is real now -- it must NOT be the unwired sentinel.
+    assert getattr(b.book_room, "__name__", "") != "_unwired", (
+        "book_room regressed to the unwired sentinel"
+    )
 
 
 # --- 5. every read-only backend is actually wired (not a sentinel) ---
@@ -221,19 +226,127 @@ def test_resolve_subject_terms_dedupes_preserving_order() -> None:
     assert out == list(dict.fromkeys(out))  # no dupes
 
 
+# --- 8. book_room backend protocol (v1 tool + confirm gate) ---------------
+
+
+class _FakeBridge:
+    """Stands in for real_backends._bridge. Call #1 per book_room
+    invocation is the building validation; call #2 (if any) is the v1
+    tool's execute. Closes the coroutines so no 'never awaited' warnings."""
+
+    def __init__(self, validate_result, tool_result=None):
+        self.validate_result = validate_result
+        self.tool_result = tool_result
+        self.calls = 0
+
+    def __call__(self, coro, timeout=30.0):
+        coro.close()
+        self.calls += 1
+        if self.calls == 1:
+            return self.validate_result
+        assert self.tool_result is not None, (
+            "v1 tool was invoked when the protocol forbids it"
+        )
+        return self.tool_result
+
+
+def _booking_args(**over):
+    base = dict(building="King", date="tomorrow", start_time="2pm",
+                end_time="3pm", first_name="Test", last_name="User",
+                email="qum@miamioh.edu")
+    base.update(over)
+    return base
+
+
+def _run_with_bridge(fake_bridge, args):
+    import src.eval.real_backends as rb
+    orig = rb._bridge
+    rb._bridge = fake_bridge
+    try:
+        fn = rb._make_book_room()
+        return fn(args)
+    finally:
+        rb._bridge = orig
+
+
+def test_book_room_rejects_fake_building() -> None:
+    """Operator requirement #1: 'book a room at OSU' must be told we
+    don't book there, with the real options -- BEFORE anything else."""
+    fake = _FakeBridge(validate_result=(
+        False,
+        "We don't reserve rooms at 'OSU'. Valid libraries: King, "
+        "Art & Architecture, Rentschler (Hamilton), Gardner-Harvey "
+        "(Middletown).",
+        "",
+    ))
+    out = _run_with_bridge(fake, _booking_args(building="OSU"))
+    assert out["success"] is False
+    assert out["stage"] == "invalid_building"
+    assert "King" in out["text"]
+    assert fake.calls == 1  # validation only -- v1 tool NEVER invoked
+
+
+def test_book_room_missing_slots_delegates_for_friendly_list() -> None:
+    """Missing slots -> v1 tool's 'I still need ...' text (it cannot
+    book with missing params, so delegation is side-effect-free)."""
+    fake = _FakeBridge(
+        validate_result=(True, "king", "King Library"),
+        tool_result={"success": False,
+                     "text": "To complete your room reservation, I still "
+                             "need: @miamioh.edu email address."},
+    )
+    out = _run_with_bridge(
+        fake, _booking_args(email=None)
+    )
+    assert out["success"] is False
+    assert out["stage"] == "tool_response"
+    assert "still need" in out["text"]
+    assert fake.calls == 2
+
+
+def test_book_room_complete_slots_without_confirm_summarizes_only() -> None:
+    """THE confirm gate: all slots present but confirm absent -> a
+    summary is returned and the v1 tool is NOT called (structurally no
+    write can happen)."""
+    fake = _FakeBridge(validate_result=(True, "king", "King Library"))
+    out = _run_with_bridge(fake, _booking_args())
+    assert out["success"] is False
+    assert out["stage"] == "needs_confirmation"
+    assert "confirm" in out["text"].lower()
+    assert "Nothing is booked yet" in out["text"]
+    assert fake.calls == 1  # validation only -- tool NOT invoked
+
+
+def test_book_room_confirm_true_books() -> None:
+    fake = _FakeBridge(
+        validate_result=(True, "king", "King Library"),
+        tool_result={"success": True,
+                     "text": "Room 110 ... Confirmation number: cs_ABC123."},
+    )
+    out = _run_with_bridge(fake, _booking_args(confirm=True))
+    assert out["success"] is True
+    assert out["stage"] == "booked"
+    assert "Confirmation number" in out["text"]
+    assert fake.calls == 2
+
+
 def main() -> int:
     tests = [
         test_point_to_url_urls_mirror_capability_scope,
         test_point_to_url_ill_is_campus_aware_and_live_sourced,
         test_point_to_url_unknown_service_returns_no_url,
         test_point_to_url_known_service_shape,
-        test_only_write_and_handoff_tools_stay_unwired,
+        test_only_ticket_and_handoff_tools_stay_unwired,
         test_all_readonly_backends_wired,
         test_point_to_url_synonyms_resolve_to_verified_urls,
         test_canonical_service_maps_and_passthrough,
         test_holds_url_is_still_drift_safe,
         test_resolve_subject_terms_alias_and_course_code,
         test_resolve_subject_terms_dedupes_preserving_order,
+        test_book_room_rejects_fake_building,
+        test_book_room_missing_slots_delegates_for_friendly_list,
+        test_book_room_complete_slots_without_confirm_summarizes_only,
+        test_book_room_confirm_true_books,
     ]
     failed = 0
     for t in tests:

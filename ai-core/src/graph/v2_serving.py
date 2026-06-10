@@ -268,16 +268,13 @@ def build_v2_deps() -> OrchestratorDeps:
     classifier = _build_classifier()
     registry = build_tool_registry(build_eval_backends())
 
-    # Drop the UNWIRED write/handoff tools from the serving surface
-    # (mirrors run_eval._build_real_deps). build_eval_backends leaves
-    # book_room / create_ticket / handoff_human as unwired sentinels;
-    # exposing them made the agent burn a turn calling book_room and
-    # getting a ToolError on every "book a room for me" (audit cases
-    # r1_reserve_room_king_action, svc2_group_room_six_people). The
-    # booking ACTION is refused upstream by capability_scope's
-    # book_room_action template (with the LibCal self-serve URL) until
-    # the v1 booking flow is properly migrated with a confirm step.
-    for _unwired in ("book_room", "create_ticket", "handoff_human"):
+    # Drop the still-UNWIRED write/handoff tools from the serving
+    # surface (mirrors run_eval._build_real_deps): exposing a sentinel
+    # makes the agent burn a turn on a ToolError. book_room is NOT
+    # dropped anymore -- it's wired to the real LibCal booking flow
+    # (v1 reservation tool + confirm gate; real_backends._make_book_room)
+    # and is the serving path for "book a room for me".
+    for _unwired in ("create_ticket", "handoff_human"):
         registry.tools.pop(_unwired, None)
 
     # Wire the Op 2 corrections loader. The store re-queries Postgres

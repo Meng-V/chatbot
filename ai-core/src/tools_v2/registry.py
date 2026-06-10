@@ -260,16 +260,18 @@ def _make_get_room_availability(backends: ToolBackends) -> Callable[[dict], Any]
 
 def _make_book_room(backends: ToolBackends) -> Callable[[dict], Any]:
     def handler(args: dict) -> Any:
-        # The agent loop is responsible for surfacing user confirmation
-        # before invoking a non-read-only tool. That's enforced at the
-        # registry level via Tool.is_read_only=False, not here -- the
-        # handler trusts that confirmation already happened.
-        for required in ("room_id", "start", "end", "user_email"):
-            if not args.get(required):
-                raise ToolError(
-                    f"book_room requires '{required}'. Got args: "
-                    f"{sorted(args.keys())}"
-                )
+        # Slot-collecting protocol (see _BOOK_ROOM_SCHEMA): only
+        # `building` is required per call -- the backend itself drives
+        # the conversation (missing-slot list -> confirmation summary ->
+        # booking on confirm=true). The confirm-before-write gate lives
+        # in the BACKEND, not in agent goodwill: without confirm=true it
+        # structurally cannot POST.
+        if not args.get("building"):
+            raise ToolError(
+                "book_room requires 'building' (the building the user "
+                "named, verbatim). Ask which library if the user hasn't "
+                "said."
+            )
         return backends.book_room(args)
 
     return handler
@@ -475,23 +477,69 @@ _GET_ROOM_AVAILABILITY_SCHEMA = {
 }
 
 _BOOK_ROOM_SCHEMA = {
+    # Mirrors the v1 LibCalComprehensiveReservationTool slots (the backend
+    # delegates to it). Only `building` is hard-required: the backend
+    # validates it against the REAL bookable-library list first (a user
+    # asking to book at "OSU" or "Farmer" must be told we don't book rooms
+    # there BEFORE any other slot is collected). All other slots are
+    # optional per call; the backend answers with a friendly "I still
+    # need ..." list until they're complete, then a confirmation summary,
+    # and only books when `confirm` is true.
     "type": "object",
     "properties": {
-        "room_id": {"type": "string"},
-        "start": {
+        "building": {
             "type": "string",
-            "description": "ISO 8601 datetime in the library's local timezone.",
+            "description": (
+                "The building EXACTLY as the user named it (e.g. 'King', "
+                "'Art Library', 'Rentschler', 'OSU', 'Farmer'). Do NOT "
+                "normalize or substitute a default -- the backend "
+                "validates it and explains if we don't book rooms there."
+            ),
         },
-        "end": {
+        "date": {
             "type": "string",
-            "description": "ISO 8601 datetime, after start.",
+            "description": (
+                "Requested date as the user said it ('tomorrow', "
+                "'next Monday', '11/12/2025')."
+            ),
         },
-        "user_email": {
+        "start_time": {
             "type": "string",
-            "description": "User's @miamioh.edu email for the booking.",
+            "description": "Start time as the user said it ('2pm', '14:00').",
+        },
+        "end_time": {
+            "type": "string",
+            "description": (
+                "End time as the user said it ('4pm'). Bookings are capped "
+                "at 2 hours after start."
+            ),
+        },
+        "first_name": {"type": "string"},
+        "last_name": {"type": "string"},
+        "email": {
+            "type": "string",
+            "description": (
+                "User's @miamioh.edu email (the backend rejects other "
+                "domains)."
+            ),
+        },
+        "room_capacity": {
+            "type": "integer",
+            "description": (
+                "Group size if the user stated one (e.g. 6 for 'a room "
+                "for 6 people')."
+            ),
+        },
+        "confirm": {
+            "type": "boolean",
+            "description": (
+                "Set true ONLY after the user explicitly confirmed the "
+                "booking summary in their LATEST message ('confirm', 'yes "
+                "book it'). NEVER true on the first call."
+            ),
         },
     },
-    "required": ["room_id", "start", "end", "user_email"],
+    "required": ["building"],
 }
 
 _CREATE_TICKET_SCHEMA = {
@@ -594,8 +642,13 @@ _DESCRIPTIONS = {
         "Optional capacity / equipment filters."
     ),
     "book_room": (
-        "Book a room. ACTION TOOL: confirm with the user (room, time, "
-        "email) before calling."
+        "Book a study room via LibCal -- THE tool for 'book/reserve a "
+        "room for me'. Call it with whatever the user has provided so "
+        "far (building is required -- pass the user's exact words); it "
+        "responds with what's still missing, then a confirmation "
+        "summary. Relay its text to the user verbatim. Set confirm=true "
+        "ONLY after the user explicitly says to book. Never invent "
+        "names, emails, dates, or times the user didn't give."
     ),
     "create_ticket": (
         "Open a LibAnswers ticket for the user's question. ACTION TOOL: "

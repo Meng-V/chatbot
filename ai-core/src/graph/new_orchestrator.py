@@ -40,7 +40,7 @@ from __future__ import annotations
 
 import re
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace as _dc_replace
 from typing import Any, Callable, Optional
 
 from src.agent.agent import AgentLLM, AgentOutcome, AgentRequest, run_agent
@@ -194,6 +194,25 @@ def run_turn(
     classification: Classification = deps.classifier.classify(request.user_message)
     bind_request_context(intent=classification.intent, margin=classification.margin)
 
+    # --- 2.0. Booking-flow continuation override ---
+    # A mid-flow booking message ("my name is Meng Qu, email qum@...",
+    # "confirm") carries no library vocabulary, so the stateless kNN
+    # classifies it as out_of_scope / clarify and the flow dies (live
+    # repro 2026-06-10: turn 2 of a booking got clarification chips,
+    # turn 3's "confirm" got the OOS refusal). If the PREVIOUS assistant
+    # message is one of OUR booking-flow texts (delivered verbatim by
+    # the transactional short-circuit below, so the markers are
+    # byte-stable), this turn belongs to the booking conversation:
+    # force intent=room_booking, skip clarify and the
+    # limitation/capability gates, and let the agent -- which sees the
+    # full history -- call book_room with the accumulated slots.
+    booking_flow = _booking_flow_active(request.conversation_history)
+    if booking_flow:
+        classification = _dc_replace(
+            classification, intent="room_booking", needs_clarification=False
+        )
+        bind_request_context(intent="room_booking", margin=classification.margin)
+
     # --- 2.1. Long-period hours short-circuit (operator rule B) ---
     # LibCal's API only covers a limited date window, so a "summer
     # hours / winter break / this semester" question can't be answered
@@ -238,7 +257,12 @@ def run_turn(
         detect_limitation_request,
         get_limitation_response,
     )
-    limitation = detect_limitation_request(request.user_message)
+    # Mid-booking-flow messages skip the limitation regexes: a slot-fill
+    # like "yes please book it" must reach the agent, not a template.
+    limitation = (
+        {} if booking_flow
+        else detect_limitation_request(request.user_message)
+    )
     if limitation.get("is_limitation"):
         ltype = limitation["limitation_type"]
         response_text = get_limitation_response(ltype)
@@ -339,6 +363,39 @@ def run_turn(
         cached_input_tokens=agent_outcome.cached_input_tokens,
         output_tokens=agent_outcome.output_tokens,
     )
+
+    # --- 4.5. Booking transactional short-circuit ---
+    # If the agent invoked book_room, the tool's text IS the reply:
+    # deterministic backend/v1-tool output (missing-slot list, the
+    # confirmation summary, the booked confirmation, or the
+    # we-don't-book-there explanation). Returning it VERBATIM (a) keeps
+    # the byte-stable markers the 2.0 flow-continuation gate matches on
+    # -- the synthesizer was observed paraphrasing them away -- and
+    # (b) skips an LLM call on a turn with nothing to synthesize.
+    _bk_text = _last_book_room_text(agent_outcome)
+    if _bk_text:
+        latency_ms = int((time.monotonic() - turn_start) * 1000)
+        record_request(endpoint="/chat", status="booking_flow",
+                       latency_s=latency_ms / 1000)
+        return TurnResponse(
+            answer=_bk_text,
+            is_refusal=False,
+            refusal_trigger=None,
+            citations=[],
+            confidence="high",
+            intent=classification.intent,
+            scope=scope.as_filter(),
+            model_used=model,
+            tokens={
+                "input": agent_outcome.input_tokens,
+                "cached_input": agent_outcome.cached_input_tokens,
+                "output": agent_outcome.output_tokens,
+            },
+            fired_corrections=[],
+            agent_stopped_reason=agent_outcome.stopped_reason,
+            latency_ms=latency_ms,
+            cited_chunk_ids=[],
+        )
 
     # --- 5. Assemble evidence and run synthesizer ---
     evidence = _extract_evidence(agent_outcome)
@@ -451,7 +508,9 @@ _LIAISONS_URL = "https://www.lib.miamioh.edu/about/organization/liaisons/"
 _ROOMS_URL = "https://www.lib.miamioh.edu/use/spaces/room-reservations/"
 
 
-def _tool_fact_evidence(result: Any) -> list[EvidenceChunk]:
+def _tool_fact_evidence(
+    result: Any, call_args: Optional[dict] = None
+) -> list[EvidenceChunk]:
     """Map a SUCCESSFUL non-search_kb tool result into trusted
     evidence so the synthesizer can actually answer from it.
 
@@ -539,10 +598,14 @@ def _tool_fact_evidence(result: Any) -> list[EvidenceChunk]:
         # lib_middletown_general, lib_hamilton_librarian all refusing
         # when they could have pointed to the regional staff page.
         if not librarians:
-            # Best-effort: pull the original tool call args (if available)
-            # to figure out which campus was queried; fall back to Oxford.
-            args = (result.tool_call.args if hasattr(result, "tool_call") else None) or {}
-            queried_campus = str(args.get("campus") or "").strip().lower()
+            # Which campus was queried? From the paired ToolCall args
+            # (threaded in by _extract_evidence -- the old
+            # `result.tool_call` probe was dead code and this fallback
+            # always defaulted to Oxford). Falls back to Oxford when the
+            # agent didn't pass a campus.
+            queried_campus = str(
+                (call_args or {}).get("campus") or ""
+            ).strip().lower()
             fallback_url, fallback_campus, fallback_text = {
                 "hamilton": (
                     "https://www.ham.miamioh.edu/library/about/rentschler-library-staff/",
@@ -569,6 +632,30 @@ def _tool_fact_evidence(result: Any) -> list[EvidenceChunk]:
                 campus=fallback_campus,
                 kind="authoritative_db",
             ))
+    elif name == "book_room":
+        # UNLIKE get_hours, FAILURE text is promoted too: the booking
+        # tool's text IS the conversational next move ("I still need
+        # your email...", "Ready to book: ... reply 'confirm'", "we
+        # don't book rooms at OSU -- we have King, Wertz..."). Dropping
+        # it would turn every mid-flow booking turn into a refusal.
+        text = str(data.get("text") or "")
+        if not text:
+            return []
+        building = str(
+            (call_args or {}).get("building") or ""
+        ).strip().lower()
+        out.append(EvidenceChunk(
+            chunk_id=f"tool:book_room:{data.get('stage') or 'response'}",
+            source_url="https://muohio.libcal.com/spaces",
+            text=text,
+            # Stage/summary text is campus-agnostic flow dialogue; "all"
+            # passes the cross-campus guard. A recognized building gets
+            # its real campus so a King booking can't masquerade as
+            # Hamilton's.
+            campus=_LIB_CAMPUS.get(building, "all"),
+            library=building or None,
+            kind="live_api",
+        ))
     elif name == "point_to_url":
         if not data.get("found") or not data.get("url"):
             return []
@@ -645,6 +732,16 @@ def _extract_evidence(agent_outcome: AgentOutcome) -> list[EvidenceChunk]:
     evidence: list[EvidenceChunk] = []
     tool_facts: list[EvidenceChunk] = []
     for turn in agent_outcome.turns:
+        # Pair each result with its originating call's arguments by
+        # call_id. ToolResult deliberately does NOT carry the ToolCall;
+        # handlers that need the request args (lookup_librarian's
+        # regional fallback, book_room's building->campus tag) get them
+        # passed explicitly. The previous `result.tool_call` hasattr
+        # probe was dead code -- the attribute never existed, so the
+        # Hamilton/Middletown fallback URL could never fire.
+        _args_by_id = {
+            tc.id: (tc.arguments or {}) for tc in (turn.tool_calls or [])
+        }
         for result in turn.tool_results:
             if result.is_error:
                 continue
@@ -668,10 +765,51 @@ def _extract_evidence(agent_outcome: AgentOutcome) -> list[EvidenceChunk]:
                         )
                     )
             else:
-                tool_facts.extend(_tool_fact_evidence(result))
+                tool_facts.extend(_tool_fact_evidence(
+                    result, call_args=_args_by_id.get(result.call_id) or {}
+                ))
     # Crawled evidence first (citation [1..] stays retrieval-anchored),
     # trusted tool facts appended after.
     return evidence + tool_facts
+
+
+_BOOKING_FLOW_MARKERS = (
+    # real_backends._make_book_room needs_confirmation summary:
+    "Nothing is booked yet",
+    "Ready to book:",
+    # v1 LibCalComprehensiveReservationTool missing-slot text:
+    "To complete your room reservation",
+    "I still need",
+)
+"""Byte-stable substrings of OUR booking-flow texts (delivered verbatim
+by the 4.5 short-circuit). If the last assistant message contains one,
+the next user message is a booking-flow continuation."""
+
+
+def _booking_flow_active(history: Optional[list]) -> bool:
+    """True when the most recent ASSISTANT message in the (OpenAI-shaped)
+    history is a mid-flow booking text. Successful-booking and
+    we-don't-book-there texts contain no marker, so the flow exits
+    naturally after completion/rejection."""
+    for entry in reversed(history or []):
+        if isinstance(entry, dict) and entry.get("role") == "assistant":
+            content = str(entry.get("content") or "")
+            return any(m in content for m in _BOOKING_FLOW_MARKERS)
+    return False
+
+
+def _last_book_room_text(agent_outcome: AgentOutcome) -> Optional[str]:
+    """The LAST non-error book_room result's text in the agent trail
+    (the agent may legitimately call it more than once per turn while
+    refining args; the final state wins). None if book_room never ran."""
+    text: Optional[str] = None
+    for turn in agent_outcome.turns:
+        for res in turn.tool_results:
+            if res.name == "book_room" and not res.is_error:
+                t = str((res.data or {}).get("text") or "")
+                if t:
+                    text = t
+    return text
 
 
 def _renumber_citations_for_display(

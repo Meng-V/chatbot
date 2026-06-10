@@ -896,6 +896,89 @@ def _make_search_kb() -> Callable[[str, dict], list[dict]]:
     return search_kb
 
 
+def _make_book_room() -> Callable[[dict], dict]:
+    """REAL LibCal room booking -- revives v1's
+    LibCalComprehensiveReservationTool (operator-written: building/email/
+    date/time validation, ≤2h cap, building-hours check, availability
+    query + capacity best-fit, POST /space/reserve) as the v2 `book_room`
+    backend, with one addition v1 never had: a CONFIRM gate. The write
+    cannot fire unless `confirm=true`, which the agent may only set after
+    the user explicitly confirms the summary.
+
+    Protocol per call (the tool's text IS the bot's next conversational
+    move -- the orchestrator maps it to [LIVE] evidence either way):
+      1. building invalid ("OSU", "Farmer")   -> we-don't-book-there text
+         listing the real bookable libraries (operator requirement #1).
+      2. slots missing                        -> v1's friendly
+         "I still need: ..." list (no side effects possible).
+      3. slots complete, confirm absent       -> deterministic summary +
+         "reply 'confirm'" (does NOT call the v1 tool; no side effects).
+      4. confirm=true                         -> v1 tool end-to-end:
+         re-validates everything, checks availability (operator
+         requirement #2), books, returns the confirmation number.
+    """
+    from src.tools.libcal_comprehensive_tools import (
+        LibCalComprehensiveReservationTool,
+        _validate_library_for_rooms,
+    )
+
+    tool = LibCalComprehensiveReservationTool()
+    _REQUIRED = ("date", "start_time", "end_time",
+                 "first_name", "last_name", "email")
+
+    def book_room(args: dict) -> dict:
+        building = str(args.get("building") or "").strip()
+        ok, err_text, display = _bridge(
+            _validate_library_for_rooms(building), timeout=20.0
+        )
+        if not ok:
+            return {"success": False, "stage": "invalid_building",
+                    "text": err_text}
+
+        missing = [k for k in _REQUIRED if not args.get(k)]
+        if not missing and not args.get("confirm"):
+            cap = args.get("room_capacity") or 2
+            return {
+                "success": False,
+                "stage": "needs_confirmation",
+                "text": (
+                    f"Ready to book: a study room at {display} on "
+                    f"{args['date']}, {args['start_time']} to "
+                    f"{args['end_time']}, for {args['first_name']} "
+                    f"{args['last_name']} ({args['email']}), party of "
+                    f"{cap}. Reply 'confirm' to book it, or tell me what "
+                    f"to change. Nothing is booked yet."
+                ),
+            }
+
+        # Missing slots -> v1 returns its "I still need ..." text and
+        # cannot book. confirm=true -> v1 validates everything
+        # (email domain, date/time parsing, 2h cap, building hours,
+        # live availability + capacity fit) and POSTs the reservation.
+        res = _bridge(
+            tool.execute(
+                query="v2 booking flow",
+                first_name=args.get("first_name"),
+                last_name=args.get("last_name"),
+                email=args.get("email"),
+                date=args.get("date"),
+                start_time=args.get("start_time"),
+                end_time=args.get("end_time"),
+                room_capacity=args.get("room_capacity"),
+                room_code_name=args.get("room_code_name"),
+                building=building,
+            ),
+            timeout=60.0,
+        )
+        return {
+            "success": bool(res.get("success")),
+            "stage": "booked" if res.get("success") else "tool_response",
+            "text": res.get("text", ""),
+        }
+
+    return book_room
+
+
 # --- assembly ------------------------------------------------------------
 
 
@@ -920,6 +1003,10 @@ def build_eval_backends() -> ToolBackends:
         # its scope-aware, featured-boost tool, so eval behavior is
         # unchanged; only serving gains a working search_kb.
         search_kb=_make_search_kb(),
+        # book_room: REAL LibCal booking (v1 tool + confirm gate). The
+        # EVAL path pops it (write tool, never fired during eval); only
+        # serving exposes it to the agent.
+        book_room=_make_book_room(),
     )
 
 
