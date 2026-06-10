@@ -75,19 +75,30 @@ LIMITATIONS = {
         "description": "Place holds on books or materials",
         "reason": "No integration with patron account system",
         "redirect_to": "human_help",
-        "response": "I can't place holds on items. Please place holds through your library account at https://www.lib.miamioh.edu/ or ask a librarian for help.",
+        # Copy fixed 2026-06-09 (audit C4): pointed at the bare homepage,
+        # which doesn't show how to place a hold. Primo search is where
+        # the "Place Hold" button lives.
+        "response": "I can't place holds for you -- only you can, signed into your account. Search the item in Primo (https://ohiolink-mu.primo.exlibrisgroup.com/discovery/search?vid=01OHIOLINK_MU:MU), click \"Place Hold\" on the title, and sign in. A librarian can help if you get stuck.",
     },
     "catalog_search": {
         "description": "Search for books, articles, journals, e-resources",
-        "reason": "Primo agent temporarily disabled",
+        "reason": "Catalog search is by-design self-service via Primo (the bot does not proxy searches)",
         "redirect_to": "human_help",
-        "response": "Catalog search is currently unavailable. Please search directly at https://www.lib.miamioh.edu/ or chat with a librarian who can help find materials.",
+        # Copy fixed 2026-06-09 (audit C4): the old text said "Catalog
+        # search is currently unavailable", which read as an OUTAGE. It is
+        # not an outage -- searching is by-design handed off to Primo. The
+        # gold case ref_catalog_search_handoff expects a clean Primo
+        # handoff, and cap2_course_reserves_submit was hitting this lie too.
+        "response": "I can't run catalog searches for you, but Primo -- the library catalog -- can do it in one box: https://ohiolink-mu.primo.exlibrisgroup.com/discovery/search?vid=01OHIOLINK_MU:MU. It covers our books, ebooks, articles, media, and OhioLINK partner libraries. A librarian on Ask Us can also help you find materials.",
     },
     "interlibrary_loan": {
         "description": "Request or check status of interlibrary loans (ILL)",
         "reason": "No integration with ILL system - but can provide ILL portal links",
         "redirect_to": "ill_info",  # Special handling for campus-specific ILL
-        "response": "I can't submit ILL requests directly, but I can show you how to request items from other libraries.",
+        # Copy fixed 2026-06-09 (audit C4): promised "I can show you how"
+        # without actually showing anything. Now carries the form URL, per
+        # the gold contract (refusal + the request-form URL).
+        "response": "I can't submit ILL requests for you -- requests go through the official form so they're tied to your account. Submit yours at https://www.lib.miamioh.edu/use/borrow/ill/ (takes a couple of minutes). Pickup is at your campus library.",
     },
     "pay_fines": {
         "description": "Pay library fines or fees",
@@ -99,7 +110,10 @@ LIMITATIONS = {
         "description": "Access or check course reserves",
         "reason": "No integration with course reserves system",
         "redirect_to": "human_help",
-        "response": "I can't check course reserves. Please visit https://libguides.lib.miamioh.edu/reserves-textbooks/ or ask a librarian.",
+        # Copy fixed 2026-06-09 (audit C4): also covers the faculty
+        # "put my book on reserve FOR me" action request, which previously
+        # fell through to the catalog_search "currently unavailable" lie.
+        "response": "I can't check or submit course reserves for you. Browse current reserves or find the faculty request process at https://libguides.lib.miamioh.edu/reserves-textbooks/ -- the circulation desk staff can take it from there.",
     },
     "print_scan_copy": {
         "description": "Help with printing, scanning, or copying (beyond general info)",
@@ -139,7 +153,14 @@ LIMITATION_PATTERNS = {
     "place_holds": [
         r'\b(place|put|request)\s*(a)?\s*hold\b',
         r'\bhold.*on\s*(a|this|the)?\s*(book|item)\b',
-        r'\brequest.*book\b',
+        # `\brequest.*book\b` REMOVED 2026-06-09 (audit C4): it hijacked
+        # explicit ILL action requests -- "Submit an ILL request for me for
+        # the book Foundation" matched HERE first (dict order puts
+        # place_holds before interlibrary_loan), so the user got the holds
+        # template instead of the ILL one (ill_no_submit_refusal). ILL
+        # phrasings match the interlibrary_loan patterns explicitly; a bare
+        # "request a book" action falls to the hold/ILL patterns above or
+        # through to the agent, which answers with the Primo hold flow.
     ],
     "interlibrary_loan": [
         r'\b(ill|interlibrary\s*loan)\b',
@@ -156,6 +177,16 @@ LIMITATION_PATTERNS = {
         r'\b(book|article)\b.*\b(another|other|different)\s*(university|school|college|institution|library)\b',
         r'\bborrow\b.*\b(book|item|article)\b.*\bfrom\b',
     ],
+    # course_reserves MUST be checked before catalog_search: first-match-
+    # wins, and catalog's broad `books?\b.*\bon\b` regex matched "put my
+    # book ON course reserves", serving the Primo-handoff copy for a
+    # reserves request (audit case cap2_course_reserves_submit,
+    # 2026-06-09). Specific topic before generic topic.
+    "course_reserves": [
+        r'\b(course|class)\s*reserves?\b',
+        r'\breserves?\s*(for|in)\s*(my|a|the)?\s*(class|course)\b',
+        r'\bprofessor.*put.*reserve\b',
+    ],
     "catalog_search": [
         r'\b(find|search|look\s*for|need|want|get)\b.*\b(articles?|books?|journals?|e-?resources?|publications?)\b',
         r'\b(articles?|books?|journals?)\b.*\b(about|on|regarding)\b',
@@ -168,11 +199,6 @@ LIMITATION_PATTERNS = {
     "pay_fines": [
         r'\b(pay|paying)\s*(my|library|a)?\s*(fines?|fees?|balance)\b',
         r'\bhow.*pay.*fine\b',
-    ],
-    "course_reserves": [
-        r'\b(course|class)\s*reserves?\b',
-        r'\breserves?\s*(for|in)\s*(my|a|the)?\s*(class|course)\b',
-        r'\bprofessor.*put.*reserve\b',
     ],
 }
 

@@ -410,11 +410,12 @@ _POINT_TO_URL: dict[str, tuple[str, str]] = {
     ),
     "holds": (
         # capability_scope LIMITATIONS["place_holds"].response uses this
-        # exact URL -> stays drift-guard-safe.
-        "https://www.lib.miamioh.edu/",
-        "Place and manage holds through your library account "
-        "(start from the Libraries homepage). The bot can't place "
-        "holds for you.",
+        # exact URL -> stays drift-guard-safe. (2026-06-09: both moved
+        # from the bare homepage to Primo search -- the homepage doesn't
+        # show how to place a hold; Primo's item page has the button.)
+        "https://ohiolink-mu.primo.exlibrisgroup.com/discovery/search?vid=01OHIOLINK_MU:MU",
+        "Search the item in Primo, click \"Place Hold\" on the title, "
+        "and sign in. The bot can't place holds for you.",
     ),
 }
 

@@ -1,0 +1,36 @@
+// Audit-driven exemplar supplement, 2026-06-09.
+// Loader globs exemplars*.jsonl lexicographically; delete this file to roll back.
+//
+// Source: hand-audit of the 234-case gold run (docs/ACCURACY-AUDIT-2026-06-09.md,
+// cluster C5 "clarify over-trigger" + the events_news mis-route in C4d).
+// Four confirmed failures where the kNN margin landed in the clarify band
+// (or routed to generic out_of_scope) on questions the bot can answer:
+//   - loan_late_fees           "Are there late fees..."      -> clarify chips
+//   - circ2_lost_book_replacement "policy for replacing a lost book" -> clarify chips
+//   - circ2_recall_request     "Can I recall a book..."      -> clarify chips
+//   - svc2_microfilm_access    "How do I view microfilm..."  -> clarify chips
+//   - events_exhibits / oos_university_news -> generic OOS refusal instead of
+//     the events_news template (which carries the News & Events URL).
+//
+// None are verbatim copies of gold questions (no test-set leakage).
+
+// fines / overdue / lost / recall -> loan_policy (answer from circulation policies)
+{"intent": "loan_policy", "utterance": "Do I get charged a fee if my book is overdue?", "source": "manual_2026-06-09_audit"}
+{"intent": "loan_policy", "utterance": "What happens if I return a book late?", "source": "manual_2026-06-09_audit"}
+{"intent": "loan_policy", "utterance": "Is there a fine for overdue items?", "source": "manual_2026-06-09_audit"}
+{"intent": "loan_policy", "utterance": "What do I do if I lost a library book?", "source": "manual_2026-06-09_audit"}
+{"intent": "loan_policy", "utterance": "How much do I owe if I lose a book?", "source": "manual_2026-06-09_audit"}
+{"intent": "loan_policy", "utterance": "What's the replacement policy for a damaged book?", "source": "manual_2026-06-09_audit"}
+{"intent": "loan_policy", "utterance": "Can I recall a book someone else has checked out?", "source": "manual_2026-06-09_audit"}
+{"intent": "loan_policy", "utterance": "Someone has the book I need checked out, can I get it back?", "source": "manual_2026-06-09_audit"}
+
+// microfilm / microfiche -> space_info (where is the reader, how to use it)
+{"intent": "space_info", "utterance": "Where can I view microfilm?", "source": "manual_2026-06-09_audit"}
+{"intent": "space_info", "utterance": "Do you have a microfilm reader?", "source": "manual_2026-06-09_audit"}
+{"intent": "space_info", "utterance": "How do I use the microfiche machine?", "source": "manual_2026-06-09_audit"}
+
+// exhibits / events -> events_news (REFUSE tier whose template carries the News URL)
+{"intent": "events_news", "utterance": "What exhibits are on display right now?", "source": "manual_2026-06-09_audit"}
+{"intent": "events_news", "utterance": "Are there any exhibits coming up?", "source": "manual_2026-06-09_audit"}
+{"intent": "events_news", "utterance": "What events are happening at the library?", "source": "manual_2026-06-09_audit"}
+{"intent": "events_news", "utterance": "Is anything going on at the library this week?", "source": "manual_2026-06-09_audit"}

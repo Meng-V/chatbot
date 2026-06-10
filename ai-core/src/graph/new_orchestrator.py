@@ -438,6 +438,12 @@ def _is_reasoning_intent(intent: str) -> bool:
 # them -- and that guard is the King-hours-for-Hamilton protection).
 _LIB_CAMPUS = {
     "king": "oxford", "wertz": "oxford", "special": "oxford",
+    # MakerSpace is a bookable LibCal location inside King (id 11904).
+    # Missing from this map, a get_hours("makerspace") evidence chunk got
+    # campus=None and post-processor rule 4 (no campus metadata -> cannot
+    # verify scope) downgraded a CORRECT live-hours answer to a refusal --
+    # audit cases fs_makerspace_hours / ms_hours_today, 2026-06-09.
+    "makerspace": "oxford",
     "rentschler": "hamilton",
     "gardner_harvey": "middletown", "sword": "middletown",
 }
