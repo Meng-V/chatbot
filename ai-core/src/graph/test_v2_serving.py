@@ -87,6 +87,33 @@ def test_wire_additive_v2_keys() -> None:
     ]
 
 
+def test_wire_carries_telemetry_passthrough() -> None:
+    """B1 regression: the wire must carry model_used + per-turn aggregate
+    tokens + latency_ms so _v2_message can persist a ModelTokenUsage row.
+    Before this, turnresponse_to_wire dropped them and the table stayed
+    EMPTY for all v2 traffic (cost dashboards read $0)."""
+    w = V.turnresponse_to_wire(
+        _resp(tokens={"input": 120, "cached_input": 90, "output": 30},
+              model_used="gpt-5.4-mini", latency_ms=4321),
+        message_id="m", conversation_id="c",
+    )
+    assert w["model_used"] == "gpt-5.4-mini"
+    assert w["tokens"] == {"input": 120, "cached_input": 90, "output": 30}
+    assert w["latency_ms"] == 4321
+    json.dumps(w)  # stays JSON-safe
+
+
+def test_wire_telemetry_tolerates_missing_tokens() -> None:
+    """A short-circuit turn (capability limitation) carries zero/empty
+    tokens; the wire must still be well-formed ints, not crash."""
+    w = V.turnresponse_to_wire(
+        _resp(tokens={}, latency_ms=0),
+        message_id="m", conversation_id="c",
+    )
+    assert w["tokens"] == {"input": 0, "cached_input": 0, "output": 0}
+    assert w["latency_ms"] == 0
+
+
 def test_refusal_sets_needs_human_and_flag() -> None:
     w = V.turnresponse_to_wire(
         _resp(is_refusal=True, refusal_trigger="no_results",

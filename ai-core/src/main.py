@@ -1083,6 +1083,31 @@ async def _v2_message(sid, data):
         )
         wire["messageId"] = message_id
         await sio_v2.emit("message", json_serializable(wire), to=sid)
+        # --- Telemetry (backlog B1): persist per-turn token usage. ---
+        # Done HERE (async context, main loop) rather than inside run_turn,
+        # which executes on an executor thread where the Prisma client's
+        # loop-affinity bites (same class of bug as the corrections loader).
+        # The wire's `tokens` is the turn AGGREGATE (agent loop + synth),
+        # so call_site="v2_turn" labels it as such for cost_rollup. Zero-
+        # token turns (capability/limitation short-circuits, refusal
+        # templates -- no LLM call) are skipped to avoid junk rows.
+        # Telemetry must NEVER break a served turn: failures only log.
+        try:
+            _tok = wire.get("tokens") or {}
+            _total = int(_tok.get("input", 0)) + int(_tok.get("output", 0))
+            if _total > 0:
+                from src.memory.conversation_store import log_token_usage_v2
+                await log_token_usage_v2(
+                    conversation_id,
+                    model_name=str(wire.get("model_used") or "v2-unknown"),
+                    prompt_tokens=int(_tok.get("input", 0)),
+                    completion_tokens=int(_tok.get("output", 0)),
+                    total_tokens=_total,
+                    cached_input_tokens=int(_tok.get("cached_input", 0)),
+                    call_site="v2_turn",
+                )
+        except Exception as te:  # noqa: BLE001
+            logging.warning(f"⚠️ [v2] token-usage telemetry failed (turn was served): {te}")
     except Exception as e:  # noqa: BLE001
         logging.error(f"❌ [v2] Error: {e}", exc_info=True)
         await sio_v2.emit(

@@ -167,6 +167,19 @@ def turnresponse_to_wire(
         "citations": citations,
         "confidence": resp.confidence,
         "is_refusal": bool(resp.is_refusal),
+        # --- telemetry passthrough (backlog B1) ---
+        # TurnResponse carries the per-turn aggregate token usage + model,
+        # but this builder used to drop them, so the socket handler had
+        # nothing to persist -> ModelTokenUsage stayed EMPTY for all v2
+        # traffic and cost dashboards read $0. The frontend ignores unknown
+        # keys; main._v2_message reads these to write the usage row.
+        "model_used": resp.model_used,
+        "tokens": {
+            "input": int((resp.tokens or {}).get("input", 0) or 0),
+            "cached_input": int((resp.tokens or {}).get("cached_input", 0) or 0),
+            "output": int((resp.tokens or {}).get("output", 0) or 0),
+        },
+        "latency_ms": int(resp.latency_ms or 0),
     }
 
 
