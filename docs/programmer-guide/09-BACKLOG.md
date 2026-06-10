@@ -88,14 +88,13 @@ pollution. Fix those targeted, not the index.
 
 ## B. Telemetry & cost observability
 
-### B1. 🔴 v2 turn telemetry is not persisted (ModelTokenUsage empty for v2)
-**What.** The v2 socket handler `_v2_message` (`ai-core/src/main.py`) does **not** call `log_token_usage`, `update_conversation_tools`, or `log_tool_execution` the way the legacy v1 handler does. Also `turnresponse_to_wire` (`v2_serving.py`) drops the `tokens` dict that `TurnResponse` carries.
-
-**Impact.** `ModelTokenUsage` has **zero rows for v2 traffic** → `scripts/cost_rollup.py` reports `$0` → the plan's cache-hit-rate gate (`cached_input_tokens / input_tokens ≥ 0.6`) is unverifiable on prod, and a prompt regression that tanks the cache burns budget silently. `ToolExecution` is also empty, so "what tools did this turn call?" is unanswerable forensically.
-
-**Fix sketch.** Add `tokens` (and `tool_calls`/`agents_used`) to the `turnresponse_to_wire` payload; in `_v2_message`, after `handle_v2_message`, `await log_token_usage(...)` + `await update_conversation_tools(...)` mirroring the v1 block (`main.py` ~line 505–530).
-
-**Effort.** ~0.5 day. **Touches:** `graph/v2_serving.py`, `graph/new_orchestrator.py` (TurnResponse already has tokens), `main.py`.
+### ~~B1. v2 turn telemetry~~ — DONE 2026-06-09 (commit `0cd2f13`)
+Per-turn aggregate token usage now persists: `turnresponse_to_wire` carries
+`model_used` / `tokens` / `latency_ms`, and `_v2_message` writes a
+`ModelTokenUsage` row via `log_token_usage_v2` (`callSite="v2_turn"`, incl.
+`cachedInputTokens`). Remaining slice — per-TOOL execution logging
+(`ToolExecution` table) — needs the tool trail surfaced on `TurnResponse`;
+folded into D2's review-surface work since that's its consumer.
 
 ### B2. 🟠 Confirm ETL-prepare + cost_rollup crons actually run on prod
 **What.** The weekly ETL-prepare cron and the daily `cost_rollup.py` cron exist as scripts but were never confirmed scheduled on `ulblwebp20`. Without ETL the index ages weekly; without cost_rollup the `DailyCost` table stays empty.
