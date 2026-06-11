@@ -586,6 +586,26 @@ def _tool_fact_evidence(
                 campus=str(lib.get("campus") or "").lower() or "all",
                 kind="authoritative_db",
             ))
+        # Subject LibGuide as its OWN citable evidence chunk (source_url =
+        # the guide URL) -- attached by the DB-subject fallback. One chunk
+        # per unique guide; in TEXT-only form a guide URL would fail the
+        # post-processor's rule-3 URL validation and refuse the turn.
+        _guide_seen: set[str] = set()
+        for lib in librarians[:5]:
+            gu = isinstance(lib, dict) and lib.get("guide_url")
+            if gu and gu not in _guide_seen:
+                _guide_seen.add(gu)
+                out.append(EvidenceChunk(
+                    chunk_id=f"tool:lookup_librarian:guide:{gu}",
+                    source_url=str(gu),
+                    text=(
+                        f"Subject research guide: "
+                        f"{lib.get('guide_name') or 'LibGuide'} -- "
+                        f"course/subject help, databases, and resources."
+                    ),
+                    campus="all",
+                    kind="authoritative_db",
+                ))
         # Empty-result fallback: if lookup_librarian found nothing, emit
         # an evidence chunk pointing to the appropriate staff/directory
         # page so the synth can give a useful "see the directory" answer

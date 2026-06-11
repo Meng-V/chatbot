@@ -371,6 +371,25 @@ def _make_lookup_librarian() -> Callable[[dict], list[dict]]:
                         continue
                     seen.add(r.email)
                     out.append(_librarian_dict(r))
+                # Attach the subject's LibGuide (operator data:
+                # Subject -> SubjectLibGuide.libGuide name -> LibGuide.url)
+                # so guide questions ("is there a guide for BUS217?")
+                # get a citable URL. Emitted as its OWN evidence chunk
+                # by the orchestrator -- a bare URL in answer text would
+                # trip post-processor rule 3.
+                if out:
+                    glinks = await client.subjectlibguide.find_many(
+                        where={"subject": {"is": {"name": {"in": expanded}}}},
+                    )
+                    gnames = list({g.libGuide for g in glinks if g.libGuide})
+                    if gnames:
+                        guides = await client.libguide.find_many(
+                            where={"name": {"in": gnames}},
+                        )
+                        if guides:
+                            for d in out:
+                                d["guide_name"] = guides[0].name
+                                d["guide_url"] = guides[0].url
                 return out
 
             try:
