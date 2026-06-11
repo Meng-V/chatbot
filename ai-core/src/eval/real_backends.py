@@ -317,6 +317,55 @@ def _make_lookup_librarian() -> Callable[[dict], list[dict]]:
         campus = _CAMPUS_DB.get(campus_raw)
         resolved = _resolve_subject_terms(subject, name)
 
+        # Subject terms incl. campus variants -- shared by the DB
+        # fallback AND the guide-attach wrapper below.
+        _SUFFIX = {"hamilton": " - HC", "middletown": " - MC"}
+        terms0 = list(resolved) if resolved else ([subject] if subject else [])
+        expanded: list[str] = []
+        for t in terms0:
+            if campus in _SUFFIX:
+                expanded.append(t + _SUFFIX[campus])
+            expanded.append(t)
+
+        def _with_guides(rows: list[dict]) -> list[dict]:
+            """Attach the subject's LibGuide URL (Subject ->
+            SubjectLibGuide -> LibGuide.url, operator data) to every
+            row, REGARDLESS of which path produced them -- the
+            LibGuides-API paths return before the DB block, which is
+            why guide_url came back None for API-served subjects."""
+            if not rows or not expanded:
+                return rows
+
+            async def _q(client):
+                subs = await client.subject.find_many(
+                    where={"name": {"in": expanded}})
+                if not subs:
+                    subs = await client.subject.find_many(where={"OR": [
+                        {"name": {"contains": t, "mode": "insensitive"}}
+                        for t in expanded
+                    ]})
+                sids = [s.id for s in subs]
+                if not sids:
+                    return None
+                gl = await client.subjectlibguide.find_many(
+                    where={"subjectId": {"in": sids}})
+                gnames = list({g.libGuide for g in gl if g.libGuide})
+                if not gnames:
+                    return None
+                lg = await client.libguide.find_many(
+                    where={"name": {"in": gnames}})
+                return (lg[0].name, lg[0].url) if lg else None
+
+            try:
+                got = _db(_q)
+                if got:
+                    for d in rows:
+                        d.setdefault("guide_name", got[0])
+                        d.setdefault("guide_url", got[1])
+            except Exception as e:  # noqa: BLE001 -- guides are garnish, never break a lookup
+                logger.warning("lookup_librarian guide attach failed: %s", e)
+            return rows
+
         # (1) Highest-precision subject path: every resolved canonical
         # subject is queried against the LIVE LibGuides API. First hit
         # with results wins (the API returns ALL librarians for that
@@ -325,14 +374,14 @@ def _make_lookup_librarian() -> Callable[[dict], list[dict]]:
             for s in resolved:
                 rows = _lookup_by_subject_via_libguides(s, campus)
                 if rows:
-                    return rows
+                    return _with_guides(rows)
 
         # (2) Raw subject fallback (no alias resolution). Still goes
         # through the LibGuides API.
         if subject:
             rows = _lookup_by_subject_via_libguides(subject, campus)
             if rows:
-                return rows
+                return _with_guides(rows)
 
         # (2.5) Postgres fallback: the operator's curated Subject /
         # LibrarianSubject / Librarian tables. Verified complete
@@ -343,20 +392,29 @@ def _make_lookup_librarian() -> Callable[[dict], list[dict]]:
         # bot refused (audit case r1_librarian_marketing). Campus-aware:
         # hamilton/middletown asks also try the " - HC"/" - MC" variant
         # rows the operator created for exactly that purpose.
-        terms = list(resolved) if resolved else ([subject] if subject else [])
-        if terms:
-            _SUFFIX = {"hamilton": " - HC", "middletown": " - MC"}
-            expanded: list[str] = []
-            for t in terms:
-                if campus in _SUFFIX:
-                    expanded.append(t + _SUFFIX[campus])
-                expanded.append(t)
+        if expanded:
 
             async def _q_by_subject_db(client) -> list[dict]:
                 links = await client.librariansubject.find_many(
                     where={"subject": {"is": {"name": {"in": expanded}}}},
                     include={"librarian": True},
                 )
+                if not links:
+                    # Variant fallback: the operator's Subject names are
+                    # often qualified ("Undeclared - Business", "Business
+                    # Management", "Marketing - HC"), so an exact IN on
+                    # the canonical term ("Business") misses. Retry as a
+                    # case-insensitive contains per term; the email
+                    # dedupe + caller's 5-cap + the staff-privacy guard
+                    # keep a broad match from becoming a roster dump.
+                    links = await client.librariansubject.find_many(
+                        where={"OR": [
+                            {"subject": {"is": {"name": {
+                                "contains": t, "mode": "insensitive"}}}}
+                            for t in expanded
+                        ]},
+                        include={"librarian": True},
+                    )
                 seen: set[str] = set()
                 out: list[dict] = []
                 for l in links:
@@ -378,8 +436,11 @@ def _make_lookup_librarian() -> Callable[[dict], list[dict]]:
                 # by the orchestrator -- a bare URL in answer text would
                 # trip post-processor rule 3.
                 if out:
+                    # Query by the subjectIds that actually MATCHED above
+                    # (works for variant names too), not by exact name.
+                    _sids = list({l.subjectId for l in links if l.subjectId})
                     glinks = await client.subjectlibguide.find_many(
-                        where={"subject": {"is": {"name": {"in": expanded}}}},
+                        where={"subjectId": {"in": _sids}},
                     )
                     gnames = list({g.libGuide for g in glinks if g.libGuide})
                     if gnames:
