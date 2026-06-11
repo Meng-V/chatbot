@@ -327,7 +327,43 @@ def _make_lookup_librarian() -> Callable[[dict], list[dict]]:
                 expanded.append(t + _SUFFIX[campus])
             expanded.append(t)
 
+        def _order_for_scope(rows: list[dict]) -> list[dict]:
+            """Scope-first ordering (backlog A6). The LibGuides API
+            returns ALL campuses' liaisons in arbitrary order, so for
+            'who is the nursing librarian?' (no campus named) the
+            evidence could lead with Hamilton's person and the synth
+            either named the wrong campus or fell back to a pointer.
+            Stable sort: requested campus first; with no campus
+            requested, Oxford-or-untagged first (plan §8 Oxford
+            default). Order WITHIN groups is preserved."""
+            # The LibGuides API rows carry NO campus -- enrich from the
+            # operator's Librarian table by email first, or the sort is
+            # a no-op (verified: nursing still led with Hamilton's
+            # person because everyone looked 'untagged-Oxford').
+            _missing = [r.get("email") for r in rows
+                        if not r.get("campus") and r.get("email")]
+            if _missing:
+                async def _q_campus(client):
+                    ls = await client.librarian.find_many(
+                        where={"email": {"in": _missing}})
+                    return {l.email: (l.campus or "") for l in ls}
+                try:
+                    _cmap = _db(_q_campus)
+                    for r in rows:
+                        if not r.get("campus"):
+                            r["campus"] = _cmap.get(r.get("email") or "") or None
+                except Exception as e:  # noqa: BLE001
+                    logger.warning("campus enrichment failed: %s", e)
+
+            def key(d: dict) -> int:
+                c = str(d.get("campus") or "").lower()
+                if campus:
+                    return 0 if c == campus else 1
+                return 0 if c in ("", "oxford") else 1
+            return sorted(rows, key=key)
+
         def _with_guides(rows: list[dict]) -> list[dict]:
+            rows = _order_for_scope(rows)
             """Attach the subject's LibGuide URL (Subject ->
             SubjectLibGuide -> LibGuide.url, operator data) to every
             row, REGARDLESS of which path produced them -- the
@@ -456,7 +492,7 @@ def _make_lookup_librarian() -> Callable[[dict], list[dict]]:
             try:
                 rows = _db(_q_by_subject_db)
                 if rows:
-                    return rows
+                    return _order_for_scope(rows)
             except Exception as e:  # noqa: BLE001 -- DB fallback must not break the turn
                 logger.warning("lookup_librarian DB-subject fallback failed: %s", e)
 
@@ -480,7 +516,7 @@ def _make_lookup_librarian() -> Callable[[dict], list[dict]]:
             return [_librarian_dict(r) for r in rows]
 
         try:
-            return _db(_q_by_name)
+            return _order_for_scope(_db(_q_by_name))
         except Exception as e:  # noqa: BLE001
             raise ToolError(
                 f"lookup_librarian (name/campus): {e}. The bot should "
