@@ -198,3 +198,23 @@ These only bite under months of real traffic — fine to defer past beta, but wr
 3. **D1** (corrections write path) — turns librarians into your QA team.
 
 Everything else is genuine polish.
+
+### A6. 🟠 Subject-librarian answers: name-vs-pointer inconsistency (evidence ordering)
+**What.** Hard-knowledge probe (2026-06-10, 12 cases): the data chain is
+solid — course code → subject → librarian + email works ("BIO 201 →
+Ginny Boehme, boehmemv@") and regional lookups return real staff. But for
+specific-subject asks the synthesizer sometimes names the liaison
+(bio/psy/ENG 111) and sometimes only points to the Liaisons page
+(marketing/history/nursing), because the lookup evidence contains
+MULTIPLE people in arbitrary order (LibGuides API returns all campuses'
+liaisons; e.g. nursing evidence leads with Hamilton's Krista McDonald,
+not Oxford's Ginny Boehme).
+**Tried & reverted:** a rule-9 prompt amendment ("must name the first
+DIRECTORY person") made nursing name the WRONG-campus person — worse
+than pointing. The fix is NOT prompt-side.
+**Fix:** order/filter lookup_librarian results before evidence:
+scope-campus people first (Oxford default), one primary per subject;
+then the existing rule 9 ("at most one") yields the right name
+naturally. Needs an A/B over the librarian + staff gold categories.
+**Effort:** ~half a day. **Touches:** `real_backends` lookup ordering,
+maybe `_tool_fact_evidence`.
