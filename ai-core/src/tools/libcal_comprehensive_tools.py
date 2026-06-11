@@ -1,4 +1,5 @@
 """Comprehensive LibCal tools matching legacy NestJS functionality."""
+import logging
 import os
 import re
 import httpx
@@ -703,7 +704,7 @@ async def _check_building_hours(building_id: str, date: str, start_time: str, en
     
     except Exception as e:
         # On error, assume valid to not block legitimate bookings
-        print(f"Warning: Building hours check failed: {e}")
+        logging.debug(f"Warning: Building hours check failed: {e}")
         return True, None
 
 class LibCalWeekHoursTool(Tool):
@@ -1316,10 +1317,10 @@ class LibCalComprehensiveReservationTool(Tool):
             token = await _get_oauth_token()
             
             # Log POST request for debugging
-            print(f"\n[LibCal POST Request]")
-            print(f"URL: {LIBCAL_RESERVATION_URL}")
-            print(f"Payload: {payload}")
-            print(f"Headers: Authorization: Bearer {token[:20]}...\n")
+            logging.debug(f"\n[LibCal POST Request]")
+            logging.debug(f"URL: {LIBCAL_RESERVATION_URL}")
+            logging.debug(f"Payload: {payload}")
+            logging.debug(f"Headers: Authorization: Bearer {token[:20]}...\n")
             
             if log_callback:
                 log_callback(f"🔄 [LibCal POST] {LIBCAL_RESERVATION_URL}")
@@ -1332,19 +1333,19 @@ class LibCalComprehensiveReservationTool(Tool):
                 )
                 
                 # Log response for debugging
-                print(f"[LibCal POST Response]")
-                print(f"Status Code: {response.status_code}")
-                print(f"Response Body: {response.text}\n")
+                logging.debug(f"[LibCal POST Response]")
+                logging.debug(f"Status Code: {response.status_code}")
+                logging.debug(f"Response Body: {response.text}\n")
                 
                 if response.status_code == 200 or response.status_code == 201:
                     result = response.json()
                     booking_id = result.get("booking_id")
                     
                     # Log booking ID
-                    print(f"[Booking Success] ID: {booking_id}")
+                    logging.debug(f"[Booking Success] ID: {booking_id}")
                     
                     if not booking_id:
-                        print(f"[WARNING] No booking_id in response: {result}")
+                        logging.debug(f"[WARNING] No booking_id in response: {result}")
                     
                     if log_callback:
                         log_callback(f"✅ [LibCal Comprehensive Reservation Tool] Booked room {selected_room['name']} - ID: {booking_id}")

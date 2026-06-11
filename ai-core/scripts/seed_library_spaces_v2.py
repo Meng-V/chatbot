@@ -215,11 +215,18 @@ SPACES: list[LibrarySpaceRow] = [
         equipment=[
             "study_rooms", "group_study_rooms",
             "computers", "printers", "scanners", "whiteboards",
+            "3d_printers",
         ],
-        # Same shape as Rentschler. NO makerspace.
+        # CORRECTED 2026-06-10: Gardner-Harvey DOES have a makerspace --
+        # the TEC Lab (3D printing). The old "NO makerspace" note drove
+        # SERVICE_NOT_AT_BUILDING refusals AND factually-wrong
+        # "Middletown has no 3D printing" answers (gold
+        # xc_makerspace_middletown_refusal / fs_makerspace_middletown).
+        # Hamilton (Rentschler) remains the campus with NO makerspace.
         services_offered=[
             "printing", "ill_pickup", "study_rooms",
             "course_reserves", "research_appointments",
+            "makerspace",
         ],
         hours_source="https://www.mid.miamioh.edu/library/about/hours/",
         source_url="https://www.mid.miamioh.edu/library/",

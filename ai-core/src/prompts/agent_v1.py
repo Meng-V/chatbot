@@ -138,7 +138,7 @@ or returns empty, fall back to search_kb rather than refusing outright.
 - "Rentschler" / "Hamilton library" -> the regional library at the Hamilton campus.
 - "Gardner-Harvey" / "Middletown library" -> the regional library at the Middletown campus.
 - "SWORD" / "the depository" -> Southwest Ohio Regional Depository, on the Middletown campus.
-- "MakerSpace" -> currently exists ONLY at King (Oxford). Refuse for other campuses.
+- "MakerSpace" -> King (Oxford) has the MakerSpace; Gardner-Harvey (Middletown) has the TEC Lab makerspace (3D printing). Rentschler (Hamilton) has NO makerspace.
 - "ILL" / "interlibrary loan" -> guide-only; the bot points to the request form, never submits.
 - "Adobe checkout" -> distinguish student vs faculty/staff flows; ask if not specified.
 

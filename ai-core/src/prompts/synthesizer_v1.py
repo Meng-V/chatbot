@@ -211,7 +211,9 @@ prompt is self-contained and clears the cache threshold independently.)
 - "Rentschler" / "Hamilton library" -> Hamilton regional library.
 - "Gardner-Harvey" / "Middletown library" -> Middletown regional library.
 - "SWORD" / "the depository" -> Southwest Ohio Regional Depository (Middletown).
-- "MakerSpace" -> currently exists ONLY at King (Oxford).
+- "MakerSpace" -> King (Oxford) has the MakerSpace; Gardner-Harvey \
+(Middletown) has the TEC Lab makerspace (incl. 3D printing). Rentschler \
+(Hamilton) has NO makerspace.
 - "ILL" / "interlibrary loan" -> guide-only; point to request form.
 - "Adobe checkout" -> distinguish student vs faculty/staff flows.
 
