@@ -42,7 +42,12 @@ To render a styled badge the frontend must *know* the kind, so you add a `kind` 
 
 **Effort.** ~0.5 day. **Touches:** `synthesis/post_processor.py`, `graph/new_orchestrator.py` (`deps.log_turn`).
 
-### A3. 🔴 Post-processor doesn't verify a cited URL came from real evidence
+### ~~A3. Post-processor evidence-grounding~~ — DONE 2026-06-08 (`91e23f7`)
+*(Shipped same day it was filed: cited URLs must match a retrieved chunk's source_url; live-verified on the Adobe case.)*
+
+<details><summary>original entry</summary>
+
+### A3-archived
 **What.** The post-processor's URL check (`post_processor.validate`, rule 3) accepts any URL that appears in `citations[].url` OR the (currently empty, see D4) `UrlSeen` allowlist. It does NOT cross-check that the cited URL is actually the `source_url` of an evidence chunk the agent retrieved. So the synthesizer LLM can fabricate a citation from the **hardcoded reference-URL list in `prompts/synthesizer_v1.py`** even when retrieval returned zero evidence — the model writes `...[1].` + `citations:[{n:1,url:<a prompt URL>}]`, and every post-processor check passes because the URL is "cited."
 
 **How it surfaced (2026-06-08).** A user asked "where to checkout Adobe." Retrieval returned no Adobe evidence on most turns, yet the bot confidently answered citing `…/use/technology/software/adobe/` — a **404** that lived in the synthesizer prompt's reference list. Probed 5×: 4 refusals, 1 answer whose citation URL was a *prompt* URL, not an evidence `source_url`. This is exactly the "fabricated URL" failure the whole project exists to prevent, slipping through the citation contract.
@@ -50,6 +55,9 @@ To render a styled badge the frontend must *know* the kind, so you add a `kind` 
 **Fix direction.** In `post_processor.validate`, add: every URL the answer cites must equal the `source_url` of some chunk in the `evidence` bundle passed in (the function already receives `evidence`). A cited URL with no backing evidence chunk → `CITATION_INVALID` refusal. Consider also dropping the hardcoded URL list from the synthesizer prompt entirely (it's the enabler) — or keeping it only as a cache-anchor that the post-processor will still reject if used without evidence.
 
 **Effort.** ~1 day incl. test + refusal-rate check (this WILL raise refusals on thin-evidence turns — that's correct, but measure it). **Touches:** `synthesis/post_processor.py`, `prompts/synthesizer_v1.py`.
+
+
+</details>
 
 ### A4. 🟠 Hardcoded prompt URLs rot silently — wire the validator into deploy/CI
 **What.** `scripts/validate_prompt_urls.py` (added 2026-06-08) extracts every URL from the prompt/source files and HTTP-checks it; it found 3 dead URLs in `synthesizer_v1.py` (Adobe, citation guide, technology checkout) that had been served to users. It's not yet run automatically. Wire it into the pre-deploy check (see C1) and a weekly cron so a rotted URL fails CI instead of reaching a user. `python scripts/validate_prompt_urls.py` exits non-zero on any non-200.
@@ -112,7 +120,11 @@ folded into D2's review-surface work since that's its consumer.
 
 > Context: beta launch surfaced a string of bugs that **passed locally but broke on prod** — nginx `/health` routing, a Responses-API conversation-shape 400 (only triggers on the *2nd* user turn), a missing 332 MB embedding cache, starlette/fastapi version drift. Root cause: our eval/test suite measures *answer quality* but never exercised the *deployment chain* or *multi-turn* paths. C1/C2 close that gap.
 
-### C1. 🔴 `scripts/preflight.sh` — pre-deploy environment check
+### ~~C1. preflight.sh~~ — DONE 2026-06-10 (`ae7c013`; 16 checks, first run caught a real tunnel outage)
+
+<details><summary>original entry</summary>
+
+### C1-archived
 **What.** A script Rachel runs on the prod box *before* restarting the backend. Checks ~10 deployment-chain things and prints pass/fail:
 nginx forwards `/health/*` and `/smartchatbot/socket.io` to `:8081`; `classifier_embeddings.json` present (or symlinked); `prisma generate` done; starlette/fastapi versions match `requirements.txt`; SSH tunnels up; required `.env` keys present; `ADMIN_API_TOKEN` set; disk space; `socketio_path` config; final `GET /smoketest/v2`.
 
@@ -120,18 +132,35 @@ nginx forwards `/health/*` and `/smartchatbot/socket.io` to `:8081`; `classifier
 
 **Effort.** ~0.5 day. **New file:** `ai-core/scripts/preflight.sh`.
 
-### C2. 🔴 `scripts/post_deploy_check.sh` — multi-turn smoke
+
+</details>
+
+### ~~C2. post_deploy_check.sh~~ — DONE 2026-06-10 (`ae7c013`; real two-turn Socket.IO smoke, verified passing)
+
+<details><summary>original entry</summary>
+
+### C2-archived
 **What.** After `systemctl restart`, connect a real Socket.IO client, send "hello" → expect greeting, then send a 2nd message "what time do you close?" → assert non-empty, has a citation, is NOT "I encountered an error."
 
 **Why.** The 2026-05-28 Responses-API 400 only fired on the **second** turn (conversation-history shape). A single-turn smoketest (`/smoketest/v2`) passes while real users break. This catches exactly that.
 
 **Effort.** ~0.5 day. **New file:** `ai-core/scripts/post_deploy_check.sh`.
 
-### C3. 🟠 Persist the classifier embedding cache across deploys
+
+</details>
+
+### ~~C3. embedding-cache symlink~~ — DONE 2026-06-09 (set up on prod during deploy; preflight checks it)
+
+<details><summary>original entry</summary>
+
+### C3-archived
 **What.** `ai-core/data/eval/classifier_embeddings.json` is 332 MB (5,555 exemplars × 3,072 dims) — over GitHub's 100 MB limit, and `ai-core/data/` is gitignored. Each clean build loses it → cold-start re-embeds all exemplars live (~30–60 s, ~$0.50) and can time out uvicorn.
 **Recommended fix:** move it to `/opt/chatbot/shared/` and symlink on every deploy (see the email to Rachel / `03-DEPLOYMENT.md`). Regenerate only when exemplars change: `python scripts/eval_classifier_v38.py`.
 
 **Effort.** 15 min one-time on prod + 1 line in the deploy script.
+
+
+</details>
 
 ### C4. 🟠 nginx `location /health` block + `ADMIN_API_TOKEN` on prod
 **What.** Two ops tasks owned by Rachel: (a) nginx must forward `/health/*` to `localhost:8081` (frontend liveness probe depends on `/health/live`); (b) set `ADMIN_API_TOKEN` env so the Op 1 review surface mounts (it fail-closes when unset, which is why `/admin/review` 404s today).
@@ -154,7 +183,12 @@ nginx forwards `/health/*` and `/smartchatbot/socket.io` to `:8081`; `classifier
 
 **Effort.** ~1–2 weeks. Blocked on B1 (need real per-turn telemetry to populate it).
 
-### D3. 🔴 ManualCorrection overrides silently don't apply on the v2 socket path
+### ~~D3. ManualCorrection on v2 socket path~~ — FALSIFIED 2026-06-10
+*(Verified on the exact prod execution path (executor thread): 4 corrections load cleanly, turn completes. The event-loop failure was eval-context-only. Corrections work in production.)*
+
+<details><summary>original entry</summary>
+
+### D3-archived
 **What.** On the real production path (`handle_v2_message` → `run_turn` via `loop.run_in_executor(None, ...)`, a worker thread), `_safe_load_corrections()` calls `PrismaCorrectionsStore.load_active()`, which awaits a Prisma client bound to the **main** event loop. Accessed from the executor thread it raises *"<asyncio.locks.Event …> is bound to a different event loop"*, which `_safe_load_corrections` catches and logs as a WARNING, then returns `[]`. Net effect: **every v2 turn runs with zero corrections applied.**
 
 **Why it's serious.** The plan designates `ManualCorrection` the operator's no-deploy safety net for wrong answers (suppress / replace / pin / blacklist). With this bug, a librarian can file corrections all day and **none take effect on prod**. It's silent — only a WARNING in the log, chat keeps working — so you'd never notice without reading logs. Confirmed 2026-06-08 (fires on the socket path; the `/smoketest/v2` path runs `run_turn` in the main loop and does NOT reproduce it, which is exactly why smoke tests miss it).
@@ -164,6 +198,9 @@ nginx forwards `/health/*` and `/smartchatbot/socket.io` to `:8081`; `classifier
 **Fix directions (pick one).** (a) Give the corrections store its own persistent `_AsyncBridge` daemon-loop (same pattern `real_backends.py` uses for legacy LibCal/LibGuides tools) so DB access is loop-stable regardless of caller thread. (b) Load corrections in the async handler *before* dispatching to the executor, and pass the already-resolved list into `run_turn` as data (no DB call inside the thread). (b) is simpler and removes a per-turn DB round-trip from the hot path.
 
 **Effort.** ~0.5–1 day. **Touches:** `graph/v2_serving.py`, possibly `database/` corrections store.
+
+
+</details>
 
 ### D4. 🟠 `load_url_allowlist` is stubbed to an empty set on v2
 **What.** `build_v2_deps` wires `load_url_allowlist=lambda: set()` (`v2_serving.py`). The post-processor's URL-validation rule therefore only ever accepts URLs that appear in `citations[].url`; the `UrlSeen` allowlist table is never consulted. In practice fine today (answers cite their URLs), but it means a legitimate non-cited URL the model surfaces would be flagged as fabricated. Wire it to the real `UrlSeen` query when that table is populated by the ETL.
