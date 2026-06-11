@@ -408,11 +408,15 @@ if _admin_token:
         "require_librarian": _guard,  # reviews_router's auth dep
         "guard": _guard,              # review_view_router's auth dep
     }
+    from src.api.admin.corrections_router import build_corrections_router
+
     app.include_router(build_reviews_router(_admin_deps))
     app.include_router(build_review_view_router(_admin_deps))
+    app.include_router(build_corrections_router(_admin_deps))
     logging.info(
-        "Op1 review surface mounted (ADMIN_API_TOKEN set): "
-        "/admin/review (HTML) + /admin/reviews (JSON)."
+        "Op1/Op2 admin surfaces mounted (ADMIN_API_TOKEN set): "
+        "/admin/review (HTML), /admin/reviews (JSON), "
+        "/admin/corrections (CRUD) + /admin/corrections/view (form)."
     )
 else:
     logging.info(
