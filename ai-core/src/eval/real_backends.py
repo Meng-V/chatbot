@@ -334,15 +334,63 @@ def _make_lookup_librarian() -> Callable[[dict], list[dict]]:
             if rows:
                 return rows
 
+        # (2.5) Postgres fallback: the operator's curated Subject /
+        # LibrarianSubject / Librarian tables. Verified complete
+        # 2026-06-10 (Marketing -> Erica Freed + Abigail Morgan; regional
+        # " - HC"/" - MC" subject variants present) -- but the LibGuides
+        # API misses some of these subjects, so until now this entire
+        # dataset was DEAD: subject lookups never touched the DB and the
+        # bot refused (audit case r1_librarian_marketing). Campus-aware:
+        # hamilton/middletown asks also try the " - HC"/" - MC" variant
+        # rows the operator created for exactly that purpose.
+        terms = list(resolved) if resolved else ([subject] if subject else [])
+        if terms:
+            _SUFFIX = {"hamilton": " - HC", "middletown": " - MC"}
+            expanded: list[str] = []
+            for t in terms:
+                if campus in _SUFFIX:
+                    expanded.append(t + _SUFFIX[campus])
+                expanded.append(t)
+
+            async def _q_by_subject_db(client) -> list[dict]:
+                links = await client.librariansubject.find_many(
+                    where={"subject": {"is": {"name": {"in": expanded}}}},
+                    include={"librarian": True},
+                )
+                seen: set[str] = set()
+                out: list[dict] = []
+                for l in links:
+                    r = l.librarian
+                    if r is None or not getattr(r, "email", None):
+                        continue
+                    if getattr(r, "isActive", True) is False:
+                        continue
+                    if campus and getattr(r, "campus", None) and r.campus != campus:
+                        continue
+                    if r.email in seen:
+                        continue
+                    seen.add(r.email)
+                    out.append(_librarian_dict(r))
+                return out
+
+            try:
+                rows = _db(_q_by_subject_db)
+                if rows:
+                    return rows
+            except Exception as e:  # noqa: BLE001 -- DB fallback must not break the turn
+                logger.warning("lookup_librarian DB-subject fallback failed: %s", e)
+
         # (3) Name / campus direct lookup via the bridge'd Prisma
         # singleton (NOT _db). Used for staff-directory cases
         # ("the dean of the libraries"). Subject is empty here.
         if not name and not campus:
             return []
 
-        async def _q_by_name() -> list[dict]:
-            from src.database.prisma_client import get_prisma_client
-            client = await get_prisma_client()
+        # Fresh-client _db pattern, NOT the bridge'd singleton:
+        # `get_prisma_client()` is sync (the old `await` of it made this
+        # path raise "'Prisma' object can't be awaited" on EVERY
+        # name/campus lookup since it shipped -- found 2026-06-10).
+        async def _q_by_name(client) -> list[dict]:
             where: dict = {"isActive": True}
             if name:
                 where["name"] = {"contains": name, "mode": "insensitive"}
@@ -352,7 +400,7 @@ def _make_lookup_librarian() -> Callable[[dict], list[dict]]:
             return [_librarian_dict(r) for r in rows]
 
         try:
-            return _bridge(_q_by_name())
+            return _db(_q_by_name)
         except Exception as e:  # noqa: BLE001
             raise ToolError(
                 f"lookup_librarian (name/campus): {e}. The bot should "
