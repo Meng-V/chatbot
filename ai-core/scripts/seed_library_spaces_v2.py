@@ -32,7 +32,22 @@ import asyncio
 import json
 import logging
 from dataclasses import asdict, dataclass, field
+from pathlib import Path
 from typing import Optional
+
+# Load .env (DATABASE_URL) the same way src/main.py does: prefer the
+# prod shared path, fall back to the repo root. Without this the script
+# only worked if DATABASE_URL happened to be exported in the shell
+# (operator hit "Environment variable not found: DATABASE_URL",
+# 2026-06-10).
+from dotenv import load_dotenv
+
+_shared = Path("/opt/chatbot/shared/.env")
+load_dotenv(
+    dotenv_path=_shared if _shared.exists()
+    else Path(__file__).resolve().parents[2] / ".env",
+    override=False,
+)
 
 logger = logging.getLogger("seed_library_spaces_v2")
 
