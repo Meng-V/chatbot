@@ -229,7 +229,7 @@ def build_corrections_router(deps: dict) -> Any:
     async def corrections_view(_user=Depends(require_librarian)):
         """Librarian-facing form + table. Open as
         /admin/corrections/view with the x-admin-token header, or
-        ?token=... if the guard accepts query tokens (same guard as
+        ?key=... in the URL (same guard convention as
         /admin/review). The page calls the JSON endpoints via fetch."""
         return HTMLResponse(_VIEW_HTML)
 
@@ -282,7 +282,7 @@ All corrections auto-expire in 180 days unless extended.</p>
 <th>reason</th><th>by</th><th>expires</th><th>fired</th><th></th></tr></thead>
 <tbody></tbody></table>
 <script>
-const token = new URLSearchParams(location.search).get("token") || "";
+const token = new URLSearchParams(location.search).get("key") || "";
 const H = {"Content-Type":"application/json","x-admin-token":token};
 async function load(){
   const r = await fetch("/admin/corrections",{headers:H});
