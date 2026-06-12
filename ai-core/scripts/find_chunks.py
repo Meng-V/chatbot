@@ -17,6 +17,14 @@ Usage (from ai-core/, venv active):
   # Show full chunk text instead of a preview:
   python scripts/find_chunks.py --url <url> --full
 
+  # Permanently delete a chunk by its chunk_id (asks for confirmation).
+  # Use for STALE content the live page no longer contains -- the next
+  # full ETL re-crawl rebuilds chunks from the current page, so the bad
+  # text will not come back. For content the page STILL contains, use a
+  # suppress/replace correction instead (deleting would only last until
+  # the next crawl re-indexes it).
+  python scripts/find_chunks.py --delete c-77c21c16149f9ef0
+
 Output per chunk: chunk_id (copy this into the corrections form),
 campus/library/topic tags, and the text.
 """
@@ -47,10 +55,15 @@ def main() -> int:
                          "(the same collection the bot serves from)")
     ap.add_argument("--limit", type=int, default=50)
     ap.add_argument("--full", action="store_true", help="print full chunk text")
+    ap.add_argument("--delete", metavar="CHUNK_ID",
+                    help="permanently delete the chunk with this chunk_id "
+                         "(prints it first, asks for confirmation)")
+    ap.add_argument("--yes", action="store_true",
+                    help="skip the --delete confirmation prompt")
     args = ap.parse_args()
 
-    if not args.url and not args.contains:
-        ap.error("need --url or --contains")
+    if not args.url and not args.contains and not args.delete:
+        ap.error("need --url, --contains, or --delete")
 
     from src.utils.weaviate_client import get_weaviate_client
     client = get_weaviate_client()
@@ -61,6 +74,32 @@ def main() -> int:
     try:
         from weaviate.classes.query import Filter
         coll = client.collections.get(args.collection)
+
+        if args.delete:
+            f = Filter.by_property("chunk_id").equal(args.delete)
+            res = coll.query.fetch_objects(filters=f, limit=2)
+            if not res.objects:
+                print(f"No chunk with chunk_id={args.delete!r} in "
+                      f"{args.collection!r}. Nothing deleted.")
+                return 1
+            obj = res.objects[0]
+            p = obj.properties or {}
+            print("About to PERMANENTLY delete this chunk:\n")
+            print(f"chunk_id : {args.delete}")
+            print(f"source   : {p.get('source_url', '')}")
+            print(f"text     : {(p.get('text') or '').strip()[:300]}\n")
+            print("Reminder: if the live page still contains this text, the "
+                  "next ETL crawl will re-index it -- use a suppress "
+                  "correction for that case instead.")
+            if not args.yes:
+                answer = input("Type DELETE to confirm: ").strip()
+                if answer != "DELETE":
+                    print("Aborted; nothing deleted.")
+                    return 1
+            coll.data.delete_by_id(obj.uuid)
+            print(f"Deleted chunk {args.delete} (weaviate uuid {obj.uuid}). "
+                  "Takes effect on the next bot turn.")
+            return 0
 
         filters = None
         if args.url:
