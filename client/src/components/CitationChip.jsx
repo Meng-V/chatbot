@@ -56,7 +56,21 @@ const CitationChip = ({ n, citation }) => {
         setOpen(false);
       }
     };
-    const onScrollOrResize = () => setOpen(false);
+    // Ignore scrolls that originate inside the popover itself, and the
+    // focus-driven scroll the browser fires when the link is clicked
+    // while partially off-screen -- that one unmounted the anchor
+    // between mousedown and click, which made the URL unclickable.
+    const onScrollOrResize = (e) => {
+      if (
+        e &&
+        e.target instanceof Node &&
+        popoverRef.current &&
+        popoverRef.current.contains(e.target)
+      ) {
+        return;
+      }
+      setOpen(false);
+    };
     document.addEventListener('mousedown', onDocPointer);
     window.addEventListener('scroll', onScrollOrResize, true);
     window.addEventListener('resize', onScrollOrResize);
@@ -128,13 +142,26 @@ const CitationChip = ({ n, citation }) => {
                 href={url}
                 target="_blank"
                 rel="noopener noreferrer"
-                onClick={(e) => {
-                  // Bulletproof navigation: keep the popover from eating the
-                  // event, and open explicitly. Relying on the anchor's
-                  // default alone proved flaky inside the portal popover.
+                // Navigate on MOUSEDOWN, not click: a click on a partially
+                // off-screen link triggers a focus scroll first, and the
+                // scroll handler used to unmount the popover before the
+                // click event could ever reach the anchor. mousedown fires
+                // before any of that and is still a user gesture, so
+                // popup blockers allow window.open.
+                onMouseDown={(e) => {
+                  if (e.button !== 0) return; // middle/right: anchor default
                   e.stopPropagation();
                   e.preventDefault();
                   window.open(url, '_blank', 'noopener,noreferrer');
+                  setOpen(false);
+                }}
+                onClick={(e) => {
+                  // Navigation already happened on mousedown; keep the
+                  // anchor's default from double-opening. (Keyboard Enter
+                  // produces a click without a prior mousedown -- let that
+                  // one through via the href.)
+                  if (e.detail > 0) e.preventDefault();
+                  e.stopPropagation();
                 }}
                 className="flex items-start gap-1 text-blue-600 hover:underline cursor-pointer"
               >
