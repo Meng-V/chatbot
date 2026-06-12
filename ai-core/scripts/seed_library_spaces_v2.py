@@ -148,7 +148,10 @@ SPACES: list[LibrarySpaceRow] = [
         campus="oxford",
         name="Wertz Art & Architecture Library",
         building_role="sub_building",
-        address="Alumni Hall, 100 Bishop Cir, Oxford, OH 45056",
+        # Matches the official location page verbatim ("Address: Alumni
+        # Hall, Oxford, OH 45056") -- an earlier seed invented a street
+        # ("100 Bishop Cir") that the library never publishes.
+        address="Alumni Hall, Oxford, OH 45056",
         phone="513-529-6638",
         libcal_id="8116",
         capacity=1000,
