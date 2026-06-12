@@ -107,16 +107,36 @@ def _run_async(coro: Any) -> Any:
 # "audit and accountability" section.
 
 _module_cached: Optional[list[ManualCorrection]] = None
-_module_load_attempted: bool = False
+_module_cached_at: Optional[float] = None  # time.monotonic()
+
+CACHE_TTL_SECONDS = 60.0
+"""Re-read corrections from Postgres at most once a minute. Short enough
+that a librarian's correction is live within a minute even cross-process;
+in-process it's IMMEDIATE because the admin router busts this cache on
+every successful write.
+
+2026-06-11 redesign: the old semantics ("cache the FIRST result forever;
+on first FAILURE cache empty forever") combined with the loop-affinity
+bug fixed below meant one bad first call silenced corrections for the
+entire process lifetime -- exactly what prod did after the 06-11 deploy
+(WARNING 'bound to a different event loop' ... continuing without
+overrides, on every turn)."""
+
+
+def _invalidate_module_cache() -> None:
+    """Bust the cache. The admin corrections router calls this after
+    every successful write so 'takes effect on the next turn' is
+    literally true in-process."""
+    global _module_cached, _module_cached_at
+    _module_cached = None
+    _module_cached_at = None
 
 
 def _reset_module_cache_for_tests() -> None:
     """Test hook only. Clears the module-level cache so unit tests don't
     leak state between cases. Not exported in __all__; tests reach in
     by name."""
-    global _module_cached, _module_load_attempted
-    _module_cached = None
-    _module_load_attempted = False
+    _invalidate_module_cache()
 
 
 @dataclass
@@ -140,43 +160,80 @@ class PrismaCorrectionsStore:
     client: Optional[Any] = None
 
     def __post_init__(self) -> None:
-        if self.client is None:
-            from src.database.prisma_client import get_prisma_client
-            self.client = get_prisma_client()
+        # `client` stays None in production -> fresh-client-per-load
+        # (see _aload_active). Tests inject a stub and we use it as-is.
+        #
+        # The old code resolved the process SINGLETON here. That
+        # singleton's query engine binds its httpx session to the loop
+        # that connected it (the app's MAIN loop at startup), but
+        # load_active runs from run_turn's executor THREAD inside its
+        # own asyncio.run() loop -> "Event ... is bound to a different
+        # event loop" on real serving turns (prod error.log 2026-06-11).
+        self._injected = self.client is not None
 
     def load_active(self) -> list[ManualCorrection]:
         """Sync entry point matching `OrchestratorDeps.load_corrections`.
 
-        Cached at module level: first successful call in the process
-        queries Postgres, subsequent calls (including from different
-        store instances) return the cached list. If the first call
-        fails (Postgres down), we cache empty so the rest of the
-        process doesn't keep retrying.
+        TTL-cached at module level (CACHE_TTL_SECONDS; the admin router
+        additionally invalidates on every write, so an in-process
+        correction is live on the next turn). On a refresh FAILURE with
+        a previous good value, serves the stale value and warns -- a
+        transient pg blip must not strip the override layer. A
+        first-ever failure raises (callers' safe-degradation treats it
+        as "no overrides this turn") and the NEXT call retries instead
+        of poisoning the process.
         """
-        global _module_cached, _module_load_attempted
-        if _module_load_attempted:
-            return _module_cached or []
-        _module_load_attempted = True
+        global _module_cached, _module_cached_at
+        import time
+        now = time.monotonic()
+        if (
+            _module_cached is not None
+            and _module_cached_at is not None
+            and now - _module_cached_at < CACHE_TTL_SECONDS
+        ):
+            return _module_cached
         try:
-            _module_cached = _run_async(self._aload_active())
+            fresh = _run_async(self._aload_active())
         except Exception:
-            _module_cached = []
+            if _module_cached is not None:
+                logger.warning(
+                    "ManualCorrection refresh failed; serving %d stale "
+                    "cached rows", len(_module_cached),
+                )
+                return _module_cached
             raise  # caller decides whether to swallow
-        return _module_cached
+        _module_cached = fresh
+        _module_cached_at = now
+        return fresh
 
     def refresh(self) -> list[ManualCorrection]:
         """Force a re-read from Postgres. Use after a known correction
         insert if the process must pick it up without restart."""
-        global _module_cached, _module_load_attempted
-        _module_load_attempted = False
-        _module_cached = None
+        _invalidate_module_cache()
         return self.load_active()
 
     async def _aload_active(self) -> list[ManualCorrection]:
-        if not self.client.is_connected():
-            await self.client.connect()
+        if self._injected:
+            client = self.client
+            if hasattr(client, "is_connected") and not client.is_connected():
+                await client.connect()
+            return await self._aquery(client)
+        # Fresh client per load, connected and disconnected INSIDE this
+        # coroutine's own event loop -- immune to both failure modes the
+        # singleton path had: cross-loop affinity, and "Event loop is
+        # closed" when a loop-bound engine is reused after asyncio.run
+        # tears its loop down.
+        from prisma import Prisma
+        client = Prisma()
+        await client.connect()
+        try:
+            return await self._aquery(client)
+        finally:
+            await client.disconnect()
+
+    async def _aquery(self, client: Any) -> list[ManualCorrection]:
         now = dt.datetime.now(dt.timezone.utc)
-        rows = await self.client.manualcorrection.find_many(
+        rows = await client.manualcorrection.find_many(
             where={
                 "active": True,
                 "expiresAt": {"gt": now},

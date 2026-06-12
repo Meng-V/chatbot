@@ -186,8 +186,8 @@ nginx forwards `/health/*` and `/smartchatbot/socket.io` to `:8081`; `classifier
 
 **Effort.** ~1–2 weeks. Blocked on B1 (need real per-turn telemetry to populate it).
 
-### ~~D3. ManualCorrection on v2 socket path~~ — FALSIFIED 2026-06-10
-*(Verified on the exact prod execution path (executor thread): 4 corrections load cleanly, turn completes. The event-loop failure was eval-context-only. Corrections work in production.)*
+### ~~D3. ManualCorrection on v2 socket path~~ — REAL, FIXED 2026-06-12
+*(The 2026-06-10 "falsified" verdict was wrong: the verification's first call ran on the main thread and populated the module cache, so the executor-path call returned the cache without ever touching Prisma — a false negative. Prod logs (2026-06-11) showed the bug firing on every turn: the singleton Prisma client's engine is bound to the app's main loop, `run_turn`'s executor thread uses a fresh `asyncio.run` loop → "Event … bound to a different event loop", and the old cache semantics then froze the first failure as empty-forever. **Fix:** `corrections_adapter.py` now opens a fresh Prisma client inside the calling loop per load (the `_db` pattern), caches with a 60 s TTL, serves stale-on-refresh-failure, never caches a first failure, and the admin router busts the cache on every write. Verified with two consecutive loads from separate worker-thread loops against real Postgres — both hit the DB and returned 4 rows.)*
 
 <details><summary>original entry</summary>
 

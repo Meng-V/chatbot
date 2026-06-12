@@ -200,8 +200,10 @@ def test_load_active_caches_first_result() -> None:
     assert len(refreshed) == 2
 
 
-def test_load_active_cache_includes_failures() -> None:
-    """If the first call raises, we don't keep retrying on every turn."""
+def test_load_active_failure_does_not_poison_cache() -> None:
+    """2026-06-11 semantics: a first-call failure RAISES and the next
+    call RETRIES (the old behavior -- cache empty forever after one bad
+    call -- is what silenced corrections on prod for a whole process)."""
     _reset_module_cache_for_tests()
     class _FailingClient:
         def __init__(self):
@@ -215,19 +217,33 @@ def test_load_active_cache_includes_failures() -> None:
 
     client = _FailingClient()
     store = PrismaCorrectionsStore(client=client)
-    # First call: raises.
-    try:
-        store.load_active()
-        raise AssertionError("expected RuntimeError on first call")
-    except RuntimeError:
-        pass
-    # Second call: cache says don't retry; return empty without re-querying.
-    second = store.load_active()
-    assert second == []
-    assert client.call_count == 1, (
-        f"After failure, load_active() retried Postgres ({client.call_count} calls); "
-        "should have returned cached empty without re-querying."
-    )
+    for expected_calls in (1, 2):
+        try:
+            store.load_active()
+            raise AssertionError("expected RuntimeError")
+        except RuntimeError:
+            pass
+        assert client.call_count == expected_calls, (
+            f"call {expected_calls}: expected a retry, got call_count="
+            f"{client.call_count} (failure must not be cached)"
+        )
+
+
+def test_load_active_serves_stale_on_refresh_failure() -> None:
+    """A transient pg blip after a good load must not strip the override
+    layer: serve the last good value, don't raise."""
+    _reset_module_cache_for_tests()
+    client = _FakeClient([_row("u-1")])
+    store = PrismaCorrectionsStore(client=client)
+    assert len(store.load_active()) == 1
+
+    async def _boom(where):
+        raise RuntimeError("Postgres blip")
+    client.manualcorrection.find_many = _boom
+    import src.database.corrections_adapter as mod
+    mod._module_cached_at = None  # force a refresh attempt past the TTL
+    stale = store.load_active()
+    assert len(stale) == 1, "refresh failure must serve the stale cache"
 
 
 def test_pin_correction_passes_query_pattern() -> None:
@@ -258,7 +274,8 @@ def main() -> int:
         test_load_active_maps_all_fields,
         test_load_active_returns_manualcorrection_instances,
         test_load_active_caches_first_result,
-        test_load_active_cache_includes_failures,
+        test_load_active_failure_does_not_poison_cache,
+        test_load_active_serves_stale_on_refresh_failure,
         test_pin_correction_passes_query_pattern,
     ]
     failed = 0

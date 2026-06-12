@@ -103,6 +103,18 @@ def _parse_expiry(raw: Any) -> Optional[datetime]:
     return dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
 
 
+def _bust_serving_cache() -> None:
+    """Invalidate the serving-side TTL cache so a write is live on the
+    very next bot turn in this process (cross-process workers converge
+    within CACHE_TTL_SECONDS). Import is local + failure-tolerant so the
+    admin API never 500s because of the serving layer."""
+    try:
+        from src.database.corrections_adapter import _invalidate_module_cache
+        _invalidate_module_cache()
+    except Exception:  # pragma: no cover
+        pass
+
+
 def _row(r: Any) -> dict:
     """Prisma ManualCorrection -> JSON-safe dict (snake_case)."""
     return {
@@ -180,6 +192,7 @@ def build_corrections_router(deps: dict) -> Any:
             "createdBy": c.created_by,
             "expiresAt": c.expires_at or default_expiry(),
         })
+        _bust_serving_cache()
         return {"created": _row(row), "note": "takes effect on the next bot turn"}
 
     @router.patch("/{correction_id}")
@@ -209,6 +222,7 @@ def build_corrections_router(deps: dict) -> Any:
                 detail="nothing to update (allowed: active, expires_at, reason)")
         row = await db.manualcorrection.update(
             where={"id": correction_id}, data=data)
+        _bust_serving_cache()
         return {"updated": _row(row)}
 
     @router.delete("/{correction_id}")
@@ -223,6 +237,7 @@ def build_corrections_router(deps: dict) -> Any:
             raise HTTPException(status_code=404, detail="no such correction")
         row = await db.manualcorrection.update(
             where={"id": correction_id}, data={"active": False})
+        _bust_serving_cache()
         return {"deactivated": _row(row)}
 
     @router.get("/view", response_class=HTMLResponse)
