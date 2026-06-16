@@ -219,52 +219,61 @@ def _build_classifier(embed_cache_path: Optional[Path] = None) -> IntentKNN:
             _AI_CORE / "data" / "eval" / "classifier_embeddings.json"
         )
 
+    import hashlib
+    import json
+
+    def _hash(text: str) -> str:
+        return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
     cached: dict[str, list[float]] = {}
     if embed_cache_path.exists():
-        import hashlib
-        import json
         cached = json.loads(embed_cache_path.read_text(encoding="utf-8"))
         logger.info(
             "loaded %d cached embeddings from %s",
             len(cached), embed_cache_path,
         )
 
-        def _hash(text: str) -> str:
-            return hashlib.sha256(text.encode("utf-8")).hexdigest()
+    from src.llm.client import embed, embed_many
 
-        # Build exemplars from cache where possible; fall back to live
-        # embed for misses. Track the miss count for cost visibility.
-        from src.llm.client import embed
-        misses = 0
-        exemplars: list[Exemplar] = []
-        for intent, text in pairs:
-            h = _hash(text)
-            if h in cached:
-                vec = cached[h]
-            else:
-                vec = embed(text)
-                cached[h] = vec
-                misses += 1
-            exemplars.append(Exemplar(intent=intent, text=text, vector=vec))
-        if misses:
-            logger.info("had to embed %d uncached exemplars live", misses)
+    # Resolve every exemplar from cache; collect the misses and embed
+    # them in ONE batched pass (ceil(N/batch) API calls) instead of one
+    # blocking call per text. With no cache on a fresh-clone deploy this
+    # is the whole 5.5k set -- batching turns a multi-minute first-request
+    # hang into a few seconds (prod "stuck loading exemplars" incident).
+    miss_texts = [t for _, t in pairs if _hash(t) not in cached]
+    if miss_texts:
+        logger.info(
+            "embedding %d uncached exemplars in batches (cache had %d/%d)",
+            len(miss_texts), len(pairs) - len(miss_texts), len(pairs),
+        )
+        # De-dup so identical utterances cost one slot.
+        uniq = list(dict.fromkeys(miss_texts))
+        vecs = embed_many(uniq)
+        for t, v in zip(uniq, vecs):
+            cached[_hash(t)] = v
+        # Persist so the next restart on this build is instant (and a
+        # fresh clone only pays the batched cost once).
+        try:
+            embed_cache_path.parent.mkdir(parents=True, exist_ok=True)
+            embed_cache_path.write_text(json.dumps(cached), encoding="utf-8")
+            logger.info("wrote %d embeddings back to %s",
+                        len(cached), embed_cache_path)
+        except Exception as e:  # noqa: BLE001
+            logger.warning("could not persist embedding cache: %s", e)
 
-        def embedder(t: str) -> list[float]:
-            h = _hash(t)
-            if h in cached:
-                return cached[h]
-            vec = embed(t)
-            cached[h] = vec
-            return vec
-
-        return IntentKNN(exemplars=exemplars, embedder=embedder)
-
-    # No cache: cold path. Slow + costs money but correct.
-    from src.llm.client import embed
     exemplars = [
-        Exemplar(intent=i, text=t, vector=embed(t)) for i, t in pairs
+        Exemplar(intent=i, text=t, vector=cached[_hash(t)]) for i, t in pairs
     ]
-    return IntentKNN(exemplars=exemplars, embedder=embed)
+
+    def embedder(t: str) -> list[float]:
+        h = _hash(t)
+        if h in cached:
+            return cached[h]
+        vec = embed(t)
+        cached[h] = vec
+        return vec
+
+    return IntentKNN(exemplars=exemplars, embedder=embedder)
 
 
 def _build_stub_deps(classifier: IntentKNN) -> OrchestratorDeps:
