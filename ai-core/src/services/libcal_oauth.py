@@ -6,6 +6,8 @@ import asyncio
 from typing import Optional, Dict
 from datetime import datetime, timedelta
 
+from src.observability.springshare import LIBCAL, log_token
+
 class LibCalOAuthService:
     """Manages OAuth tokens for LibCal API access."""
     
@@ -38,13 +40,15 @@ class LibCalOAuthService:
             Exception: If token fetch fails after all retries
         """
         if self._is_token_valid():
+            log_token(LIBCAL, ok=True, cached=True)
             return self._token
-        
+
         # Fetch new token
         if not all([self.oauth_url, self.client_id, self.client_secret]):
             raise ValueError("LibCal OAuth credentials not configured")
-        
+
         last_error = None
+        start = time.monotonic()
         for attempt in range(max_retries):
             try:
                 async with httpx.AsyncClient(timeout=15) as client:
@@ -58,11 +62,16 @@ class LibCalOAuthService:
                     )
                     response.raise_for_status()
                     data = response.json()
-                    
+
                     self._token = data.get("access_token")
                     expires_in = data.get("expires_in", 3600)  # Default 1 hour
                     self._token_expiry = datetime.now() + timedelta(seconds=expires_in)
-                    
+
+                    log_token(
+                        LIBCAL, ok=True,
+                        latency_ms=int((time.monotonic() - start) * 1000),
+                        expires_in=expires_in,
+                    )
                     return self._token
             except Exception as e:
                 last_error = e
@@ -71,7 +80,12 @@ class LibCalOAuthService:
                     wait_time = 2 ** attempt
                     await asyncio.sleep(wait_time)
                     continue
-        
+
+        log_token(
+            LIBCAL, ok=False,
+            latency_ms=int((time.monotonic() - start) * 1000),
+            error=str(last_error),
+        )
         raise Exception(f"Failed to fetch LibCal OAuth token after {max_retries} attempts: {str(last_error)}")
     
     def clear_token(self):

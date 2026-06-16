@@ -157,14 +157,24 @@ class LibGuideSubjectLookupTool(Tool):
             
             # Fetch librarian data from LibApps API
             token = await _get_libapps_oauth_token()
-            
+
+            from src.observability.springshare import LIBGUIDES, log_api_call
+            import time as _time
+            _accounts_url = "https://lgapi-us.libapps.com/1.2/accounts"
+            _t0 = _time.monotonic()
             async with httpx.AsyncClient(timeout=15) as client:
                 response = await client.get(
-                    "https://lgapi-us.libapps.com/1.2/accounts",
+                    _accounts_url,
                     headers={"Authorization": f"Bearer {token}"},
                     params={"expand": "subjects"}
                 )
-                
+                log_api_call(
+                    LIBGUIDES, "GET", _accounts_url,
+                    status=response.status_code,
+                    latency_ms=int((_time.monotonic() - _t0) * 1000),
+                    error=None if response.status_code < 400 else f"HTTP {response.status_code}",
+                )
+
                 # Handle 401 gracefully - return fallback
                 if response.status_code == 401:
                     if log_callback:

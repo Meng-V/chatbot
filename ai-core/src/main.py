@@ -191,6 +191,17 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logging.error(f"⚠️ [RAG Classifier] Vector store init failed: {e}", exc_info=True)
 
+    # --- Springshare (LibCal / LibGuides) pre-flight health check ---
+    # Runs BEFORE the bot serves traffic so the operator sees, at boot,
+    # whether the Springshare APIs are reachable. Never fatal -- live
+    # data degrades gracefully -- but it logs a loud banner if a service
+    # is down so flaky-API incidents are visible immediately.
+    try:
+        from src.observability.springshare import check_springshare_health
+        await check_springshare_health()
+    except Exception as e:
+        logging.warning(f"⚠️ [Springshare] pre-flight health check errored: {e}")
+
     logging.info("🚀 Application startup complete")
     yield
 

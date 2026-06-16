@@ -2,6 +2,7 @@
 import logging
 import os
 import re
+import time
 import httpx
 import asyncio
 from typing import Dict, Any, Optional, List, Tuple
@@ -163,9 +164,13 @@ async def _make_libcal_request(
     Raises:
         Exception: If all retries fail
     """
+    from src.observability.springshare import LIBCAL, log_api_call
+
     last_error = None
-    
+
     for attempt in range(max_retries):
+        _t0 = time.monotonic()
+        _attempt_label = f"{attempt + 1}/{max_retries}"
         try:
             async with httpx.AsyncClient(timeout=timeout) as client:
                 if method.upper() == "GET":
@@ -174,16 +179,30 @@ async def _make_libcal_request(
                     response = await client.post(url, headers=headers, params=params, data=data)
                 else:
                     raise ValueError(f"Unsupported HTTP method: {method}")
-                
+
                 response.raise_for_status()
+                log_api_call(
+                    LIBCAL, method, url,
+                    status=response.status_code,
+                    latency_ms=int((time.monotonic() - _t0) * 1000),
+                    attempt=_attempt_label if attempt else None,
+                )
                 return response
-                
+
         except httpx.TimeoutException as e:
             last_error = f"Timeout after {timeout}s"
+            log_api_call(LIBCAL, method, url,
+                         latency_ms=int((time.monotonic() - _t0) * 1000),
+                         attempt=_attempt_label, error=f"timeout after {timeout}s")
             if log_callback:
                 log_callback(f"⚠️ [LibCal Request] Attempt {attempt + 1}/{max_retries} timed out")
         except httpx.HTTPStatusError as e:
             last_error = f"HTTP {e.response.status_code}: {e.response.text[:200]}"
+            log_api_call(LIBCAL, method, url,
+                         status=e.response.status_code,
+                         latency_ms=int((time.monotonic() - _t0) * 1000),
+                         attempt=_attempt_label,
+                         error=f"HTTP {e.response.status_code}: {e.response.text[:140]}")
             if log_callback:
                 log_callback(f"⚠️ [LibCal Request] Attempt {attempt + 1}/{max_retries} failed: HTTP {e.response.status_code}")
             # Don't retry on 4xx errors (client errors)
@@ -191,16 +210,20 @@ async def _make_libcal_request(
                 raise
         except Exception as e:
             last_error = str(e)
+            log_api_call(LIBCAL, method, url,
+                         latency_ms=int((time.monotonic() - _t0) * 1000),
+                         attempt=_attempt_label,
+                         error=f"{type(e).__name__}: {str(e)[:140]}")
             if log_callback:
                 log_callback(f"⚠️ [LibCal Request] Attempt {attempt + 1}/{max_retries} failed: {str(e)}")
-        
+
         # Exponential backoff: 1s, 2s, 4s
         if attempt < max_retries - 1:
             wait_time = 2 ** attempt
             if log_callback:
                 log_callback(f"⏳ [LibCal Request] Retrying in {wait_time}s...")
             await asyncio.sleep(wait_time)
-    
+
     # All retries failed
     raise Exception(f"LibCal API request failed after {max_retries} attempts: {last_error}")
 

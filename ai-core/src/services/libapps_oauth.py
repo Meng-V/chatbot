@@ -1,8 +1,11 @@
 """LibApps OAuth token management service (for LibGuides)."""
 import os
+import time
 import httpx
 from typing import Optional
 from datetime import datetime, timedelta
+
+from src.observability.springshare import LIBGUIDES, log_token
 
 class LibAppsOAuthService:
     """Manages OAuth tokens for LibApps API access (LibGuides)."""
@@ -25,11 +28,13 @@ class LibAppsOAuthService:
     async def get_token(self) -> str:
         """Get valid OAuth token, fetching new one if needed."""
         if self._is_token_valid():
+            log_token(LIBGUIDES, ok=True, cached=True)
             return self._token
-        
+
         if not all([self.oauth_url, self.client_id, self.client_secret]):
             raise ValueError("LibApps OAuth credentials not configured")
-        
+
+        start = time.monotonic()
         try:
             async with httpx.AsyncClient(timeout=10) as client:
                 response = await client.post(
@@ -42,13 +47,23 @@ class LibAppsOAuthService:
                 )
                 response.raise_for_status()
                 data = response.json()
-                
+
                 self._token = data.get("access_token")
                 expires_in = data.get("expires_in", 3600)
                 self._token_expiry = datetime.now() + timedelta(seconds=expires_in)
-                
+
+                log_token(
+                    LIBGUIDES, ok=True,
+                    latency_ms=int((time.monotonic() - start) * 1000),
+                    expires_in=expires_in,
+                )
                 return self._token
         except Exception as e:
+            log_token(
+                LIBGUIDES, ok=False,
+                latency_ms=int((time.monotonic() - start) * 1000),
+                error=str(e),
+            )
             raise Exception(f"Failed to fetch LibApps OAuth token: {str(e)}")
     
     def clear_token(self):
