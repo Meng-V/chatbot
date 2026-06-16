@@ -397,6 +397,41 @@ def run_turn(
             cited_chunk_ids=[],
         )
 
+    # --- 4.6. Subject-liaison deterministic short-circuit ---
+    # For "who is the librarian for <subject>?" (and the research-help
+    # variants that resolve to a subject), the lookup_librarian backend
+    # returns the exact liaison(s)+email. The synth was unreliable at
+    # stating them (deflected to the directory; refused on two co-liaisons),
+    # so format the contact deterministically and skip the synth. Only
+    # fires on a SUBJECT-scoped lookup with in-campus results; building
+    # rosters and empty results fall through to normal synthesis.
+    if classification.intent in ("subject_librarian", "research_consultation"):
+        _liaison = _subject_liaison_short_circuit(agent_outcome, scope)
+        if _liaison is not None:
+            _ans, _cites = _liaison
+            latency_ms = int((time.monotonic() - turn_start) * 1000)
+            record_request(endpoint="/chat", status="subject_liaison",
+                           latency_s=latency_ms / 1000)
+            return TurnResponse(
+                answer=_ans,
+                is_refusal=False,
+                refusal_trigger=None,
+                citations=_cites,
+                confidence="high",
+                intent=classification.intent,
+                scope=scope.as_filter(),
+                model_used=model,
+                tokens={
+                    "input": agent_outcome.input_tokens,
+                    "cached_input": agent_outcome.cached_input_tokens,
+                    "output": agent_outcome.output_tokens,
+                },
+                fired_corrections=[],
+                agent_stopped_reason=agent_outcome.stopped_reason,
+                latency_ms=latency_ms,
+                cited_chunk_ids=[],
+            )
+
     # --- 5. Assemble evidence and run synthesizer ---
     evidence = _extract_evidence(agent_outcome)
 
@@ -519,6 +554,73 @@ _LIB_CAMPUS = {
 }
 _LIAISONS_URL = "https://www.lib.miamioh.edu/about/organization/liaisons/"
 _ROOMS_URL = "https://www.lib.miamioh.edu/use/spaces/room-reservations/"
+
+
+def _subject_liaison_short_circuit(
+    agent_outcome: "AgentOutcome", scope: "Scope"
+) -> "Optional[tuple[str, list[dict]]]":
+    """Deterministic answer for "who is the librarian for <subject>?".
+
+    The `lookup_librarian` backend is exact (Postgres `LibrarianSubject`),
+    but the synthesizer was unreliable at actually stating the name+email
+    it was handed -- it kept deflecting to the liaisons page, and refused
+    outright when a subject had two co-liaisons. When the agent did a
+    SUBJECT-scoped lookup (a `subject` arg, not a building roster) and got
+    liaison rows for the user's campus, format the contact ourselves and
+    skip the synth -- the same pattern as the booking short-circuit.
+
+    Returns `(answer_text, citations)` or None to fall through to synth.
+    Building-roster lookups (no `subject` arg) and empty/cross-campus
+    results return None so they keep their normal handling.
+    """
+    want_campus = (scope.campus or "").lower()
+    seen: set = set()
+    liaisons: list[dict] = []
+    guide_name = ""
+    guide_url = ""
+    for turn in (agent_outcome.turns or []):
+        args_by_id = {tc.id: (tc.arguments or {}) for tc in (turn.tool_calls or [])}
+        for res in (turn.tool_results or []):
+            if res.name != "lookup_librarian" or res.error or not res.data:
+                continue
+            subj = (args_by_id.get(res.call_id) or {}).get("subject")
+            if not subj or not str(subj).strip():
+                continue  # building roster, not a subject ask -> let synth handle
+            for lib in (res.data.get("librarians") or []):
+                if not isinstance(lib, dict) or not lib.get("email"):
+                    continue
+                lib_campus = (lib.get("campus") or "").lower()
+                # Campus discipline: only surface a liaison in the asked
+                # campus (or campus-agnostic rows). This is the guard the
+                # synth path gets from the cross-campus citation check;
+                # we replicate it since we're bypassing the synth.
+                if want_campus and lib_campus and lib_campus != want_campus:
+                    continue
+                if lib["email"] in seen:
+                    continue
+                seen.add(lib["email"])
+                liaisons.append(lib)
+                if not guide_url and lib.get("guide_url"):
+                    guide_name = lib.get("guide_name") or "subject guide"
+                    guide_url = lib.get("guide_url")
+    if not liaisons:
+        return None
+
+    liaisons = liaisons[:2]  # at most two co-liaisons for one subject
+    _items = [f"{l['name']} ({l['email']})" for l in liaisons]
+    contacts = " and ".join(_items) if len(_items) == 2 else _items[0]
+    lead = "subject librarian is" if len(liaisons) == 1 else "subject librarians are"
+    answer = f"Your {lead} {contacts} [1]."
+    citations = [{
+        "n": 1,
+        "url": str(liaisons[0].get("profile_url") or _LIAISONS_URL),
+        "snippet": "; ".join(f"{l['name']} — {l['email']}" for l in liaisons),
+    }]
+    if guide_url:
+        answer += f" You can also use the subject research guide [2]."
+        citations.append({"n": 2, "url": guide_url,
+                          "snippet": f"{guide_name} subject guide"})
+    return answer, citations
 
 
 def _ensure_makerspace_evidence(
