@@ -180,35 +180,6 @@ def embed(text: str, *, model: str = "text-embedding-3-large") -> list[float]:
     return list(resp.data[0].embedding)
 
 
-def embed_many(
-    texts: list[str],
-    *,
-    model: str = "text-embedding-3-large",
-    batch_size: int = 1024,
-) -> list[list[float]]:
-    """Embed many texts with as few API round-trips as possible.
-
-    The OpenAI embeddings endpoint accepts a LIST input and returns
-    vectors in request order, so N texts cost ceil(N/batch_size) calls
-    instead of N. This is the difference between the kNN classifier
-    cold-start taking ~seconds vs. blocking the first request for many
-    minutes while it embeds ~5.5k exemplars one at a time (the prod
-    "backend stuck loading exemplars" incident).
-
-    Order is preserved: out[i] is the embedding of texts[i].
-    """
-    out: list[list[float]] = []
-    client = _get_client()
-    for i in range(0, len(texts), batch_size):
-        chunk = texts[i : i + batch_size]
-        resp = client.embeddings.create(model=model, input=chunk)
-        # API guarantees data is returned in input order, but sort by
-        # index defensively in case a future SDK reorders.
-        for item in sorted(resp.data, key=lambda d: d.index):
-            out.append(list(item.embedding))
-    return out
-
-
 def completion(
     *,
     prefix_id: str,
