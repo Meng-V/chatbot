@@ -697,11 +697,17 @@ def _cross_campus_service_short_circuit(
     svc_id, phrase = detected
     from src.agent.tool_registry import ToolCall
 
-    per_campus: dict[str, bool] = {}
+    # Per campus we keep a LEVEL, not just a bool, so 3D printing can
+    # distinguish self-service (Oxford MakerSpace) from staff-operated
+    # (Middletown TEC Lab -- "3D printers (staff use only)" per the TEC
+    # Lab guide). Levels: "self" > "staff" > "" (none). Non-3D services
+    # are binary: "yes" / "".
+    _RANK = {"self": 2, "staff": 1, "yes": 1, "": 0}
+    per_campus: dict[str, str] = {}
     cites: list[dict] = []
     seen_urls: set = set()
     for campus, libraries in _CAMPUS_BUILDINGS.items():
-        has = False
+        level = ""
         for lib in libraries:
             try:
                 res = deps.tool_registry.dispatch(
@@ -714,32 +720,53 @@ def _cross_campus_service_short_circuit(
             space = res.data.get("space") or {}
             services = set(space.get("services_offered") or [])
             equip = set(space.get("equipment") or [])
-            hit = svc_id in services or (
-                svc_id == "3d_printing" and "3d_printer" in equip
-            )
-            if hit:
-                has = True
+            if svc_id == "3d_printing":
+                # Self-service if the row advertises the 3d_printing
+                # SERVICE (Oxford MakerSpace). Staff-operated if it only
+                # has the equipment / the explicit "3d_printing_staff"
+                # tag (Gardner-Harvey TEC Lab -- staff use only). The
+                # equipment stem match also covers the data's singular/
+                # plural drift ("3d_printer" vs "3d_printers").
+                if "3d_printing" in services:
+                    this = "self"
+                elif ("3d_printing_staff" in services
+                      or any("3d_print" in e for e in equip)):
+                    this = "staff"
+                else:
+                    this = ""
+            else:
+                this = "yes" if svc_id in services else ""
+            if _RANK[this] > _RANK[level]:
+                level = this
+            if this:
                 url = str(space.get("source_url") or "")
                 if url and url not in seen_urls:
                     seen_urls.add(url)
                     cites.append({"n": len(cites) + 1, "url": url,
                                   "snippet": f"{space.get('name') or lib}: {phrase}"})
-        per_campus[campus] = has
+        per_campus[campus] = level
 
     if not per_campus:
         return None
-    yes = [c for c in _CAMPUS_BUILDINGS if per_campus.get(c)]
-    no = [c for c in _CAMPUS_BUILDINGS if not per_campus.get(c)]
-    if len(yes) == 3:
+
+    def _phrase(level: str) -> str:
+        if level == "self":
+            return "yes (self-service)"
+        if level == "staff":
+            return "yes (staff-operated)"
+        if level == "yes":
+            return "yes"
+        return "no"
+
+    all_plain_yes = all(per_campus.get(c) == "yes" for c in _CAMPUS_BUILDINGS)
+    if all_plain_yes:
         body = (f"Yes -- {phrase} is available at all three campuses: "
                 f"Oxford ({_CAMPUS_MAIN['oxford']}), "
                 f"Hamilton ({_CAMPUS_MAIN['hamilton']}), and "
                 f"Middletown ({_CAMPUS_MAIN['middletown']}).")
     else:
-        parts = []
-        for c in _CAMPUS_BUILDINGS:
-            mark = "yes" if per_campus.get(c) else "no"
-            parts.append(f"{_CAMPUS_DISPLAY[c]} ({_CAMPUS_MAIN[c]}): {mark}")
+        parts = [f"{_CAMPUS_DISPLAY[c]} ({_CAMPUS_MAIN[c]}): {_phrase(per_campus.get(c, ''))}"
+                 for c in _CAMPUS_BUILDINGS]
         body = f"For {phrase}: " + "; ".join(parts) + "."
     if cites:
         body += " [" + "][".join(str(c["n"]) for c in cites[:3]) + "]"

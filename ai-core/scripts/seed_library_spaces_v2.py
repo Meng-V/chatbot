@@ -241,10 +241,18 @@ SPACES: list[LibrarySpaceRow] = [
         # "Middletown has no 3D printing" answers (gold
         # xc_makerspace_middletown_refusal / fs_makerspace_middletown).
         # Hamilton (Rentschler) remains the campus with NO makerspace.
+        #
+        # 2026-06-16: the TEC Lab guide
+        # (libguides.lib.miamioh.edu/middletown_tec_lab/home) lists
+        # "3D printers (staff use only)" -- so 3D printing exists here
+        # but is STAFF-OPERATED, unlike Oxford King MakerSpace's
+        # self-service "3d_printing". Tag it "3d_printing_staff" so the
+        # cross-campus comparison answers "yes (staff-operated)" for
+        # Middletown rather than equating it with Oxford self-service.
         services_offered=[
             "printing", "ill_pickup", "study_rooms",
             "course_reserves", "research_appointments",
-            "makerspace",
+            "makerspace", "3d_printing_staff",
         ],
         hours_source="https://www.mid.miamioh.edu/library/about/hours/",
         source_url="https://www.mid.miamioh.edu/library/",
