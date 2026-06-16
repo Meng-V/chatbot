@@ -66,6 +66,36 @@ from src.agent.tool_registry import ToolCall
 
 logger = logging.getLogger(__name__)
 
+# Dedicated logger so OpenAI traffic is greppable in the console the same
+# way Springshare is: `grep '\[OpenAI\]'`. Metrics for agent/synth calls
+# are recorded by the orchestrator (call_site=agent/synth); this layer
+# adds the per-call CONSOLE breadcrumb (status / latency / tokens) and is
+# the ONLY observability for the embeddings path (classifier + query
+# embedding), which nothing else meters.
+_oai_log = logging.getLogger("openai_calls")
+
+
+def _log_openai(
+    op: str,
+    model: str,
+    t0: float,
+    *,
+    error: Optional[str] = None,
+    tokens: Optional[int] = None,
+    note: Optional[str] = None,
+) -> None:
+    import time as _t
+    ms = int((_t.monotonic() - t0) * 1000)
+    tail = f" tokens={tokens}" if tokens is not None else ""
+    if note:
+        tail += f" {note}"
+    if error:
+        _oai_log.warning("⚠️ [OpenAI] %s model=%s in %dms | ERROR: %s",
+                         op, model, ms, str(error)[:160])
+    else:
+        _oai_log.info("🤖 [OpenAI] %s model=%s -> ok in %dms%s",
+                      op, model, ms, tail)
+
 
 # --- Shared shapes --------------------------------------------------------
 
@@ -176,7 +206,15 @@ def embed(text: str, *, model: str = "text-embedding-3-large") -> list[float]:
     Embeddings API call shape is stable across openai SDK versions and
     independent of the Responses-vs-Chat-Completions split.
     """
-    resp = _get_client().embeddings.create(model=model, input=text)
+    import time as _t
+    t0 = _t.monotonic()
+    try:
+        resp = _get_client().embeddings.create(model=model, input=text)
+    except Exception as e:  # noqa: BLE001
+        _log_openai("embed", model, t0, error=f"{type(e).__name__}: {e}")
+        raise
+    toks = getattr(getattr(resp, "usage", None), "total_tokens", None)
+    _log_openai("embed", model, t0, tokens=toks)
     return list(resp.data[0].embedding)
 
 
@@ -195,16 +233,24 @@ def completion(
     import via prompts/builder.register_prefix), `input` is what
     changes per turn.
     """
+    import time as _t
+    t0 = _t.monotonic()
     instructions = _resolve_prefix(prefix_id)
-    response = _get_client().responses.create(
-        model=model,
-        instructions=instructions,
-        input=dynamic_suffix,
-        max_output_tokens=max_output_tokens,
-        store=False,
-    )
+    try:
+        response = _get_client().responses.create(
+            model=model,
+            instructions=instructions,
+            input=dynamic_suffix,
+            max_output_tokens=max_output_tokens,
+            store=False,
+        )
+    except Exception as e:  # noqa: BLE001
+        _log_openai("completion", model, t0, error=f"{type(e).__name__}: {e}")
+        raise
     text = getattr(response, "output_text", "") or ""
-    return text, _usage_from_response(response)
+    usage = _usage_from_response(response)
+    _log_openai("completion", model, t0, tokens=usage.input_tokens + usage.output_tokens)
+    return text, usage
 
 
 def structured_completion(
@@ -224,21 +270,28 @@ def structured_completion(
     "schema": ...}}`. `output_text` returns the JSON string, which we
     parse here so the caller gets a dict.
     """
+    import time as _t
+    t0 = _t.monotonic()
     instructions = _resolve_prefix(prefix_id)
-    response = _get_client().responses.create(
-        model=model,
-        instructions=instructions,
-        input=dynamic_suffix,
-        text={
-            "format": {
-                "type": "json_schema",
-                "name": schema_name,
-                "strict": True,
-                "schema": response_schema,
-            }
-        },
-        store=False,
-    )
+    try:
+        response = _get_client().responses.create(
+            model=model,
+            instructions=instructions,
+            input=dynamic_suffix,
+            text={
+                "format": {
+                    "type": "json_schema",
+                    "name": schema_name,
+                    "strict": True,
+                    "schema": response_schema,
+                }
+            },
+            store=False,
+        )
+    except Exception as e:  # noqa: BLE001
+        _log_openai("structured_completion", model, t0, error=f"{type(e).__name__}: {e}")
+        raise
+    _log_openai("structured_completion", model, t0)
     raw_text = getattr(response, "output_text", "") or ""
     try:
         parsed = json.loads(raw_text) if raw_text else {}
@@ -281,14 +334,21 @@ def completion_with_tools(
     `tool_calls` is the parsed list of ToolCall objects -- the agent
     module doesn't have to know the Responses-API SDK shape.
     """
+    import time as _t
+    t0 = _t.monotonic()
     instructions = _resolve_prefix(prefix_id)
-    response = _get_client().responses.create(
-        model=model,
-        instructions=instructions,
-        input=input_items,
-        tools=tools,
-        store=False,
-    )
+    try:
+        response = _get_client().responses.create(
+            model=model,
+            instructions=instructions,
+            input=input_items,
+            tools=tools,
+            store=False,
+        )
+    except Exception as e:  # noqa: BLE001
+        _log_openai("completion_with_tools", model, t0, error=f"{type(e).__name__}: {e}")
+        raise
+    _log_openai("completion_with_tools", model, t0)
 
     output_items: list[Any] = list(getattr(response, "output", []) or [])
 

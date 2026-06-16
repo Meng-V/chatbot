@@ -40,6 +40,7 @@ from src.api.readiness_router import (
     make_weaviate_probe,
     make_openai_probe,
     make_libcal_probe,
+    make_libguides_probe,
 )
 from src.api.admin.smoketest_router import build_smoketest_router
 from src.observability.request_id_middleware import RequestIdMiddleware
@@ -298,11 +299,18 @@ def _build_readiness_probes():
         if not token:
             raise RuntimeError("no token")
 
+    async def libguides_status():
+        from src.services.libapps_oauth import get_libapps_oauth_service
+        token = await get_libapps_oauth_service().get_token()
+        if not token:
+            raise RuntimeError("no token")
+
     return [
         make_postgres_probe(pg_exec),
         make_weaviate_probe(wv_meta),
         make_openai_probe(openai_ping),
         make_libcal_probe(libcal_status),
+        make_libguides_probe(libguides_status),
     ]
 
 

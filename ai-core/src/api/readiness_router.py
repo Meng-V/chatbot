@@ -237,6 +237,39 @@ def make_libcal_probe(status_fn: Callable[[], Awaitable[Any]]) -> Probe:
     return probe
 
 
+def make_libguides_probe(status_fn: Callable[[], Awaitable[Any]]) -> Probe:
+    """LibGuides (LibApps) availability check via its OAuth token path.
+    Mirrors make_libcal_probe -- a down Springshare product degrades the
+    bot's live answers (subject-librarian lookup here), it doesn't crash
+    the turn, so timeout/error is `degraded` not `unhealthy`."""
+
+    async def probe() -> ProbeResult:
+        start = time.monotonic()
+        try:
+            await asyncio.wait_for(status_fn(), timeout=3.0)
+            return ProbeResult(
+                name="libguides",
+                status="healthy",
+                latency_ms=int((time.monotonic() - start) * 1000),
+            )
+        except asyncio.TimeoutError:
+            return ProbeResult(
+                name="libguides",
+                status="degraded",
+                latency_ms=int((time.monotonic() - start) * 1000),
+                detail="timeout (>3s) -- subject-librarian lookup may be unavailable",
+            )
+        except Exception as e:
+            return ProbeResult(
+                name="libguides",
+                status="degraded",
+                latency_ms=int((time.monotonic() - start) * 1000),
+                detail=type(e).__name__ + ": " + str(e)[:120],
+            )
+
+    return probe
+
+
 def make_etl_freshness_probe(
     last_run_fn: Callable[[], Awaitable[Optional[datetime]]],
     *,
@@ -418,6 +451,7 @@ __all__ = [
     "build_readiness_router",
     "make_etl_freshness_probe",
     "make_libcal_probe",
+    "make_libguides_probe",
     "make_openai_probe",
     "make_postgres_probe",
     "make_weaviate_probe",

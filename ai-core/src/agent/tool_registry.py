@@ -266,8 +266,21 @@ class ToolRegistry:
         """
         import time
 
+        def _meter(status: str, latency_s: float) -> None:
+            # Per-tool Prometheus counters/histograms (no-op if
+            # prometheus_client isn't installed). This is the single
+            # dispatch chokepoint, so every tool call -- search_kb,
+            # get_hours, book_room, lookup_librarian, ... -- is counted
+            # and timed here rather than at each call site.
+            try:
+                from src.observability.metrics import record_tool_call
+                record_tool_call(tool=call.name, status=status, latency_s=latency_s)
+            except Exception:  # pragma: no cover -- metrics must never break a turn
+                pass
+
         tool = self.tools.get(call.name)
         if tool is None:
+            _meter("error", 0.0)
             return ToolResult(
                 call_id=call.id,
                 name=call.name,
@@ -277,6 +290,7 @@ class ToolRegistry:
         start = time.monotonic()
         try:
             data = tool.handler(call.arguments)
+            _meter("ok", time.monotonic() - start)
             return ToolResult(
                 call_id=call.id,
                 name=call.name,
@@ -284,12 +298,19 @@ class ToolRegistry:
                 latency_ms=int((time.monotonic() - start) * 1000),
             )
         except ToolError as e:
+            _meter("error", time.monotonic() - start)
             return ToolResult(
                 call_id=call.id,
                 name=call.name,
                 error=e.message,
                 latency_ms=int((time.monotonic() - start) * 1000),
             )
+        except Exception:
+            # Unexpected crash propagates to the agent loop's turn-level
+            # handler, but record it as a tool error first so the metric
+            # reflects reality.
+            _meter("error", time.monotonic() - start)
+            raise
 
 
 __all__ = [
