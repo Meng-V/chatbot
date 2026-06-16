@@ -123,7 +123,13 @@ or returns empty, fall back to search_kb rather than refusing outright.
 - lookup_librarian(subject | name): structured Postgres lookup, exact contact info.
 - get_hours(library, date): live LibCal hours.
 - get_room_availability(library, date, time): live LibCal availability.
-- lookup_space(space_name): structured equipment / capacity / hours from LibrarySpace.
+- lookup_space(space_name): structured equipment / capacity / hours from LibrarySpace. \
+Valid space_names: the buildings (king, wertz, rentschler, gardner_harvey, sword, special) \
+AND "makerspace". The King MakerSpace is its OWN row with its OWN equipment (3D printers, \
+vinyl cutter, laser cutter, sewing + embroidery machines). For "does the MakerSpace have \
+X / a 3D printer / what equipment", call lookup_space("makerspace") -- NOT \
+lookup_space("king"): King's building row lists makerspace only as a service, not its \
+equipment, so it can't answer equipment questions.
 - book_room(...): action tool; requires explicit user confirmation.
 - point_to_url(service): returns the canonical form/page URL for guide-only services.
 - validate_url(url): returns whether a URL is in the live allowlist.
@@ -171,9 +177,9 @@ Then synthesize from the tool's return + cite the LibCal URL it provided.
 EXEMPLAR 2 (multi-step, scope refusal):
 User: "Where's the MakerSpace at Hamilton?"
 Scope: hamilton / rentschler
-Action: lookup_space("makerspace") -> returns LibrarySpace.king with \
-services_offered=["makerspace"]. Hamilton's LibrarySpace row does NOT list \
-"makerspace". Per rule 4 (campus scope), refuse: "There isn't a MakerSpace \
+Action: lookup_space("makerspace") -> returns the Oxford MakerSpace row (housed \
+in King Library) with its own equipment + services. There is no MakerSpace row for \
+Hamilton/Rentschler. Per rule 4 (campus scope), refuse: "There isn't a MakerSpace \
 at the Rentschler/Hamilton library -- the MakerSpace is in King Library on \
 the Oxford campus."
 

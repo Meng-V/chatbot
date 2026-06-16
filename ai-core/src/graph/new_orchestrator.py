@@ -400,6 +400,19 @@ def run_turn(
     # --- 5. Assemble evidence and run synthesizer ---
     evidence = _extract_evidence(agent_outcome)
 
+    # Deterministic MakerSpace-equipment evidence. The MakerSpace is its
+    # OWN LibrarySpace row ("makerspace"), separate from King's building
+    # row, and the agent is unreliable at picking lookup_space("makerspace")
+    # vs ("king") for equipment questions -- it kept querying King (whose
+    # row lists makerspace only as a *service*, with no 3D-printer in its
+    # equipment) and then hedged/refused on "does the MakerSpace have a 3D
+    # printer?". For the makerspace intent on the Oxford campus, fetch the
+    # MakerSpace row directly and prepend it so the synthesizer always has
+    # the equipment/services facts. (Regional makerspace asks never reach
+    # here -- the service-availability guard refuses them before the agent.)
+    if classification.intent == "makerspace_3d" and scope.campus in ("oxford", None):
+        evidence = _ensure_makerspace_evidence(evidence, deps)
+
     # Promote to reasoning model when CRAWLED evidence is multi-hop:
     # >5 chunks across multiple topics. Tool facts (live_api /
     # authoritative_db) are excluded -- they have no topic and a
@@ -506,6 +519,33 @@ _LIB_CAMPUS = {
 }
 _LIAISONS_URL = "https://www.lib.miamioh.edu/about/organization/liaisons/"
 _ROOMS_URL = "https://www.lib.miamioh.edu/use/spaces/room-reservations/"
+
+
+def _ensure_makerspace_evidence(
+    evidence: list["EvidenceChunk"], deps: "OrchestratorDeps"
+) -> list["EvidenceChunk"]:
+    """Prepend a lookup_space('makerspace') evidence chunk if the agent
+    didn't already produce one. Deterministic so MakerSpace equipment
+    questions ('does it have a 3D printer?') can always be answered from
+    the dedicated MakerSpace row. Failure-tolerant: on any error, return
+    the evidence unchanged (the turn degrades to whatever the agent found)."""
+    if any(
+        getattr(c, "chunk_id", "") == "tool:lookup_space:makerspace"
+        for c in evidence
+    ):
+        return evidence
+    try:
+        from src.agent.tool_registry import ToolCall
+        result = deps.tool_registry.dispatch(
+            ToolCall(id="prefetch-makerspace", name="lookup_space",
+                     arguments={"library": "makerspace"})
+        )
+        if result.error:
+            return evidence
+        chunks = _tool_fact_evidence(result, {"library": "makerspace"})
+        return chunks + evidence
+    except Exception:  # noqa: BLE001 -- prefetch must never break the turn
+        return evidence
 
 
 def _tool_fact_evidence(
