@@ -280,11 +280,38 @@ const ChatBotComponent = ({ askUsStatus = { isOpen: false, hoursToday: null } })
                     )}
                   </div>
                 </div>
-                {/* Sources footer REMOVED (operator request 2026-06-08):
-                    the big bordered box that listed full source URLs was
-                    redundant with the inline [n] chips and visually heavy.
-                    Source access now lives entirely on the inline CitationChip
-                    pill -- click [n] to expand snippet + link. */}
+                {/* Sources footer (re-added 2026-06-16, operator request):
+                    the inline [n] popover chip proved unclickable on the
+                    embedded widget (portal popover + sandbox/popup quirks).
+                    List the source links here instead, as small plain
+                    anchors in normal document flow -- a real <a target=_blank>
+                    that just navigates, no popover, right-click/copy work. */}
+                {message.sender !== 'user' &&
+                  renderCitations &&
+                  renderCitations.length > 0 && (
+                    <div className="mt-1 ml-1 px-4 text-[11px] leading-snug text-gray-500">
+                      <span className="font-semibold text-gray-600">Sources</span>
+                      <ul className="mt-0.5 space-y-0.5">
+                        {renderCitations
+                          .filter((c) => c && c.url)
+                          .map((c, ci) => (
+                            <li key={`src-${index}-${ci}`} className="flex gap-1">
+                              <span className="shrink-0 text-gray-400">
+                                [{c.n}]
+                              </span>
+                              <a
+                                href={c.url}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="break-all text-blue-600 hover:underline"
+                              >
+                                {c.url}
+                              </a>
+                            </li>
+                          ))}
+                      </ul>
+                    </div>
+                  )}
                 {/* Render clarification choices if present */}
                 {message.sender !== 'user' && message.clarificationChoices && (
                   <ClarificationChoices
