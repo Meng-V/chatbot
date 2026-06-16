@@ -405,6 +405,30 @@ def run_turn(
     # so format the contact deterministically and skip the synth. Only
     # fires on a SUBJECT-scoped lookup with in-campus results; building
     # rosters and empty results fall through to normal synthesis.
+    # --- 4.55. Cross-campus service comparison short-circuit ---
+    # "Do all the libraries have <service>?" -- aggregate per campus from
+    # the LibrarySpace truth table deterministically, rather than letting
+    # the synth answer (it dropped the regional campuses).
+    if classification.intent == "cross_campus_comparison":
+        _xc = _cross_campus_service_short_circuit(request.user_message, deps)
+        if _xc is not None:
+            _ans, _cites = _xc
+            latency_ms = int((time.monotonic() - turn_start) * 1000)
+            record_request(endpoint="/chat", status="cross_campus",
+                           latency_s=latency_ms / 1000)
+            return TurnResponse(
+                answer=_ans, is_refusal=False, refusal_trigger=None,
+                citations=_cites, confidence="high",
+                intent=classification.intent, scope=scope.as_filter(),
+                model_used=model,
+                tokens={"input": agent_outcome.input_tokens,
+                        "cached_input": agent_outcome.cached_input_tokens,
+                        "output": agent_outcome.output_tokens},
+                fired_corrections=[],
+                agent_stopped_reason=agent_outcome.stopped_reason,
+                latency_ms=latency_ms, cited_chunk_ids=[],
+            )
+
     if classification.intent in ("subject_librarian", "research_consultation"):
         _liaison = _subject_liaison_short_circuit(agent_outcome, scope)
         if _liaison is not None:
@@ -621,6 +645,105 @@ def _subject_liaison_short_circuit(
         citations.append({"n": 2, "url": guide_url,
                           "snippet": f"{guide_name} subject guide"})
     return answer, citations
+
+
+# Canonical buildings per campus (matches LibrarySpace_v2). Used by the
+# deterministic cross-campus service comparison below.
+_CAMPUS_BUILDINGS: dict[str, list[str]] = {
+    "oxford": ["king", "wertz", "special", "makerspace"],
+    "hamilton": ["rentschler"],
+    "middletown": ["gardner_harvey", "sword"],
+}
+_CAMPUS_DISPLAY = {"oxford": "Oxford", "hamilton": "Hamilton", "middletown": "Middletown"}
+_CAMPUS_MAIN = {"oxford": "King", "hamilton": "Rentschler", "middletown": "Gardner-Harvey"}
+
+# (keyword tuple, service-id, display phrase). Order matters: more specific
+# phrases first ("3d print" before "print"). A building "has" the service
+# if the id is in services_offered OR (for 3d) 3d_printer is in equipment.
+_CROSS_SERVICE_KEYWORDS: list[tuple[tuple[str, ...], str, str]] = [
+    (("3d print", "3-d print", "3d-print", "3d printer"), "3d_printing", "3D printing"),
+    (("makerspace", "maker space"), "makerspace", "a MakerSpace"),
+    (("study room",), "study_rooms", "study rooms"),
+    (("interlibrary loan", "ill pickup", "ill request"), "ill_pickup",
+     "interlibrary loan pickup"),
+    (("course reserve",), "course_reserves", "course reserves"),
+    (("print",), "printing", "printing"),
+]
+
+
+def _detect_cross_service(message: str) -> "Optional[tuple[str, str]]":
+    m = (message or "").lower()
+    for keys, svc_id, phrase in _CROSS_SERVICE_KEYWORDS:
+        if any(k in m for k in keys):
+            return svc_id, phrase
+    return None
+
+
+def _cross_campus_service_short_circuit(
+    message: str, deps: "OrchestratorDeps"
+) -> "Optional[tuple[str, list[dict]]]":
+    """Deterministic "do all the libraries have <service>?" answer.
+
+    cross_campus_comparison is synth-driven and was observed answering
+    only for Oxford ("King and Wertz offer printing") and dropping the
+    regional campuses entirely. When the question names a known service,
+    aggregate LibrarySpace_v2.services_offered per campus ourselves and
+    state each campus -- the same truth-table approach used for the
+    MakerSpace fix. Returns (text, citations) or None to fall through.
+    """
+    detected = _detect_cross_service(message)
+    if detected is None:
+        return None
+    svc_id, phrase = detected
+    from src.agent.tool_registry import ToolCall
+
+    per_campus: dict[str, bool] = {}
+    cites: list[dict] = []
+    seen_urls: set = set()
+    for campus, libraries in _CAMPUS_BUILDINGS.items():
+        has = False
+        for lib in libraries:
+            try:
+                res = deps.tool_registry.dispatch(
+                    ToolCall(id=f"xc-{lib}", name="lookup_space",
+                             arguments={"library": lib}))
+            except Exception:  # noqa: BLE001
+                continue
+            if res.error or not res.data:
+                continue
+            space = res.data.get("space") or {}
+            services = set(space.get("services_offered") or [])
+            equip = set(space.get("equipment") or [])
+            hit = svc_id in services or (
+                svc_id == "3d_printing" and "3d_printer" in equip
+            )
+            if hit:
+                has = True
+                url = str(space.get("source_url") or "")
+                if url and url not in seen_urls:
+                    seen_urls.add(url)
+                    cites.append({"n": len(cites) + 1, "url": url,
+                                  "snippet": f"{space.get('name') or lib}: {phrase}"})
+        per_campus[campus] = has
+
+    if not per_campus:
+        return None
+    yes = [c for c in _CAMPUS_BUILDINGS if per_campus.get(c)]
+    no = [c for c in _CAMPUS_BUILDINGS if not per_campus.get(c)]
+    if len(yes) == 3:
+        body = (f"Yes -- {phrase} is available at all three campuses: "
+                f"Oxford ({_CAMPUS_MAIN['oxford']}), "
+                f"Hamilton ({_CAMPUS_MAIN['hamilton']}), and "
+                f"Middletown ({_CAMPUS_MAIN['middletown']}).")
+    else:
+        parts = []
+        for c in _CAMPUS_BUILDINGS:
+            mark = "yes" if per_campus.get(c) else "no"
+            parts.append(f"{_CAMPUS_DISPLAY[c]} ({_CAMPUS_MAIN[c]}): {mark}")
+        body = f"For {phrase}: " + "; ".join(parts) + "."
+    if cites:
+        body += " [" + "][".join(str(c["n"]) for c in cites[:3]) + "]"
+    return body, cites[:3]
 
 
 def _ensure_makerspace_evidence(
