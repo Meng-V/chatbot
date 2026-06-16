@@ -498,7 +498,20 @@ def _make_lookup_librarian() -> Callable[[dict], list[dict]]:
 
         # (3) Name / campus direct lookup via the bridge'd Prisma
         # singleton (NOT _db). Used for staff-directory cases
-        # ("the dean of the libraries"). Subject is empty here.
+        # ("the dean of the libraries", "staff at Hamilton"). Subject is
+        # empty here.
+        #
+        # CRITICAL GUARD: if the user asked for a SUBJECT's librarian and
+        # paths (1)/(2)/(2.5) all found nothing, that subject does not
+        # exist in our data -- return [] and let the caller hand off.
+        # Do NOT fall through to the campus-only query below: with a
+        # campus set (the agent always passes one) that returns the
+        # ENTIRE campus roster, which the synth/short-circuit then
+        # presents as "the <bogus subject> librarian" (e.g. "who is the
+        # underwater basket weaving librarian?" -> the first two Oxford
+        # staff). A subject miss must be an empty result, not a roster.
+        if subject:
+            return []
         if not name and not campus:
             return []
 

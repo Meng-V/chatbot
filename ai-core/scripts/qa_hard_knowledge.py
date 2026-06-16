@@ -50,10 +50,39 @@ CASES: list[tuple[str, str, str]] = [
 ]
 
 
+# Broader sweep (run with --extended) to hunt for new failures across more
+# subjects, course codes, buildings, services, cross-campus, and a refusal.
+EXTENDED: list[tuple[str, str, str]] = [
+    ("subject→librarian", "Who is the chemistry librarian?", "the Chemistry liaison + email"),
+    ("subject→librarian", "Who is the history librarian?", "the History liaison + email"),
+    ("subject→librarian", "Who helps with computer science research?", "the CS/CSE liaison + email"),
+    ("subject→librarian", "Who is the psychology librarian?", "the Psychology liaison + email"),
+    ("subject→librarian", "music subject librarian", "the Music liaison + email"),
+    ("subject→librarian", "Who is the engineering librarian?", "the Engineering liaison + email"),
+    ("course number", "Which librarian helps with PSY 111?", "Psychology liaison + email"),
+    ("course number", "research help for CSE 174", "CS liaison + email"),
+    ("course number", "Who can help with HST 111?", "History liaison + email"),
+    ("hours", "What are Wertz Library's hours today?", "Wertz hours from LibCal (live)"),
+    ("hours", "When does the Hamilton library close today?", "Rentschler hours (live)"),
+    ("location/address", "Where is Special Collections?", "King Library 3rd floor, Oxford"),
+    ("location/address", "What is the Rentschler Library address?", "1601 University Blvd, Hamilton"),
+    ("location/address", "Where is SWORD?", "Middletown depository, 4200 N. University Blvd"),
+    ("per-building service", "Can I print at Wertz?", "yes (Wertz services_offered has printing)"),
+    ("per-building service", "Does the Hamilton library have study rooms?", "yes (Rentschler study_rooms)"),
+    ("guide-only service", "How do I request an interlibrary loan?", "point to the ILL request form URL"),
+    ("guide-only service", "How do I get Adobe Creative Cloud?", "point to the software/Adobe access page"),
+    ("cross-campus", "Do all the libraries have printing?", "per-campus printing availability"),
+    ("refusal/no-fabricate", "Who is the underwater basket weaving librarian?",
+     "no such subject -> must NOT fabricate a name; refuse / point to liaisons or Ask Us"),
+]
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--only", type=int, default=0,
                     help="run only the first N cases (0 = all)")
+    ap.add_argument("--extended", action="store_true",
+                    help="run the broader EXTENDED sweep instead of the core set")
     args = ap.parse_args()
 
     from src.graph.v2_serving import build_v2_deps
@@ -63,7 +92,8 @@ def main() -> int:
     deps = build_v2_deps()
     print("ready.\n", flush=True)
 
-    cases = CASES[: args.only] if args.only else CASES
+    base = EXTENDED if args.extended else CASES
+    cases = base[: args.only] if args.only else base
     for i, (cat, q, expected) in enumerate(cases, 1):
         try:
             resp = run_turn(TurnRequest(user_message=q, conversation_id=f"qa-{i}"), deps)
