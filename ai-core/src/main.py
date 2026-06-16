@@ -203,6 +203,26 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logging.warning(f"⚠️ [Springshare] pre-flight health check errored: {e}")
 
+    # --- Warm the v2 serving deps at BOOT (do NOT lazy-load per request) ---
+    # build_v2_deps() loads ~5.5k kNN exemplars + a ~347MB embedding cache
+    # and embeds any cache-misses -- ~10-16s of synchronous CPU/network.
+    # Doing that lazily on the FIRST user message ran it on the asyncio
+    # event loop (`deps = _get_v2_deps()` in the async _v2_message handler),
+    # which blocked Uvicorn long enough to miss the Socket.IO heartbeat:
+    # the browser assumed the server died, dropped the connection, and
+    # showed "I encountered an error" -- with no Python traceback, because
+    # the backend never crashed. Warming here, before any traffic, moves
+    # that cost off the request path. `to_thread` keeps even boot's event
+    # loop responsive while the heavy build runs on a worker thread.
+    try:
+        import asyncio as _asyncio
+        await _asyncio.to_thread(_get_v2_deps)
+        logging.info("✅ [v2] serving deps warmed (classifier + backends ready)")
+    except Exception as e:  # noqa: BLE001
+        logging.warning(
+            f"⚠️ [v2] deps warm-up failed; first message will lazy-load: {e}"
+        )
+
     logging.info("🚀 Application startup complete")
     yield
 
