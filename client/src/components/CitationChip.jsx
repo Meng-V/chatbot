@@ -142,26 +142,34 @@ const CitationChip = ({ n, citation }) => {
                 href={url}
                 target="_blank"
                 rel="noopener noreferrer"
-                // Navigate on MOUSEDOWN, not click: a click on a partially
-                // off-screen link triggers a focus scroll first, and the
-                // scroll handler used to unmount the popover before the
-                // click event could ever reach the anchor. mousedown fires
-                // before any of that and is still a user gesture, so
-                // popup blockers allow window.open.
-                onMouseDown={(e) => {
-                  if (e.button !== 0) return; // middle/right: anchor default
-                  e.stopPropagation();
-                  e.preventDefault();
-                  window.open(url, '_blank', 'noopener,noreferrer');
-                  setOpen(false);
-                }}
+                // Bulletproof open, tolerant of three failure modes seen
+                // on the embedded widget:
+                //  1) the popover's outside-click teardown firing first
+                //     (stopPropagation on both pointer events fixes it);
+                //  2) a focus-scroll unmounting the popover between
+                //     mousedown and click (we never preventDefault on
+                //     mousedown, so the NATIVE target=_blank stays armed);
+                //  3) the host page embedding us in a sandboxed iframe or
+                //     a popup blocker swallowing the native new-tab open.
+                // For (3) we additionally try window.open; if it returns a
+                // window we used it and suppress the native nav to avoid a
+                // double tab. If window.open is blocked (returns null) we
+                // do NOT preventDefault, so the native anchor still gets
+                // its chance. Right-click / middle-click / ⌘-click keep
+                // working because mousedown never calls preventDefault.
+                onMouseDown={(e) => e.stopPropagation()}
                 onClick={(e) => {
-                  // Navigation already happened on mousedown; keep the
-                  // anchor's default from double-opening. (Keyboard Enter
-                  // produces a click without a prior mousedown -- let that
-                  // one through via the href.)
-                  if (e.detail > 0) e.preventDefault();
                   e.stopPropagation();
+                  let opened = null;
+                  try {
+                    opened = window.open(url, '_blank', 'noopener,noreferrer');
+                  } catch (_) {
+                    opened = null;
+                  }
+                  if (opened) {
+                    e.preventDefault(); // handled programmatically; no 2nd tab
+                  }
+                  setOpen(false);
                 }}
                 className="flex items-start gap-1 text-blue-600 hover:underline cursor-pointer"
               >
