@@ -325,6 +325,27 @@ def run_turn(
         classification.intent, scope.campus
     )
 
+    # --- 3.5. Administrative-role short-circuit ---
+    # "Who is the library dean?" / "library administration" etc. is NOT a
+    # subject-librarian lookup. Answer deterministically with the Dean's
+    # Office page before the agent can fuzzy-match "dean" to a subject and
+    # name a random liaison.
+    _admin = _admin_role_answer(request.user_message)
+    if _admin is not None:
+        _ans, _cites = _admin
+        latency_ms = int((time.monotonic() - turn_start) * 1000)
+        record_request(endpoint="/chat", status="admin_role",
+                       latency_s=latency_ms / 1000)
+        return TurnResponse(
+            answer=_ans, is_refusal=False, refusal_trigger=None,
+            citations=_cites, confidence="high",
+            intent=classification.intent, scope=scope.as_filter(),
+            model_used=model_basic,
+            tokens={"input": 0, "cached_input": 0, "output": 0},
+            fired_corrections=[], agent_stopped_reason="admin_role_short_circuit",
+            latency_ms=latency_ms, cited_chunk_ids=[],
+        )
+
     # --- 4. Run the agent ---
     # Model selection: basic by default, reasoning on comparative /
     # cross-campus / multi-hop intents. Plan: "Synthesizer defaults to
@@ -578,6 +599,38 @@ _LIB_CAMPUS = {
 }
 _LIAISONS_URL = "https://www.lib.miamioh.edu/about/organization/liaisons/"
 _ROOMS_URL = "https://www.lib.miamioh.edu/use/spaces/room-reservations/"
+_DEANS_OFFICE_URL = "https://www.lib.miamioh.edu/about/organization/deans-office/"
+
+# "Who is the library dean?" is an ADMINISTRATIVE-role question, NOT a
+# subject-librarian lookup. Left to the agent, "dean" fuzzy-matches a
+# LibGuides subject and the liaison short-circuit then names a random
+# liaison as "your subject librarian" (prod 2026-06-17: Katie Gibson /
+# Stefanie Hilles / Roger Justus for the same question). Point to the
+# Dean's Office page deterministically instead.
+_ADMIN_ROLE_RE = re.compile(
+    r"\bdean(['’]?s)?\b"
+    r"|library (administration|leadership|director|directors)"
+    r"|director of (the )?librar"
+    r"|head of (the )?librar"
+    r"|who (runs|heads|leads|is in charge of) (the )?librar",
+    re.IGNORECASE,
+)
+
+
+def _admin_role_answer(message: str) -> "Optional[tuple[str, list[dict]]]":
+    """Deterministic pointer to the Dean's Office for library-leadership
+    questions, so they never get mis-answered as a subject-librarian
+    lookup. Returns (answer, citations) or None."""
+    if not _ADMIN_ROLE_RE.search(message or ""):
+        return None
+    answer = (
+        "For the Dean of University Libraries and the library "
+        "administration/leadership team, see the Dean's Office page [1]."
+    )
+    return answer, [{
+        "n": 1, "url": _DEANS_OFFICE_URL,
+        "snippet": "Miami University Libraries — Dean's Office",
+    }]
 
 
 def _subject_liaison_short_circuit(
