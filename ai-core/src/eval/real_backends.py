@@ -1113,20 +1113,74 @@ def _make_book_room() -> Callable[[dict], dict]:
                     "text": err_text}
 
         missing = [k for k in _REQUIRED if not args.get(k)]
-        if not missing and not args.get("confirm"):
-            cap = args.get("room_capacity") or 2
-            return {
-                "success": False,
-                "stage": "needs_confirmation",
-                "text": (
-                    f"Ready to book: a study room at {display} on "
-                    f"{args['date']}, {args['start_time']} to "
-                    f"{args['end_time']}, for {args['first_name']} "
-                    f"{args['last_name']} ({args['email']}), party of "
-                    f"{cap}. Reply 'confirm' to book it, or tell me what "
-                    f"to change. Nothing is booked yet."
-                ),
-            }
+        if not missing:
+            # Validate BEFORE the "Ready to book" summary / confirm, not
+            # only inside the v1 execute. Stress test 2026-06-17 showed a
+            # gmail address, a 4-hour window, and backwards times all
+            # reaching "Ready to book ... reply confirm" -- the user only
+            # got rejected AFTER confirming. Catch them up front here so
+            # the summary is shown only for a genuinely bookable request.
+            from src.tools.libcal_comprehensive_tools import (
+                _validate_email, _parse_time_intelligent,
+                _validate_booking_duration, _parse_date_intelligent,
+            )
+            ok_d, pd, _ed = _parse_date_intelligent(str(args.get("date") or ""))
+            if ok_d:
+                import datetime as _dt
+                try:
+                    import pytz as _pytz
+                    _today = _dt.datetime.now(
+                        _pytz.timezone("America/New_York")).date()
+                    if _dt.date.fromisoformat(pd) < _today:
+                        return {
+                            "success": False, "stage": "invalid_date",
+                            "text": (
+                                f"{args.get('date')} is in the past -- I can "
+                                f"only reserve rooms for today or a future "
+                                f"date. Which day would you like?"
+                            ),
+                        }
+                except Exception:  # noqa: BLE001 -- date guard is best-effort
+                    pass
+            email = str(args.get("email") or "")
+            if not _validate_email(email):
+                return {
+                    "success": False, "stage": "invalid_email",
+                    "text": (
+                        f"'{email}' isn't a Miami email. Room reservations "
+                        f"need a @miamioh.edu address -- please give me your "
+                        f"Miami email and I'll get the booking ready."
+                    ),
+                }
+            ok_s, ps, _es = _parse_time_intelligent(str(args.get("start_time") or ""))
+            ok_e, pe, _ee = _parse_time_intelligent(str(args.get("end_time") or ""))
+            if ok_s and ok_e:
+                valid_dur, hrs = _validate_booking_duration(ps, pe)
+                if not valid_dur:
+                    # Covers over-2h AND backwards times (5pm->2pm parses
+                    # as a ~21h overnight span -> over the cap).
+                    return {
+                        "success": False, "stage": "invalid_duration",
+                        "text": (
+                            f"That comes to about {hrs:.1f} hours. Study rooms "
+                            f"can be reserved for up to 2 hours at a time -- "
+                            f"please pick a start and end time within 2 hours."
+                        ),
+                    }
+            if not args.get("confirm"):
+                cap = args.get("room_capacity") or 2
+                return {
+                    "success": False,
+                    "stage": "needs_confirmation",
+                    "text": (
+                        f"Ready to book: a study room at {display} on "
+                        f"{args['date']}, {args['start_time']} to "
+                        f"{args['end_time']}, for {args['first_name']} "
+                        f"{args['last_name']} ({args['email']}), party of "
+                        f"{cap}. Reply 'confirm' to book it, or tell me what "
+                        f"to change. Nothing is booked yet."
+                    ),
+                }
 
         # Missing slots -> v1 returns its "I still need ..." text and
         # cannot book. confirm=true -> v1 validates everything
