@@ -277,6 +277,18 @@ app.include_router(ticket_router)
 app.include_router(askus_router)
 app.include_router(route_router)
 
+# Also expose the browser-facing HTTP endpoints under the /smartchatbot/
+# nginx prefix. The widget is served at /smartchatbot/ and POSTs
+# same-origin, so /ticket/create and /summarize-chat at the SITE ROOT
+# are not forwarded by nginx (only /smartchatbot/* and /health are) ->
+# the ticket form got a 404 HTML page parsed as JSON ("Unexpected token
+# '<'", prod 2026-06-17). Mounting the same routers under /smartchatbot
+# makes them reachable via the same path socket.io already uses. Root
+# mounts above are kept for dev (vite /api proxy) and the legacy path.
+app.include_router(summarize_router, prefix="/smartchatbot")
+app.include_router(ticket_router, prefix="/smartchatbot")
+app.include_router(askus_router, prefix="/smartchatbot")
+
 
 # --- Op 3: /health/ready + /smoketest (rebuild observability) -------------
 # Built as dependency-injected routers so test setup can stub probes.

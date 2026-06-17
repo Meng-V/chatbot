@@ -58,7 +58,10 @@ const TicketWidget = () => {
       const historyText = formatChatHistory();
 
       const isDev = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
-      const summarizeUrl = isDev ? '/api/summarize-chat' : '/summarize-chat';
+      // Prod: the widget is served at /smartchatbot/ and nginx only
+      // forwards /smartchatbot/* -- a root POST to /summarize-chat 404s.
+      // import.meta.env.BASE_URL is '/smartchatbot/' (vite base).
+      const summarizeUrl = isDev ? '/api/summarize-chat' : `${import.meta.env.BASE_URL}summarize-chat`;
 
       const response = await fetch(summarizeUrl, {
         method: 'POST',
@@ -95,7 +98,9 @@ const TicketWidget = () => {
 
     try {
       const isDev = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
-      const ticketUrl = isDev ? '/api/ticket/create' : '/ticket/create';
+      // See summarizeUrl note: prod must hit /smartchatbot/ticket/create
+      // (nginx forwards /smartchatbot/*, not the site root).
+      const ticketUrl = isDev ? '/api/ticket/create' : `${import.meta.env.BASE_URL}ticket/create`;
 
       const response = await fetch(ticketUrl, {
         method: 'POST',
