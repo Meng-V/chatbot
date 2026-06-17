@@ -1373,9 +1373,16 @@ class LibCalComprehensiveReservationTool(Tool):
                     if log_callback:
                         log_callback(f"✅ [LibCal Comprehensive Reservation Tool] Booked room {selected_room['name']} - ID: {booking_id}")
                     
-                    # Build confirmation message
+                    # Build confirmation message. Don't double "Library":
+                    # `building` may already be "King Library", so only
+                    # append " Library" when it isn't already there
+                    # (fixes "King library Library").
+                    _bldg = str(building).strip()
+                    if not _bldg.lower().endswith("library"):
+                        _bldg = f"{_bldg} Library"
+                    _bldg = _bldg.title()
                     if booking_id:
-                        confirmation_text = f"{selected_room['name']} with capacity {selected_room['capacity']} is booked from {start_time} to {end_time} on {date} at {building.capitalize()} Library. Confirmation number: {booking_id}. A confirmation email has been sent to your email."
+                        confirmation_text = f"{selected_room['name']} with capacity {selected_room['capacity']} is booked from {start_time} to {end_time} on {date} at {_bldg}. Confirmation number: {booking_id}. A confirmation email has been sent to your email."
                         return {
                             "tool": self.name,
                             "success": True,
