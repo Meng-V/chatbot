@@ -16,10 +16,39 @@ during the rollout. When the legacy path retires, fold v2 -> v1 names.
 import os
 from typing import List, Dict, Any, Optional
 from datetime import datetime
-from src.database.prisma_client import get_prisma_client
+
+
+# DEDICATED Prisma client for conversation memory -- NOT the shared
+# `prisma_client.get_prisma_client()` singleton.
+#
+# Why: a Prisma client's query-engine httpx connection binds its internal
+# asyncio.Event to the event loop that first uses it. The shared singleton
+# is touched by tool execution inside run_turn, which runs on the
+# executor thread (handle_v2_message -> loop.run_in_executor) and the
+# _bridge daemon loop (location_service / LibCal lookups). That rebinds
+# the singleton's connection away from the main loop, so the very next
+# main-loop `add_message` raised "bound to a different event loop" and the
+# whole turn errored (prod 2026-06-17, post-deploy 2nd-turn failure).
+#
+# This module is only ever called from the MAIN-loop chat handlers
+# (_v2_message / legacy handlers), so a dedicated client stays bound to
+# the main loop for the process lifetime and is immune to whatever the
+# tool path does to the singleton. One extra query-engine process is a
+# cheap price for loop-stable conversation memory.
+_cs_client = None
+
+
+def get_prisma_client():
+    """Return the dedicated conversation-memory Prisma client (lazy)."""
+    global _cs_client
+    if _cs_client is None:
+        from prisma import Prisma
+        _cs_client = Prisma()
+    return _cs_client
+
 
 async def ensure_connection():
-    """Ensure Prisma is connected."""
+    """Ensure the dedicated conversation Prisma client is connected."""
     prisma = get_prisma_client()
     if not prisma.is_connected():
         await prisma.connect()
