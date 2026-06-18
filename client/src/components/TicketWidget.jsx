@@ -8,6 +8,19 @@ import { Label } from '@/components/ui/label';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { Spinner } from '@/components/ui/spinner';
 
+// LibAnswers caps the ticket QUESTION (subject) field at 150 chars. Trim
+// to a WORD boundary (never mid-word) with an ellipsis, so a long question
+// or AI summary isn't chopped like "...library hours, leade".
+const QUESTION_MAX = 150;
+const fitQuestion = (q) => {
+  const t = (q || '').trim();
+  if (t.length <= QUESTION_MAX) return t;
+  const cut = t.slice(0, QUESTION_MAX);
+  const lastSpace = cut.lastIndexOf(' ');
+  const base = lastSpace > 100 ? cut.slice(0, lastSpace) : cut;
+  return base.replace(/[\s,.;:—-]+$/, '') + '…';
+};
+
 const TicketWidget = () => {
   const [question, setQuestion] = useState('');
   const [email, setEmail] = useState('');
@@ -106,7 +119,7 @@ const TicketWidget = () => {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          question: question.trim().slice(0, 150),
+          question: fitQuestion(question),
           details: details.trim(),
           name: name.trim(),
           email: email.trim(),

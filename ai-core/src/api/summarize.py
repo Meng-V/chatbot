@@ -27,6 +27,22 @@ class ChatSummaryResponse(BaseModel):
     summary: str
 
 
+# LibAnswers ticket QUESTION (subject) field caps at 150 chars; the ticket
+# form prepends a ~42-char "Summarized by AI" marker, so the summary itself
+# must stay within the remainder or it gets sliced mid-word in the subject.
+SUBJECT_CHAR_LIMIT = 105
+
+
+def _fit_subject(text: str, limit: int = SUBJECT_CHAR_LIMIT) -> str:
+    """Collapse whitespace and trim to <= limit chars at a WORD boundary
+    (never mid-word), adding an ellipsis when truncated."""
+    text = " ".join((text or "").split())
+    if len(text) <= limit:
+        return text
+    cut = text[:limit].rsplit(" ", 1)[0].rstrip(" ,.;:—-")
+    return (cut or text[:limit]).rstrip() + "…"
+
+
 @router.post("/summarize-chat", response_model=ChatSummaryResponse)
 async def summarize_chat(request: ChatSummaryRequest):
     """
@@ -52,25 +68,26 @@ async def summarize_chat(request: ChatSummaryRequest):
             llm_kwargs["temperature"] = 0.3  # Lower temperature for focused summaries
         
         llm = ChatOpenAI(**llm_kwargs)
-        
-        # Create summary prompt using system pattern (SystemMessage + HumanMessage)
-        system_prompt = """You are summarizing a conversation between a user and a library chatbot for a human librarian.
 
-Create a concise summary (3-5 sentences) that includes:
-1. The user's main question or need
-2. Key topics or resources discussed
-3. Current status (resolved, needs follow-up, etc.)
-4. Any specific details the librarian should know"""
-        
+        # The summary goes into the LibAnswers ticket QUESTION (subject)
+        # field, which is capped at 150 chars; the ticket form prepends a
+        # ~42-char "Summarized by AI" marker, so anything past ~108 chars
+        # was cut mid-word in the subject (prod 2026-06-17). Ask for a
+        # short one-line subject, not a multi-sentence paragraph.
+        system_prompt = """You are writing the SUBJECT LINE for a library help-desk ticket, summarizing what a user needs based on their chat with the library bot.
+
+Write ONE short phrase capturing the user's main question or need -- at most ~100 characters (about 15 words). No preamble, no "the user asked", no full sentences. Just the topic.
+Examples: "Library hours and finding a subject librarian"; "Booking a study room at King Library"; "Help locating a peer-reviewed article on insomnia"."""
+
         messages = [
             SystemMessage(content=system_prompt),
-            HumanMessage(content=f"Chat History:\n{request.chatHistory}\n\nSummary:")
+            HumanMessage(content=f"Chat History:\n{request.chatHistory}\n\nSubject:")
         ]
-        
+
         # Generate summary using async invoke (matching system pattern)
         response = await llm.ainvoke(messages)
-        summary = response.content.strip()
-        
+        summary = _fit_subject(response.content.strip())
+
         return ChatSummaryResponse(summary=summary)
         
     except Exception as e:
