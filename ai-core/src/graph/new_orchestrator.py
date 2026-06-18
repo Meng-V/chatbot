@@ -232,6 +232,31 @@ def run_turn(
             latency_ms=latency_ms, cited_chunk_ids=[],
         )
 
+    # --- 2.06. Facilities/conduct policy short-circuit ---
+    # Food/drink/alcohol/sleeping/noise/pets/smoking/bikes/... policies live
+    # in the operator's Facilities & Events Policies Google Doc, not the
+    # indexed site. Placed EARLY (before clarify / OOS-refuse) because these
+    # questions often classify as out_of_scope or low-margin clarify -- a
+    # deterministic message match must win so they reach the doc, not a
+    # refusal. Skipped mid-booking-flow.
+    if not booking_flow:
+        _fac = _facilities_policy_answer(request.user_message)
+        if _fac is not None:
+            _ans, _cites = _fac
+            latency_ms = int((time.monotonic() - turn_start) * 1000)
+            record_request(endpoint="/chat", status="facilities_policy",
+                           latency_s=latency_ms / 1000)
+            return TurnResponse(
+                answer=_ans, is_refusal=False, refusal_trigger=None,
+                citations=_cites, confidence="high",
+                intent=classification.intent, scope=scope.as_filter(),
+                model_used=model_basic,
+                tokens={"input": 0, "cached_input": 0, "output": 0},
+                fired_corrections=[],
+                agent_stopped_reason="facilities_policy_short_circuit",
+                latency_ms=latency_ms, cited_chunk_ids=[],
+            )
+
     # --- 2.1. Long-period hours short-circuit (operator rule B) ---
     # LibCal's API only covers a limited date window, so a "summer
     # hours / winter break / this semester" question can't be answered
@@ -659,6 +684,58 @@ def _greeting_answer(message: str) -> "Optional[str]":
     if _GREETING_RE.match(message or ""):
         return _GREETING_TEXT
     return None
+
+
+# Building-conduct / facilities policies (food, drink, alcohol, sleeping,
+# noise, pets, smoking, bikes, solicitation, room rules, ...) live in the
+# operator's "Facilities & Events Policies" Google Doc, not on the indexed
+# site. Point there deterministically so these questions never get a
+# refusal or a guess.
+_FACILITIES_POLICY_URL = (
+    "https://docs.google.com/document/d/"
+    "1ZQdegDmo_8V7_aM8EMzpr57lQ5-kOj_jgtCqsbJ8_d4/edit?tab=t.0"
+)
+# Strong terms: in a library bot, asking about these is ~always a conduct
+# question (no permission phrasing required).
+_CONDUCT_STRONG_RE = re.compile(
+    r"\b(alcohol|beer|wine|liquor|smoking|smoke|vape|vaping|tobacco|"
+    r"cigarettes?|napping|\bnap\b|sleeping in|sleep in|overnight)\b",
+    re.IGNORECASE,
+)
+# Weak terms also match common non-policy questions ("food science
+# librarian", "coffee shop"), so they only fire WITH permission/policy
+# phrasing.
+_CONDUCT_WEAK_RE = re.compile(
+    r"\b(food|eat|eating|snacks?|drinks?|beverages?|coffee|pets?|dogs?|"
+    r"animals?|skateboards?|scooters?|bikes?|bicycles?|rollerblad\w*|"
+    r"solicit\w*|selling)\b",
+    re.IGNORECASE,
+)
+_PERMISSION_RE = re.compile(
+    r"\b(can i|allowed|permitted|is it ok|okay to|policy|policies|rules?|"
+    r"prohibit\w*|forbid\w*|bring (my|a|an|in|some))\b",
+    re.IGNORECASE,
+)
+
+
+def _facilities_policy_answer(message: str) -> "Optional[tuple[str, list[dict]]]":
+    """Deterministic pointer to the Facilities & Events Policies doc for
+    building-conduct questions (food/drink/alcohol/sleeping/noise/pets/
+    smoking/bikes/...). Returns (answer, citations) or None."""
+    m = message or ""
+    if not (_CONDUCT_STRONG_RE.search(m)
+            or (_CONDUCT_WEAK_RE.search(m) and _PERMISSION_RE.search(m))):
+        return None
+    answer = (
+        "Miami University Libraries' building policies -- food and drink, "
+        "alcohol, sleeping/napping, noise, pets and service animals, "
+        "smoking/vaping, bikes and skateboards, and more -- are in the "
+        "Libraries' Facilities & Events Policies guide [1]."
+    )
+    return answer, [{
+        "n": 1, "url": _FACILITIES_POLICY_URL,
+        "snippet": "Miami University Libraries — Facilities & Events Policies",
+    }]
 
 
 def _admin_role_answer(message: str) -> "Optional[tuple[str, list[dict]]]":
