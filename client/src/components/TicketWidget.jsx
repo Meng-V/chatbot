@@ -58,10 +58,10 @@ const TicketWidget = () => {
       const historyText = formatChatHistory();
 
       const isDev = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
-      // Prod: the widget is served at /smartchatbot/ and nginx only
-      // forwards /smartchatbot/* -- a root POST to /summarize-chat 404s.
-      // import.meta.env.BASE_URL is '/smartchatbot/' (vite base).
-      const summarizeUrl = isDev ? '/api/summarize-chat' : `${import.meta.env.BASE_URL}summarize-chat`;
+      // Prod hits the ROOT path: nginx proxies `location /summarize-chat`
+      // to the backend (and `/ticket/create` once its block is added).
+      // /smartchatbot/* is a STATIC alias (POST -> 405), so don't prefix.
+      const summarizeUrl = isDev ? '/api/summarize-chat' : '/summarize-chat';
 
       const response = await fetch(summarizeUrl, {
         method: 'POST',
@@ -98,9 +98,9 @@ const TicketWidget = () => {
 
     try {
       const isDev = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
-      // See summarizeUrl note: prod must hit /smartchatbot/ticket/create
-      // (nginx forwards /smartchatbot/*, not the site root).
-      const ticketUrl = isDev ? '/api/ticket/create' : `${import.meta.env.BASE_URL}ticket/create`;
+      // Root path, proxied by an nginx `location /ticket/create` block
+      // (mirrors the existing /summarize-chat one). See summarizeUrl note.
+      const ticketUrl = isDev ? '/api/ticket/create' : '/ticket/create';
 
       const response = await fetch(ticketUrl, {
         method: 'POST',
