@@ -213,6 +213,25 @@ def run_turn(
         )
         bind_request_context(intent="room_booking", margin=classification.margin)
 
+    # --- 2.05. Greeting short-circuit ---
+    # A bare "hi"/"hello" has no library signal, so the kNN sends it to
+    # out_of_scope and the user gets a refusal for saying hello. Greet
+    # back deterministically instead. Skipped mid-booking-flow so a
+    # slot-fill that happens to look like a greeting still reaches the
+    # agent.
+    if not booking_flow and _greeting_answer(request.user_message):
+        latency_ms = int((time.monotonic() - turn_start) * 1000)
+        record_request(endpoint="/chat", status="greeting",
+                       latency_s=latency_ms / 1000)
+        return TurnResponse(
+            answer=_GREETING_TEXT, is_refusal=False, refusal_trigger=None,
+            citations=[], confidence="high", intent="greeting",
+            scope=scope.as_filter(), model_used=model_basic,
+            tokens={"input": 0, "cached_input": 0, "output": 0},
+            fired_corrections=[], agent_stopped_reason="greeting_short_circuit",
+            latency_ms=latency_ms, cited_chunk_ids=[],
+        )
+
     # --- 2.1. Long-period hours short-circuit (operator rule B) ---
     # LibCal's API only covers a limited date window, so a "summer
     # hours / winter break / this semester" question can't be answered
@@ -615,6 +634,31 @@ _ADMIN_ROLE_RE = re.compile(
     r"|who (runs|heads|leads|is in charge of) (the )?librar",
     re.IGNORECASE,
 )
+
+
+# Bare greeting -> a friendly hello, not the out_of_scope refusal. A
+# standalone "hi" has no library signal so the kNN classifier sends it to
+# out_of_scope; greet deterministically instead and point at what the bot
+# can do.
+_GREETING_RE = re.compile(
+    r"^\s*(hi+|hey+|hello+|heya|yo|howdy|greetings|good\s+(morning|afternoon|"
+    r"evening|day)|sup|hiya|hello\s+there|hey\s+there)\s*[!.,?]*\s*$",
+    re.IGNORECASE,
+)
+_GREETING_TEXT = (
+    "Hi! I'm the Miami University Libraries assistant. I can help with "
+    "things like library hours, finding the subject librarian for a course "
+    "or major, booking a study room, locations and addresses, and services "
+    "like printing, interlibrary loan, or the MakerSpace. What can I help "
+    "you with?"
+)
+
+
+def _greeting_answer(message: str) -> "Optional[str]":
+    """Friendly greeting for a bare hi/hello, else None."""
+    if _GREETING_RE.match(message or ""):
+        return _GREETING_TEXT
+    return None
 
 
 def _admin_role_answer(message: str) -> "Optional[tuple[str, list[dict]]]":
