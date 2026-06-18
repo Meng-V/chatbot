@@ -696,24 +696,40 @@ _FACILITIES_POLICY_URL = (
     "1ZQdegDmo_8V7_aM8EMzpr57lQ5-kOj_jgtCqsbJ8_d4/edit?tab=t.0"
 )
 # Strong terms: in a library bot, asking about these is ~always a conduct
-# question (no permission phrasing required).
+# question (no permission phrasing required) -- UNLESS it's a research
+# question about the topic (handled by _RESEARCH_CTX_RE below).
 _CONDUCT_STRONG_RE = re.compile(
     r"\b(alcohol|beer|wine|liquor|smoking|smoke|vape|vaping|tobacco|"
-    r"cigarettes?|napping|\bnap\b|sleeping in|sleep in|overnight)\b",
+    r"cigarettes?|napping|nap|sleeping in|sleep in|overnight|"
+    r"live in the|living in the|reside|residence)\b",
     re.IGNORECASE,
 )
 # Weak terms also match common non-policy questions ("food science
 # librarian", "coffee shop"), so they only fire WITH permission/policy
 # phrasing.
 _CONDUCT_WEAK_RE = re.compile(
-    r"\b(food|eat|eating|snacks?|drinks?|beverages?|coffee|pets?|dogs?|"
-    r"animals?|skateboards?|scooters?|bikes?|bicycles?|rollerblad\w*|"
-    r"solicit\w*|selling)\b",
+    r"\b(food|eat|eating|snacks?|drinks?|beverages?|coffee|water bottle|water|"
+    r"pets?|dogs?|animals?|snakes?|skateboards?|scooters?|bikes?|bicycles?|"
+    r"rollerblad\w*|skat\w*|sell|selling|sales|vendors?|solicit\w*|"
+    r"noise|talking|loud|amplified|music|quiet|"
+    r"balloons?|confetti|glitter|candles?|incense|decorations?|"
+    r"child|children|kids?|minors?|strollers?|baby|toddlers?|year.?old)\b",
     re.IGNORECASE,
 )
 _PERMISSION_RE = re.compile(
-    r"\b(can i|allowed|permitted|is it ok|okay to|policy|policies|rules?|"
-    r"prohibit\w*|forbid\w*|bring (my|a|an|in|some))\b",
+    r"\b(can i|can we|am i allowed|are .{0,30} allowed|allowed|permitted|"
+    r"is it ok|okay to|policy|policies|rules?|prohibit\w*|forbid\w*|against "
+    r"the rules|bring (my|a|an|in|some|me)|put up|set up)\b",
+    re.IGNORECASE,
+)
+# If the question is about FINDING research on a topic, it's NOT a conduct
+# question even if the topic word is a conduct term ("article about alcohol
+# abuse"). Skip the policy pointer and let the agent handle the research ask.
+_RESEARCH_CTX_RE = re.compile(
+    r"\b(articles?|journals?|databases?|papers?|sources?|cite|citations?|"
+    r"citing|peer.?reviewed|research (on|about|paper|topic|for)|study about|"
+    r"studies (on|about)|books? about|information (on|about)|"
+    r"find .{0,30}(article|source|paper|book|journal))\b",
     re.IGNORECASE,
 )
 
@@ -723,6 +739,8 @@ def _facilities_policy_answer(message: str) -> "Optional[tuple[str, list[dict]]]
     building-conduct questions (food/drink/alcohol/sleeping/noise/pets/
     smoking/bikes/...). Returns (answer, citations) or None."""
     m = message or ""
+    if _RESEARCH_CTX_RE.search(m):
+        return None  # "article about alcohol" etc. -> research, not conduct
     if not (_CONDUCT_STRONG_RE.search(m)
             or (_CONDUCT_WEAK_RE.search(m) and _PERMISSION_RE.search(m))):
         return None
