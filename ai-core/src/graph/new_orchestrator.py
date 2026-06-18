@@ -257,6 +257,28 @@ def run_turn(
                 latency_ms=latency_ms, cited_chunk_ids=[],
             )
 
+    # --- 2.07. Closed-library short-circuit ---
+    # B.E.S.T. and Amos Music Library have permanently closed. Answer the
+    # closure deterministically (these otherwise confuse/refuse). Early,
+    # before clarify/OOS, same as the facilities pointer.
+    if not booking_flow:
+        _closed = _closed_library_answer(request.user_message)
+        if _closed is not None:
+            _ans, _cites = _closed
+            latency_ms = int((time.monotonic() - turn_start) * 1000)
+            record_request(endpoint="/chat", status="closed_library",
+                           latency_s=latency_ms / 1000)
+            return TurnResponse(
+                answer=_ans, is_refusal=False, refusal_trigger=None,
+                citations=_cites, confidence="high",
+                intent=classification.intent, scope=scope.as_filter(),
+                model_used=model_basic,
+                tokens={"input": 0, "cached_input": 0, "output": 0},
+                fired_corrections=[],
+                agent_stopped_reason="closed_library_short_circuit",
+                latency_ms=latency_ms, cited_chunk_ids=[],
+            )
+
     # --- 2.1. Long-period hours short-circuit (operator rule B) ---
     # LibCal's API only covers a limited date window, so a "summer
     # hours / winter break / this semester" question can't be answered
@@ -753,6 +775,42 @@ def _facilities_policy_answer(message: str) -> "Optional[tuple[str, list[dict]]]
     return answer, [{
         "n": 1, "url": _FACILITIES_POLICY_URL,
         "snippet": "Miami University Libraries — Facilities & Events Policies",
+    }]
+
+
+_ASKUS_URL = "https://www.lib.miamioh.edu/research/research-support/ask/"
+
+# Permanently CLOSED libraries (operator-confirmed 2026-06-18): the
+# B.E.S.T. Library and the Amos Music Library. Questions about them as
+# locations were getting confused/refused (Music) or conflated with "best
+# library" = flagship (BEST). Answer the closure deterministically.
+_CLOSED_LIBRARY_RE = re.compile(
+    r"(b\.?e\.?s\.?t\.?\s+librar|amos\s+music|music\s+librar(y|ies)\b)",
+    re.IGNORECASE,
+)
+
+
+def _closed_library_answer(message: str) -> "Optional[tuple[str, list[dict]]]":
+    """Deterministic 'this library has closed' answer for B.E.S.T. / Amos
+    Music Library. Returns None for the music SUBJECT LIBRARIAN (still a
+    valid liaison -- only the building closed)."""
+    m = message or ""
+    if re.search(r"music\s+librarian", m, re.IGNORECASE):
+        return None  # the Music subject liaison still exists
+    if not _CLOSED_LIBRARY_RE.search(m):
+        return None
+    is_best = bool(re.search(r"b\.?e\.?s\.?t\.?\s+librar", m, re.IGNORECASE))
+    name = ("The B.E.S.T. Library" if is_best else "The Amos Music Library")
+    extra = (" (If you meant the main/flagship library, that's King Library.)"
+             if is_best else "")
+    answer = (
+        f"{name} has permanently closed. Its collections and services have "
+        f"moved to other Miami University Libraries.{extra} For where a "
+        f"specific item or service is now, ask a librarian through Ask Us [1]."
+    )
+    return answer, [{
+        "n": 1, "url": _ASKUS_URL,
+        "snippet": "Miami University Libraries — Ask Us",
     }]
 
 
