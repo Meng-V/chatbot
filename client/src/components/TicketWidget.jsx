@@ -89,8 +89,10 @@ const TicketWidget = () => {
       }
 
       const data = await response.json();
+      // Short marker only ("[AI] "), so almost all of the 150-char subject
+      // budget goes to the actual summary instead of a long banner.
       setQuestion((prev) =>
-  `${prev ? `${prev.trim()}\n\n` : ''}=== Content Below is Summarized by AI ===\n${data.summary ?? ''}`
+  `${prev ? `${prev.trim()}\n\n` : ''}[AI] ${data.summary ?? ''}`
 );
     } catch (error) {
       console.error('Error generating summary:', error);

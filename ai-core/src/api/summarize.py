@@ -28,9 +28,9 @@ class ChatSummaryResponse(BaseModel):
 
 
 # LibAnswers ticket QUESTION (subject) field caps at 150 chars; the ticket
-# form prepends a ~42-char "Summarized by AI" marker, so the summary itself
-# must stay within the remainder or it gets sliced mid-word in the subject.
-SUBJECT_CHAR_LIMIT = 105
+# form prepends a short "[AI] " marker (5 chars), so the summary gets almost
+# the whole budget. Cap a touch under 145 for a safety margin.
+SUBJECT_CHAR_LIMIT = 140
 
 
 def _fit_subject(text: str, limit: int = SUBJECT_CHAR_LIMIT) -> str:
@@ -76,8 +76,8 @@ async def summarize_chat(request: ChatSummaryRequest):
         # short one-line subject, not a multi-sentence paragraph.
         system_prompt = """You are writing the SUBJECT LINE for a library help-desk ticket, summarizing what a user needs based on their chat with the library bot.
 
-Write ONE short phrase capturing the user's main question or need -- at most ~100 characters (about 15 words). No preamble, no "the user asked", no full sentences. Just the topic.
-Examples: "Library hours and finding a subject librarian"; "Booking a study room at King Library"; "Help locating a peer-reviewed article on insomnia"."""
+Write ONE concise line capturing the user's main question(s) and any key specifics (subject, building, course, what's unresolved) -- at most ~130 characters (about 20 words). No preamble, no "the user asked", no full sentences. Pack in the useful details, not filler.
+Examples: "Library hours, and who the dean of libraries is"; "Booking a 2-3pm study room at King for tomorrow"; "Finding a peer-reviewed article on insomnia and academic performance"."""
 
         messages = [
             SystemMessage(content=system_prompt),
