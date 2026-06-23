@@ -191,7 +191,16 @@ def run_turn(
     )
 
     # --- 2. Classify intent ---
-    classification: Classification = deps.classifier.classify(request.user_message)
+    # Anaphoric follow-ups ("what about tomorrow?") carry no standalone library
+    # signal; prepend the prior user question to the CLASSIFIER input only so
+    # the intent is right. The agent still gets the real message + history and
+    # resolves the reference. See _is_bare_followup.
+    classify_input = request.user_message
+    if _is_bare_followup(request.user_message):
+        _prev_q = _last_user_question(request.conversation_history)
+        if _prev_q:
+            classify_input = f"{_prev_q} {request.user_message}"
+    classification: Classification = deps.classifier.classify(classify_input)
     bind_request_context(intent=classification.intent, margin=classification.margin)
 
     # --- 2.0. Booking-flow continuation override ---
@@ -744,6 +753,56 @@ def _greeting_answer(message: str) -> "Optional[str]":
         return _GREETING_TEXT
     if _THANKS_RE.match(m):
         return _THANKS_TEXT
+    return None
+
+
+# Anaphoric follow-up handling. A terse referential message ("what about
+# tomorrow?", "how about Wertz?", "and on Sunday?") has no standalone library
+# signal, so the context-free classifier misroutes it to out_of_scope and the
+# user gets a refusal -- even though the agent (which DOES receive history)
+# could resolve it. When one is detected and a prior user turn exists, classify
+# on "<prior question> <this message>" so the INTENT comes out right; the agent
+# still gets the real message + history and resolves the reference itself.
+# (Found 2026-06-24: "King hours today?" then "what about tomorrow?" -> OOS.)
+_FOLLOWUP_RE = re.compile(
+    r"^\s*(?:and|but|so|ok(?:ay)?|well|then)?[\s,]*"
+    r"(?:"
+    r"what about|how about|what if|and what about|and how about|"
+    r"tomorrow|tonight|"
+    r"this (?:weekend|week|morning|afternoon|evening|"
+    r"monday|tuesday|wednesday|thursday|friday|saturday|sunday)|"
+    r"next (?:week|month|monday|tuesday|wednesday|thursday|friday|saturday|sunday)|"
+    r"on (?:monday|tuesday|wednesday|thursday|friday|saturday|sunday|the weekend)|"
+    r"later|earlier|the day after|over the weekend"
+    r")\b.{0,40}$",
+    re.IGNORECASE,
+)
+
+
+def _is_bare_followup(message: str) -> bool:
+    """True for a short anaphoric follow-up that needs prior context to
+    classify ('what about tomorrow?'). Length-capped so a self-contained
+    question that merely starts with these words isn't swept up."""
+    m = (message or "").strip()
+    if not m or len(m) > 45:
+        return False
+    return bool(_FOLLOWUP_RE.match(m))
+
+
+def _last_user_question(history: "Optional[list]") -> "Optional[str]":
+    """The most recent prior USER message that carries its own signal, used as
+    the anchor when reformulating a bare follow-up. Skips earlier bare
+    follow-ups so a chain ('King hours today?' -> 'what about tomorrow?' ->
+    'how about this weekend?') still anchors on the substantive question. The
+    current turn is already de-duplicated from history upstream."""
+    for raw in reversed(history or []):
+        if not isinstance(raw, dict):
+            continue
+        role = raw.get("role") or raw.get("type")
+        if role == "user":
+            c = (raw.get("content") or "").strip()
+            if c and not _is_bare_followup(c):
+                return c
     return None
 
 
