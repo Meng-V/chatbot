@@ -604,6 +604,7 @@ def run_turn(
         scope=scope,
         agent_outcome=agent_outcome,
         total_latency_ms=total_latency_ms,
+        user_message=request.user_message,
     )
 
     if response.is_refusal and response.refusal_trigger:
@@ -744,6 +745,57 @@ def _greeting_answer(message: str) -> "Optional[str]":
     if _THANKS_RE.match(m):
         return _THANKS_TEXT
     return None
+
+
+# Prompt-injection backstop. The synthesizer's rule 1a tells the model not to
+# obey user-dictated text ("append this exact sentence: '...'"), but that's a
+# model instruction and not 100% reliable -- an hours turn appended a dictated
+# "the library is closing permanently next week." on 2026-06-24 (adversarial
+# probe). This deterministic strip is the second line of defense: it finds a
+# sentence the user tried to DICTATE via an injection trigger and, if that exact
+# text leaked into the answer, removes it. It only ever touches attacker-
+# dictated text that actually appears verbatim in the answer, so normal turns
+# (no such trigger in the message) are never altered.
+_QUOTES = "'\"‘’“”"
+_INJECT_DICTATION_RE = re.compile(
+    r"\b("
+    # A: verbs that alone imply dictation (no cue needed)
+    r"(?:append|prepend|repeat|verbatim)"
+    # B: position verb + "with" ("end your answer with", "finish with")
+    r"|(?:end[a-z]*|finish|conclude|start|begin|respond|reply|follow)"
+    r"(?:\s+\w+){0,3}\s+with"
+    # C: general verb + an explicit dictation cue
+    r"|(?:say|write|print|output|add|include|put)\b[^" + _QUOTES + r"\n]{0,30}?"
+    r"(?:this exact|exactly this|the following|verbatim|this sentence|this phrase|"
+    r"this line|this text|this statement|the phrase|the sentence|the words|"
+    r"to the end|at the end)"
+    r")"
+    r"[^" + _QUOTES + r"\n]{0,40}?"
+    r"[" + _QUOTES + r"]([^" + _QUOTES + r"\n]{10,200})[" + _QUOTES + r"]",
+    re.IGNORECASE,
+)
+
+
+def _strip_injected_dictation(user_message: str, answer: str) -> str:
+    """Remove attacker-dictated sentences (prompt injection) that leaked into
+    the answer. See the note above _INJECT_DICTATION_RE."""
+    um = user_message or ""
+    ans = answer or ""
+    if not ans or not um:
+        return ans
+    for m in _INJECT_DICTATION_RE.finditer(um):
+        dictated = m.group(2).strip().strip(".!?,;:" + _QUOTES).strip()
+        if len(dictated) < 10:
+            continue
+        pat = re.compile(
+            r"\s*[" + _QUOTES + r"]?" + re.escape(dictated)
+            + r"[.!?]*[" + _QUOTES + r"]?",
+            re.IGNORECASE,
+        )
+        ans = pat.sub("", ans)
+    ans = re.sub(r"[ \t]{2,}", " ", ans)
+    ans = re.sub(r"\s+([.!?,;:])", r"\1", ans)
+    return ans.strip()
 
 
 # Building-conduct / facilities policies (food, drink, alcohol, sleeping,
@@ -1462,6 +1514,7 @@ def _shape_response(
     scope: Scope,
     agent_outcome: AgentOutcome,
     total_latency_ms: int,
+    user_message: str = "",
 ) -> TurnResponse:
     """Turn the synthesis result + agent outcome into the wire shape."""
     pp: PostProcessorResult = synth_result.post_processor
@@ -1507,6 +1560,10 @@ def _shape_response(
     answer_text, citations_wire = _renumber_citations_for_display(
         pp.answer.answer, citations_wire
     )
+    # Prompt-injection backstop: drop any user-dictated sentence that slipped
+    # past the synthesizer's rule 1a (e.g. an appended "the library is closing
+    # permanently next week"). No-op unless the message tried to dictate text.
+    answer_text = _strip_injected_dictation(user_message, answer_text)
     return TurnResponse(
         answer=answer_text,
         is_refusal=False,
