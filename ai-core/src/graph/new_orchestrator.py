@@ -733,13 +733,15 @@ _CONDUCT_WEAK_RE = re.compile(
     r"\b(food|eat|eating|snacks?|drinks?|beverages?|coffee|water bottle|water|"
     r"pets?|dogs?|animals?|snakes?|skateboards?|scooters?|bikes?|bicycles?|"
     r"rollerblad\w*|skat\w*|sell|selling|sales|vendors?|solicit\w*|"
+    r"flyers?|fliers?|posters?|leaflets?|handbills?|handouts?|tabling|"
     r"noise|talking|loud|amplified|music|quiet|"
     r"balloons?|confetti|glitter|candles?|incense|decorations?|"
     r"child|children|kids?|minors?|strollers?|baby|toddlers?|year.?old)\b",
     re.IGNORECASE,
 )
 _PERMISSION_RE = re.compile(
-    r"\b(can i|can we|am i allowed|are .{0,30} allowed|allowed|permitted|"
+    r"\b(can (i|we|my|a|an|you|someone|somebody|he|she|they)|"
+    r"am i allowed|are .{0,30} allowed|allowed|permitted|"
     r"is it ok|okay to|policy|policies|rules?|prohibit\w*|forbid\w*|against "
     r"the rules|bring (my|a|an|in|some|me)|put up|set up)\b",
     re.IGNORECASE,

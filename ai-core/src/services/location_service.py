@@ -43,11 +43,21 @@ class LocationService:
         if not self._client.is_connected():
             await self._client.connect()
         
-        # Search by short name or name
+        # Search by short name, display name, or name. displayName is the
+        # name the bot SHOWS the user in the "valid libraries" list AND it's
+        # where the colloquial building name often lives: Wertz's row is
+        # shortName="art", name="Art & Architecture Library", but
+        # displayName="Wertz Art & Architecture Library" -- so without a
+        # displayName match, neither the exact suggested name NOR the common
+        # "wertz" matched, and the reply rejected the very name it listed as
+        # valid (self-contradicting reply found 2026-06-24 by the
+        # soft-knowledge probe). `contains` covers both the full name and the
+        # bare "wertz".
         library = await self._client.library.find_first(
             where={
                 "OR": [
                     {"shortName": {"equals": building_lower, "mode": "insensitive"}},
+                    {"displayName": {"contains": building_lower, "mode": "insensitive"}},
                     {"name": {"contains": building_lower, "mode": "insensitive"}}
                 ]
             }
