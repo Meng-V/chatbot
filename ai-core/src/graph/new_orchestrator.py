@@ -219,12 +219,13 @@ def run_turn(
     # back deterministically instead. Skipped mid-booking-flow so a
     # slot-fill that happens to look like a greeting still reaches the
     # agent.
-    if not booking_flow and _greeting_answer(request.user_message):
+    _greet_text = None if booking_flow else _greeting_answer(request.user_message)
+    if _greet_text:
         latency_ms = int((time.monotonic() - turn_start) * 1000)
         record_request(endpoint="/chat", status="greeting",
                        latency_s=latency_ms / 1000)
         return TurnResponse(
-            answer=_GREETING_TEXT, is_refusal=False, refusal_trigger=None,
+            answer=_greet_text, is_refusal=False, refusal_trigger=None,
             citations=[], confidence="high", intent="greeting",
             scope=scope.as_filter(), model_used=model_basic,
             tokens={"input": 0, "cached_input": 0, "output": 0},
@@ -699,12 +700,49 @@ _GREETING_TEXT = (
     "like printing, interlibrary loan, or the MakerSpace. What can I help "
     "you with?"
 )
+# Identity / capability questions ("who are you", "what can you help me
+# with") carry no library signal either, so the context-free classifier
+# sends them to out_of_scope too -- but the greeting intro IS the right
+# answer. Anchored so a real question that merely starts with these words
+# ("who are you going to recommend for nursing?") still reaches the agent.
+_IDENTITY_RE = re.compile(
+    r"^\s*("
+    r"who\s+are\s+you|what\s+are\s+you|"
+    r"what\s+can\s+you\s+do|what\s+do\s+you\s+do|"
+    r"what\s+can\s+you\s+help\s+(me\s+)?with|what\s+can\s+you\s+help\s+me|"
+    r"how\s+can\s+you\s+help( me)?|how\s+do\s+you\s+work|"
+    r"what\s+(kinds?|sorts?)\s+of\s+(questions|things|stuff)\s+can\s+you\s+(answer|help( me)?\s+with|do)|"
+    r"what\s+can\s+i\s+ask( you)?( about)?|"
+    r"are\s+you\s+(a\s+)?(bot|robot|chatbot|human|real|a\s+person|an?\s+ai)"
+    r")\s*[!.,?]*\s*$",
+    re.IGNORECASE,
+)
+# A bare thanks shouldn't get an out-of-scope refusal. Anchored so
+# "thanks, but what time do you close?" still reaches the agent.
+_THANKS_RE = re.compile(
+    r"^\s*(thanks?|thank\s+you|thank\s+u|thx|ty|tysm|"
+    r"much\s+appreciated|appreciate\s+it|appreciated|cheers)"
+    r"(\s+(so\s+much|a\s+lot|a\s+bunch|very\s+much|so|much|again))?"
+    r"\s*[!.,]*\s*$",
+    re.IGNORECASE,
+)
+_THANKS_TEXT = (
+    "You're welcome! If there's anything else I can help with -- library "
+    "hours, finding a subject librarian, booking a study room, or services "
+    "like printing or interlibrary loan -- just ask."
+)
 
 
 def _greeting_answer(message: str) -> "Optional[str]":
-    """Friendly greeting for a bare hi/hello, else None."""
-    if _GREETING_RE.match(message or ""):
+    """Friendly reply for a bare greeting, an identity/capability question
+    ('who are you', 'what can you help with'), or a thanks -- each of which a
+    context-free kNN classifier otherwise misroutes to out_of_scope. Returns
+    the reply text, or None."""
+    m = message or ""
+    if _GREETING_RE.match(m) or _IDENTITY_RE.match(m):
         return _GREETING_TEXT
+    if _THANKS_RE.match(m):
+        return _THANKS_TEXT
     return None
 
 
