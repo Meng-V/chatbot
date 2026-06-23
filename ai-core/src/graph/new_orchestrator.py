@@ -803,10 +803,11 @@ def _strip_injected_dictation(user_message: str, answer: str) -> str:
 # operator's "Facilities & Events Policies" Google Doc, not on the indexed
 # site. Point there deterministically so these questions never get a
 # refusal or a guess.
-_FACILITIES_POLICY_URL = (
-    "https://docs.google.com/document/d/"
-    "1ZQdegDmo_8V7_aM8EMzpr57lQ5-kOj_jgtCqsbJ8_d4/edit?tab=t.0"
-)
+# NB: keep this URL on ONE source line. validate_prompt_urls.py scans source
+# text and its URL regex stops at the closing quote, so a string split across
+# two literals makes it see only the truncated "…/document/d/" (404) and fail
+# preflight (found 2026-06-23). The full URL returns 200.
+_FACILITIES_POLICY_URL = "https://docs.google.com/document/d/1ZQdegDmo_8V7_aM8EMzpr57lQ5-kOj_jgtCqsbJ8_d4/edit?tab=t.0"
 # Strong terms: in a library bot, asking about these is ~always a conduct
 # question (no permission phrasing required) -- UNLESS it's a research
 # question about the topic (handled by _RESEARCH_CTX_RE below).
