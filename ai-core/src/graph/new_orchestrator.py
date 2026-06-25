@@ -289,6 +289,29 @@ def run_turn(
                 latency_ms=latency_ms, cited_chunk_ids=[],
             )
 
+    # --- 2.08. MakerSpace staff/contact short-circuit ---
+    # "who is the makerspace librarian" / "I need help with the makerspace"
+    # had no authoritative staff chunk in Weaviate, so the bot either refused
+    # or fabricated a wrong contact (a random subject liaison -- prod
+    # 2026-06-25). Answer deterministically from the MakerSpace staff page.
+    if not booking_flow:
+        _ms = _makerspace_staff_answer(request.user_message)
+        if _ms is not None:
+            _ans, _cites = _ms
+            latency_ms = int((time.monotonic() - turn_start) * 1000)
+            record_request(endpoint="/chat", status="makerspace_staff",
+                           latency_s=latency_ms / 1000)
+            return TurnResponse(
+                answer=_ans, is_refusal=False, refusal_trigger=None,
+                citations=_cites, confidence="high",
+                intent=classification.intent, scope=scope.as_filter(),
+                model_used=model_basic,
+                tokens={"input": 0, "cached_input": 0, "output": 0},
+                fired_corrections=[],
+                agent_stopped_reason="makerspace_staff_short_circuit",
+                latency_ms=latency_ms, cited_chunk_ids=[],
+            )
+
     # --- 2.1. Long-period hours short-circuit (operator rule B) ---
     # LibCal's API only covers a limited date window, so a "summer
     # hours / winter break / this semester" question can't be answered
@@ -963,6 +986,59 @@ def _closed_library_answer(message: str) -> "Optional[tuple[str, list[dict]]]":
     return answer, [{
         "n": 1, "url": _ASKUS_URL,
         "snippet": "Miami University Libraries — Ask Us",
+    }]
+
+
+# MakerSpace staff (https://libguides.lib.miamioh.edu/create/about-makerspace/staff,
+# curl-verified 2026-06-25). Sarah Nagle is the librarian; the others are the
+# team. Katie Gibson is a SUBJECT liaison and does NOT staff the MakerSpace --
+# the bot was fabricating her as the contact because no makerspace-staff chunk
+# existed in the index.
+_MAKERSPACE_STAFF_URL = "https://libguides.lib.miamioh.edu/create/about-makerspace/staff"
+_MAKERSPACE_RE = re.compile(r"\bmaker\s?space\b", re.IGNORECASE)
+# A staff / contact / who-do-I-talk-to signal.
+_MS_STAFF_RE = re.compile(
+    r"\b(librarian|staff|contact|email|e-mail|reach|manager|specialist|"
+    r"coordinator|technologist|run by|in charge|"
+    r"who\s+(runs|manages|works|is in charge|to (contact|email|ask|talk|see)|"
+    r"do i (contact|email|ask|talk|see)|is the|are the|can help|"
+    r"can i (contact|email|talk|ask))|"
+    r"help\s+(me\s+)?with|need help|get help|talk to|get in touch|works there)\b",
+    re.IGNORECASE,
+)
+# Usage / hours / 3D / booking questions are handled elsewhere -- don't hijack.
+_MS_NOT_STAFF_RE = re.compile(
+    r"\b(hours?|open|clos(e|ed|ing)|3-?d|print|laser|sewing|vinyl|embroider|"
+    r"who can use|who(?:'s| is) allowed|who can access|can i use|am i allowed|"
+    r"book a|reserve|consultation|located|where(?:'s| is)|cost|price|how much|"
+    r"equipment|tool)\b",
+    re.IGNORECASE,
+)
+
+
+def _makerspace_staff_answer(message: str) -> "Optional[tuple[str, list[dict]]]":
+    """Deterministic MakerSpace staff/contact answer. Fires on
+    'who is the makerspace librarian' / 'I need help with the makerspace' etc.,
+    but NOT on usage/hours/3D/booking questions handled elsewhere. Returns
+    (answer, citations) or None."""
+    m = message or ""
+    if not _MAKERSPACE_RE.search(m):
+        return None
+    if _MS_NOT_STAFF_RE.search(m):
+        return None
+    if not _MS_STAFF_RE.search(m):
+        return None
+    answer = (
+        "The MakerSpace librarian is Sarah Nagle, Creation & Innovation "
+        "Services Librarian (pricesb@miamioh.edu). The rest of the MakerSpace "
+        "team: Lori Chapin, Manager of Innovative Spaces (pheanila@miamioh.edu); "
+        "Lindsey Masters, Creative Technologist (masterlr@miamioh.edu); "
+        "John Williams, MakerSpace Technology Specialist (williajc@miamioh.edu); "
+        "and Nathan Hall, MakerSpace Specialist (hallnj3@miamioh.edu) [1]."
+    )
+    return answer, [{
+        "n": 1, "url": _MAKERSPACE_STAFF_URL,
+        "snippet": "Miami University Libraries — MakerSpace: Our Staff",
     }]
 
 
