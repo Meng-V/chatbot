@@ -334,6 +334,28 @@ def run_turn(
                 latency_ms=latency_ms, cited_chunk_ids=[],
             )
 
+    # --- 2.10. MakerSpace 3D-printing / usage short-circuit ---
+    # "3d printing in King" misroutes to printing_wifi (the "printing" token),
+    # where the agent loops and refuses/answers weakly. Answer the Oxford/King
+    # case deterministically; cross-campus + regional buildings fall through.
+    if not booking_flow:
+        _ms3d = _makerspace_3d_answer(request.user_message, scope)
+        if _ms3d is not None:
+            _ans, _cites = _ms3d
+            latency_ms = int((time.monotonic() - turn_start) * 1000)
+            record_request(endpoint="/chat", status="makerspace_3d",
+                           latency_s=latency_ms / 1000)
+            return TurnResponse(
+                answer=_ans, is_refusal=False, refusal_trigger=None,
+                citations=_cites, confidence="high",
+                intent=classification.intent, scope=scope.as_filter(),
+                model_used=model_basic,
+                tokens={"input": 0, "cached_input": 0, "output": 0},
+                fired_corrections=[],
+                agent_stopped_reason="makerspace_3d_short_circuit",
+                latency_ms=latency_ms, cited_chunk_ids=[],
+            )
+
     # --- 2.1. Long-period hours short-circuit (operator rule B) ---
     # LibCal's API only covers a limited date window, so a "summer
     # hours / winter break / this semester" question can't be answered
@@ -1083,6 +1105,64 @@ _OA_SERVICE_RE = re.compile(
     r"support|librarian|coordinator|office|advice|question)\b",
     re.IGNORECASE,
 )
+
+
+# 3D printing / MakerSpace USAGE (distinct from the staff short-circuit above).
+# "3d printing in King" classifies as printing_wifi (the "printing" token), which
+# has no good 3D content -- the agent loops and either refuses ("couldn't verify
+# my sources") or gives a weak "King offers a makerspace" (prod 2026-06-25). The
+# makerspace_3d evidence prefetch only runs on the makerspace_3d intent, so the
+# misroute skips it. Answer the Oxford/King case deterministically; leave the
+# cross-campus comparison and the regional buildings to the existing paths.
+_MAKERSPACE_GUIDE_URL = "https://libguides.lib.miamioh.edu/create/makerspace"
+_MS_3D_RE = re.compile(r"\b3-?d\s*print\w*|\b3-?d\s*printer", re.IGNORECASE)
+_MS_USE_RE = re.compile(
+    r"\b(can i|could i|i (need|want|'?d like|wanna)|how (do|can|to)|where|"
+    r"do you have|is there|are there|available|access|use|using|book|reserve|"
+    r"consult|cost|price|how much|hours?|get to)\b",
+    re.IGNORECASE,
+)
+_MS_CROSS_RE = re.compile(
+    r"\b(all (the )?librar(y|ies)|every (campus|librar(y|ies)|location)|"
+    r"each (campus|librar(y|ies))|which (librar(y|ies)|campus|location)|"
+    r"both campus|compare|across campus|any (librar(y|ies)|campus)|vs\b|versus)\b",
+    re.IGNORECASE,
+)
+_MS_REGIONAL_RE = re.compile(
+    r"\b(hamilton|rentschler|middletown|gardner|gardner-harvey|regional)\b",
+    re.IGNORECASE,
+)
+
+
+def _makerspace_3d_answer(message: str, scope: "Scope") -> "Optional[tuple[str, list[dict]]]":
+    """Deterministic King MakerSpace 3D-printing/usage answer. Fires on any
+    3D-printing service question, or a MakerSpace question that names King/
+    Oxford. Defers (None) on cross-campus comparisons and regional buildings so
+    the existing cross-campus path handles those. Returns (answer, cites) or None."""
+    m = message or ""
+    names_king = bool(re.search(r"\b(king|oxford)\b", m, re.IGNORECASE))
+    is_3d = bool(_MS_3D_RE.search(m))
+    is_ms = bool(_MAKERSPACE_RE.search(m))
+    if not (is_3d or (is_ms and names_king)):
+        return None
+    if is_ms and not is_3d and not _MS_USE_RE.search(m):
+        return None
+    if _MS_CROSS_RE.search(m):
+        return None
+    if _MS_REGIONAL_RE.search(m) and not names_king:
+        return None
+    if scope.campus not in ("oxford", None):
+        return None
+    answer = (
+        "Yes — 3D printing is available at the King Library MakerSpace (3rd "
+        "floor, Room 303) on the Oxford campus, and it's self-service. The "
+        "MakerSpace guide has how to get started, the available printers, and "
+        "any costs [1]."
+    )
+    return answer, [{
+        "n": 1, "url": _MAKERSPACE_GUIDE_URL,
+        "snippet": "Miami University Libraries — MakerSpace (Create)",
+    }]
 
 
 def _scholarly_comm_answer(message: str) -> "Optional[tuple[str, list[dict]]]":
