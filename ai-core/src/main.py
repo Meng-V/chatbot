@@ -452,14 +452,17 @@ if _admin_token:
         "guard": _guard,              # review_view_router's auth dep
     }
     from src.api.admin.corrections_router import build_corrections_router
+    from src.api.admin.cost_view_router import build_cost_view_router
 
     app.include_router(build_reviews_router(_admin_deps))
     app.include_router(build_review_view_router(_admin_deps))
     app.include_router(build_corrections_router(_admin_deps))
+    app.include_router(build_cost_view_router(_admin_deps))
     logging.info(
-        "Op1/Op2 admin surfaces mounted (ADMIN_API_TOKEN set): "
+        "Op1/Op2/Op3 admin surfaces mounted (ADMIN_API_TOKEN set): "
         "/admin/review (HTML), /admin/reviews (JSON), "
-        "/admin/corrections (CRUD) + /admin/corrections/view (form)."
+        "/admin/corrections (CRUD) + /admin/corrections/view (form), "
+        "/admin/cost (HTML) + /admin/cost.json."
     )
 else:
     logging.info(
