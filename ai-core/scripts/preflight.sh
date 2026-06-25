@@ -101,5 +101,17 @@ fi
 AVAIL=$(df -m "$ROOT" 2>/dev/null | awk 'NR==2{print $4}')
 [ "${AVAIL:-0}" -ge 1024 ] && ok "disk ${AVAIL}MB free" || bad "low disk: ${AVAIL:-?}MB free"
 
+# 11. deterministic short-circuits behave (greeting/policy/closures/makerspace/
+# scholarly-comm/3D/follow-up/injection-backstop). Pure functions, no backends;
+# standalone runner so it works without pytest in the prod venv. A regression
+# here means a hard-knowledge answer silently broke.
+if [ -x "$PY" ]; then
+  if (cd "$ROOT/ai-core" && PYTHONPATH="$ROOT/ai-core" "$PY" src/graph/test_short_circuits.py >/dev/null 2>&1); then
+    ok "deterministic short-circuits (test_short_circuits)"
+  else
+    bad "short-circuit regression -- run: python src/graph/test_short_circuits.py"
+  fi
+fi
+
 echo "== preflight: $pass ok, $fail failed =="
 [ "$fail" -eq 0 ]
