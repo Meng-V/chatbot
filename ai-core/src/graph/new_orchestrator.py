@@ -312,6 +312,28 @@ def run_turn(
                 latency_ms=latency_ms, cited_chunk_ids=[],
             )
 
+    # --- 2.09. Scholarly-communication / open-access contact short-circuit ---
+    # No scholarly-comm chunk in the index, so the bot named the wrong liaison
+    # (the Business librarian) for open access -- same fabrication as MakerSpace
+    # (contacts probe 2026-06-25). Answer with the real coordinator.
+    if not booking_flow:
+        _sc = _scholarly_comm_answer(request.user_message)
+        if _sc is not None:
+            _ans, _cites = _sc
+            latency_ms = int((time.monotonic() - turn_start) * 1000)
+            record_request(endpoint="/chat", status="scholarly_comm",
+                           latency_s=latency_ms / 1000)
+            return TurnResponse(
+                answer=_ans, is_refusal=False, refusal_trigger=None,
+                citations=_cites, confidence="high",
+                intent=classification.intent, scope=scope.as_filter(),
+                model_used=model_basic,
+                tokens={"input": 0, "cached_input": 0, "output": 0},
+                fired_corrections=[],
+                agent_stopped_reason="scholarly_comm_short_circuit",
+                latency_ms=latency_ms, cited_chunk_ids=[],
+            )
+
     # --- 2.1. Long-period hours short-circuit (operator rule B) ---
     # LibCal's API only covers a limited date window, so a "summer
     # hours / winter break / this semester" question can't be answered
@@ -1039,6 +1061,48 @@ def _makerspace_staff_answer(message: str) -> "Optional[tuple[str, list[dict]]]"
     return answer, [{
         "n": 1, "url": _MAKERSPACE_STAFF_URL,
         "snippet": "Miami University Libraries — MakerSpace: Our Staff",
+    }]
+
+
+# Scholarly communication / open access. Carla Myers is the Coordinator of
+# Scholarly Communication (staff-directory-verified 2026-06-25). The bot had no
+# scholarly-comm chunk, so it named the BUSINESS liaison (Erica Freed) for open
+# access -- the same misapplied-liaison fabrication as the MakerSpace case
+# (contacts probe 2026-06-25). Her email isn't in the static page (JS contact
+# widget), so we name her + title + the Scholarly Commons page, no fabricated
+# address.
+_SCHOLARLY_COMMONS_URL = "https://www.lib.miamioh.edu/research/creation/scholarly-commons/"
+_SCHOLCOMM_STRONG_RE = re.compile(
+    r"\b(scholarly communication|scholarly commons|author'?s? rights|"
+    r"institutional repository|predatory journals?)\b",
+    re.IGNORECASE,
+)
+_OPEN_ACCESS_RE = re.compile(r"\bopen access\b", re.IGNORECASE)
+_OA_SERVICE_RE = re.compile(
+    r"\b(who|contact|help|reach|publish|publishing|deposit|polic|fund|fee|"
+    r"support|librarian|coordinator|office|advice|question)\b",
+    re.IGNORECASE,
+)
+
+
+def _scholarly_comm_answer(message: str) -> "Optional[tuple[str, list[dict]]]":
+    """Deterministic scholarly-communication / open-access contact. Fires on
+    the service ('who handles open access and scholarly communication') but not
+    on 'find open access articles' (research). Returns (answer, citations) or
+    None."""
+    m = message or ""
+    if not (_SCHOLCOMM_STRONG_RE.search(m)
+            or (_OPEN_ACCESS_RE.search(m) and _OA_SERVICE_RE.search(m))):
+        return None
+    answer = (
+        "For open access, scholarly communication, author rights, and the "
+        "institutional repository, the contact is Carla Myers, Coordinator of "
+        "Scholarly Communication. The Scholarly Commons page has the details "
+        "and her contact info [1]."
+    )
+    return answer, [{
+        "n": 1, "url": _SCHOLARLY_COMMONS_URL,
+        "snippet": "Miami University Libraries — Scholarly Commons",
     }]
 
 
