@@ -1115,7 +1115,11 @@ _OA_SERVICE_RE = re.compile(
 # misroute skips it. Answer the Oxford/King case deterministically; leave the
 # cross-campus comparison and the regional buildings to the existing paths.
 _MAKERSPACE_GUIDE_URL = "https://libguides.lib.miamioh.edu/create/makerspace"
-_MS_3D_RE = re.compile(r"\b3-?d\s*print\w*|\b3-?d\s*printer", re.IGNORECASE)
+_MS_3D_RE = re.compile(
+    r"\b3-?d\s*print\w*|\b3-?d\s*printer|\bstl\b|\.stl\b|"
+    r"\b3-?d\s*(model|file)|\bg-?code\b|\bresin print",
+    re.IGNORECASE,
+)
 _MS_USE_RE = re.compile(
     r"\b(can i|could i|i (need|want|'?d like|wanna)|how (do|can|to)|where|"
     r"do you have|is there|are there|available|access|use|using|book|reserve|"
