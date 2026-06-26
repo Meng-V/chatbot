@@ -356,6 +356,28 @@ def run_turn(
                 latency_ms=latency_ms, cited_chunk_ids=[],
             )
 
+    # --- 2.11. Cancel-reservation short-circuit ---
+    # Cancel was never wired into v2 (no cancel tool), so "cancel my booking
+    # <code>" used to loop/error. Handle it deterministically + gracefully.
+    # Skipped mid-booking-flow (there, "cancel" means abort the new booking).
+    if not booking_flow:
+        _cx = _cancel_reservation_answer(request.user_message)
+        if _cx is not None:
+            _ans, _cites = _cx
+            latency_ms = int((time.monotonic() - turn_start) * 1000)
+            record_request(endpoint="/chat", status="cancel_reservation",
+                           latency_s=latency_ms / 1000)
+            return TurnResponse(
+                answer=_ans, is_refusal=False, refusal_trigger=None,
+                citations=_cites, confidence="high",
+                intent=classification.intent, scope=scope.as_filter(),
+                model_used=model_basic,
+                tokens={"input": 0, "cached_input": 0, "output": 0},
+                fired_corrections=[],
+                agent_stopped_reason="cancel_reservation_short_circuit",
+                latency_ms=latency_ms, cited_chunk_ids=[],
+            )
+
     # --- 2.1. Long-period hours short-circuit (operator rule B) ---
     # LibCal's API only covers a limited date window, so a "summer
     # hours / winter break / this semester" question can't be answered
@@ -1167,6 +1189,78 @@ def _makerspace_3d_answer(message: str, scope: "Scope") -> "Optional[tuple[str, 
         "n": 1, "url": _MAKERSPACE_GUIDE_URL,
         "snippet": "Miami University Libraries — MakerSpace (Create)",
     }]
+
+
+# --- Cancel a room reservation (destructive write; deterministic, NOT LLM) ---
+# The cancel feature existed only in the v1 agent (LibCalCancelReservationTool)
+# and was NEVER wired into the live v2 path: the v2 tool registry is
+# search_kb/lookup_librarian/lookup_space/get_hours/book_room -- no cancel. So
+# "cancel my booking <code>" had no tool to call, the agent looped, and the turn
+# fell through to the generic "I encountered an error" (prod 2026-06-25, boss
+# demo). Handle it deterministically here: pull the LibCal confirmation code +
+# the booking email out of the message, verify+cancel via the v1 tool over the
+# _bridge daemon loop (loop-safe, same as book_room), and degrade GRACEFULLY on
+# ANY failure -- a destructive external call must never surface a raw crash.
+_CANCEL_INTENT_RE = re.compile(r"\bcancel(l?ing|l?ed|lation)?\b", re.IGNORECASE)
+_CANCEL_CTX_RE = re.compile(
+    r"\b(reservation|booking|booked|study\s*room|\broom\b|appointment|reserve)\b",
+    re.IGNORECASE,
+)
+# "what's the cancellation policy / fee / refund / deadline" is informational,
+# NOT a request to cancel a specific reservation.
+_CANCEL_INFO_RE = re.compile(
+    r"\b(policy|policies|fee|fees|charge|charges|deadline|refund|penalt)\b",
+    re.IGNORECASE,
+)
+_CONF_CODE_RE = re.compile(r"\bcs_[A-Za-z0-9]{3,}\b", re.IGNORECASE)
+_ANY_EMAIL_RE = re.compile(r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b")
+_CANCEL_HELP = (
+    "To cancel a room reservation I need two things: the confirmation number "
+    "(it looks like cs_… and is in your confirmation email) and the email "
+    "address used to book it (so I can verify the reservation is yours). Send "
+    "both and I'll cancel it. You can also cancel anytime with the link in that "
+    "confirmation email, or by calling the library at (513) 529-4141 [1]."
+)
+_CANCEL_FALLBACK = (
+    "I couldn't complete the cancellation just now. You can cancel using the "
+    "link in your confirmation email, or contact the library at (513) 529-4141 "
+    "and they'll take care of it [1]."
+)
+
+
+def _cancel_reservation_answer(message: str) -> "Optional[tuple[str, list[dict]]]":
+    """Deterministic room-reservation cancellation. Returns (answer, cites) or
+    None. NEVER raises: a failed destructive call degrades to a graceful
+    fallback, not a crash."""
+    m = message or ""
+    if not _CANCEL_INTENT_RE.search(m):
+        return None
+    has_code = bool(_CONF_CODE_RE.search(m))
+    if not (has_code or _CANCEL_CTX_RE.search(m)):
+        return None
+    # informational ("cancellation policy/fee") with no concrete code -> let the
+    # normal path answer; don't treat it as a cancel action.
+    if _CANCEL_INFO_RE.search(m) and not has_code:
+        return None
+    cite = [{"n": 1, "url": _ROOMS_URL,
+             "snippet": "Miami University Libraries — Room Reservations"}]
+    code_m = _CONF_CODE_RE.search(m)
+    email_m = _ANY_EMAIL_RE.search(m)
+    if not (code_m and email_m):
+        return _CANCEL_HELP, cite
+    try:
+        from src.eval.real_backends import _bridge
+        from src.tools.libcal_comprehensive_tools import LibCalCancelReservationTool
+        res = _bridge(
+            LibCalCancelReservationTool().execute(
+                query=m, booking_id=code_m.group(0), email=email_m.group(0)),
+            timeout=30.0,
+        )
+        text = res.get("text") if isinstance(res, dict) else None
+        return ((text + " [1]") if text else _CANCEL_FALLBACK), cite
+    except Exception:  # noqa: BLE001 -- destructive call must never crash a turn
+        get_logger("new_orchestrator").exception("cancel_reservation failed")
+        return _CANCEL_FALLBACK, cite
 
 
 def _scholarly_comm_answer(message: str) -> "Optional[tuple[str, list[dict]]]":

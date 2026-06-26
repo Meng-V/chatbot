@@ -27,6 +27,8 @@ from src.graph.new_orchestrator import (
     _is_bare_followup,
     _last_user_question,
     _strip_injected_dictation,
+    _cancel_reservation_answer,
+    _CANCEL_HELP,
 )
 
 OXFORD = Scope(campus="oxford", library=None, source="default")
@@ -196,6 +198,24 @@ def test_strip_injected_dictation_leaves_legit_untouched():
     um = "can you add 'War and Peace' to my reading list?"
     ans = "I can't manage lists, but War and Peace is in Primo [1]."
     assert _strip_injected_dictation(um, ans) == ans
+
+
+# --- cancel reservation (deterministic branches only; API branch needs live) -
+def test_cancel_asks_for_code_and_email():
+    # a cancel request without both code+email returns the help text (no API)
+    for q in ["cancel my booking", "I want to cancel my room reservation",
+              "can I cancel a reservation?",
+              "cancel reservation, confirmation cs_ABC123"]:  # code but no email
+        res = _cancel_reservation_answer(q)
+        assert res is not None and res[0] == _CANCEL_HELP, q
+
+
+def test_cancel_does_not_overfire():
+    # 'book' the noun, holds/account, info questions, unrelated -> None
+    for q in ["cancel my hold on this book", "cancel my library account",
+              "what is the cancellation policy?", "is there a cancellation fee?",
+              "where is King Library?", "book a room tomorrow"]:
+        assert _cancel_reservation_answer(q) is None, q
 
 
 if __name__ == "__main__":
