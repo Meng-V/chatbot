@@ -1186,8 +1186,11 @@ async def _v2_message(sid, data):
                 {
                     "messageId": None,
                     "message": (
-                        "I encountered an error. Please try again or "
-                        "contact a librarian."
+                        "Sorry — I ran into a problem on my end and couldn't "
+                        "answer that. Please try again in a moment. If it keeps "
+                        "happening, a librarian can help right away through Ask "
+                        "Us (https://www.lib.miamioh.edu/research/research-support/ask/) "
+                        "or at (513) 529-4141."
                     ),
                     "error": str(e),
                 }

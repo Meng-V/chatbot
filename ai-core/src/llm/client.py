@@ -139,7 +139,12 @@ def _get_client() -> Any:
     if _client is None:
         from openai import OpenAI  # type: ignore[import-not-found]
 
-        _client = OpenAI()
+        # Bounded timeout so a hung/slow OpenAI fails FAST instead of stalling
+        # the whole turn for the SDK default 600s -- a 600s hang blows the
+        # socket heartbeat and surfaces as the mysterious "I encountered an
+        # error". max_retries keeps the SDK's transient-blip recovery (429/
+        # 5xx/connection).
+        _client = OpenAI(timeout=30.0, max_retries=2)
     return _client
 
 
