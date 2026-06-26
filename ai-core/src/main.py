@@ -1100,8 +1100,22 @@ async def _v2_message(sid, data):
         conversation_id = await create_conversation()
         client_conversations[sid] = conversation_id
     try:
-        await add_message(conversation_id, "user", text_input)
-        history = await get_conversation_history(conversation_id, limit=10)
+        # Conversation logging + history are BEST-EFFORT: a DB blip must NOT
+        # crash the turn. The bot can still classify and answer; we only lose
+        # logging / prior-turn context for this message. (Same rule as the
+        # token telemetry below and _safe_load_corrections.) prod 2026-06-25:
+        # a Postgres outage made add_message throw at the very FIRST line of
+        # this handler, so EVERY message -- including a cancel test during a
+        # demo -- hit the generic "I encountered an error" before the bot ran.
+        try:
+            await add_message(conversation_id, "user", text_input)
+        except Exception as le:  # noqa: BLE001
+            logging.warning(f"⚠️ [v2] user-message log failed (continuing): {le}")
+        try:
+            history = await get_conversation_history(conversation_id, limit=10)
+        except Exception as le:  # noqa: BLE001
+            logging.warning(f"⚠️ [v2] history load failed (no context this turn): {le}")
+            history = []
         try:
             deps = _get_v2_deps()
         except Exception as e:  # noqa: BLE001
@@ -1128,9 +1142,15 @@ async def _v2_message(sid, data):
             conversation_id=conversation_id,
             conversation_history=history,
         )
-        message_id = await add_message(
-            conversation_id, "assistant", wire.get("message", "") or ""
-        )
+        # Log the assistant turn, but NEVER let a logging failure swallow a
+        # successfully-generated reply -- the emit happens regardless.
+        message_id = None
+        try:
+            message_id = await add_message(
+                conversation_id, "assistant", wire.get("message", "") or ""
+            )
+        except Exception as le:  # noqa: BLE001
+            logging.warning(f"⚠️ [v2] assistant-message log failed (reply still delivered): {le}")
         wire["messageId"] = message_id
         await sio_v2.emit("message", json_serializable(wire), to=sid)
         # --- Telemetry (backlog B1): persist per-turn token usage. ---
