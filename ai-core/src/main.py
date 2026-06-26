@@ -223,15 +223,91 @@ async def lifespan(app: FastAPI):
             f"⚠️ [v2] deps warm-up failed; first message will lazy-load: {e}"
         )
 
+    # Background health watcher -- email the operator (ALERT_EMAIL_TO,
+    # default qum@miamioh.edu) when a dependency goes down or recovers, so a
+    # silent outage (e.g. Postgres down) is visible without waiting for a user
+    # complaint. Best-effort; never blocks startup.
+    try:
+        import asyncio as _aio
+        app.state.health_task = _aio.create_task(_health_alert_watcher())
+    except Exception as e:  # noqa: BLE001
+        logging.warning(f"[health-watch] failed to start: {e}")
+
     logging.info("🚀 Application startup complete")
     yield
 
     # Shutdown
     logging.info("🛑 Application shutting down...")
+    _ht = getattr(app.state, "health_task", None)
+    if _ht is not None:
+        _ht.cancel()
     close_weaviate_client()
     logging.info("🔌 [Weaviate] Client closed")
     await disconnect_database()
     logging.info("✅ Database disconnected")
+
+
+def _health_alert_body(results: list) -> str:
+    """Plain-text dependency status block for an alert email."""
+    lines = ["Smart Chatbot dependency health (app.lib.miamioh.edu):", ""]
+    for r in results:
+        lines.append(f"  [{'OK  ' if r.passed else 'DOWN'}] {r.name}: {r.status}")
+    lines.append("")
+    lines.append("Live status: curl http://localhost:8081/health/ready")
+    return "\n".join(lines)
+
+
+async def _health_alert_watcher() -> None:
+    """Poll dependency health on an interval; email the operator ONLY on a
+    state change (down / recovered) so there's no spam. Never raises -- a
+    watcher failure only logs."""
+    import asyncio
+    from src.observability.alerting import send_alert_email, alert_enabled
+    from src.api.readiness_router import run_probes
+
+    if not alert_enabled():
+        logging.info("[health-watch] disabled (ALERT_EMAIL_ENABLED=false)")
+        return
+    try:
+        interval = int(os.getenv("ALERT_CHECK_INTERVAL_SEC", "300") or "300")
+    except ValueError:
+        interval = 300
+    probes = _build_readiness_probes()
+    last_ok = None  # tri-state: None (no baseline yet) / True / False
+    await asyncio.sleep(45)  # let boot + dep warm-up settle before first check
+    logging.info(
+        "[health-watch] started (every %ss, alerts -> %s)",
+        interval, os.getenv("ALERT_EMAIL_TO", "qum@miamioh.edu"),
+    )
+    while True:
+        try:
+            results = await run_probes(probes)
+            down = [r.name for r in results if not r.passed]
+            ok = not down
+            if last_ok is None:
+                last_ok = ok
+                if not ok:
+                    send_alert_email(
+                        "🔴 Smart Chatbot: dependency DOWN at startup (" + ", ".join(down) + ")",
+                        _health_alert_body(results),
+                    )
+            elif ok != last_ok:
+                last_ok = ok
+                if ok:
+                    send_alert_email(
+                        "✅ Smart Chatbot: recovered",
+                        "All dependency checks pass again.\n\n" + _health_alert_body(results),
+                    )
+                else:
+                    send_alert_email(
+                        "🔴 Smart Chatbot: dependency DOWN (" + ", ".join(down) + ")",
+                        _health_alert_body(results),
+                    )
+        except asyncio.CancelledError:
+            raise
+        except Exception as e:  # noqa: BLE001 -- watcher must never crash the app
+            logging.warning("[health-watch] cycle errored: %s", e)
+        await asyncio.sleep(interval)
 
 # Create FastAPI app with lifecycle
 app = FastAPI(
