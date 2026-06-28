@@ -272,17 +272,29 @@ async def _health_alert_watcher() -> None:
         interval = int(os.getenv("ALERT_CHECK_INTERVAL_SEC", "300") or "300")
     except ValueError:
         interval = 300
+    try:
+        recheck_delay = int(os.getenv("ALERT_RECHECK_DELAY_SEC", "15") or "15")
+    except ValueError:
+        recheck_delay = 15
     probes = _build_readiness_probes()
     last_ok = None  # tri-state: None (no baseline yet) / True / False
     await asyncio.sleep(45)  # let boot + dep warm-up settle before first check
     logging.info(
-        "[health-watch] started (every %ss, alerts -> %s)",
-        interval, os.getenv("ALERT_EMAIL_TO", "qum@miamioh.edu"),
+        "[health-watch] started (every %ss, recheck %ss, alerts -> %s)",
+        interval, recheck_delay, os.getenv("ALERT_EMAIL_TO", "qum@miamioh.edu"),
     )
     while True:
         try:
             results = await run_probes(probes)
             down = [r.name for r in results if not r.passed]
+            if down:
+                # Transient guard: a cold remote-SSL DB connect right after a
+                # restart fails the probe's 2s timeout ONCE, then passes when
+                # warm. Re-check after a short delay; only a SUSTAINED failure
+                # alerts. (False "postgres DOWN" on 2026-06-25 redeploy.)
+                await asyncio.sleep(recheck_delay)
+                results = await run_probes(probes)
+                down = [r.name for r in results if not r.passed]
             ok = not down
             if last_ok is None:
                 last_ok = ok
