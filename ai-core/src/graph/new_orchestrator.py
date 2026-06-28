@@ -1182,8 +1182,8 @@ def _makerspace_3d_answer(message: str, scope: "Scope") -> "Optional[tuple[str, 
     answer = (
         "Yes — 3D printing is available at the King Library MakerSpace (3rd "
         "floor, Room 303) on the Oxford campus, and it's self-service. The "
-        "MakerSpace guide has how to get started, the available printers, and "
-        "any costs [1]."
+        "MakerSpace guide has how to get started — including any training or "
+        "consultation — plus the available printers and costs [1]."
     )
     return answer, [{
         "n": 1, "url": _MAKERSPACE_GUIDE_URL,
