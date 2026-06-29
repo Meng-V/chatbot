@@ -399,6 +399,26 @@ def run_turn(
                 latency_ms=latency_ms, cited_chunk_ids=[],
             )
 
+    # --- 2.13. Newspapers -> correct LibGuide page (content-security: guide,
+    # don't answer; every URL verified). ---
+    if not booking_flow:
+        _news = _newspaper_answer(request.user_message)
+        if _news is not None:
+            _ans, _cites = _news
+            latency_ms = int((time.monotonic() - turn_start) * 1000)
+            record_request(endpoint="/chat", status="newspapers",
+                           latency_s=latency_ms / 1000)
+            return TurnResponse(
+                answer=_ans, is_refusal=False, refusal_trigger=None,
+                citations=_cites, confidence="high",
+                intent=classification.intent, scope=scope.as_filter(),
+                model_used=model_basic,
+                tokens={"input": 0, "cached_input": 0, "output": 0},
+                fired_corrections=[],
+                agent_stopped_reason="newspaper_short_circuit",
+                latency_ms=latency_ms, cited_chunk_ids=[],
+            )
+
     # --- 2.1. Long-period hours short-circuit (operator rule B) ---
     # LibCal's API only covers a limited date window, so a "summer
     # hours / winter break / this semester" question can't be answered
@@ -1310,6 +1330,59 @@ def _archives_contact_answer(message: str) -> "Optional[tuple[str, list[dict]]]"
         "n": 1, "url": _ARCHIVES_STAFF_URL,
         "snippet": "Miami University Libraries — Special Collections & University Archives staff",
     }]
+
+
+# Newspapers. CONTENT-SECURITY design (operator, 2026-06-29): do NOT answer
+# newspaper-access questions from the bot's own words -- GUIDE the user to the
+# correct, up-to-date LibGuide page so they read the authoritative content
+# themselves. Every URL here is curl-verified 200 (the WSJ partner link 500s
+# for scripted clients, so WSJ routes to the main guide, never a dead link).
+_NEWS_GUIDE_URL = "https://libguides.lib.miamioh.edu/newspapers"
+_NEWS_NYT_URL = "https://libguides.lib.miamioh.edu/newspapers/nyt"
+_NEWS_OHIO_URL = "https://libguides.lib.miamioh.edu/newspapers/ohio"
+_NEWS_ARCHIVES_URL = "https://libguides.lib.miamioh.edu/newspapers/Archives"
+_NYT_RE = re.compile(r"\b(new york times|n\.?y\.?t\.?|ny times)\b", re.IGNORECASE)
+_WSJ_RE = re.compile(r"\b(wall street journal|w\.?s\.?j\.?)\b", re.IGNORECASE)
+_OHIO_PAPER_RE = re.compile(
+    r"\b(cincinnati enquirer|enquirer|dayton daily|columbus dispatch|"
+    r"plain dealer|akron beacon|toledo blade|ohio newspaper)\b", re.IGNORECASE)
+_NEWS_HIST_RE = re.compile(
+    r"\b(historical|archiv|back issue|old issue|past issue|microfilm)\b", re.IGNORECASE)
+_NEWS_RE = re.compile(r"\bnewspapers?\b", re.IGNORECASE)
+# topic-research ("newspaper articles about X") belongs to the research path.
+_NEWS_RESEARCH_RE = re.compile(r"\barticles?\b.{0,30}\b(about|on|regarding)\b", re.IGNORECASE)
+
+
+def _newspaper_answer(message: str) -> "Optional[tuple[str, list[dict]]]":
+    """Guide newspaper-access questions to the correct LibGuide page (never
+    answer the access steps directly). Returns (answer, citations) or None."""
+    m = message or ""
+    def cite(url, label):
+        return [{"n": 1, "url": url, "snippet": label}]
+    # Specific named papers -> most specific verified page.
+    if _NYT_RE.search(m):
+        return ("Miami provides New York Times access for affiliated users. "
+                "The Libraries' New York Times guide has the current activation "
+                "steps — see [1].", cite(_NEWS_NYT_URL, "Miami Libraries — New York Times guide"))
+    if _WSJ_RE.search(m):
+        return ("Miami provides Wall Street Journal access for current students, "
+                "faculty, and staff. The Libraries' Newspapers guide has the "
+                "current activation details — see [1].",
+                cite(_NEWS_GUIDE_URL, "Miami Libraries — Newspapers guide"))
+    if _OHIO_PAPER_RE.search(m):
+        return ("For that paper and other Ohio newspapers, check the Libraries' "
+                "Ohio Newspapers guide — it lists how to read them — see [1].",
+                cite(_NEWS_OHIO_URL, "Miami Libraries — Ohio Newspapers guide"))
+    # Generic newspaper questions (not topic-research).
+    if _NEWS_RE.search(m) and not _NEWS_RESEARCH_RE.search(m):
+        if _NEWS_HIST_RE.search(m):
+            return ("For historical or back-issue newspapers, see the Libraries' "
+                    "Newspaper Archives guide — [1].",
+                    cite(_NEWS_ARCHIVES_URL, "Miami Libraries — Newspaper Archives guide"))
+        return ("The Libraries' Newspapers guide lists the newspapers Miami "
+                "provides and how to read them — see [1].",
+                cite(_NEWS_GUIDE_URL, "Miami Libraries — Newspapers guide"))
+    return None
 
 
 def _scholarly_comm_answer(message: str) -> "Optional[tuple[str, list[dict]]]":

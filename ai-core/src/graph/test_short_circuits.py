@@ -30,6 +30,7 @@ from src.graph.new_orchestrator import (
     _cancel_reservation_answer,
     _CANCEL_HELP,
     _archives_contact_answer,
+    _newspaper_answer,
 )
 
 OXFORD = Scope(campus="oxford", library=None, source="default")
@@ -230,6 +231,21 @@ def test_archivist_names_jacky_johnson():
     assert "roger justus" not in _archives_contact_answer("archivist email")[0].lower()
     # not an archivist question -> None
     assert _archives_contact_answer("what are the special collections hours?") is None
+
+
+def test_newspaper_routes_to_correct_libguide():
+    def url(q):
+        r = _newspaper_answer(q)
+        return r[1][0]["url"] if r else None
+    assert url("Do you have the New York Times?") == "https://libguides.lib.miamioh.edu/newspapers/nyt"
+    assert url("how do I read NYT") == "https://libguides.lib.miamioh.edu/newspapers/nyt"
+    assert url("Wall Street Journal access") == "https://libguides.lib.miamioh.edu/newspapers"
+    assert url("can I read the Cincinnati Enquirer?") == "https://libguides.lib.miamioh.edu/newspapers/ohio"
+    assert url("historical newspapers") == "https://libguides.lib.miamioh.edu/newspapers/Archives"
+    assert url("what newspapers do you have?") == "https://libguides.lib.miamioh.edu/newspapers"
+    # topic-research stays out of the newspaper guide path
+    assert _newspaper_answer("find newspaper articles about the 2020 election") is None
+    assert _newspaper_answer("who is the chemistry librarian?") is None
 
 
 if __name__ == "__main__":
