@@ -304,6 +304,17 @@ def process_synthesizer_output(
         evidence_urls = {
             _norm_url(getattr(c, "source_url", "")) for c in evidence
         }
+        # Operator-verified Q&A chunks embed the canonical ANSWER url in their
+        # TEXT, which often differs from the chunk's source_url (e.g. the NYT
+        # gold chunk's source_url is .../az/databases but the operator answer
+        # points to .../newspapers). A url written into retrieved evidence is
+        # backed by retrieval -- NOT a fabrication from the prompt -- so it's a
+        # legitimate citation. Without this, those curated answers refused with
+        # CITATION_INVALID (prod eval 2026-06-28). Still blocks URLs the model
+        # invents that appear in NO retrieved chunk.
+        for c in evidence:
+            for m in _URL_RE.finditer(getattr(c, "text", "") or ""):
+                evidence_urls.add(_norm_url(m.group(0).rstrip(".,);:")))
         evidence_urls.discard("")
         for c in output.citations:
             if not c.url:
