@@ -29,6 +29,7 @@ from src.graph.new_orchestrator import (
     _strip_injected_dictation,
     _cancel_reservation_answer,
     _CANCEL_HELP,
+    _archives_contact_answer,
 )
 
 OXFORD = Scope(campus="oxford", library=None, source="default")
@@ -216,6 +217,19 @@ def test_cancel_does_not_overfire():
               "what is the cancellation policy?", "is there a cancellation fee?",
               "where is King Library?", "book a room tomorrow"]:
         assert _cancel_reservation_answer(q) is None, q
+
+
+def test_archivist_names_jacky_johnson():
+    for q in ["What is the email of the university archivist?",
+              "who is the archivist?"]:
+        res = _archives_contact_answer(q)
+        assert res is not None, q
+        assert "jacky johnson" in res[0].lower(), q
+        assert "johnsoj@miamioh.edu" in res[0].lower(), q
+    # must NOT name the wrong rubric example
+    assert "roger justus" not in _archives_contact_answer("archivist email")[0].lower()
+    # not an archivist question -> None
+    assert _archives_contact_answer("what are the special collections hours?") is None
 
 
 if __name__ == "__main__":

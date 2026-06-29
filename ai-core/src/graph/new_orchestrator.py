@@ -378,6 +378,27 @@ def run_turn(
                 latency_ms=latency_ms, cited_chunk_ids=[],
             )
 
+    # --- 2.12. University Archivist / Special Collections contact ---
+    # A rubric KB chunk named the WRONG archivist and made the synth refuse;
+    # answer from the verified staff page instead.
+    if not booking_flow:
+        _arch = _archives_contact_answer(request.user_message)
+        if _arch is not None:
+            _ans, _cites = _arch
+            latency_ms = int((time.monotonic() - turn_start) * 1000)
+            record_request(endpoint="/chat", status="archives_contact",
+                           latency_s=latency_ms / 1000)
+            return TurnResponse(
+                answer=_ans, is_refusal=False, refusal_trigger=None,
+                citations=_cites, confidence="high",
+                intent=classification.intent, scope=scope.as_filter(),
+                model_used=model_basic,
+                tokens={"input": 0, "cached_input": 0, "output": 0},
+                fired_corrections=[],
+                agent_stopped_reason="archives_contact_short_circuit",
+                latency_ms=latency_ms, cited_chunk_ids=[],
+            )
+
     # --- 2.1. Long-period hours short-circuit (operator rule B) ---
     # LibCal's API only covers a limited date window, so a "summer
     # hours / winter break / this semester" question can't be answered
@@ -1261,6 +1282,34 @@ def _cancel_reservation_answer(message: str) -> "Optional[tuple[str, list[dict]]
     except Exception:  # noqa: BLE001 -- destructive call must never crash a turn
         get_logger("new_orchestrator").exception("cancel_reservation failed")
         return _CANCEL_FALLBACK, cite
+
+
+# University Archivist / Special Collections contact. The operator-gold KB had
+# a RUBRIC chunk ("Provide the contact info, e.g. 'Roger Justus, justusra@'")
+# that out-ranked the clean answer AND named the WRONG person (Roger Justus is
+# Data Services, not the archivist) -> the synth saw contradictory instruction-
+# phrased text and refused ('email of the university archivist', prod eval
+# 2026-06-28). Answer deterministically from the verified staff page: the
+# archivist is Jacky Johnson (spec.lib.miamioh.edu/home/staff/, curl-verified).
+_ARCHIVIST_RE = re.compile(r"\barchivist\b", re.IGNORECASE)
+_ARCHIVES_STAFF_URL = "https://spec.lib.miamioh.edu/home/staff/"
+
+
+def _archives_contact_answer(message: str) -> "Optional[tuple[str, list[dict]]]":
+    """Deterministic University Archivist / Special Collections contact.
+    Returns (answer, citations) or None."""
+    if not _ARCHIVIST_RE.search(message or ""):
+        return None
+    answer = (
+        "The University Archivist is Jacky Johnson, Department Head & "
+        "University Archivist (johnsoj@miamioh.edu), in Special Collections & "
+        "University Archives on the 3rd floor of King Library. General "
+        "contacts: SpecColl@MiamiOH.edu, Archives@MiamiOH.edu, (513) 529-3323 [1]."
+    )
+    return answer, [{
+        "n": 1, "url": _ARCHIVES_STAFF_URL,
+        "snippet": "Miami University Libraries — Special Collections & University Archives staff",
+    }]
 
 
 def _scholarly_comm_answer(message: str) -> "Optional[tuple[str, list[dict]]]":
