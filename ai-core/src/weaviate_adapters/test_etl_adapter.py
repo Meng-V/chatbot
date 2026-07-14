@@ -160,7 +160,22 @@ class _StubClient:
 def _install_weaviate_stubs():
     """Inject minimal weaviate.classes.config + weaviate.classes.query
     stubs so the lazy imports inside adapter methods don't blow up
-    when the real SDK isn't reachable in the test process."""
+    when the real SDK isn't reachable in the test process.
+
+    If the real SDK is importable, use it and stub NOTHING. This runs
+    at module import, so under `pytest src/` anything it puts in
+    sys.modules is visible to every other test in the process. An
+    earlier version setdefault'ed into the REAL weaviate.classes.query
+    module and overwrote its Filter with the stub (which lacks
+    any_of/all_of), breaking test_search_adapter's hybrid_search tests
+    whenever another test had already imported the real SDK."""
+    try:
+        import weaviate.classes.config  # noqa: F401
+        import weaviate.classes.query  # noqa: F401
+        return  # Real SDK present -- the lazy imports will just work.
+    except ImportError:
+        pass
+
     if "weaviate" not in sys.modules:
         # Don't shadow the real SDK if it's already loaded.
         weav = types.ModuleType("weaviate")
@@ -191,9 +206,14 @@ def _install_weaviate_stubs():
         def __repr__(self):
             return f"Property({self.name}, {self.data_type})"
 
-    config_mod.Configure = _Configure  # type: ignore[attr-defined]
-    config_mod.DataType = _DataType  # type: ignore[attr-defined]
-    config_mod.Property = _Property  # type: ignore[attr-defined]
+    # Never overwrite attributes that already exist -- if a real (or
+    # partially imported) module is in sys.modules, leave it alone.
+    if not hasattr(config_mod, "Configure"):
+        config_mod.Configure = _Configure  # type: ignore[attr-defined]
+    if not hasattr(config_mod, "DataType"):
+        config_mod.DataType = _DataType  # type: ignore[attr-defined]
+    if not hasattr(config_mod, "Property"):
+        config_mod.Property = _Property  # type: ignore[attr-defined]
 
     query_mod = sys.modules.setdefault("weaviate.classes.query", types.ModuleType("weaviate.classes.query"))
     classes.query = query_mod  # type: ignore[attr-defined]
@@ -219,7 +239,8 @@ def _install_weaviate_stubs():
             f._matched_count = 0
             return f
 
-    query_mod.Filter = _Filter  # type: ignore[attr-defined]
+    if not hasattr(query_mod, "Filter"):
+        query_mod.Filter = _Filter  # type: ignore[attr-defined]
 
 
 _install_weaviate_stubs()
