@@ -60,6 +60,20 @@ PYEOF
   else
     bad "prisma client stale or missing -- run: bash ai-core/scripts/ensure_prisma_client.sh (then restart)"
   fi
+
+  # 3b. the two schema copies agree. The build generates the Python
+  # client from ai-core/schema.prisma (an auto-synced COPY of
+  # prisma/schema.prisma); if the sync is skipped, every deploy
+  # regenerates a stale client from the old copy (root cause of the
+  # 2026-07-14 LibrarySpace_v2 incident). Compare model lists.
+  if [ -f "$ROOT/prisma/schema.prisma" ] && [ -f "$ROOT/ai-core/schema.prisma" ]; then
+    if diff -q <(grep "^model" "$ROOT/prisma/schema.prisma") \
+               <(grep "^model" "$ROOT/ai-core/schema.prisma") >/dev/null 2>&1; then
+      ok "prisma schema copies in sync (root vs ai-core)"
+    else
+      bad "schema copies diverged -- run: ./local-auto-start.sh --sync-prisma, commit, redeploy"
+    fi
+  fi
 fi
 
 # 4. embedding cache present and big (the 30-60s-hang-on-first-message guard)

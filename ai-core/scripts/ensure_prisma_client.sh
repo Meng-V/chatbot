@@ -60,7 +60,11 @@ fi
 echo "  ! drift detected ($OUT) -- regenerating..."
 
 [ -x "$PRISMA" ] || { echo "✗ prisma CLI not found at $PRISMA"; exit 1; }
-"$PRISMA" generate --schema "$SCHEMA"
+# `prisma generate` shells out to the generator BINARY named in the
+# schema ("prisma-client-py"), resolved via PATH -- which a `sudo -u`
+# invocation doesn't have. Prepend the venv bin dir so it resolves
+# (PRD 2026-07-14: '/bin/sh: prisma-client-py: command not found').
+PATH="$(dirname "$PY"):$PATH" "$PRISMA" generate --schema "$SCHEMA"
 
 if OUT=$(check); then
   echo "  ✓ regenerated -- $OUT"
