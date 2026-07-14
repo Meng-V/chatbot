@@ -1,0 +1,28 @@
+// Human-verified-eval exemplar supplement, 2026-07-14.
+// Loader globs exemplars*.jsonl lexicographically; delete this file to roll back.
+//
+// Source: the operator's human re-label of the 2026-06-29 v2 eval review
+// (docs/eval/eval_review_2026-06-29.md), P0 intent-misroute fixes:
+//   - case #34 "How do I extend my checkout?"        -> classified adobe_access
+//   - case #89 "What software is on the library computers?" -> classified adobe_access
+// The adobe_access exemplar pool is dense with "checkout"/"check out"
+// software-license phrasing, so generic checkout-extension and
+// software-on-public-computers questions land there. Give renewal and
+// software_access nearer neighbors for those phrasings.
+//
+// None are verbatim copies of gold questions (no test-set leakage).
+
+// extend a checkout / due date -> renewal
+{"intent": "renewal", "utterance": "How can I extend my checkout?", "source": "manual_2026-07-14_eval_review"}
+{"intent": "renewal", "utterance": "Can I extend the checkout on my book?", "source": "manual_2026-07-14_eval_review"}
+{"intent": "renewal", "utterance": "I need to extend my book checkout, how do I do that?", "source": "manual_2026-07-14_eval_review"}
+{"intent": "renewal", "utterance": "How do I extend the due date on something I checked out?", "source": "manual_2026-07-14_eval_review"}
+{"intent": "renewal", "utterance": "Can I extend my loan period?", "source": "manual_2026-07-14_eval_review"}
+{"intent": "renewal", "utterance": "My book is due tomorrow, can I extend it?", "source": "manual_2026-07-14_eval_review"}
+
+// software on the library / public computers -> software_access
+{"intent": "software_access", "utterance": "What software is installed on the library computers?", "source": "manual_2026-07-14_eval_review"}
+{"intent": "software_access", "utterance": "What programs do the public computers in the library have?", "source": "manual_2026-07-14_eval_review"}
+{"intent": "software_access", "utterance": "Which software is available on the computers at King?", "source": "manual_2026-07-14_eval_review"}
+{"intent": "software_access", "utterance": "Do the library computers have Microsoft Office?", "source": "manual_2026-07-14_eval_review"}
+{"intent": "software_access", "utterance": "Is there statistical software on the library computers?", "source": "manual_2026-07-14_eval_review"}
