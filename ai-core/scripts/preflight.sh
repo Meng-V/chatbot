@@ -36,11 +36,29 @@ if [ -x "$PY" ]; then
   else
     bad "core imports fail (try: pip install --force-reinstall fastapi starlette)"
   fi
-  # 3. prisma client generated
-  if "$PY" -c "from prisma import Prisma; Prisma()" 2>/dev/null; then
-    ok "prisma client generated"
+  # 3. prisma client generated AND current with the schema. Import-only
+  # checking is not enough: a client generated from an OLDER schema
+  # imports fine but lacks the newer models (PRD 2026-07-14: the
+  # LibrarySpace_v2 seed died with "'Prisma' object has no attribute
+  # 'libraryspace_v2'" because the venv's client predated the 05-18
+  # schema). Verify every model in schema.prisma exists on the client.
+  SCHEMA="$ROOT/prisma/schema.prisma"
+  [ -f "$SCHEMA" ] || SCHEMA="$ROOT/ai-core/schema.prisma"
+  if env SCHEMA="$SCHEMA" "$PY" - <<'PYEOF' 2>/dev/null
+import os, re, sys
+from prisma import Prisma
+db = Prisma()
+src = open(os.environ["SCHEMA"], encoding="utf-8").read()
+models = re.findall(r"^model\s+(\w+)", src, re.M)
+missing = [m for m in models if not hasattr(db, m.lower())]
+if missing:
+    print("stale prisma client, missing models: " + ", ".join(missing))
+    sys.exit(1)
+PYEOF
+  then
+    ok "prisma client generated + current with schema ($(basename "$SCHEMA"))"
   else
-    bad "prisma client missing (cd ai-core && venv/bin/prisma py fetch && venv/bin/prisma generate)"
+    bad "prisma client stale or missing -- run: bash ai-core/scripts/ensure_prisma_client.sh (then restart)"
   fi
 fi
 

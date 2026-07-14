@@ -223,6 +223,14 @@ chmod 600 .env
 
 ### 4. Initialize Database
 
+> **Every deploy (not just first setup):** run
+> `bash ai-core/scripts/ensure_prisma_client.sh` after installing Python
+> deps and before `preflight.sh`. It regenerates the Prisma Python client
+> only when it has drifted from `prisma/schema.prisma`. A reused venv with
+> a stale client imports fine but crashes on newer models — this bit PRD
+> on 2026-07-14 (`'Prisma' object has no attribute 'libraryspace_v2'`),
+> and preflight check #3 now fails hard on that drift.
+
 ```bash
 # Generate Prisma client
 cd ai-core
