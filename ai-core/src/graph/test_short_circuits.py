@@ -36,6 +36,14 @@ from src.graph.new_orchestrator import (
     _sword_hours_answer,
     _special_collections_hours_answer,
     _is_long_period_hours,
+    _staff_directory_answer,
+    _locker_answer,
+    _alumni_borrowing_answer,
+    _always_open_answer,
+    _research_appointment_answer,
+    _peer_review_answer,
+    _makerspace_equipment_answer,
+    _renewal_paths_answer,
 )
 
 OXFORD = Scope(campus="oxford", library=None, source="default")
@@ -413,6 +421,103 @@ def test_short_term_hours_still_live():
     for q in ["Is the library open right now?", "King hours today",
               "what time does King close tonight?"]:
         assert not _is_long_period_hours(q), q
+
+
+# --- P2 verified-pointer short-circuits (eval review 2026-06-29) ------------
+def test_staff_directory_pointer():
+    res = _staff_directory_answer("How do I find the staff directory?")
+    assert res is not None
+    assert res[1][0]["url"] == "https://www.lib.miamioh.edu/about/organization/staff/"
+
+
+def test_staff_hamilton_points_to_rentschler_page():
+    for q in ["Who works at the Hamilton library?",
+              "Who can help me at the Hamilton library?"]:
+        res = _staff_directory_answer(q)
+        assert res is not None, q
+        assert "rentschler-library-staff" in res[1][0]["url"], q
+
+
+def test_staff_subject_lookups_fall_through():
+    for q in ["who is the biology librarian?",
+              "who is the librarian for chemistry at Hamilton?",
+              "who is the dean of the libraries?"]:
+        assert _staff_directory_answer(q) is None, q
+
+
+def test_lockers_answer_and_scope():
+    res = _locker_answer("Are there lockers at King?")
+    assert res is not None
+    assert "faculty" in res[0] and "graduate" in res[0]
+    assert res[1][0]["url"].endswith("/use/spaces/reading-rooms/")
+    # regional locker questions fall through; no lockers -> no fire
+    assert _locker_answer("are there lockers at Rentschler?") is None
+    assert _locker_answer("where can I study?") is None
+
+
+def test_alumni_no_library_card():
+    res = _alumni_borrowing_answer(
+        "I graduated from Miami -- can I still check out books?")
+    assert res is not None
+    assert "does not issue an alumni library card" in res[0]
+    assert "loan-periods-fines" in res[1][0]["url"]
+    # research about alumni is not a borrowing question
+    assert _alumni_borrowing_answer("books about famous Miami alumni") is None
+
+
+def test_24_hours_never_asserted_from_one_day():
+    for q in ["Is the library 24 hours?", "is King open 24/7",
+              "are you open overnight?"]:
+        res = _always_open_answer(q)
+        assert res is not None, q
+        assert "vary by building" in res[0], q
+    assert _always_open_answer("is the library open right now?") is None
+
+
+def test_research_appointment_points_to_liaisons():
+    res = _research_appointment_answer(
+        "Can I schedule an appointment with a librarian?")
+    assert res is not None
+    assert res[1][0]["url"].endswith("/about/organization/liaisons/")
+    # archivist appointments keep the archives contact path
+    assert _research_appointment_answer(
+        "can I make an appointment with the archivist?") is None
+
+
+def test_peer_review_explains_filter():
+    res = _peer_review_answer("How do I find only peer-reviewed articles?")
+    assert res is not None
+    assert "filter" in res[0].lower()
+    assert res[1][0]["url"].endswith("/az/databases")
+    assert _peer_review_answer("is this journal peer-reviewed?") is None
+
+
+def test_makerspace_equipment_points_to_live_page():
+    res = _makerspace_equipment_answer("Is there a vinyl cutter at the MakerSpace?")
+    assert res is not None
+    assert res[1][0]["url"] == "https://muohio.libcal.com/reserve/equipment/makerspace"
+    # 3D questions keep the dedicated 3D answer; hours keep the hours path
+    assert _makerspace_equipment_answer("Does the MakerSpace have a 3D printer?") is None
+    assert _makerspace_equipment_answer("What are the MakerSpace hours?") is None
+
+
+def test_renewal_two_paths():
+    res = _renewal_paths_answer("Can I renew my book?")
+    assert res is not None
+    assert "loan-periods-fines" in res[1][0]["url"]
+    assert "loan-periods-ohiolink-ill" in res[1][1]["url"]
+    # bot-as-actor phrasing must keep the capability-limitation template
+    assert _renewal_paths_answer("can you renew my book for me?") is None
+    assert _renewal_paths_answer("please renew my books") is None
+
+
+def test_room_pointer_regional_existence_questions():
+    # eval review #43: existence question about regional study rooms
+    res = _room_reservation_answer("Are there study rooms at Gardner-Harvey?")
+    assert res is not None
+    assert res[1][0]["url"] == "https://muohio.libcal.com/reserve/middletown"
+    # King existence questions keep the agent's evidence-based answer
+    assert _room_reservation_answer("Are there study rooms at King?") is None
 
 
 if __name__ == "__main__":

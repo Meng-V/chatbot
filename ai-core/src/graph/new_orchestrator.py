@@ -470,6 +470,38 @@ def run_turn(
                 latency_ms=latency_ms, cited_chunk_ids=[],
             )
 
+    # --- 2.15. Verified-pointer short-circuits (eval review 2026-06-29 P2) ---
+    # Narrow, operator-verified deterministic answers: staff directory /
+    # Rentschler staff (#42/#72/#98), King lockers (#24), no-alumni-card
+    # (#40), never-assert-24-hours (#70), research appointments (#76),
+    # peer-reviewed filter (#79), MakerSpace equipment page (#58).
+    if not booking_flow:
+        for _status, _fn in (
+            ("staff_directory", _staff_directory_answer),
+            ("lockers", _locker_answer),
+            ("alumni_borrowing", _alumni_borrowing_answer),
+            ("always_open_hours", _always_open_answer),
+            ("research_appointment", _research_appointment_answer),
+            ("peer_reviewed", _peer_review_answer),
+            ("makerspace_equipment", _makerspace_equipment_answer),
+        ):
+            _res = _fn(request.user_message)
+            if _res is not None:
+                _ans, _cites = _res
+                latency_ms = int((time.monotonic() - turn_start) * 1000)
+                record_request(endpoint="/chat", status=_status,
+                               latency_s=latency_ms / 1000)
+                return TurnResponse(
+                    answer=_ans, is_refusal=False, refusal_trigger=None,
+                    citations=_cites, confidence="high",
+                    intent=classification.intent, scope=scope.as_filter(),
+                    model_used=model_basic,
+                    tokens={"input": 0, "cached_input": 0, "output": 0},
+                    fired_corrections=[],
+                    agent_stopped_reason=f"{_status}_short_circuit",
+                    latency_ms=latency_ms, cited_chunk_ids=[],
+                )
+
     # --- 2.1. Long-period hours short-circuit (operator rule B) ---
     # LibCal's API only covers a limited date window, so a "summer
     # hours / winter break / this semester" question can't be answered
@@ -548,6 +580,28 @@ def run_turn(
             latency_ms=latency_ms,
             cited_chunk_ids=[],
         )
+
+    # --- 2.45. Renewal two-path answer (eval review 2026-06-29 #33) ---
+    # AFTER the limitation check so bot-as-actor phrasings ('renew it for
+    # me') keep the explicit "I can't do that" template. How-to renewal
+    # questions get the material-type-split policy answer.
+    if not booking_flow:
+        _renew = _renewal_paths_answer(request.user_message)
+        if _renew is not None:
+            _ans, _cites = _renew
+            latency_ms = int((time.monotonic() - turn_start) * 1000)
+            record_request(endpoint="/chat", status="renewal_paths",
+                           latency_s=latency_ms / 1000)
+            return TurnResponse(
+                answer=_ans, is_refusal=False, refusal_trigger=None,
+                citations=_cites, confidence="high",
+                intent=classification.intent, scope=scope.as_filter(),
+                model_used=model_basic,
+                tokens={"input": 0, "cached_input": 0, "output": 0},
+                fired_corrections=[],
+                agent_stopped_reason="renewal_paths_short_circuit",
+                latency_ms=latency_ms, cited_chunk_ids=[],
+            )
 
     # --- 2.5. Per-intent capability check ---
     # Some intents (account, events_news, find_resource, databases) are
@@ -713,7 +767,11 @@ def run_turn(
     # "Do all the libraries have <service>?" -- aggregate per campus from
     # the LibrarySpace truth table deterministically, rather than letting
     # the synth answer (it dropped the regional campuses).
-    if classification.intent == "cross_campus_comparison":
+    # Also fires on all-libraries phrasing under a misrouted intent --
+    # 'do all the libraries have scanners?' classified printing_wifi and
+    # answered Oxford-only (eval review 2026-06-29 #46).
+    if (classification.intent == "cross_campus_comparison"
+            or _MS_CROSS_RE.search(request.user_message)):
         _xc = _cross_campus_service_short_circuit(request.user_message, deps)
         if _xc is not None:
             _ans, _cites = _xc
@@ -1313,6 +1371,20 @@ def _makerspace_3d_answer(message: str, scope: "Scope") -> "Optional[tuple[str, 
         return None
     if scope.campus not in ("oxford", None):
         return None
+    # Cost/fee questions get a pricing-focused answer (eval review
+    # 2026-06-29 #64): guide the patron to check the current rates on
+    # the MakerSpace guide -- often free, but never assert a number.
+    if re.search(r"\b(cost|price|pricing|fees?|charge|how much)\b", m,
+                 re.IGNORECASE):
+        answer = (
+            "3D printing at the King Library MakerSpace is often free of "
+            "charge, but rates can change -- please check the current "
+            "pricing on the MakerSpace guide before you print [1]."
+        )
+        return answer, [{
+            "n": 1, "url": _MAKERSPACE_GUIDE_URL,
+            "snippet": "Miami University Libraries — MakerSpace (Create)",
+        }]
     answer = (
         "Yes — 3D printing is available at the King Library MakerSpace (3rd "
         "floor, Room 303) on the Oxford campus, and it's self-service. The "
@@ -1569,6 +1641,15 @@ _ROOM_HAMILTON_RE = re.compile(r"\b(rentschler|hamilton)\b", re.IGNORECASE)
 _ROOM_MIDDLETOWN_RE = re.compile(
     r"\b(gardner[- ]?harvey|middletown)\b", re.IGNORECASE
 )
+# Existence questions about REGIONAL study rooms ("are there study rooms
+# at Gardner-Harvey?") also deserve the reservation pointer -- the agent
+# path confirmed rooms exist but cited no bookable link (eval review
+# 2026-06-29 #43, operator URL /reserve/middletown).
+_ROOM_EXISTS_RE = re.compile(
+    r"\b(are\s+there|is\s+there|do\s+(you|they)\s+have"
+    r"|does\s+[\w\s-]{0,30}\bhave)\b[^.?!]{0,40}\b(study\s+)?rooms?\b",
+    re.IGNORECASE,
+)
 
 
 def _room_reservation_answer(message: str) -> "Optional[tuple[str, list[dict]]]":
@@ -1579,7 +1660,16 @@ def _room_reservation_answer(message: str) -> "Optional[tuple[str, list[dict]]]"
     regional-origin session (xc_session_origin_hamilton). Returns
     (answer, citations) or None to fall through to the agent."""
     m = message or ""
-    if not _ROOM_RESERVE_RE.search(m):
+    _regional = bool(
+        _ROOM_HAMILTON_RE.search(m) or _ROOM_MIDDLETOWN_RE.search(m)
+    )
+    if not (
+        _ROOM_RESERVE_RE.search(m)
+        # Regional study-room EXISTENCE questions also get the pointer
+        # (case #43); King-scope existence questions keep the agent's
+        # evidence-based answer.
+        or (_regional and _ROOM_EXISTS_RE.search(m))
+    ):
         return None
     # Cancels are the 2.11 short-circuit's job (it runs first; this is
     # defense-in-depth for direct helper callers/tests).
@@ -1634,6 +1724,274 @@ def _room_reservation_answer(message: str) -> "Optional[tuple[str, list[dict]]]"
             (_ROOMS_KING_RESERVE_URL,
              "LibCal — Miami University Libraries room reservations"),
         ]),
+    )
+
+
+# --- P2 verified-pointer short-circuits (eval review 2026-06-29) -----------
+#
+# Each fires on a narrow message pattern and answers with operator-
+# verified content/URLs from the human re-label of the 2026-06-29 eval
+# review. All pure functions -> unit-tested in test_short_circuits.py.
+
+# Case #98: the crawled nav suggested the Contact Us page; the operator's
+# correct URL is the staff page itself.
+_STAFF_DIRECTORY_URL = "https://www.lib.miamioh.edu/about/organization/staff/"
+# Cases #42/#72: a generic "who works at the Hamilton library" must point
+# to the Rentschler staff page (operator URL), never enumerate people
+# (privacy) and never dead-end in the roster-dump refusal.
+_RENTSCHLER_STAFF_URL = (
+    "https://www.ham.miamioh.edu/library/about/rentschler-library-staff/"
+)
+_STAFF_DIR_RE = re.compile(
+    r"\bstaff\s+directory\b|\bdirectory\s+of\s+(library\s+)?staff\b"
+    r"|\blist\s+of\s+(library\s+)?(staff|employees)\b",
+    re.IGNORECASE,
+)
+_STAFF_GENERIC_RE = re.compile(
+    r"\bwho\s+(works|all\s+works)\b|\bwho\s+can\s+help(\s+me)?\b"
+    r"|\bstaff\b|\bemployees\b",
+    re.IGNORECASE,
+)
+
+
+def _staff_directory_answer(message: str) -> "Optional[tuple[str, list[dict]]]":
+    """Point staff-directory / who-works-here questions at the right staff
+    page. Subject lookups ('who is the biology librarian?') fall through
+    to the liaison path."""
+    m = message or ""
+    if _STAFF_DIR_RE.search(m):
+        return (
+            "The Libraries' staff directory is on the staff page -- you can "
+            "look up any staff member and their contact information there [1].",
+            [{"n": 1, "url": _STAFF_DIRECTORY_URL,
+              "snippet": "Miami University Libraries — Staff"}],
+        )
+    if _ROOM_HAMILTON_RE.search(m) and _STAFF_GENERIC_RE.search(m) \
+            and "librarian for" not in m.lower():
+        return (
+            "For who works at Rentschler Library (Hamilton campus), please "
+            "see the Rentschler Library staff page -- it lists the staff and "
+            "how to reach them [1].",
+            [{"n": 1, "url": _RENTSCHLER_STAFF_URL,
+              "snippet": "Rentschler Library — staff"}],
+        )
+    return None
+
+
+# Case #24: lockers had no searchable chunk, so the bot listed everything
+# King has EXCEPT lockers. Facts + URL are the operator-verified gold
+# (svc_lockers, corrected 2026-05-22: King DOES have lockers).
+_READING_ROOMS_URL = "https://www.lib.miamioh.edu/use/spaces/reading-rooms/"
+_LOCKER_RE = re.compile(r"\blockers?\b", re.IGNORECASE)
+
+
+def _locker_answer(message: str) -> "Optional[tuple[str, list[dict]]]":
+    m = message or ""
+    if not _LOCKER_RE.search(m):
+        return None
+    # Regional locker policies aren't in the verified content -- let the
+    # agent (and its evidence rules) handle those.
+    if _ROOM_HAMILTON_RE.search(m) or _ROOM_MIDDLETOWN_RE.search(m):
+        return None
+    return (
+        "Yes -- King Library has lockers in the Reading Rooms. They are "
+        "restricted to active faculty and actively enrolled graduate "
+        "students. Locker assignments are requested via an online form on "
+        "the Reading Rooms page and are assigned yearly on a first-come, "
+        "first-served basis (with a waitlist when full) [1].",
+        [{"n": 1, "url": _READING_ROOMS_URL,
+          "snippet": "Miami University Libraries — Reading Rooms"}],
+    )
+
+
+# Case #40: there is NO alumni library card (operator-critical note).
+# The bot must not invent one; point to the circulation policies page.
+_LOAN_FINES_URL = (
+    "https://libguides.lib.miamioh.edu/circulation-policies/loan-periods-fines"
+)
+_ALUMNI_RE = re.compile(r"\b(alumni|alumnus|alumna|alum|graduated)\b", re.IGNORECASE)
+_ALUMNI_BORROW_RE = re.compile(
+    r"\b(borrow(ing)?|check(\s|-)?out|checking\s+out|library\s+card"
+    r"|borrowing\s+privileges?)\b",
+    re.IGNORECASE,
+)
+
+
+def _alumni_borrowing_answer(message: str) -> "Optional[tuple[str, list[dict]]]":
+    m = message or ""
+    if not (_ALUMNI_RE.search(m) and _ALUMNI_BORROW_RE.search(m)):
+        return None
+    return (
+        "Miami University Libraries does not issue an alumni library card. "
+        "For the borrowing options currently available after graduation, "
+        "please check the circulation policies page [1], or ask the "
+        "circulation desk at (513) 529-4141.",
+        [{"n": 1, "url": _LOAN_FINES_URL,
+          "snippet": "Miami University Libraries — loan periods & fines"}],
+    )
+
+
+# Case #70: 'Is the library 24 hours?' must explain hours vary by
+# building and term (King runs near-24-hour only during finals periods)
+# and hand the user the hours hub -- never assert a flat yes/no from one
+# day's schedule.
+_ALWAYS_OPEN_RE = re.compile(
+    r"\b24[-/ ]?(hours?|hrs?|7)\b|\b24x7\b|\bopen\s+(all\s+night|overnight)\b"
+    r"|\baround\s+the\s+clock\b",
+    re.IGNORECASE,
+)
+
+
+def _always_open_answer(message: str) -> "Optional[tuple[str, list[dict]]]":
+    m = message or ""
+    if not _ALWAYS_OPEN_RE.search(m):
+        return None
+    url = _HOURS_PAGE_URL["oxford"]
+    return (
+        "Library hours vary by building and by term, so none of the "
+        "libraries are routinely open 24 hours. King Library is the only "
+        "building that runs near-24-hour schedules, and only during finals "
+        "periods. Please check the hours page for the building and date "
+        "you need [1].",
+        [{"n": 1, "url": url,
+          "snippet": "Miami University Libraries — Library Hours"}],
+    )
+
+
+# Case #76: 'Can I schedule an appointment with a librarian?' should
+# guide to the subject-liaison page (operator URL), not the generic Ask
+# Us deflection. Archivist/SCUA and MakerSpace appointments have their
+# own earlier short-circuits.
+_RESEARCH_APPT_RE = re.compile(
+    r"\b(appointment|consultation|one[- ]on[- ]one)\b[^.?!]*\blibrarian\b"
+    r"|\blibrarian\b[^.?!]*\b(appointment|consultation)\b"
+    r"|\bresearch\s+consultation\b",
+    re.IGNORECASE,
+)
+_APPT_EXCLUDE_RE = re.compile(
+    r"\b(archivist|special\s+collections|archives|maker\s*space)\b",
+    re.IGNORECASE,
+)
+
+
+def _research_appointment_answer(message: str) -> "Optional[tuple[str, list[dict]]]":
+    m = message or ""
+    if not _RESEARCH_APPT_RE.search(m) or _APPT_EXCLUDE_RE.search(m):
+        return None
+    return (
+        "Yes -- librarians offer research consultations. Find the subject "
+        "librarian for your course, major, or topic on the subject "
+        "librarians page and contact them directly to set up an "
+        "appointment [1].",
+        [{"n": 1, "url": _LIAISONS_URL,
+          "snippet": "Miami University Libraries — subject librarians"}],
+    )
+
+
+# Case #79: 'how do I find only peer-reviewed articles?' should explain
+# the databases' peer-reviewed filter (not just drop the A-Z link).
+_DATABASES_AZ_URL = "https://libguides.lib.miamioh.edu/az/databases"
+_PEER_REVIEW_RE = re.compile(
+    r"\bpeer[- ]?reviewed?\b|\bscholarly\s+(articles?|journals?|sources?)\b",
+    re.IGNORECASE,
+)
+_PEER_REVIEW_FIND_RE = re.compile(
+    r"\b(only|filter|find|limit|restrict|search|how)\b", re.IGNORECASE
+)
+
+
+def _peer_review_answer(message: str) -> "Optional[tuple[str, list[dict]]]":
+    m = message or ""
+    if not (_PEER_REVIEW_RE.search(m) and _PEER_REVIEW_FIND_RE.search(m)):
+        return None
+    return (
+        "Most article databases (EBSCO, JSTOR, and others) have a "
+        "'peer-reviewed' or 'scholarly journals' checkbox filter -- apply "
+        "it to limit your results to peer-reviewed articles. Pick a "
+        "database from the Databases A-Z list [1], and if you're not sure "
+        "which database fits your topic, your subject librarian can "
+        "recommend one [2].",
+        [
+            {"n": 1, "url": _DATABASES_AZ_URL,
+             "snippet": "Miami University Libraries — Databases A-Z"},
+            {"n": 2, "url": _LIAISONS_URL,
+             "snippet": "Miami University Libraries — subject librarians"},
+        ],
+    )
+
+
+# Case #58: equipment-availability questions ('is there a vinyl cutter at
+# the MakerSpace?') must send the user to the live equipment page, not
+# assert an inventory from crawled text. 3D-printing questions keep the
+# dedicated 2.10 answer.
+_MAKERSPACE_EQUIPMENT_URL = "https://muohio.libcal.com/reserve/equipment/makerspace"
+_MS_EQUIP_Q_RE = re.compile(
+    r"\b(is\s+there|are\s+there|does\s+(it|the\s+maker\s*space)\s+have"
+    r"|do\s+you\s+have|what\s+(equipment|tools|machines)"
+    r"|vinyl|laser|cricut|sewing|embroider|button\s+maker|cnc|cutter)\b",
+    re.IGNORECASE,
+)
+
+
+def _makerspace_equipment_answer(message: str) -> "Optional[tuple[str, list[dict]]]":
+    m = message or ""
+    if not _MAKERSPACE_WORD_RE.search(m):
+        return None
+    if _MS_3D_RE.search(m):  # 3D questions -> the 2.10 short-circuit
+        return None
+    if not _MS_EQUIP_Q_RE.search(m):
+        return None
+    return (
+        "The MakerSpace's current equipment list -- with live availability "
+        "and reservations -- is on the MakerSpace equipment page. Please "
+        "check there for the item you're looking for [1].",
+        [{"n": 1, "url": _MAKERSPACE_EQUIPMENT_URL,
+          "snippet": "LibCal — MakerSpace equipment"}],
+    )
+
+
+# Case #33: 'Can I renew my book?' got a single generic OhioLINK-account
+# answer. Renewal differs by material type -- give both policy paths.
+_LOAN_OHIOLINK_ILL_URL = (
+    "https://libguides.lib.miamioh.edu/mul-circulation-policies/"
+    "loan-periods-ohiolink-ill"
+)
+_MYACCOUNT_URL = (
+    "https://ohiolink-mu.primo.exlibrisgroup.com/discovery/account"
+    "?vid=01OHIOLINK_MU:MU&section=overview&lang=en"
+)
+_RENEW_HOWTO_RE = re.compile(
+    r"\b(can|how\s+(do|can|to)|where\s+(do|can))\b[^.?!]*\brenew\b"
+    r"|\brenew\b[^.?!]*\b(online|books?|items?|loans?|materials?)\b",
+    re.IGNORECASE,
+)
+# Bot-as-actor phrasings must keep reaching the capability-limitation
+# check ('I can't renew it for you') -- exclude them here.
+_RENEW_ACTOR_RE = re.compile(
+    r"\b(can|could|will|would)\s+you\b|\bplease\s+renew\b|\bfor\s+me\b",
+    re.IGNORECASE,
+)
+
+
+def _renewal_paths_answer(message: str) -> "Optional[tuple[str, list[dict]]]":
+    m = message or ""
+    if not _RENEW_HOWTO_RE.search(m) or _RENEW_ACTOR_RE.search(m):
+        return None
+    return (
+        "Yes -- but renewal works differently depending on where the item "
+        "came from. For Miami materials, renewal limits and loan periods "
+        "are on the circulation policies page [1]. For OhioLINK and "
+        "interlibrary loan items, see the OhioLINK & ILL loan periods "
+        "page [2]. In both cases you renew by signing in to your library "
+        "account (MyAccount) [3].",
+        [
+            {"n": 1, "url": _LOAN_FINES_URL,
+             "snippet": "Miami University Libraries — loan periods & fines"},
+            {"n": 2, "url": _LOAN_OHIOLINK_ILL_URL,
+             "snippet": "OhioLINK & ILL loan periods"},
+            {"n": 3, "url": _MYACCOUNT_URL,
+             "snippet": "MyAccount — OhioLINK library account"},
+        ],
     )
 
 
@@ -1761,6 +2119,10 @@ _CROSS_SERVICE_KEYWORDS: list[tuple[tuple[str, ...], str, str]] = [
     (("interlibrary loan", "ill pickup", "ill request"), "ill_pickup",
      "interlibrary loan pickup"),
     (("course reserve",), "course_reserves", "course reserves"),
+    # Scanners live in the rows' EQUIPMENT lists ("scanners" /
+    # "scanning_station"), not services_offered -- handled by the
+    # equipment fallback in the aggregator (eval review 2026-06-29 #46).
+    (("scanner", "scanning"), "scanning", "scanners"),
     (("print",), "printing", "printing"),
 ]
 
@@ -1828,6 +2190,10 @@ def _cross_campus_service_short_circuit(
                     this = "staff"
                 else:
                     this = ""
+            elif svc_id == "scanning":
+                # Scanners are equipment, not a services_offered entry
+                # ("scanners", "scanning_station").
+                this = "yes" if any("scan" in e for e in equip) else ""
             else:
                 this = "yes" if svc_id in services else ""
             if _RANK[this] > _RANK[level]:
