@@ -31,6 +31,8 @@ from src.graph.new_orchestrator import (
     _CANCEL_HELP,
     _archives_contact_answer,
     _newspaper_answer,
+    _room_reservation_answer,
+    _ensure_makerspace_hours_evidence,
 )
 
 OXFORD = Scope(campus="oxford", library=None, source="default")
@@ -246,6 +248,111 @@ def test_newspaper_routes_to_correct_libguide():
     # topic-research stays out of the newspaper guide path
     assert _newspaper_answer("find newspaper articles about the 2020 election") is None
     assert _newspaper_answer("who is the chemistry librarian?") is None
+
+
+# --- room-reservation how-to pointer (eval review 2026-06-29 #1/#9) ---------
+def test_room_reservation_hamilton_pointer():
+    # case #1: was a model_self_flagged refusal
+    res = _room_reservation_answer("How do I reserve a study room at Rentschler?")
+    assert res is not None
+    assert "rentschler" in res[0].lower()
+    assert res[1][0]["url"] == "https://muohio.libcal.com/reserve/hamilton"
+    assert res[1][1]["url"] == "https://www.ham.miamioh.edu/library/study-rooms/"
+    # "hamilton" without the building name works too
+    assert _room_reservation_answer("how do I book a room at the Hamilton library?") is not None
+
+
+def test_room_reservation_middletown_pointer():
+    res = _room_reservation_answer("How do I reserve a room at Gardner-Harvey?")
+    assert res is not None
+    assert res[1][0]["url"] == "https://muohio.libcal.com/reserve/middletown"
+
+
+def test_room_reservation_generic_defaults_to_king():
+    # case #9: was a refusal; gold (operator-corrected) says default to
+    # King allspaces even when the session originates from a regional site
+    for q in ["Can I book a room?", "How do I reserve a study room?",
+              "where do I go to reserve a room?"]:
+        res = _room_reservation_answer(q)
+        assert res is not None, q
+        assert res[1][0]["url"] == "https://muohio.libcal.com/allspaces", q
+        assert "king" in res[0].lower(), q
+
+
+def test_room_reservation_transactional_falls_to_agent():
+    # concrete booking requests keep the live book_room flow
+    for q in ["Book a room at Rentschler tomorrow afternoon.",
+              "book a room for me",
+              "Reserve a study room today 3pm to 4pm",
+              "book a room on friday",
+              "reserve a room, my email is qum@miamioh.edu"]:
+        assert _room_reservation_answer(q) is None, q
+
+
+def test_room_reservation_other_spaces_fall_to_agent():
+    # Special Collections booking must keep refusing (case #3 BOT-OK);
+    # Wertz has its own room story; MakerSpace booking = consultations;
+    # cancels belong to the cancel short-circuit.
+    for q in ["Can I book a study room in Special Collections?",
+              "Can I book a room at Wertz?",
+              "How do I book a MakerSpace consultation?",
+              "cancel my room reservation"]:
+        assert _room_reservation_answer(q) is None, q
+
+
+def test_room_reservation_ignores_non_booking():
+    for q in ["What are the study rooms like?", "where is King Library?",
+              "can I renew my book?"]:
+        assert _room_reservation_answer(q) is None, q
+
+
+# --- MakerSpace hours evidence prefetch (eval review 2026-06-29 #14/#15) ----
+class _StubToolResult:
+    def __init__(self, data=None, error=None):
+        self.name = "get_hours"
+        self.data = data
+        self.error = error
+
+
+class _StubDeps:
+    """Minimal deps stub: only tool_registry.dispatch is exercised."""
+    def __init__(self, result):
+        outer = self
+
+        class _Reg:
+            def dispatch(self, call):
+                outer.last_call = call
+                return outer._result
+
+        self._result = result
+        self.last_call = None
+        self.tool_registry = _Reg()
+
+
+def test_makerspace_hours_prefetch_prepends_chunk():
+    deps = _StubDeps(_StubToolResult(data={
+        "success": True, "library": "makerspace",
+        "hours": "MakerSpace: today 10:00am - 6:00pm.",
+        "source_url": "https://www.lib.miamioh.edu/about/locations/hours/",
+    }))
+    out = _ensure_makerspace_hours_evidence([], deps)
+    assert len(out) == 1
+    assert out[0].chunk_id == "tool:get_hours:makerspace"
+    assert out[0].campus == "oxford"  # cross-campus guard needs this tag
+    assert "makerspace" in (out[0].library or "")
+    assert deps.last_call.name == "get_hours"
+    assert deps.last_call.arguments == {"library": "makerspace"}
+
+
+def test_makerspace_hours_prefetch_skips_if_present_or_failed():
+    # already fetched by the agent -> no duplicate dispatch
+    class _Chunk:
+        chunk_id = "tool:get_hours:makerspace"
+    deps = _StubDeps(_StubToolResult(error="boom"))
+    existing = [_Chunk()]
+    assert _ensure_makerspace_hours_evidence(existing, deps) is existing
+    # LibCal down -> unchanged evidence (refusal is correct degradation)
+    assert _ensure_makerspace_hours_evidence([], deps) == []
 
 
 if __name__ == "__main__":

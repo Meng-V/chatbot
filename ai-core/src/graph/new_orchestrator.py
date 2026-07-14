@@ -419,6 +419,34 @@ def run_turn(
                 latency_ms=latency_ms, cited_chunk_ids=[],
             )
 
+    # --- 2.14. Room-reservation how-to pointer ---
+    # "How do I reserve a study room at Rentschler?" / "Can I book a
+    # room?" reached the agent+synth path and refused with
+    # model_self_flagged -- the crawled KB has no page that spells out
+    # the reservation steps (human-verified eval review 2026-06-29,
+    # cases #1 and #9). The reservation entry points are static,
+    # operator-verified LibCal URLs (the same ones the v1 booking tool
+    # has cited for years), so answer HOW-TO / capability questions
+    # deterministically. Concrete transactional requests ("book a room
+    # tomorrow at 3pm") still reach the agent's book_room flow.
+    if not booking_flow:
+        _room = _room_reservation_answer(request.user_message)
+        if _room is not None:
+            _ans, _cites = _room
+            latency_ms = int((time.monotonic() - turn_start) * 1000)
+            record_request(endpoint="/chat", status="room_reservation_info",
+                           latency_s=latency_ms / 1000)
+            return TurnResponse(
+                answer=_ans, is_refusal=False, refusal_trigger=None,
+                citations=_cites, confidence="high",
+                intent=classification.intent, scope=scope.as_filter(),
+                model_used=model_basic,
+                tokens={"input": 0, "cached_input": 0, "output": 0},
+                fired_corrections=[],
+                agent_stopped_reason="room_reservation_short_circuit",
+                latency_ms=latency_ms, cited_chunk_ids=[],
+            )
+
     # --- 2.1. Long-period hours short-circuit (operator rule B) ---
     # LibCal's API only covers a limited date window, so a "summer
     # hours / winter break / this semester" question can't be answered
@@ -698,6 +726,22 @@ def run_turn(
     # here -- the service-availability guard refuses them before the agent.)
     if classification.intent == "makerspace_3d" and scope.campus in ("oxford", None):
         evidence = _ensure_makerspace_evidence(evidence, deps)
+
+    # Deterministic MakerSpace HOURS evidence (human-verified eval review
+    # 2026-06-29, cases #14/#15). The MakerSpace is its own LibCal hours
+    # location (id 11904) inside King, but the scope resolver maps
+    # "makerspace" -> library=king, so the agent kept calling
+    # get_hours("king"): the synth then either served King's BUILDING
+    # hours as the MakerSpace's (wrong -- the space keeps shorter hours)
+    # or self-flag-refused. For an hours question that names the
+    # MakerSpace, prefetch get_hours("makerspace") and prepend it so the
+    # synthesizer always has the real MakerSpace hours to answer from.
+    if (
+        classification.intent == "hours"
+        and _MAKERSPACE_WORD_RE.search(request.user_message)
+        and scope.campus in ("oxford", None)
+    ):
+        evidence = _ensure_makerspace_hours_evidence(evidence, deps)
 
     # Promote to reasoning model when CRAWLED evidence is multi-hop:
     # >5 chunks across multiple topics. Tool facts (live_api /
@@ -1385,6 +1429,120 @@ def _newspaper_answer(message: str) -> "Optional[tuple[str, list[dict]]]":
     return None
 
 
+# --- Room-reservation how-to pointer (v2 eval review 2026-06-29 #1/#9) ----
+#
+# URLs: /reserve/hamilton and /allspaces are the v1 booking tool's own
+# RESERVATION_URL_HAMILTON / RESERVATION_URL_DEFAULT constants
+# (src/tools/libcal_comprehensive_tools.py -- operator-written, cited in
+# prod for years). /reserve/middletown is operator-provided in the
+# 2026-06-29 human review (case #43 notes). The ham.miamioh.edu
+# study-rooms page is the gold set's allowed URL for Hamilton room info.
+_ROOMS_KING_RESERVE_URL = "https://muohio.libcal.com/allspaces"
+_ROOMS_HAMILTON_RESERVE_URL = "https://muohio.libcal.com/reserve/hamilton"
+_ROOMS_HAMILTON_INFO_URL = "https://www.ham.miamioh.edu/library/study-rooms/"
+_ROOMS_MIDDLETOWN_RESERVE_URL = "https://muohio.libcal.com/reserve/middletown"
+
+# booking verb + room noun, either order, within one clause.
+_ROOM_RESERVE_RE = re.compile(
+    r"\b(book|reserve|reserving|booking|reservations?)\b[^.?!]*"
+    r"\b(study\s+)?rooms?\b"
+    r"|\b(study\s+)?rooms?\b[^.?!]*"
+    r"\b(book|reserve|reserving|booking|reservations?)\b",
+    re.IGNORECASE,
+)
+# Concrete-booking signals: a dated/timed request (or one carrying an
+# email / "book me") is a transaction for the agent's book_room flow,
+# not a how-to question.
+_ROOM_TXN_RE = re.compile(
+    r"\b(today|tonight|tomorrow|monday|tuesday|wednesday|thursday|friday"
+    r"|saturday|sunday|next\s+week|this\s+(afternoon|evening|morning))\b"
+    r"|\b\d{1,2}(:\d{2})?\s*(am|pm)\b"
+    r"|\b(book|reserve|get)\s+me\b|\bfor\s+me\b"
+    r"|\d{4}-\d{2}-\d{2}"
+    r"|[\w.+-]+@[\w.-]+",
+    re.IGNORECASE,
+)
+# Spaces with their own (non-)booking story: Special Collections is
+# appointment-only research (gold wants a refusal, case #3 BOT-OK);
+# Wertz has its own limited room set the agent handles; MakerSpace
+# "booking" is consultations/equipment, not study rooms.
+_ROOM_OTHER_SPACE_RE = re.compile(
+    r"\b(special\s+collections|archives|scua|wertz"
+    r"|art\s*(and|&)\s*architecture|art\s+library|maker\s*space|makerspace)\b",
+    re.IGNORECASE,
+)
+_ROOM_HAMILTON_RE = re.compile(r"\b(rentschler|hamilton)\b", re.IGNORECASE)
+_ROOM_MIDDLETOWN_RE = re.compile(
+    r"\b(gardner[- ]?harvey|middletown)\b", re.IGNORECASE
+)
+
+
+def _room_reservation_answer(message: str) -> "Optional[tuple[str, list[dict]]]":
+    """Deterministic answer for HOW-TO / capability study-room booking
+    questions ('how do I reserve a study room at Rentschler?', 'can I
+    book a room?'). Campus comes from the MESSAGE mention only -- the
+    gold set's operator-corrected default is King even for a
+    regional-origin session (xc_session_origin_hamilton). Returns
+    (answer, citations) or None to fall through to the agent."""
+    m = message or ""
+    if not _ROOM_RESERVE_RE.search(m):
+        return None
+    # Cancels are the 2.11 short-circuit's job (it runs first; this is
+    # defense-in-depth for direct helper callers/tests).
+    if re.search(r"\bcancel", m, re.IGNORECASE):
+        return None
+    if _ROOM_OTHER_SPACE_RE.search(m):
+        return None
+
+    def cite(pairs):
+        return [
+            {"n": i + 1, "url": u, "snippet": s}
+            for i, (u, s) in enumerate(pairs)
+        ]
+
+    # A dated/timed request is a real booking -> agent book_room flow.
+    # Checked BEFORE the campus branches so "book a room at Rentschler
+    # tomorrow afternoon" keeps its live-availability path (review case
+    # #12 verdict: that path's answer was correct).
+    if _ROOM_TXN_RE.search(m):
+        return None
+
+    if _ROOM_HAMILTON_RE.search(m):
+        return (
+            "Study rooms at Rentschler Library (Hamilton campus) are "
+            "reserved through LibCal: pick a room, date, and time on the "
+            "Hamilton room reservation page [1]. The Rentschler "
+            "study-rooms page has details about the rooms themselves [2].",
+            cite([
+                (_ROOMS_HAMILTON_RESERVE_URL,
+                 "LibCal — Rentschler Library room reservations"),
+                (_ROOMS_HAMILTON_INFO_URL,
+                 "Rentschler Library — study rooms"),
+            ]),
+        )
+    if _ROOM_MIDDLETOWN_RE.search(m):
+        return (
+            "Study rooms at Gardner-Harvey Library (Middletown campus) "
+            "are reserved through LibCal: pick a room, date, and time on "
+            "the Middletown room reservation page [1].",
+            cite([
+                (_ROOMS_MIDDLETOWN_RESERVE_URL,
+                 "LibCal — Gardner-Harvey Library room reservations"),
+            ]),
+        )
+    return (
+        "Yes — you can reserve a study room at King Library through the "
+        "LibCal room reservation system: pick a room, date, and time on "
+        "the reservation page [1]. Or I can book one for you right here "
+        "in chat — just tell me the date, start and end time, and your "
+        "Miami email.",
+        cite([
+            (_ROOMS_KING_RESERVE_URL,
+             "LibCal — Miami University Libraries room reservations"),
+        ]),
+    )
+
+
 def _scholarly_comm_answer(message: str) -> "Optional[tuple[str, list[dict]]]":
     """Deterministic scholarly-communication / open-access contact. Fires on
     the service ('who handles open access and scholarly communication') but not
@@ -1632,6 +1790,37 @@ def _ensure_makerspace_evidence(
         from src.agent.tool_registry import ToolCall
         result = deps.tool_registry.dispatch(
             ToolCall(id="prefetch-makerspace", name="lookup_space",
+                     arguments={"library": "makerspace"})
+        )
+        if result.error:
+            return evidence
+        chunks = _tool_fact_evidence(result, {"library": "makerspace"})
+        return chunks + evidence
+    except Exception:  # noqa: BLE001 -- prefetch must never break the turn
+        return evidence
+
+
+_MAKERSPACE_WORD_RE = re.compile(r"\bmaker\s*space\b", re.IGNORECASE)
+
+
+def _ensure_makerspace_hours_evidence(
+    evidence: list["EvidenceChunk"], deps: "OrchestratorDeps"
+) -> list["EvidenceChunk"]:
+    """Prepend a get_hours('makerspace') evidence chunk if the agent
+    didn't already produce one, so a MakerSpace hours question is
+    answered from the space's own LibCal hours (id 11904) rather than
+    King's building hours. Failure-tolerant: on any error (LibCal down),
+    return the evidence unchanged -- the no-evidence refusal path is the
+    correct degradation for live hours."""
+    if any(
+        getattr(c, "chunk_id", "") == "tool:get_hours:makerspace"
+        for c in evidence
+    ):
+        return evidence
+    try:
+        from src.agent.tool_registry import ToolCall
+        result = deps.tool_registry.dispatch(
+            ToolCall(id="prefetch-makerspace-hours", name="get_hours",
                      arguments={"library": "makerspace"})
         )
         if result.error:
