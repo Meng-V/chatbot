@@ -1420,11 +1420,22 @@ _CANCEL_INFO_RE = re.compile(
     r"\b(policy|policies|fee|fees|charge|charges|deadline|refund|penalt)\b",
     re.IGNORECASE,
 )
-_CONF_CODE_RE = re.compile(r"\bcs_[A-Za-z0-9]{3,}\b", re.IGNORECASE)
+# Accepts BOTH confirmation-number shapes: LibCal's cs_-prefixed codes
+# AND the bare hex booking ids OUR OWN booking flow prints ("Confirmation
+# number: 5d0fc27a6d39"). Live P3 check 2026-07-14: the bot booked King
+# 029 and then refused to cancel it because this regex only knew cs_ --
+# the bot rejected its own confirmation number. The hex branch requires
+# at least one letter AND one digit so a bare phone number ("5137273474")
+# or an English word can't be mistaken for a booking id.
+_CONF_CODE_RE = re.compile(
+    r"\bcs_[A-Za-z0-9]{3,}\b"
+    r"|\b(?=[0-9a-f]*[a-f])(?=[0-9a-f]*\d)[0-9a-f]{8,20}\b",
+    re.IGNORECASE,
+)
 _ANY_EMAIL_RE = re.compile(r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b")
 _CANCEL_HELP = (
     "To cancel a room reservation I need two things: the confirmation number "
-    "(it looks like cs_… and is in your confirmation email) and the email "
+    "(it's in your booking confirmation message/email) and the email "
     "address used to book it (so I can verify the reservation is yours). Send "
     "both and I'll cancel it. You can also cancel anytime with the link in that "
     "confirmation email, or by calling the library at (513) 529-4141 [1]."
@@ -1443,7 +1454,10 @@ def _cancel_reservation_answer(message: str) -> "Optional[tuple[str, list[dict]]
     m = message or ""
     if not _CANCEL_INTENT_RE.search(m):
         return None
-    has_code = bool(_CONF_CODE_RE.search(m))
+    # Extract the code from the message WITH EMAILS BLANKED so a hex-ish
+    # email localpart (abc123def@...) can't be mistaken for a booking id.
+    m_no_email = _ANY_EMAIL_RE.sub(" ", m)
+    has_code = bool(_CONF_CODE_RE.search(m_no_email))
     if not (has_code or _CANCEL_CTX_RE.search(m)):
         return None
     # informational ("cancellation policy/fee") with no concrete code -> let the
@@ -1452,7 +1466,7 @@ def _cancel_reservation_answer(message: str) -> "Optional[tuple[str, list[dict]]
         return None
     cite = [{"n": 1, "url": _ROOMS_URL,
              "snippet": "Miami University Libraries — Room Reservations"}]
-    code_m = _CONF_CODE_RE.search(m)
+    code_m = _CONF_CODE_RE.search(m_no_email)
     email_m = _ANY_EMAIL_RE.search(m)
     if not (code_m and email_m):
         return _CANCEL_HELP, cite

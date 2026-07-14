@@ -227,6 +227,21 @@ def test_cancel_asks_for_code_and_email():
         assert res is not None and res[0] == _CANCEL_HELP, q
 
 
+def test_cancel_accepts_our_own_hex_confirmation_numbers():
+    # Live P3 check 2026-07-14: booking printed 'Confirmation number:
+    # 5d0fc27a6d39' but cancel only recognized cs_ codes -- the bot
+    # rejected its own confirmation number.
+    from src.graph.new_orchestrator import _CONF_CODE_RE, _ANY_EMAIL_RE
+    assert _CONF_CODE_RE.search("cancel booking 5d0fc27a6d39")
+    assert _CONF_CODE_RE.search("confirmation cs_ABC123")
+    # a bare phone number or plain word is NOT a booking id
+    assert _CONF_CODE_RE.search("call me at 5137273474") is None
+    assert _CONF_CODE_RE.search("it was cancelled beforehand") is None
+    # hex-ish email localparts are blanked before extraction
+    m = "cancel my reservation, email abc123def@miamioh.edu"
+    assert _CONF_CODE_RE.search(_ANY_EMAIL_RE.sub(" ", m)) is None
+
+
 def test_cancel_does_not_overfire():
     # 'book' the noun, holds/account, info questions, unrelated -> None
     for q in ["cancel my hold on this book", "cancel my library account",
