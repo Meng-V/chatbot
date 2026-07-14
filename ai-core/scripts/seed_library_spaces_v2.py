@@ -264,7 +264,9 @@ SPACES: list[LibrarySpaceRow] = [
         name="Southwest Ohio Regional Depository (SWORD)",
         building_role="depository",
         address="4200 N. University Blvd, Middletown, OH 45042",
-        phone="513-727-3296",
+        # Operator-confirmed 2026-07-14 (matches the live SWORD page):
+        # 513-727-3474. The old 513-727-3296 was stale.
+        phone="513-727-3474",
         libcal_id=None,  # depository not on LibCal -- request via ILL
         capacity=None,   # storage facility, no public seating
         equipment=[
