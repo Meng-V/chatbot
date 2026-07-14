@@ -44,6 +44,7 @@ from src.graph.new_orchestrator import (
     _peer_review_answer,
     _makerspace_equipment_answer,
     _renewal_paths_answer,
+    _course_reserves_answer,
 )
 
 OXFORD = Scope(campus="oxford", library=None, source="default")
@@ -509,6 +510,18 @@ def test_renewal_two_paths():
     # bot-as-actor phrasing must keep the capability-limitation template
     assert _renewal_paths_answer("can you renew my book for me?") is None
     assert _renewal_paths_answer("please renew my books") is None
+
+
+def test_course_reserves_carries_page_facts():
+    for q in ["How do I find course reserves?", "Where are my course reserves?",
+              "Is my textbook on reserve?"]:
+        res = _course_reserves_answer(q)
+        assert res is not None, q
+        assert "Primo" in res[0] and "ECO 201" in res[0], q
+        assert res[1][0]["url"].endswith("/reserves-textbooks/"), q
+    # room/space reservations stay on the booking paths
+    assert _course_reserves_answer("how do I reserve a study room?") is None
+    assert _course_reserves_answer("can I book a room?") is None
 
 
 def test_room_pointer_regional_existence_questions():

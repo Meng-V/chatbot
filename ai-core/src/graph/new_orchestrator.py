@@ -484,6 +484,7 @@ def run_turn(
             ("research_appointment", _research_appointment_answer),
             ("peer_reviewed", _peer_review_answer),
             ("makerspace_equipment", _makerspace_equipment_answer),
+            ("course_reserves", _course_reserves_answer),
         ):
             _res = _fn(request.user_message)
             if _res is not None:
@@ -1947,6 +1948,44 @@ def _makerspace_equipment_answer(message: str) -> "Optional[tuple[str, list[dict
         "check there for the item you're looking for [1].",
         [{"n": 1, "url": _MAKERSPACE_EQUIPMENT_URL,
           "snippet": "LibCal — MakerSpace equipment"}],
+    )
+
+
+# Cases #38/#39: course-reserves questions should carry the reserves
+# guide's actual facts (WebFetch-verified 2026-07-14 against
+# libguides.lib.miamioh.edu/reserves-textbooks: Primo search by title /
+# course abbreviation / professor last name; instructor-chosen loan
+# periods of 2-hour in-library, 1-day, or 3-day; reserves cleared each
+# semester), not just a bare link.
+_RESERVES_GUIDE_URL = "https://libguides.lib.miamioh.edu/reserves-textbooks/"
+_COURSE_RESERVES_RE = re.compile(
+    r"\bcourse\s+reserves?\b|\breserves\b|\btextbooks?\s+on\s+reserve\b"
+    r"|\bon\s+reserve\b",
+    re.IGNORECASE,
+)
+_RESERVES_Q_RE = re.compile(
+    r"\b(find|where|search|how|my|look|locate|textbooks?|check(\s|-)?out)\b",
+    re.IGNORECASE,
+)
+
+
+def _course_reserves_answer(message: str) -> "Optional[tuple[str, list[dict]]]":
+    m = message or ""
+    if not (_COURSE_RESERVES_RE.search(m) and _RESERVES_Q_RE.search(m)):
+        return None
+    # 'reserve a room/space' questions belong to the booking paths.
+    if re.search(r"\b(rooms?|space|study)\b", m, re.IGNORECASE):
+        return None
+    return (
+        "Search course reserves in Primo: type the textbook title, a "
+        "course abbreviation (e.g. ECO 201), or your professor's last "
+        "name [1]. Loan periods for reserve items are chosen by the "
+        "instructor -- 2-hour checkout for use in the library, 1-day, or "
+        "3-day -- and all reserve materials are removed at the end of "
+        "every semester [1]. The reserves guide has the full details, "
+        "including how instructors place materials on reserve [1].",
+        [{"n": 1, "url": _RESERVES_GUIDE_URL,
+          "snippet": "Miami University Libraries — Reserves and Textbooks"}],
     )
 
 
