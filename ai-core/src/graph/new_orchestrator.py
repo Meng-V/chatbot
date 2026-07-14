@@ -289,6 +289,29 @@ def run_turn(
                 latency_ms=latency_ms, cited_chunk_ids=[],
             )
 
+    # --- 2.075. SWORD public-access short-circuit ---
+    # "When is SWORD open to the public?" must explain it's a
+    # closed-stacks depository (no public hours; request via ILL) plus
+    # the address/phone facts -- the agent path returned only the
+    # directory half (human-verified eval review 2026-06-29, case #11).
+    if not booking_flow:
+        _sw = _sword_hours_answer(request.user_message)
+        if _sw is not None:
+            _ans, _cites = _sw
+            latency_ms = int((time.monotonic() - turn_start) * 1000)
+            record_request(endpoint="/chat", status="sword_depository",
+                           latency_s=latency_ms / 1000)
+            return TurnResponse(
+                answer=_ans, is_refusal=False, refusal_trigger=None,
+                citations=_cites, confidence="high",
+                intent=classification.intent, scope=scope.as_filter(),
+                model_used=model_basic,
+                tokens={"input": 0, "cached_input": 0, "output": 0},
+                fired_corrections=[],
+                agent_stopped_reason="sword_depository_short_circuit",
+                latency_ms=latency_ms, cited_chunk_ids=[],
+            )
+
     # --- 2.08. MakerSpace staff/contact short-circuit ---
     # "who is the makerspace librarian" / "I need help with the makerspace"
     # had no authoritative staff chunk in Weaviate, so the bot either refused
@@ -579,6 +602,32 @@ def run_turn(
             fired_corrections=[], agent_stopped_reason="admin_role_short_circuit",
             latency_ms=latency_ms, cited_chunk_ids=[],
         )
+
+    # --- 3.6. Special Collections hours short-circuit ---
+    # Live LibCal hours for the SCUA location + the appointment-only
+    # rider (human-verified eval review 2026-06-29, case #67). Placed
+    # after the long-period check (so "Special Collections summer
+    # hours" still points at the hours page) and gated on the resolved
+    # library scope, not a fresh regex -- the alias table already maps
+    # "special collections" / "archives" / "archivist" here. Falls
+    # through to the agent when LibCal has no data.
+    if classification.intent == "hours" and scope.library == "special":
+        _sc_hours = _special_collections_hours_answer(deps)
+        if _sc_hours is not None:
+            _ans, _cites = _sc_hours
+            latency_ms = int((time.monotonic() - turn_start) * 1000)
+            record_request(endpoint="/chat", status="sc_hours",
+                           latency_s=latency_ms / 1000)
+            return TurnResponse(
+                answer=_ans, is_refusal=False, refusal_trigger=None,
+                citations=_cites, confidence="high",
+                intent=classification.intent, scope=scope.as_filter(),
+                model_used=model_basic,
+                tokens={"input": 0, "cached_input": 0, "output": 0},
+                fired_corrections=[],
+                agent_stopped_reason="sc_hours_short_circuit",
+                latency_ms=latency_ms, cited_chunk_ids=[],
+            )
 
     # --- 4. Run the agent ---
     # Model selection: basic by default, reasoning on comparative /
@@ -1429,6 +1478,51 @@ def _newspaper_answer(message: str) -> "Optional[tuple[str, list[dict]]]":
     return None
 
 
+# --- SWORD public-access / hours (eval review 2026-06-29 #11) --------------
+#
+# "When is SWORD open to the public?" got a directory-entry answer
+# (address/phone, "no public hours listed") that missed the point: SWORD
+# is a closed-stacks depository with NO public access at all. The
+# operator verdict asks for BOTH halves -- the depository explanation +
+# request-via-ILL, and the address/phone facts. Facts and URLs are the
+# operator-authored LibrarySpace seed row (scripts/seed_library_spaces_v2
+# .py, canonical truth table) and the capability_scope ILL_URLS table.
+_SWORD_URL = "https://www.lib.miamioh.edu/about/locations/sword/"
+_ILL_MAIN_URL = "https://www.lib.miamioh.edu/use/borrow/ill/"
+_SWORD_NAME_RE = re.compile(
+    r"\bsword\b|\bregional depository\b", re.IGNORECASE
+)
+_SWORD_ACCESS_RE = re.compile(
+    r"\b(open|hours|visit|public|tour|access|browse|walk[- ]?in"
+    r"|stop by|go (to|in)|get in)\b",
+    re.IGNORECASE,
+)
+
+
+def _sword_hours_answer(message: str) -> "Optional[tuple[str, list[dict]]]":
+    """Deterministic answer for SWORD public-access/hours questions.
+    Location-only questions ('where is SWORD?') fall through -- the
+    agent's lookup_space answer for those was verdict-correct."""
+    m = message or ""
+    if not (_SWORD_NAME_RE.search(m) and _SWORD_ACCESS_RE.search(m)):
+        return None
+    answer = (
+        "SWORD (Southwest Ohio Regional Depository) is a closed-stacks "
+        "storage depository, not a public-access library -- it has no "
+        "public walk-in hours and can't be browsed in person [1]. "
+        "Materials stored there are requested through interlibrary "
+        "loan and delivered to your campus library for pickup [2]. "
+        "For reference, SWORD is located at 4200 N. University Blvd, "
+        "Middletown, OH 45042 (phone 513-727-3296) [1]."
+    )
+    return answer, [
+        {"n": 1, "url": _SWORD_URL,
+         "snippet": "Southwest Ohio Regional Depository (SWORD)"},
+        {"n": 2, "url": _ILL_MAIN_URL,
+         "snippet": "Miami University Libraries — Interlibrary Loan"},
+    ]
+
+
 # --- Room-reservation how-to pointer (v2 eval review 2026-06-29 #1/#9) ----
 #
 # URLs: /reserve/hamilton and /allspaces are the v1 booking tool's own
@@ -1801,6 +1895,50 @@ def _ensure_makerspace_evidence(
 
 
 _MAKERSPACE_WORD_RE = re.compile(r"\bmaker\s*space\b", re.IGNORECASE)
+
+# Special Collections appointment system -- operator-verified URL, also
+# the gold set's allowed URL (hr_special_collections_appt_only).
+_SPEC_APPOINTMENTS_URL = "https://spec.lib.miamioh.edu/home/"
+
+
+def _special_collections_hours_answer(
+    deps: "OrchestratorDeps",
+) -> "Optional[tuple[str, list[dict]]]":
+    """Deterministic Special Collections hours answer (human-verified eval
+    review 2026-06-29 #67): live LibCal hours for the SCUA location PLUS
+    the appointment-only rider the agent+synth path kept dropping --
+    research access must be requested through spec.lib.miamioh.edu even
+    when the reading room is open. Returns None when LibCal has no data
+    (the agent/refusal path is the correct degradation for live hours)."""
+    try:
+        from src.agent.tool_registry import ToolCall
+        result = deps.tool_registry.dispatch(
+            ToolCall(id="sc-hours", name="get_hours",
+                     arguments={"library": "special"})
+        )
+        if result.error:
+            return None
+        data = result.data or {}
+        hours_text = str(data.get("hours") or "").strip()
+        if not data.get("success") or not hours_text:
+            return None
+        source_url = str(data.get("source_url") or "")
+    except Exception:  # noqa: BLE001 -- never break the turn; agent fallback
+        return None
+    answer = (
+        f"{hours_text} [1]\n\n"
+        "Note: research access to the Walter Havighurst Special "
+        "Collections & University Archives is by appointment -- please "
+        "request an appointment through the Special Collections site "
+        "before visiting [2]."
+    )
+    citations = [
+        {"n": 1, "url": source_url,
+         "snippet": "Miami University Libraries — hours"},
+        {"n": 2, "url": _SPEC_APPOINTMENTS_URL,
+         "snippet": "Walter Havighurst Special Collections & University Archives"},
+    ]
+    return answer, citations
 
 
 def _ensure_makerspace_hours_evidence(
@@ -2303,6 +2441,11 @@ _LONG_PERIOD_HOURS_RE = re.compile(
     r"semester|term|intersession|over (the )?break|"
     r"during (the )?break|holidays?|this year|next month|"
     r"next semester|next term|"
+    # Finals / midterms / exam-week phrasing (human-verified eval review
+    # 2026-06-29 #19): the bot must NEVER assume an extended
+    # finals/exam-week schedule exists -- LibCal/the hours page is the
+    # only source, so guide the user to check their specific dates there.
+    r"finals?|final exams?|midterms?|exam weeks?|dead week|reading week|"
     r"january|february|march|april|may|june|july|august|"
     r"september|october|november|december"
     r")\b",

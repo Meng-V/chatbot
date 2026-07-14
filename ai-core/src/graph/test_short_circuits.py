@@ -33,6 +33,9 @@ from src.graph.new_orchestrator import (
     _newspaper_answer,
     _room_reservation_answer,
     _ensure_makerspace_hours_evidence,
+    _sword_hours_answer,
+    _special_collections_hours_answer,
+    _is_long_period_hours,
 )
 
 OXFORD = Scope(campus="oxford", library=None, source="default")
@@ -353,6 +356,63 @@ def test_makerspace_hours_prefetch_skips_if_present_or_failed():
     assert _ensure_makerspace_hours_evidence(existing, deps) is existing
     # LibCal down -> unchanged evidence (refusal is correct degradation)
     assert _ensure_makerspace_hours_evidence([], deps) == []
+
+
+# --- SWORD public-access (eval review 2026-06-29 #11) -----------------------
+def test_sword_public_access_combines_both_halves():
+    for q in ["When is SWORD open to the public?", "What are SWORD's hours?",
+              "Can I visit SWORD?", "is the regional depository open"]:
+        res = _sword_hours_answer(q)
+        assert res is not None, q
+        low = res[0].lower()
+        assert "depository" in low and "interlibrary" in low, q
+        assert "4200 n. university blvd" in low, q
+        assert res[1][0]["url"].endswith("/about/locations/sword/"), q
+
+
+def test_sword_location_only_falls_to_agent():
+    # 'where is SWORD' answers were verdict-correct via lookup_space
+    assert _sword_hours_answer("Where is SWORD located?") is None
+    # 'sword' inside another word (password) must not fire
+    assert _sword_hours_answer("I forgot my password, is that a library issue?") is None
+    assert _sword_hours_answer("when is King open?") is None
+
+
+# --- Special Collections hours (eval review 2026-06-29 #67) -----------------
+def test_sc_hours_appends_appointment_rider():
+    deps = _StubDeps(_StubToolResult(data={
+        "success": True, "library": "special",
+        "hours": "Special Collections: Mon-Fri 8:00am - 5:00pm this week.",
+        "source_url": "https://www.lib.miamioh.edu/about/locations/hours/",
+    }))
+    res = _special_collections_hours_answer(deps)
+    assert res is not None
+    assert "8:00am - 5:00pm" in res[0]
+    assert "appointment" in res[0].lower()
+    assert res[1][1]["url"] == "https://spec.lib.miamioh.edu/home/"
+    assert deps.last_call.arguments == {"library": "special"}
+
+
+def test_sc_hours_falls_through_when_libcal_down():
+    assert _special_collections_hours_answer(
+        _StubDeps(_StubToolResult(error="LibCal 503"))) is None
+    assert _special_collections_hours_answer(
+        _StubDeps(_StubToolResult(data={"success": False, "hours": ""}))) is None
+
+
+# --- finals/exam-week -> hours-page pointer (eval review 2026-06-29 #19) ----
+def test_finals_week_routes_to_hours_page():
+    # never assume an extended finals schedule exists -- point to the page
+    for q in ["Are King Library hours extended for finals?",
+              "How late is King open during finals week?",
+              "midterm week hours?", "exam week schedule"]:
+        assert _is_long_period_hours(q), q
+
+
+def test_short_term_hours_still_live():
+    for q in ["Is the library open right now?", "King hours today",
+              "what time does King close tonight?"]:
+        assert not _is_long_period_hours(q), q
 
 
 if __name__ == "__main__":
