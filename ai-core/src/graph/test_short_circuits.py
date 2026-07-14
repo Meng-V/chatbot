@@ -45,6 +45,7 @@ from src.graph.new_orchestrator import (
     _makerspace_equipment_answer,
     _renewal_paths_answer,
     _course_reserves_answer,
+    _digital_exhibits_answer,
 )
 
 OXFORD = Scope(campus="oxford", library=None, source="default")
@@ -376,7 +377,7 @@ def test_sword_public_access_combines_both_halves():
         low = res[0].lower()
         assert "depository" in low and "interlibrary" in low, q
         assert "4200 n. university blvd" in low, q
-        assert res[1][0]["url"].endswith("/about/locations/sword/"), q
+        assert res[1][0]["url"].endswith("/about/locations/regional/sword/"), q
 
 
 def test_sword_location_only_falls_to_agent():
@@ -522,6 +523,24 @@ def test_course_reserves_carries_page_facts():
     # room/space reservations stay on the booking paths
     assert _course_reserves_answer("how do I reserve a study room?") is None
     assert _course_reserves_answer("can I book a room?") is None
+
+
+def test_digital_exhibits_never_asserts_coverage():
+    # eval review #55: never assert topic coverage; point to the site
+    for q in ["Do you have any digital exhibits about WW2?",
+              "are there online exhibits on the civil war?",
+              "what digital collections do you have?"]:
+        res = _digital_exhibits_answer(q)
+        assert res is not None, q
+        assert res[1][0]["url"] == "https://www.lib.miamioh.edu/digital-collections/", q
+    # digitization staff/contact questions keep their own paths
+    assert _digital_exhibits_answer("who manages the digital collections?") is None
+
+
+def test_sword_answer_uses_live_regional_url_and_phone():
+    res = _sword_hours_answer("When is SWORD open to the public?")
+    assert res is not None
+    assert "513-727-3474" in res[0]  # matches the cited page, not the stale seed
 
 
 def test_room_pointer_regional_existence_questions():

@@ -334,7 +334,7 @@ Primo:
 - intent: digital_collections  | refusal: False
 - WANT: Answer ONLY from indexed exhibit pages; otherwise REFUSAL pointing to digital-collections front page.
 - BOT: Yes. Miami’s Digital Collections page says to “visit our past digital exhibit archive” for older historical exhibits, and it lists collections such as the Online Civil War Diaries and other digital collections [1]. For WWII specifically, th
-- verdict: [ ] BOT-OK   [ ] REAL bug   notes: WANT was correct. BOT should go double check. I don't want the BOT to automatically giving answers about what kind of collections does Miami has based on faked information. I would need the answer to be fetched from verified sources.
+- verdict: [ ] BOT-OK   [x] REAL bug   notes: WANT was correct. BOT should go double check. I don't want the BOT to automatically giving answers about what kind of collections does Miami has based on faked information. I would need the answer to be fetched from verified sources. (Operator verdict delivered 2026-07-14; fixed same day: digital-exhibit topic questions now point to the Digital Collections site instead of asserting coverage.)
 
 ### 56. [partial] (featured_service) How do I access materials in Special Collections?
 - intent: staff_lookup  | refusal: False

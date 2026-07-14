@@ -276,7 +276,9 @@ SPACES: list[LibrarySpaceRow] = [
             "depository_retrieval",
         ],
         hours_source=None,  # not a public-access space
-        source_url="https://www.lib.miamioh.edu/about/locations/sword/",
+        # Corrected 2026-07-14: /about/locations/sword/ 404s; the live
+        # page moved under /regional/ (WebFetch-verified 200).
+        source_url="https://www.lib.miamioh.edu/about/locations/regional/sword/",
     ),
 ]
 

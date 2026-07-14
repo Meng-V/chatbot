@@ -485,6 +485,7 @@ def run_turn(
             ("peer_reviewed", _peer_review_answer),
             ("makerspace_equipment", _makerspace_equipment_answer),
             ("course_reserves", _course_reserves_answer),
+            ("digital_exhibits", _digital_exhibits_answer),
         ):
             _res = _fn(request.user_message)
             if _res is not None:
@@ -1560,7 +1561,10 @@ def _newspaper_answer(message: str) -> "Optional[tuple[str, list[dict]]]":
 # request-via-ILL, and the address/phone facts. Facts and URLs are the
 # operator-authored LibrarySpace seed row (scripts/seed_library_spaces_v2
 # .py, canonical truth table) and the capability_scope ILL_URLS table.
-_SWORD_URL = "https://www.lib.miamioh.edu/about/locations/sword/"
+# Operator-corrected 2026-07-14: the old /about/locations/sword/ 404s
+# (caught by validate_prompt_urls on PRD). WebFetch-verified: 200,
+# title "Southwest Ohio Regional Depository (SWORD)".
+_SWORD_URL = "https://www.lib.miamioh.edu/about/locations/regional/sword/"
 _ILL_MAIN_URL = "https://www.lib.miamioh.edu/use/borrow/ill/"
 _SWORD_NAME_RE = re.compile(
     r"\bsword\b|\bregional depository\b", re.IGNORECASE
@@ -1586,7 +1590,7 @@ def _sword_hours_answer(message: str) -> "Optional[tuple[str, list[dict]]]":
         "Materials stored there are requested through interlibrary "
         "loan and delivered to your campus library for pickup [2]. "
         "For reference, SWORD is located at 4200 N. University Blvd, "
-        "Middletown, OH 45042 (phone 513-727-3296) [1]."
+        "Middletown, OH 45042 (phone 513-727-3474) [1]."
     )
     return answer, [
         {"n": 1, "url": _SWORD_URL,
@@ -1948,6 +1952,43 @@ def _makerspace_equipment_answer(message: str) -> "Optional[tuple[str, list[dict
         "check there for the item you're looking for [1].",
         [{"n": 1, "url": _MAKERSPACE_EQUIPMENT_URL,
           "snippet": "LibCal — MakerSpace equipment"}],
+    )
+
+
+# Case #55: 'do you have digital exhibits about <topic>?' -- the bot
+# asserted topic coverage from thin crawled text. Operator verdict
+# (2026-07-14): the bot must not give a confident inventory answer it
+# can't verify; guide the user to browse the Digital Collections site
+# themselves (WebFetch-verified 2026-07-14: 200, lists 50+ collections
+# and links the past-exhibit archive).
+_DIGITAL_COLLECTIONS_URL = "https://www.lib.miamioh.edu/digital-collections/"
+_DIGITAL_EXHIBIT_RE = re.compile(
+    r"\b(digital|online|virtual)\s+(exhibits?|exhibitions?|collections?)\b",
+    re.IGNORECASE,
+)
+# Staff/contact questions about the digitization program are a different
+# ask -- leave them to the agent/liaison paths.
+_DIGITAL_EXHIBIT_EXCLUDE_RE = re.compile(
+    r"\b(who|contact|librarian|staff|manage|digitize|digitization"
+    r"|scan my|submit)\b",
+    re.IGNORECASE,
+)
+
+
+def _digital_exhibits_answer(message: str) -> "Optional[tuple[str, list[dict]]]":
+    m = message or ""
+    if not _DIGITAL_EXHIBIT_RE.search(m):
+        return None
+    if _DIGITAL_EXHIBIT_EXCLUDE_RE.search(m):
+        return None
+    return (
+        "Miami's digital exhibits and collections are listed on the "
+        "Digital Collections site -- I can't reliably confirm coverage of "
+        "a specific topic from here, so please browse the collections "
+        "(and the past digital exhibit archive linked there) to see "
+        "what's available [1].",
+        [{"n": 1, "url": _DIGITAL_COLLECTIONS_URL,
+          "snippet": "Miami University Libraries — Digital Collections"}],
     )
 
 
