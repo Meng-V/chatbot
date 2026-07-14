@@ -2658,6 +2658,7 @@ def _extract_evidence(agent_outcome: AgentOutcome) -> list[EvidenceChunk]:
     """
     evidence: list[EvidenceChunk] = []
     tool_facts: list[EvidenceChunk] = []
+    denied = _EVIDENCE_URL_DENYLIST
     for turn in agent_outcome.turns:
         # Pair each result with its originating call's arguments by
         # call_id. ToolResult deliberately does NOT carry the ToolCall;
@@ -2676,6 +2677,11 @@ def _extract_evidence(agent_outcome: AgentOutcome) -> list[EvidenceChunk]:
                 data = result.data or {}
                 raw_items = data.get("evidence") or data.get("chunks") or []
                 for raw in raw_items:
+                    src = str(raw.get("source_url", raw.get("url", "")))
+                    # Denylisted pages never reach the synthesizer, so
+                    # they can never be cited (see _EVIDENCE_URL_DENYLIST).
+                    if any(src.startswith(p) for p in denied):
+                        continue
                     text = str(raw.get("snippet", raw.get("text", "")))
                     evidence.append(
                         EvidenceChunk(
@@ -2698,6 +2704,19 @@ def _extract_evidence(agent_outcome: AgentOutcome) -> list[EvidenceChunk]:
     # Crawled evidence first (citation [1..] stays retrieval-anchored),
     # trusted tool facts appended after.
     return evidence + tool_facts
+
+
+# Pages that must never be used as evidence or cited. The COVID-era
+# "Library Healthy / virtual services" section is still live and mentions
+# services like Adobe checkout, so retrieval surfaces it -- but the
+# operator ruled it out as a citable source (2026-07-14: an Adobe answer
+# cited /libraryhealthy/virtual/ next to the authoritative /software/
+# page). Prefix-matched against chunk source_url. Longer term these
+# pages should also be excluded from the ETL crawl / pruned from
+# Weaviate; this filter is the serving-side guarantee.
+_EVIDENCE_URL_DENYLIST = (
+    "https://www.lib.miamioh.edu/libraryhealthy",
+)
 
 
 _BOOKING_FLOW_MARKERS = (
@@ -2760,23 +2779,41 @@ def _renumber_citations_for_display(
             order.append(n)
     if not order:
         return answer, citations
-    remap = {old: i + 1 for i, old in enumerate(order)}
+    by_n: dict[int, dict] = {}
+    for c in citations:
+        # keep the first citation seen for a given original n
+        by_n.setdefault(c.get("n"), c)
+    # Merge citations that point at the SAME URL into one display number.
+    # The synthesizer can cite two different chunks from one page, which
+    # rendered as duplicate Sources rows ("[1] .../software/ [2]
+    # .../software/" -- operator report 2026-07-14). Same URL -> same
+    # number; distinct or empty URLs keep their own numbers.
+    remap: dict[int, int] = {}
+    url_display: dict[str, int] = {}
+    new_citations: list[dict] = []
+    for old in order:
+        c = by_n.get(old)
+        if c is None:
+            continue
+        url = str(c.get("url") or "").strip()
+        if url and url in url_display:
+            remap[old] = url_display[url]
+            continue
+        disp = len(new_citations) + 1
+        remap[old] = disp
+        if url:
+            url_display[url] = disp
+        nc = dict(c)
+        nc["n"] = disp
+        new_citations.append(nc)
     new_answer = re.sub(
         r"\[(\d+)\]",
         lambda mm: f"[{remap.get(int(mm.group(1)), mm.group(1))}]",
         answer,
     )
-    by_n: dict[int, dict] = {}
-    for c in citations:
-        # keep the first citation seen for a given original n
-        by_n.setdefault(c.get("n"), c)
-    new_citations: list[dict] = []
-    for old in order:
-        c = by_n.get(old)
-        if c is not None:
-            nc = dict(c)
-            nc["n"] = remap[old]
-            new_citations.append(nc)
+    # Merging can leave the same marker repeated back-to-back
+    # ("[1] [1] [2]") -- collapse runs of an identical marker.
+    new_answer = re.sub(r"(\[\d+\])(\s*\1)+", r"\1", new_answer)
     return new_answer, new_citations
 
 

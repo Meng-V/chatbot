@@ -498,6 +498,64 @@ def test_extract_evidence_falls_back_to_legacy_chunks_shape() -> None:
     assert ev[0].text == "Legacy text."
 
 
+def test_extract_evidence_drops_denylisted_urls() -> None:
+    """The COVID-era libraryhealthy pages must never reach the
+    synthesizer (operator ruling 2026-07-14: an Adobe answer cited
+    /libraryhealthy/virtual/ next to the authoritative /software/)."""
+    healthy = _evidence_dict("bad")
+    healthy["source_url"] = "https://www.lib.miamioh.edu/libraryhealthy/virtual/"
+    outcome = AgentOutcome(
+        terminal_message={"role": "assistant", "content": "x"},
+        turns=[
+            AgentTurn(
+                iteration=0,
+                llm_message={"role": "assistant"},
+                tool_calls=[ToolCall(id="t1", name="search_kb", arguments={})],
+                tool_results=[
+                    ToolResult(
+                        call_id="t1", name="search_kb",
+                        data={"evidence": [_evidence_dict("good"), healthy]},
+                    )
+                ],
+            ),
+        ],
+        stopped_reason="clean",
+    )
+    ev = _extract_evidence(outcome)
+    assert [c.chunk_id for c in ev] == ["good"]
+
+
+def test_renumber_merges_same_url_citations() -> None:
+    """Two citations to the SAME page must render as one Sources row
+    (operator report 2026-07-14: '[1] .../software/ [2] .../software/')."""
+    from src.graph.new_orchestrator import _renumber_citations_for_display
+    answer = "Get Adobe via Software Checkout [1] [2] [3]."
+    citations = [
+        {"n": 1, "url": "https://www.lib.miamioh.edu/software/", "snippet": "a"},
+        {"n": 2, "url": "https://www.lib.miamioh.edu/software/", "snippet": "b"},
+        {"n": 3, "url": "https://www.lib.miamioh.edu/tech/", "snippet": "c"},
+    ]
+    new_answer, new_cites = _renumber_citations_for_display(answer, citations)
+    assert new_answer == "Get Adobe via Software Checkout [1] [2]."
+    assert [c["url"] for c in new_cites] == [
+        "https://www.lib.miamioh.edu/software/",
+        "https://www.lib.miamioh.edu/tech/",
+    ]
+    assert [c["n"] for c in new_cites] == [1, 2]
+
+
+def test_renumber_still_orders_by_first_appearance() -> None:
+    from src.graph.new_orchestrator import _renumber_citations_for_display
+    answer = "See [5] and [2]."
+    citations = [
+        {"n": 2, "url": "https://lib/b", "snippet": "b"},
+        {"n": 5, "url": "https://lib/a", "snippet": "a"},
+    ]
+    new_answer, new_cites = _renumber_citations_for_display(answer, citations)
+    assert new_answer == "See [1] and [2]."
+    assert [c["url"] for c in new_cites] == ["https://lib/a", "https://lib/b"]
+
+
 def test_extract_evidence_skips_errored_search_kb() -> None:
     outcome = AgentOutcome(
         terminal_message={"role": "assistant", "content": "x"},
