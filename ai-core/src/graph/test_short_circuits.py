@@ -308,13 +308,25 @@ def test_room_reservation_generic_defaults_to_king():
 
 
 def test_room_reservation_transactional_falls_to_agent():
-    # concrete booking requests keep the live book_room flow
-    for q in ["Book a room at Rentschler tomorrow afternoon.",
-              "book a room for me",
+    # concrete KING/default booking requests keep the live book_room flow
+    for q in ["book a room for me",
               "Reserve a study room today 3pm to 4pm",
               "book a room on friday",
               "reserve a room, my email is qum@miamioh.edu"]:
         assert _room_reservation_answer(q) is None, q
+
+
+def test_room_reservation_regional_pointer_even_when_dated():
+    # regional asks get the pointer even with a date (post-fix eval
+    # 2026-07-15: the agent path refused again; operator-verified answer
+    # for regional asks is the pointer -- never substitute King rooms)
+    res = _room_reservation_answer("Book a room at Rentschler tomorrow afternoon.")
+    assert res is not None
+    assert res[1][0]["url"] == "https://muohio.libcal.com/reserve/hamilton"
+    # the in-chat follow-up ('book it for me...') has no room-noun, so it
+    # still reaches the agent's book_room flow
+    assert _room_reservation_answer(
+        "yes book it for me tomorrow 2-3pm, qum@miamioh.edu") is None
 
 
 def test_room_reservation_other_spaces_fall_to_agent():

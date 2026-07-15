@@ -1739,19 +1739,23 @@ def _room_reservation_answer(message: str) -> "Optional[tuple[str, list[dict]]]"
             for i, (u, s) in enumerate(pairs)
         ]
 
-    # A dated/timed request is a real booking -> agent book_room flow.
-    # Checked BEFORE the campus branches so "book a room at Rentschler
-    # tomorrow afternoon" keeps its live-availability path (review case
-    # #12 verdict: that path's answer was correct).
-    if _ROOM_TXN_RE.search(m):
-        return None
-
+    # Campus branches come FIRST, before the transactional check: the
+    # agent path for regional booking requests is flaky (post-fix eval
+    # 2026-07-15: 'Book a room at Rentschler tomorrow afternoon' drew a
+    # model_self_flagged refusal again), and the operator-verified
+    # answer for regional asks IS the pointer (review #12: pointer
+    # marked BOT-OK; gold: 'never substitute King rooms'). A follow-up
+    # 'book it for me, tomorrow 2pm, <email>' has no room-noun, so it
+    # falls past this regex to the agent's book_room flow.
     if _ROOM_HAMILTON_RE.search(m):
         return (
             "Study rooms at Rentschler Library (Hamilton campus) are "
             "reserved through LibCal: pick a room, date, and time on the "
             "Hamilton room reservation page [1]. The Rentschler "
-            "study-rooms page has details about the rooms themselves [2].",
+            "study-rooms page has details about the rooms themselves [2]. "
+            "Or I can book one for you here in chat -- just tell me to "
+            "book it, with the date, start and end time, and your Miami "
+            "email.",
             cite([
                 (_ROOMS_HAMILTON_RESERVE_URL,
                  "LibCal — Rentschler Library room reservations"),
@@ -1763,12 +1767,18 @@ def _room_reservation_answer(message: str) -> "Optional[tuple[str, list[dict]]]"
         return (
             "Study rooms at Gardner-Harvey Library (Middletown campus) "
             "are reserved through LibCal: pick a room, date, and time on "
-            "the Middletown room reservation page [1].",
+            "the Middletown room reservation page [1]. Or I can book one "
+            "for you here in chat -- just tell me to book it, with the "
+            "date, start and end time, and your Miami email.",
             cite([
                 (_ROOMS_MIDDLETOWN_RESERVE_URL,
                  "LibCal — Gardner-Harvey Library room reservations"),
             ]),
         )
+    # King/default: a dated/timed request is a real booking -> the
+    # agent's live book_room flow (which DOES book King rooms in-chat).
+    if _ROOM_TXN_RE.search(m):
+        return None
     return (
         "Yes — you can reserve a study room at King Library through the "
         "LibCal room reservation system: pick a room, date, and time on "
