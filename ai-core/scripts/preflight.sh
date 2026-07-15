@@ -13,9 +13,9 @@
 #
 # Exit 0 = all green. Exit 1 = at least one ✗ (fix before restarting).
 
-ROOT="${ROOT:-/opt/chatbot/current}"
+ROOT="${ROOT:-/opt/chatbot}"
 PORT="${PORT:-8081}"
-ENV_FILE="${ENV_FILE:-/opt/chatbot/shared/.env}"
+ENV_FILE="${ENV_FILE:-/opt/chatbot/.env}"
 [ -f "$ENV_FILE" ] || ENV_FILE="$ROOT/.env"
 PY="$ROOT/ai-core/venv/bin/python"
 [ -x "$PY" ] || PY="$ROOT/ai-core/.venv/bin/python"
@@ -82,7 +82,7 @@ if [ -e "$CACHE" ]; then
   SZ=$(du -m "$(readlink -f "$CACHE" 2>/dev/null || echo "$CACHE")" 2>/dev/null | cut -f1)
   if [ "${SZ:-0}" -ge 100 ]; then ok "classifier embedding cache (${SZ}MB)"; else bad "embedding cache suspiciously small (${SZ:-0}MB)"; fi
 else
-  bad "classifier_embeddings.json missing -- symlink from /opt/chatbot/shared/ (see docs/DEPLOY-2026-06-09.md §4)"
+  bad "classifier_embeddings.json missing -- symlink from /opt/chatbot/ (see docs/DEPLOY-2026-06-09.md §4)"
 fi
 
 # 5. .env + required keys
@@ -92,7 +92,7 @@ if [ -f "$ENV_FILE" ]; then
     grep -qE "^${K}=." "$ENV_FILE" && ok "env $K" || bad "env $K missing in $ENV_FILE"
   done
 else
-  bad ".env not found at /opt/chatbot/shared/.env or $ROOT/.env"
+  bad ".env not found at /opt/chatbot/.env or $ROOT/.env"
 fi
 
 # 6. data stores reachable

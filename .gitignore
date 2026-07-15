@@ -208,3 +208,4 @@ docs/notes.md
 tran_raw_2026_5.csv
 /.claude
 ai-core/eval_results.jsonl
+ai-core/eval_results_20260714_postfix.jsonl
