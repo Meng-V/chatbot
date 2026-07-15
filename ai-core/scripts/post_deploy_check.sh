@@ -13,7 +13,7 @@
 #
 # Exit 0 = both turns answered sanely. Non-zero = deploy is bad.
 
-ROOT="${ROOT:-/opt/chatbot/current}"
+ROOT="${ROOT:-/opt/chatbot}"
 PORT="${PORT:-8081}"
 PY="$ROOT/ai-core/venv/bin/python"
 [ -x "$PY" ] || PY="$ROOT/ai-core/.venv/bin/python"
