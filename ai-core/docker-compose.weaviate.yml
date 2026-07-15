@@ -12,7 +12,8 @@ services:
     # image: cr.weaviate.io/semitechnologies/weaviate:1.28.6
     image: semitechnologies/weaviate:1.28.6
     container_name: weaviate
-    restart: on-failure:0
+    # restart: on-failure:0
+    restart: unless-stopped
     ports:
       - "127.0.0.1:8080:8080"      # HTTP/REST API  
       - "127.0.0.1:50051:50051"    # gRPC (for batch operations)
