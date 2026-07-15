@@ -470,6 +470,30 @@ def run_turn(
                 latency_ms=latency_ms, cited_chunk_ids=[],
             )
 
+    # --- 2.145. Room-availability question short-circuit ---
+    # A dated "what rooms are available ...?" is a QUESTION -- answer it
+    # with live availability (or the reservation-page grid), never the
+    # book_room slot-collection flow (P3 live check 2026-07-14). Skipped
+    # mid-booking-flow: there, "9am to 10am, any room available?" is a
+    # slot-fill that must reach the agent.
+    if not booking_flow:
+        _avail = _room_availability_answer(request.user_message, scope, deps)
+        if _avail is not None:
+            _ans, _cites = _avail
+            latency_ms = int((time.monotonic() - turn_start) * 1000)
+            record_request(endpoint="/chat", status="room_availability",
+                           latency_s=latency_ms / 1000)
+            return TurnResponse(
+                answer=_ans, is_refusal=False, refusal_trigger=None,
+                citations=_cites, confidence="high",
+                intent=classification.intent, scope=scope.as_filter(),
+                model_used=model_basic,
+                tokens={"input": 0, "cached_input": 0, "output": 0},
+                fired_corrections=[],
+                agent_stopped_reason="room_availability_short_circuit",
+                latency_ms=latency_ms, cited_chunk_ids=[],
+            )
+
     # --- 2.15. Verified-pointer short-circuits (eval review 2026-06-29 P2) ---
     # Narrow, operator-verified deterministic answers: staff directory /
     # Rentschler staff (#42/#72/#98), King lockers (#24), no-alumni-card
@@ -706,10 +730,22 @@ def run_turn(
         scope_library=scope.library,
         conversation_history=request.conversation_history,
     )
+    # On room_booking turns, wrap the registry so book_room args the
+    # LLM dropped are back-filled from slots the user gave in EARLIER
+    # turns (P3 live check 2026-07-14: turn 1's date + times were
+    # acknowledged, then lost when turn 2 supplied name/email). See
+    # _extract_booking_slots / _SlotFillingRegistry.
+    agent_registry: ToolRegistry = deps.tool_registry
+    if classification.intent == "room_booking":
+        _slots = _extract_booking_slots(
+            _user_texts(request.conversation_history, request.user_message)
+        )
+        if _slots:
+            agent_registry = _SlotFillingRegistry(deps.tool_registry, _slots)
     agent_start = time.monotonic()
     agent_outcome: AgentOutcome = run_agent(
         agent_req,
-        deps.tool_registry,
+        agent_registry,
         llm=deps.agent_llm,
         model=model,
     )
@@ -1746,6 +1782,126 @@ def _room_reservation_answer(message: str) -> "Optional[tuple[str, list[dict]]]"
     )
 
 
+# --- Room-availability QUESTION short-circuit (P3 live check 2026-07-14) ---
+#
+# "What study rooms are available at King tomorrow from 9am to 10am?"
+# is a question, not a booking -- but it classifies as room_booking and
+# the agent prompt biases hard toward book_room, so the live bot opened
+# the slot-collection flow ("I still need: first name, last name,
+# email ...") for a user who never asked to book. Answer availability
+# questions deterministically with get_room_availability instead; the
+# user can then say "book it" and reach the booking flow on purpose.
+
+# availability word + room noun within one clause, either order.
+_ROOM_AVAIL_RE = re.compile(
+    r"\b(?:availab\w*|free|vacant|unbooked)\b[^.?!]*\b(?:study\s+)?rooms?\b"
+    r"|\b(?:study\s+)?rooms?\b[^.?!]*\b(?:availab\w*|free|vacant|unbooked)\b",
+    re.IGNORECASE,
+)
+
+_AVAIL_RESERVE_PAGES = {
+    "king": (_ROOMS_KING_RESERVE_URL,
+             "LibCal — Miami University Libraries room reservations"),
+    "wertz": (_ROOMS_KING_RESERVE_URL,
+              "LibCal — Miami University Libraries room reservations"),
+    "rentschler": (_ROOMS_HAMILTON_RESERVE_URL,
+                   "LibCal — Rentschler Library room reservations"),
+    "gardner_harvey": (_ROOMS_MIDDLETOWN_RESERVE_URL,
+                       "LibCal — Gardner-Harvey Library room reservations"),
+}
+
+
+def _avail_canonical_library(message: str, scope: "Scope") -> str:
+    """Canonical library id for an availability lookup: the building the
+    MESSAGE names, else the session scope, else the campus default."""
+    m = _SLOT_BUILDING_RE.search(message or "")
+    if m:
+        word = m.group(0).lower()
+        if "king" in word:
+            return "king"
+        if "wertz" in word or "art" in word:
+            return "wertz"
+        if "rentschler" in word:
+            return "rentschler"
+        return "gardner_harvey"
+    if scope.library in _AVAIL_RESERVE_PAGES:
+        return scope.library
+    return {
+        "hamilton": "rentschler",
+        "middletown": "gardner_harvey",
+    }.get(scope.campus, "king")
+
+
+def _room_availability_answer(
+    message: str, scope: "Scope", deps: "OrchestratorDeps"
+) -> "Optional[tuple[str, list[dict]]]":
+    """Deterministic answer for dated room-availability QUESTIONS.
+    Returns (answer, citations) or None to fall through.
+
+    Fires only when the message carries a date/time signal AND no
+    booking verb: existence questions ("are there study rooms at
+    King?") keep the agent's evidence-based answer / the 2.14 pointer,
+    and actual booking requests keep the agent's book_room flow.
+    With a full time window it checks live LibCal; without one (or when
+    LibCal is down) it points at the reservation page's live grid --
+    either way it never opens the booking slot-collection flow."""
+    m = message or ""
+    if not _ROOM_AVAIL_RE.search(m):
+        return None
+    if _ROOM_RESERVE_RE.search(m):  # booking verb -> a real transaction
+        return None
+    if re.search(r"\bcancel", m, re.IGNORECASE):
+        return None
+    if _ROOM_OTHER_SPACE_RE.search(m):
+        return None
+    slots = _extract_booking_slots([m])
+    has_window = bool(slots.get("start_time") and slots.get("end_time"))
+    if not has_window and not slots.get("date"):
+        return None  # undated existence/how-to question -- existing paths
+    canon = _avail_canonical_library(m, scope)
+    reserve_url, reserve_label = _AVAIL_RESERVE_PAGES[canon]
+    citations = [{"n": 1, "url": reserve_url, "snippet": reserve_label}]
+
+    if has_window:
+        # A dated question without a date ("any rooms free 9 to 10am?")
+        # means today.
+        try:
+            from src.agent.tool_registry import ToolCall
+            result = deps.tool_registry.dispatch(ToolCall(
+                id="room-availability", name="get_room_availability",
+                arguments={
+                    "library": canon,
+                    "date": slots.get("date") or "today",
+                    "start_time": slots["start_time"],
+                    "end_time": slots["end_time"],
+                    "capacity": slots.get("room_capacity"),
+                },
+            ))
+        except Exception:  # noqa: BLE001 -- degrade to the pointer answer
+            result = None
+        if result is not None and not result.is_error:
+            data = result.data if isinstance(result.data, dict) else {}
+            entries = data.get("slots") or []
+            first = entries[0] if entries and isinstance(entries[0], dict) else {}
+            text = str(first.get("text") or "").strip()
+            if first.get("success") and text:
+                answer = (
+                    f"{text}\n\nYou can book on the reservation page [1], "
+                    f"or ask me to book one right here in chat."
+                )
+                return answer, citations
+
+    # No usable time window, or LibCal degraded: point at the live grid
+    # instead of guessing (and instead of opening the booking flow).
+    answer = (
+        "You can see live room availability and book on the reservation "
+        "page [1]. Or tell me the date and a start and end time (for "
+        "example 'tomorrow 9am to 10am') and I'll check for you right "
+        "here."
+    )
+    return answer, citations
+
+
 # --- P2 verified-pointer short-circuits (eval review 2026-06-29) -----------
 #
 # Each fires on a narrow message pattern and answers with operator-
@@ -2770,6 +2926,143 @@ def _last_book_room_text(agent_outcome: AgentOutcome) -> Optional[str]:
                 if t:
                     text = t
     return text
+
+
+# --- Booking-slot accumulation (P3 live check 2026-07-14) ------------------
+#
+# Live defect: the LLM only reliably passes CURRENT-turn details into
+# book_room args. Turn 1 gave date + times ("tomorrow from 9am to
+# 10am") and the flow acknowledged them (asked only for name/email);
+# turn 2 gave name/email, and the turn-2 book_room call carried ONLY
+# name/email -- the backend re-asked for date/start/end. The agent sees
+# the full history, but "sees" is not "passes". So we extract booking
+# slots from the user's messages DETERMINISTICALLY and fill in whatever
+# the LLM dropped at dispatch time.
+#
+# Conservative by design: only unambiguous patterns are recognized, and
+# extracted slots only FILL args the LLM omitted -- LLM-provided args
+# always win, so an in-flow correction ("actually make it 2pm") is
+# preserved. `confirm` is NEVER filled: the write gate stays tied to an
+# explicit confirmation in the user's latest message.
+
+_SLOT_DATE_RE = re.compile(
+    r"\b(?:today|tonight|tomorrow|day\s+after\s+tomorrow"
+    r"|(?:next\s+|this\s+)?(?:monday|tuesday|wednesday|thursday|friday"
+    r"|saturday|sunday))\b"
+    r"|\b\d{4}-\d{2}-\d{2}\b"
+    r"|\b\d{1,2}/\d{1,2}(?:/\d{2,4})?\b",
+    re.IGNORECASE,
+)
+# "9am to 10am", "9 - 10am", "from 9:30 until 11 am". The END must carry
+# am/pm so a bare "9 to 10" (could be a date range, a page range...)
+# never matches; a meridiem-less START inherits the end's ("9 to 10am"
+# -> 9am). The v1 parsers downstream accept these raw strings.
+_SLOT_TIME_RANGE_RE = re.compile(
+    r"\b(\d{1,2}(?::\d{2})?)\s*(am|pm)?\s*(?:-|–|—|to|until|till|thru|through)\s*"
+    r"(\d{1,2}(?::\d{2})?)\s*(am|pm)\b",
+    re.IGNORECASE,
+)
+_SLOT_EMAIL_RE = re.compile(r"\b[\w.+-]+@[\w-]+(?:\.[\w-]+)+\b")
+_SLOT_CAPACITY_RE = re.compile(
+    r"\b(?:party|group)\s+of\s+(\d{1,2})\b"
+    r"|\b(\d{1,2})\s+(?:people|persons|person)\b",
+    re.IGNORECASE,
+)
+# Lead-in is case-insensitive; the NAME tokens must be capitalized so
+# "I'm looking for a room" can't be read as first_name="looking".
+_SLOT_NAME_RE = re.compile(
+    r"(?i:\bmy\s+name\s+is|\bmy\s+name's|\bi\s+am|\bi'm|\bthis\s+is)\s+"
+    r"([A-Z][a-zA-Z'-]*)\s+([A-Z][a-zA-Z'-]*)\b"
+)
+# Only REAL bookable-library names -- campus words ("Hamilton") and
+# non-bookable spaces are left to the LLM / backend validator.
+_SLOT_BUILDING_RE = re.compile(
+    r"\b(?:king|wertz|art\s*(?:&|and)\s*architecture|rentschler"
+    r"|gardner[- ]?harvey)\b",
+    re.IGNORECASE,
+)
+
+
+def _extract_booking_slots(texts: list[str]) -> dict:
+    """Scan user-message texts IN ORDER and return the booking slots
+    they contain; a later mention of a slot overrides an earlier one
+    (so 'actually Friday' wins over turn 1's 'tomorrow')."""
+    slots: dict = {}
+    for text in texts:
+        t = text or ""
+        m = _SLOT_BUILDING_RE.search(t)
+        if m:
+            slots["building"] = m.group(0)
+        m = _SLOT_DATE_RE.search(t)
+        if m:
+            date = m.group(0)
+            slots["date"] = "today" if date.lower() == "tonight" else date
+        m = _SLOT_TIME_RANGE_RE.search(t)
+        if m:
+            start, start_mer, end, end_mer = m.groups()
+            slots["start_time"] = f"{start}{(start_mer or end_mer).lower()}"
+            slots["end_time"] = f"{end}{end_mer.lower()}"
+        m = _SLOT_EMAIL_RE.search(t)
+        if m:
+            slots["email"] = m.group(0)
+        m = _SLOT_CAPACITY_RE.search(t)
+        if m:
+            slots["room_capacity"] = int(m.group(1) or m.group(2))
+        m = _SLOT_NAME_RE.search(t)
+        if m:
+            slots["first_name"], slots["last_name"] = m.group(1), m.group(2)
+    return slots
+
+
+def _user_texts(history: Optional[list], current_message: str) -> list[str]:
+    """The conversation's user-message texts, oldest first, current
+    message last. Assistant messages are excluded on purpose -- our own
+    booking texts quote dates/times ('Ready to book ... 9am to 10am')
+    and must never be mistaken for user-provided slots."""
+    texts: list[str] = []
+    for entry in history or []:
+        if isinstance(entry, dict) and entry.get("role") == "user":
+            content = entry.get("content")
+            if isinstance(content, str):
+                texts.append(content)
+    texts.append(current_message or "")
+    return texts
+
+
+_BOOKING_FILL_KEYS = (
+    "building", "date", "start_time", "end_time",
+    "first_name", "last_name", "email", "room_capacity",
+)
+
+
+class _SlotFillingRegistry:
+    """ToolRegistry proxy for room_booking turns: fills book_room args
+    the LLM dropped with slots extracted from the user's own messages
+    (see the section comment above). Duck-types the two methods the
+    agent loop uses; every other tool passes through untouched."""
+
+    def __init__(self, inner: ToolRegistry, slots: dict) -> None:
+        self._inner = inner
+        self._slots = {
+            k: v for k, v in slots.items()
+            if k in _BOOKING_FILL_KEYS and v
+        }
+
+    def as_responses_tools(self) -> list[dict]:
+        return self._inner.as_responses_tools()
+
+    def get(self, name: str):
+        return self._inner.get(name)
+
+    def dispatch(self, call):
+        if call.name == "book_room" and self._slots:
+            from src.agent.tool_registry import ToolCall
+            merged = dict(call.arguments or {})
+            for key, value in self._slots.items():
+                if not merged.get(key):
+                    merged[key] = value
+            call = ToolCall(id=call.id, name=call.name, arguments=merged)
+        return self._inner.dispatch(call)
 
 
 def _renumber_citations_for_display(
