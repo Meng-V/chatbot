@@ -90,7 +90,7 @@ class ToolBackends:
     get_hours: Callable[[str], dict] = None  # type: ignore
     """get_hours(library_id) -> {today: {open, close}, week: [...], source_url}."""
     get_room_availability: Callable[[dict], list[dict]] = None  # type: ignore
-    """get_room_availability({library, date, capacity?, equipment?}) -> list of slots."""
+    """get_room_availability({library, date, start_time?, end_time?, capacity?, equipment?}) -> list of slots."""
 
     # actions (write)
     book_room: Callable[[dict], dict] = None  # type: ignore
@@ -249,6 +249,15 @@ def _make_get_room_availability(backends: ToolBackends) -> Callable[[dict], Any]
             {
                 "library": args["library"],
                 "date": args["date"],
+                # Time window forwarded since the P3 live check
+                # 2026-07-14: the backend (LibCalEnhancedAvailabilityTool)
+                # REQUIRES start/end to answer "what rooms are free from
+                # 9am to 10am?" -- dropping them here made every
+                # availability call fail with "Missing required
+                # parameters", which pushed the agent into book_room's
+                # slot-collection flow for plain availability QUESTIONS.
+                "start_time": args.get("start_time"),
+                "end_time": args.get("end_time"),
                 "capacity": args.get("capacity"),
                 "equipment": args.get("equipment"),
             }
@@ -458,7 +467,24 @@ _GET_ROOM_AVAILABILITY_SCHEMA = {
         },
         "date": {
             "type": "string",
-            "description": "ISO date YYYY-MM-DD (in the library's local timezone).",
+            "description": (
+                "Date to check, as the user said it ('tomorrow', "
+                "'next Monday') or ISO YYYY-MM-DD."
+            ),
+        },
+        "start_time": {
+            "type": "string",
+            "description": (
+                "Start of the window to check, as the user said it "
+                "('9am', '14:00'). Required by the live lookup."
+            ),
+        },
+        "end_time": {
+            "type": "string",
+            "description": (
+                "End of the window to check ('10am'). Required by the "
+                "live lookup."
+            ),
         },
         "capacity": {
             "type": "integer",
@@ -638,17 +664,23 @@ _DESCRIPTIONS = {
         "-- do NOT use search_kb for hours."
     ),
     "get_room_availability": (
-        "Fetch live room booking availability for a library on a date. "
-        "Optional capacity / equipment filters."
+        "List which rooms are free -- THE tool for availability "
+        "QUESTIONS ('what rooms are available tomorrow from 9am to "
+        "10am?'). Needs date + start_time + end_time (natural formats "
+        "OK); optional capacity/equipment. Do NOT call book_room for a "
+        "question -- only when the user asks to book."
     ),
     "book_room": (
         "Book a study room via LibCal -- THE tool for 'book/reserve a "
         "room for me'. Call it with whatever the user has provided so "
-        "far (building is required -- pass the user's exact words); it "
-        "responds with what's still missing, then a confirmation "
-        "summary. Relay its text to the user verbatim. Set confirm=true "
-        "ONLY after the user explicitly says to book. Never invent "
-        "names, emails, dates, or times the user didn't give."
+        "far -- across ALL turns of the conversation, not just the "
+        "latest message (building is required -- pass the user's exact "
+        "words); it responds with what's still missing, then a "
+        "confirmation summary. Relay its text to the user verbatim. Set "
+        "confirm=true ONLY after the user explicitly says to book. "
+        "Never invent names, emails, dates, or times the user didn't "
+        "give. If the user is only ASKING what's available, use "
+        "get_room_availability instead."
     ),
     "create_ticket": (
         "Open a LibAnswers ticket for the user's question. ACTION TOOL: "

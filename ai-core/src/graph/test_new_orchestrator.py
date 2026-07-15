@@ -37,6 +37,10 @@ Tests:
  12. log_turn called with full telemetry payload.
  13. cited_chunk_ids surfaces from citations[] for librarian review join.
  14. Session origin URL resolves to campus default.
+ 15. Booking regressions (P3 live check 2026-07-14): dated availability
+     QUESTIONS answer via get_room_availability (never book_room slot
+     collection), and book_room args are back-filled with slots the
+     user gave in earlier turns (LLM args win; confirm never filled).
 """
 
 from __future__ import annotations
@@ -856,6 +860,333 @@ def test_rule_a_bare_question_defaults_king_no_clarify() -> None:
     assert resp.scope.get("library") in (None, "")
 
 
+# --- Booking flow: availability questions + slot accumulation -------------
+# Regressions for the P3 live check 2026-07-14:
+#   1. An availability QUESTION ("What study rooms are available at King
+#      tomorrow from 9am to 10am?") entered book_room's slot-collection
+#      flow instead of listing open rooms.
+#   2. Slot accumulation was leaky: turn 1's date/times were dropped
+#      when turn 2 supplied name/email, and the flow re-asked for them.
+
+
+_BOOKING_HISTORY = [
+    {"role": "user",
+     "content": "Book a study room at King tomorrow from 9am to 10am."},
+    {"role": "assistant",
+     "content": ("To complete your room reservation, I still need: your "
+                 "first name, last name, and @miamioh.edu email.")},
+]
+
+
+def _stub_agent_llm_book_room(book_args: dict):
+    """Stub agent LLM that calls book_room once with `book_args` (the
+    args the LIVE model was observed passing -- current-turn details
+    only), then terminates."""
+    state = {"calls": 0}
+
+    def call(*, prefix_id, messages, tools, model):
+        state["calls"] += 1
+        if state["calls"] == 1:
+            return (
+                {"role": "assistant", "content": None},
+                [ToolCall(id="bk1", name="book_room",
+                          arguments=dict(book_args))],
+                {"input_tokens": 100, "cached_input_tokens": 0,
+                 "output_tokens": 10},
+            )
+        return (
+            {"role": "assistant", "content": "done"},
+            [],
+            {"input_tokens": 10, "cached_input_tokens": 0,
+             "output_tokens": 5},
+        )
+
+    return call
+
+
+def _no_llm(*, prefix_id, dynamic_suffix=None, messages=None, tools=None,
+            model=None):
+    raise AssertionError("LLM must not be called on this path")
+
+
+def _booking_registry(
+    book_calls: list,
+    avail_calls: Optional[list] = None,
+    avail_raises: bool = False,
+) -> ToolRegistry:
+    """Registry with book_room + get_room_availability stubs that mimic
+    real_backends' return shapes and capture their args."""
+    from src.agent.tool_registry import ToolError
+
+    registry = ToolRegistry()
+
+    def book_handler(args: dict) -> dict:
+        book_calls.append(dict(args))
+        required = ("date", "start_time", "end_time",
+                    "first_name", "last_name", "email")
+        missing = [k for k in required if not args.get(k)]
+        if missing:
+            return {"success": False, "stage": "missing_slots",
+                    "text": ("To complete your room reservation, I still "
+                             "need: " + ", ".join(missing))}
+        if not args.get("confirm"):
+            return {"success": False, "stage": "needs_confirmation",
+                    "text": (f"Ready to book: a study room at King Library "
+                             f"on {args['date']}, {args['start_time']} to "
+                             f"{args['end_time']}, for {args['first_name']} "
+                             f"{args['last_name']} ({args['email']}). Reply "
+                             f"'confirm' to book it. Nothing is booked yet.")}
+        return {"success": True, "stage": "booked",
+                "text": "Booked! Confirmation: abc123"}
+
+    def avail_handler(args: dict) -> dict:
+        if avail_calls is not None:
+            avail_calls.append(dict(args))
+        if avail_raises:
+            raise ToolError("LibCal down")
+        return {"slots": [{"success": True,
+                           "text": ("Available rooms at King Library:\n\n"
+                                    "• Room 205 (capacity: 4)")}],
+                "count": 1}
+
+    registry.register(Tool(
+        name="book_room", description="stub booking",
+        parameters={"type": "object"}, handler=book_handler,
+        is_read_only=False,
+    ))
+    registry.register(Tool(
+        name="get_room_availability", description="stub availability",
+        parameters={"type": "object"}, handler=avail_handler,
+    ))
+    registry.register(_stub_search_kb_tool([]))
+    return registry
+
+
+def _booking_deps(registry: ToolRegistry, agent_llm,
+                  intent: str = "room_booking") -> OrchestratorDeps:
+    return OrchestratorDeps(
+        classifier=StubClassifier(_classification(intent)),
+        tool_registry=registry,
+        agent_llm=agent_llm,
+        synthesizer_llm=_stub_synth_llm(),
+        load_corrections=lambda: [],
+        load_url_allowlist=lambda: set(),
+        lookup_service_availability=lambda intent, campus: None,
+    )
+
+
+def test_availability_question_answers_with_availability_tool() -> None:
+    """P3 defect #1: a dated availability QUESTION must list open rooms
+    via get_room_availability -- never enter book_room slot collection."""
+    book_calls: list = []
+    avail_calls: list = []
+    deps = _booking_deps(
+        _booking_registry(book_calls, avail_calls),
+        agent_llm=_no_llm,  # deterministic path -- no LLM at all
+    )
+    resp = run_turn(
+        TurnRequest(
+            user_message=("What study rooms are available at King tomorrow "
+                          "from 9am to 10am?"),
+            conversation_id="c1",
+        ),
+        deps,
+    )
+    assert resp.agent_stopped_reason == "room_availability_short_circuit"
+    assert not resp.is_refusal
+    assert "Room 205" in resp.answer
+    assert "I still need" not in resp.answer      # no slot collection
+    assert book_calls == []                       # book_room never ran
+    assert resp.tokens == {"input": 0, "cached_input": 0, "output": 0}
+    # The live lookup got the question's window, verbatim slots.
+    assert len(avail_calls) == 1
+    call = avail_calls[0]
+    assert call["library"] == "king"
+    assert call["date"] == "tomorrow"
+    assert call["start_time"] == "9am"
+    assert call["end_time"] == "10am"
+    # Citation: the reservation page (allspaces for King).
+    assert resp.citations[0]["url"] == "https://muohio.libcal.com/allspaces"
+
+
+def test_availability_question_without_window_points_to_page() -> None:
+    """Dated availability question WITHOUT a start/end window: the live
+    grid can't be queried, so point at the reservation page -- still no
+    booking flow."""
+    book_calls: list = []
+    deps = _booking_deps(_booking_registry(book_calls), agent_llm=_no_llm)
+    resp = run_turn(
+        TurnRequest(
+            user_message="Are there any study rooms available tomorrow?",
+            conversation_id="c1",
+        ),
+        deps,
+    )
+    assert resp.agent_stopped_reason == "room_availability_short_circuit"
+    assert "reservation page" in resp.answer
+    assert book_calls == []
+    assert resp.citations[0]["url"] == "https://muohio.libcal.com/allspaces"
+
+
+def test_availability_libcal_down_degrades_to_pointer() -> None:
+    """LibCal error on the availability lookup degrades to the
+    reservation-page pointer, not a crash and not the booking flow."""
+    book_calls: list = []
+    deps = _booking_deps(
+        _booking_registry(book_calls, avail_raises=True), agent_llm=_no_llm,
+    )
+    resp = run_turn(
+        TurnRequest(
+            user_message=("What rooms are available at King tomorrow from "
+                          "9am to 10am?"),
+            conversation_id="c1",
+        ),
+        deps,
+    )
+    assert resp.agent_stopped_reason == "room_availability_short_circuit"
+    assert "reservation page" in resp.answer
+    assert book_calls == []
+
+
+def test_availability_detector_boundaries() -> None:
+    """Booking requests and undated existence questions must NOT be
+    hijacked by the availability short-circuit."""
+    from src.graph.new_orchestrator import _room_availability_answer
+    from src.scope.resolver import resolve_scope
+
+    deps = _booking_deps(_booking_registry([]), agent_llm=_no_llm)
+
+    def helper(msg):
+        return _room_availability_answer(msg, resolve_scope(msg), deps)
+
+    # Booking verb -> the agent's book_room flow keeps it.
+    assert helper("Book me a study room tomorrow from 9am to 10am") is None
+    assert helper("Can I reserve a room that's available tomorrow?") is None
+    # Undated existence question -> agent / 2.14 pointer keep it.
+    assert helper("Are there study rooms available at King?") is None
+    # Cancel and other-space questions fall through too.
+    assert helper("Is my cancelled room still available tomorrow?") is None
+    assert helper(
+        "Any rooms available at Special Collections tomorrow 1pm to 2pm?"
+    ) is None
+    # Regional campus resolves the regional reservation page.
+    res = helper("What rooms are free at Rentschler tomorrow 1pm to 2pm?")
+    assert res is not None
+    _ans, _cites = res
+    assert _cites[0]["url"] == "https://muohio.libcal.com/reserve/hamilton"
+
+
+def test_booking_slots_accumulate_across_turns() -> None:
+    """P3 defect #2: turn 1 gave date + times, turn 2 gives name/email.
+    The live model passed only current-turn details to book_room; the
+    slot-filling registry must back-fill turn 1's date/start/end so the
+    flow advances to the confirmation summary instead of re-asking."""
+    book_calls: list = []
+    registry = _booking_registry(book_calls)
+    # The LIVE failure: model drops earlier-turn slots from the args.
+    agent_llm = _stub_agent_llm_book_room({
+        "building": "King", "first_name": "Meng", "last_name": "Qu",
+        "email": "qum@miamioh.edu", "room_capacity": 3,
+    })
+    # Classifier returns out_of_scope (the mid-flow message has no
+    # library vocabulary) -- the booking-flow override must force
+    # room_booking AND the merge must still apply.
+    deps = _booking_deps(registry, agent_llm, intent="out_of_scope")
+    resp = run_turn(
+        TurnRequest(
+            user_message="My name is Meng Qu, email qum@miamioh.edu, party of 3.",
+            conversation_id="c1",
+            conversation_history=list(_BOOKING_HISTORY),
+        ),
+        deps,
+    )
+    assert len(book_calls) == 1
+    merged = book_calls[0]
+    # Earlier-turn slots survived:
+    assert merged["date"] == "tomorrow"
+    assert merged["start_time"] == "9am"
+    assert merged["end_time"] == "10am"
+    # Current-turn slots kept:
+    assert merged["first_name"] == "Meng"
+    assert merged["email"] == "qum@miamioh.edu"
+    # confirm is NEVER auto-filled -- nothing books without the user.
+    assert not merged.get("confirm")
+    # And the reply is the confirmation summary, not a re-ask.
+    assert "Ready to book" in resp.answer
+    assert "I still need" not in resp.answer
+    assert resp.intent == "room_booking"   # override held
+
+
+def test_booking_slot_merge_never_overrides_llm_args() -> None:
+    """An in-flow correction ('actually 2pm to 3pm') that the LLM passes
+    must win over the extracted history slots."""
+    book_calls: list = []
+    registry = _booking_registry(book_calls)
+    agent_llm = _stub_agent_llm_book_room({
+        "building": "King", "first_name": "Meng", "last_name": "Qu",
+        "email": "qum@miamioh.edu",
+        "start_time": "2pm", "end_time": "3pm",   # the LLM's own args
+    })
+    deps = _booking_deps(registry, agent_llm, intent="out_of_scope")
+    run_turn(
+        TurnRequest(
+            user_message=("Actually make it 2pm to 3pm. My name is Meng Qu, "
+                          "email qum@miamioh.edu."),
+            conversation_id="c1",
+            conversation_history=list(_BOOKING_HISTORY),
+        ),
+        deps,
+    )
+    merged = book_calls[0]
+    assert merged["start_time"] == "2pm"    # LLM/current turn wins
+    assert merged["end_time"] == "3pm"
+    assert merged["date"] == "tomorrow"     # still back-filled
+
+
+def test_availability_short_circuit_skipped_mid_booking_flow() -> None:
+    """Mid-booking-flow, '9am to 10am, any room available?' is a
+    slot-fill -- it must reach the agent, not the availability
+    short-circuit."""
+    book_calls: list = []
+    registry = _booking_registry(book_calls)
+    agent_llm = _stub_agent_llm_book_room({"building": "King"})
+    deps = _booking_deps(registry, agent_llm, intent="out_of_scope")
+    resp = run_turn(
+        TurnRequest(
+            user_message="9am to 10am tomorrow -- any room available?",
+            conversation_id="c1",
+            conversation_history=list(_BOOKING_HISTORY),
+        ),
+        deps,
+    )
+    assert resp.agent_stopped_reason != "room_availability_short_circuit"
+    assert len(book_calls) == 1              # the agent's flow ran
+
+
+def test_extract_booking_slots_patterns() -> None:
+    from src.graph.new_orchestrator import _extract_booking_slots
+
+    slots = _extract_booking_slots([
+        "Book a study room at King tomorrow from 9am to 10am",
+        "My name is Meng Qu, email qum@miamioh.edu, party of 3",
+    ])
+    assert slots == {
+        "building": "King", "date": "tomorrow",
+        "start_time": "9am", "end_time": "10am",
+        "email": "qum@miamioh.edu", "room_capacity": 3,
+        "first_name": "Meng", "last_name": "Qu",
+    }
+    # Later mentions override earlier ones.
+    assert _extract_booking_slots(
+        ["tomorrow 9am to 10am", "actually Friday 2pm to 3pm"]
+    ) == {"date": "Friday", "start_time": "2pm", "end_time": "3pm"}
+    # Meridiem-less start inherits the end's; bare "9 to 10" never matches.
+    assert _extract_booking_slots(["9 to 10am works"])["start_time"] == "9am"
+    assert "start_time" not in _extract_booking_slots(["rooms for 9 to 10"])
+    # "I'm looking for a room" is NOT a name.
+    assert _extract_booking_slots(["I'm looking for a room"]) == {}
+
+
 def main() -> int:
     tests = [
         test_rule_a_bare_question_defaults_king_no_clarify,
@@ -885,6 +1216,14 @@ def main() -> int:
         test_log_turn_called_with_full_payload,
         test_cited_chunk_ids_surfaces_for_librarian_review,
         test_session_origin_url_resolves_campus_default,
+        test_availability_question_answers_with_availability_tool,
+        test_availability_question_without_window_points_to_page,
+        test_availability_libcal_down_degrades_to_pointer,
+        test_availability_detector_boundaries,
+        test_booking_slots_accumulate_across_turns,
+        test_booking_slot_merge_never_overrides_llm_args,
+        test_availability_short_circuit_skipped_mid_booking_flow,
+        test_extract_booking_slots_patterns,
     ]
     failed = 0
     for t in tests:
