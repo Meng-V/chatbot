@@ -276,6 +276,10 @@ def test_newspaper_routes_to_correct_libguide():
     # topic-research stays out of the newspaper guide path
     assert _newspaper_answer("find newspaper articles about the 2020 election") is None
     assert _newspaper_answer("who is the chemistry librarian?") is None
+    # SW-Ohio local papers get the Ohio guide, not a hard refusal
+    # (eval 2026-07-16 news_local_paper_refusal)
+    assert url("Do you subscribe to the Hamilton Journal-News?") == "https://libguides.lib.miamioh.edu/newspapers/ohio"
+    assert url("is the Oxford Press available?") == "https://libguides.lib.miamioh.edu/newspapers/ohio"
 
 
 # --- room-reservation how-to pointer (eval review 2026-06-29 #1/#9) ---------
@@ -554,6 +558,17 @@ def test_renewal_two_paths():
     assert _renewal_paths_answer("please renew my books") is None
 
 
+def test_renewal_covers_extend_phrasing_and_limit():
+    # eval 2026-07-16 renew_extend: 'extend my checkout' has no 'renew'
+    # and fell to the agent's thin one-path answer
+    res = _renewal_paths_answer("How do I extend my checkout?")
+    assert res is not None
+    assert "(513) 529-4141" in res[0]  # past-the-limit path is present
+    assert _renewal_paths_answer("can I extend the loan on my book?") is not None
+    # actor phrasing still excluded
+    assert _renewal_paths_answer("please extend my checkout for me") is None
+
+
 def test_course_reserves_carries_page_facts():
     for q in ["How do I find course reserves?", "Where are my course reserves?",
               "Is my textbook on reserve?"]:
@@ -594,6 +609,36 @@ def test_digital_exhibits_never_asserts_coverage():
         assert res[1][0]["url"] == "https://www.lib.miamioh.edu/digital-collections/", q
     # digitization staff/contact questions keep their own paths
     assert _digital_exhibits_answer("who manages the digital collections?") is None
+
+
+def test_digital_collections_rights_questions_get_rights_answer():
+    # eval 2026-07-16 fs2_digital_collections_download_rights: rights
+    # asks must not get the browse-the-site deflection
+    res = _digital_exhibits_answer(
+        "Can I download a photo from Digital Collections and use it in my thesis?")
+    assert res is not None
+    assert "rights" in res[0].lower()
+    assert "SpecColl@MiamiOH.edu" in res[0]
+    assert res[1][0]["url"] == "https://www.lib.miamioh.edu/digital-collections/"
+    # inventory questions keep the deflection (no rights vocabulary)
+    res2 = _digital_exhibits_answer("what digital collections do you have?")
+    assert res2 is not None and "rights" not in res2[0].lower()
+
+
+def test_gov_docs_answer_names_liaison_and_directory():
+    # eval 2026-07-16 res2_government_documents: a bare librarian name
+    # is not an answer; describe the subject area + verified pointers
+    from src.graph.new_orchestrator import _gov_docs_answer
+    for q in ["Does the library have government documents?",
+              "where can I find government information?",
+              "do you have federal publications?"]:
+        res = _gov_docs_answer(q)
+        assert res is not None, q
+        assert "Government Information and Law" in res[0], q
+        assert "Presnell" in res[0], q
+        assert res[1][0]["url"].endswith("/liaisons/"), q
+    # unrelated questions fall through
+    assert _gov_docs_answer("what are the King hours?") is None
 
 
 def test_sword_answer_uses_live_regional_url_and_phone():

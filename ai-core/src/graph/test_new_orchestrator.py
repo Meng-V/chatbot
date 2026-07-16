@@ -1187,6 +1187,45 @@ def test_extract_booking_slots_patterns() -> None:
     assert _extract_booking_slots(["I'm looking for a room"]) == {}
 
 
+def test_subject_liaison_unknown_subject_gets_explicit_no_match() -> None:
+    """eval 2026-07-16 lib_unknown_subject_refusal: a subject lookup
+    that returns zero rows must say 'no librarian for that subject'
+    plus the directory, not a bare deflection. Filtered-to-zero
+    (cross-campus) results keep falling through to the synth."""
+    from src.graph.new_orchestrator import _subject_liaison_short_circuit
+    from src.scope.resolver import Scope
+
+    def outcome_with_rows(rows):
+        return AgentOutcome(
+            terminal_message={"role": "assistant", "content": "x"},
+            turns=[AgentTurn(
+                iteration=0,
+                llm_message={"role": "assistant"},
+                tool_calls=[ToolCall(
+                    id="t1", name="lookup_librarian",
+                    arguments={"subject": "underwater basket weaving"},
+                )],
+                tool_results=[ToolResult(
+                    call_id="t1", name="lookup_librarian",
+                    data={"librarians": rows},
+                )],
+            )],
+            stopped_reason="clean",
+        )
+
+    scope = Scope(campus="oxford", library=None, source="default")
+    res = _subject_liaison_short_circuit(outcome_with_rows([]), scope)
+    assert res is not None
+    assert "underwater basket weaving" in res[0]
+    assert "doesn't have a subject librarian" in res[0]
+    assert res[1][0]["url"].endswith("/liaisons/")
+
+    # rows exist but are all cross-campus -> fall through (None), don't
+    # falsely claim no librarian exists
+    cross = [{"name": "X Y", "email": "xy@miamioh.edu", "campus": "hamilton"}]
+    assert _subject_liaison_short_circuit(outcome_with_rows(cross), scope) is None
+
+
 def main() -> int:
     tests = [
         test_rule_a_bare_question_defaults_king_no_clarify,

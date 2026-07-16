@@ -510,6 +510,7 @@ def run_turn(
             ("makerspace_equipment", _makerspace_equipment_answer),
             ("course_reserves", _course_reserves_answer),
             ("digital_exhibits", _digital_exhibits_answer),
+            ("gov_docs", _gov_docs_answer),
         ):
             _res = _fn(request.user_message)
             if _res is not None:
@@ -1562,7 +1563,11 @@ _NYT_RE = re.compile(r"\b(new york times|n\.?y\.?t\.?|ny times)\b", re.IGNORECAS
 _WSJ_RE = re.compile(r"\b(wall street journal|w\.?s\.?j\.?)\b", re.IGNORECASE)
 _OHIO_PAPER_RE = re.compile(
     r"\b(cincinnati enquirer|enquirer|dayton daily|columbus dispatch|"
-    r"plain dealer|akron beacon|toledo blade|ohio newspaper)\b", re.IGNORECASE)
+    r"plain dealer|akron beacon|toledo blade|ohio newspaper|"
+    # SW-Ohio local papers (eval 2026-07-16 news_local_paper_refusal:
+    # 'Hamilton Journal-News' drew a hard refusal instead of the guide)
+    r"journal[- ]news|hamilton journal|middletown journal|oxford press|"
+    r"oxford observer)\b", re.IGNORECASE)
 _NEWS_HIST_RE = re.compile(
     r"\b(historical|archiv|back issue|old issue|past issue|microfilm)\b", re.IGNORECASE)
 _NEWS_RE = re.compile(r"\bnewspapers?\b", re.IGNORECASE)
@@ -2150,6 +2155,43 @@ def _makerspace_equipment_answer(message: str) -> "Optional[tuple[str, list[dict
     )
 
 
+# Government documents/information (eval 2026-07-16
+# res2_government_documents: the agent answered with a bare librarian
+# name). Facts verified against the live staff page 2026-07-16:
+# "Government Information and Law" is a listed subject area, and Jenny
+# Presnell (Humanities and Social Science Librarian, King 204, (513)
+# 529-3937) lists it among her liaison responsibilities. No dedicated
+# public LibGuide URL could be verified (LibGuides subject pages are
+# JS-rendered), so the answer points to the liaisons directory and the
+# research-guides page (both curl-verified 200) rather than inventing
+# a guide URL or asserting depository details not in the corpus.
+_RESEARCH_GUIDES_URL = "https://www.lib.miamioh.edu/research/find/guides/"
+_GOV_DOCS_RE = re.compile(
+    r"\b(government|federal)\s+(documents?|information|publications?|docs)\b"
+    r"|\bgov\s?docs\b",
+    re.IGNORECASE,
+)
+
+
+def _gov_docs_answer(message: str) -> "Optional[tuple[str, list[dict]]]":
+    m = message or ""
+    if not _GOV_DOCS_RE.search(m):
+        return None
+    return (
+        "Yes -- the Libraries support government information research. "
+        "\"Government Information and Law\" is one of the Libraries' "
+        "subject areas, and its subject liaison is Jenny Presnell "
+        "(Humanities and Social Science Librarian, King Library), whom "
+        "you can reach through the subject liaisons directory [1]. The "
+        "research guides page lists the related subject guides [2].",
+        [{"n": 1, "url": _LIAISONS_URL,
+          "snippet": "Miami University Libraries — subject liaisons "
+                     "directory"},
+         {"n": 2, "url": _RESEARCH_GUIDES_URL,
+          "snippet": "Miami University Libraries — research guides"}],
+    )
+
+
 # Case #55: 'do you have digital exhibits about <topic>?' -- the bot
 # asserted topic coverage from thin crawled text. Operator verdict
 # (2026-07-14): the bot must not give a confident inventory answer it
@@ -2168,12 +2210,39 @@ _DIGITAL_EXHIBIT_EXCLUDE_RE = re.compile(
     r"|scan my|submit)\b",
     re.IGNORECASE,
 )
+# Rights/permissions asks about Digital Collections items ("can I
+# download a photo and use it in my thesis?") are not inventory
+# questions -- the browse-the-site deflection misses the point (eval
+# 2026-07-16 fs2_digital_collections_download_rights). Rights vary per
+# collection/item, and permission questions go to Special Collections /
+# University Archives (same contacts as the submission path, review #63).
+_DIGITAL_RIGHTS_RE = re.compile(
+    r"\b(download|copyright|permissions?|reuse|re-use|republish"
+    r"|reproduc\w*|rights|licen[cs]\w*|cite|use\s+(it|this|an?\s+"
+    r"(image|photo|photograph|item|scan)))\b",
+    re.IGNORECASE,
+)
+_SPEC_HOME_URL = "https://spec.lib.miamioh.edu/home/"
 
 
 def _digital_exhibits_answer(message: str) -> "Optional[tuple[str, list[dict]]]":
     m = message or ""
     if not _DIGITAL_EXHIBIT_RE.search(m):
         return None
+    if _DIGITAL_RIGHTS_RE.search(m):
+        return (
+            "Download and reuse rights vary by collection and item -- "
+            "check the rights statement on the item's page in Digital "
+            "Collections [1]. If the rights are unclear or you need "
+            "permission (for example for a thesis or publication), "
+            "contact Special Collections & University Archives at "
+            "SpecColl@MiamiOH.edu or Archives@MiamiOH.edu [2].",
+            [{"n": 1, "url": _DIGITAL_COLLECTIONS_URL,
+              "snippet": "Miami University Libraries — Digital Collections"},
+             {"n": 2, "url": _SPEC_HOME_URL,
+              "snippet": "Walter Havighurst Special Collections & "
+                         "University Archives"}],
+        )
     if _DIGITAL_EXHIBIT_EXCLUDE_RE.search(m):
         return None
     return (
@@ -2261,7 +2330,12 @@ _MYACCOUNT_URL = (
 )
 _RENEW_HOWTO_RE = re.compile(
     r"\b(can|how\s+(do|can|to)|where\s+(do|can))\b[^.?!]*\brenew\b"
-    r"|\brenew\b[^.?!]*\b(online|books?|items?|loans?|materials?)\b",
+    r"|\brenew\b[^.?!]*\b(online|books?|items?|loans?|materials?)\b"
+    # 'extend my checkout / loan / due date' is the same ask without the
+    # word 'renew' (eval 2026-07-16 renew_extend: fell to the agent and
+    # got a thin one-path answer).
+    r"|\bextend\b[^.?!]*\b(checkout|check[- ]?out|loan|due\s+date"
+    r"|borrowing)\b",
     re.IGNORECASE,
 )
 # Bot-as-actor phrasings must keep reaching the capability-limitation
@@ -2282,7 +2356,8 @@ def _renewal_paths_answer(message: str) -> "Optional[tuple[str, list[dict]]]":
         "are on the circulation policies page [1]. For OhioLINK and "
         "interlibrary loan items, see the OhioLINK & ILL loan periods "
         "page [2]. In both cases you renew by signing in to your library "
-        "account (MyAccount) [3].",
+        "account (MyAccount) [3]. If you've reached the renewal limit, "
+        "contact the circulation desk at (513) 529-4141.",
         [
             {"n": 1, "url": _LOAN_FINES_URL,
              "snippet": "Miami University Libraries — loan periods & fines"},
@@ -2353,6 +2428,8 @@ def _subject_liaison_short_circuit(
     liaisons: list[dict] = []
     guide_name = ""
     guide_url = ""
+    subject_asked = ""       # last subject arg the agent looked up
+    rows_before_filter = 0   # rows seen before campus/email filtering
     for turn in (agent_outcome.turns or []):
         args_by_id = {tc.id: (tc.arguments or {}) for tc in (turn.tool_calls or [])}
         for res in (turn.tool_results or []):
@@ -2361,6 +2438,8 @@ def _subject_liaison_short_circuit(
             subj = (args_by_id.get(res.call_id) or {}).get("subject")
             if not subj or not str(subj).strip():
                 continue  # building roster, not a subject ask -> let synth handle
+            subject_asked = str(subj).strip()
+            rows_before_filter += len(res.data.get("librarians") or [])
             for lib in (res.data.get("librarians") or []):
                 if not isinstance(lib, dict) or not lib.get("email"):
                     continue
@@ -2379,6 +2458,24 @@ def _subject_liaison_short_circuit(
                     guide_name = lib.get("guide_name") or "subject guide"
                     guide_url = lib.get("guide_url")
     if not liaisons:
+        # The agent DID look up a subject and Postgres had no liaison
+        # rows at all: say so explicitly instead of a bare directory
+        # deflection (eval 2026-07-16 lib_unknown_subject_refusal --
+        # gold wants "no librarian for that subject; here's the
+        # directory"). If rows existed but were filtered (cross-campus),
+        # fall through to the synth as before -- "none exists" would be
+        # false there.
+        if subject_asked and rows_before_filter == 0:
+            return (
+                f"Miami doesn't have a subject librarian listed for "
+                f"\"{subject_asked}\" specifically. The subject liaisons "
+                f"directory lists every subject area we do cover -- the "
+                f"closest match there is your best contact [1]. You can "
+                f"also ask a librarian directly through Ask Us.",
+                [{"n": 1, "url": _LIAISONS_URL,
+                  "snippet": "Miami University Libraries — subject "
+                             "liaisons directory"}],
+            )
         return None
 
     liaisons = liaisons[:2]  # at most two co-liaisons for one subject
