@@ -694,12 +694,12 @@ def run_eval(
         import src.prompts.agent_v1  # noqa: F401 -- registers prefix
         import src.prompts.synthesizer_v1  # noqa: F401
 
-    # Resolve the judge LLM if needed. Import prompts/judge_v1 so the
+    # Resolve the judge LLM if needed. Import prompts/judge_v2 so the
     # prefix registers before any call. Late-import keeps non-judge
     # runs from paying for the openai/prompt-builder imports.
     judge_verdicts: list[Verdict] = []
     if with_judge:
-        import src.prompts.judge_v1  # noqa: F401 -- registers prefix
+        import src.prompts.judge_v2  # noqa: F401 -- registers prefix (pulls in v1)
         if judge_llm is None:
             judge_llm = _real_judge_llm
 
@@ -841,9 +841,17 @@ def run_eval(
                         expected_answer=q.expected_answer,
                         bot_answer=result.bot_answer,
                         allowed_urls=q.allowed_urls,
+                        # v2: the gold notes carry the operator's review
+                        # verdicts -- without them the judge re-litigates
+                        # style calls the operator already settled
+                        # (2026-07-16 triage: ~60/76 flags were this).
+                        notes=q.notes,
                     )
                     try:
-                        outcome = judge_answer(judge_req, judge_llm=judge_llm)
+                        outcome = judge_answer(
+                            judge_req, judge_llm=judge_llm,
+                            prefix_id="judge_v2",
+                        )
                         result.judge_verdict = outcome.verdict.verdict
                         judge_verdicts.append(outcome.verdict)
                         report.judge_called += 1

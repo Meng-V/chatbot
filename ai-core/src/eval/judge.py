@@ -48,6 +48,13 @@ class JudgeRequest:
     allowed_urls: list[str] = field(default_factory=list)
     """URLs the bot is permitted to cite. Anything else is wrong."""
 
+    notes: Optional[str] = None
+    """The gold case's `notes` field: operator review history and
+    intent for this case. Shown to the judge (judge_v2+) as
+    authoritative context for interpreting expected_answer -- the
+    2026-07-16 triage found ~60/76 flagged verdicts were judge
+    harshness the notes would have resolved."""
+
 
 @dataclass(frozen=True)
 class Verdict:
@@ -111,12 +118,15 @@ def build_judge_dynamic_suffix(request: JudgeRequest) -> str:
         if request.allowed_urls
         else "  (none)"
     )
-    return (
+    suffix = (
         f"QUESTION: {request.question}\n\n"
         f"EXPECTED: {request.expected_answer}\n\n"
         f"BOT ANSWER: {request.bot_answer}\n\n"
         f"ALLOWED URLS:\n{allowed}\n"
     )
+    if request.notes:
+        suffix += f"\nOPERATOR NOTES: {request.notes}\n"
+    return suffix
 
 
 # --- Verdict parsing -----------------------------------------------------

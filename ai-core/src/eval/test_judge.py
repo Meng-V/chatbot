@@ -84,6 +84,31 @@ def test_build_judge_suffix_handles_empty_allowed_urls() -> None:
     assert "(none)" in suffix
 
 
+def test_build_judge_suffix_includes_operator_notes() -> None:
+    req = JudgeRequest(
+        question="q", expected_answer="e", bot_answer="b",
+        notes="operator marked the pointer answer BOT-OK",
+    )
+    suffix = build_judge_dynamic_suffix(req)
+    assert "OPERATOR NOTES: operator marked the pointer answer BOT-OK" in suffix
+    # notes come AFTER the core fields so the rubric anchoring is unchanged
+    assert suffix.index("BOT ANSWER") < suffix.index("OPERATOR NOTES")
+
+
+def test_build_judge_suffix_omits_notes_section_when_absent() -> None:
+    req = JudgeRequest(question="q", expected_answer="e", bot_answer="b")
+    assert "OPERATOR NOTES" not in build_judge_dynamic_suffix(req)
+
+
+def test_judge_v2_prefix_builds_on_v1() -> None:
+    from src.prompts.judge_v2 import JUDGE_V2_PREFIX
+    # the v1 E1 rule was rewritten, the v2 rules appended
+    assert "OPERATOR NOTES are authoritative context" in JUDGE_V2_PREFIX
+    assert "POINTER golds are satisfied by pointers" in JUDGE_V2_PREFIX
+    assert "NOT factual claims and need no citation" in JUDGE_V2_PREFIX
+    assert "Citation discipline is non-negotiable" in JUDGE_V2_PREFIX
+
+
 def test_build_judge_suffix_question_appears_before_expected() -> None:
     """Order matters -- the rubric is anchored by question + expected
     BEFORE the bot answer, so the judge doesn't bias on the bot's text."""
