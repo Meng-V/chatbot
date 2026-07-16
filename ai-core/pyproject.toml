@@ -3,6 +3,7 @@ name = "ai-core"
 version = "0.1.0"
 dependencies = [
   "fastapi",
+  "python-multipart",  # form parsing for the librarian ticket surface (src/api/admin/ticket_router.py)
   "uvicorn[standard]",
   "python-socketio[asgi]",
   "websocket-client",  # post_deploy_check.sh client transport (deploy.sh installs via `pip install -e .`)

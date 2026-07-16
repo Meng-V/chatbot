@@ -39,6 +39,8 @@ endpoints, so reaching them does **not** turn on the v2 bot.
 | `GET /admin/reviews` | List flagged conversations (thumb-down). | Only when `ADMIN_API_TOKEN` env var is set. Fail-closed. |
 | `GET /admin/reviews/{id}` | Drill into one conversation (tokens, tools, citations, handoff). | Same gate. |
 | `GET /admin/reviews/view` | Server-rendered HTML review page (auth = `?key=<token>`). | Same gate. Bookmarkable. |
+| `GET/POST /librarian/ticket` | Staff "the bot answered this wrong" report form (added 2026-07-16). Auth = `?key=<LIBRARIAN_TICKET_CODE>` — a distributable staff code, NOT the admin token. Each submission is stored (`CorrectionTicket` table) and emailed to `ALERT_EMAIL_TO`. | Mounted with the admin block; the form 401s until `LIBRARIAN_TICKET_CODE` is set. |
+| `GET /admin/tickets/view` | Operator queue for those tickets, newest first, with open→reviewed→done status links and a ⚠️ marker on tickets whose alert email failed to send. | `ADMIN_API_TOKEN` gate. Bookmarkable. |
 
 For the agent's own request/response endpoints, see the legacy docs —
 those haven't moved.

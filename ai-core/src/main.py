@@ -552,6 +552,27 @@ if _admin_token:
         "/admin/corrections (CRUD) + /admin/corrections/view (form), "
         "/admin/cost (HTML) + /admin/cost.json."
     )
+
+    # Librarian correction tickets ("this answer is wrong" reports).
+    # The librarian form needs its own shared code (staff-distributable,
+    # weaker than the admin token which exposes PII); the operator list
+    # rides the admin guard. Mounted inside the admin block because the
+    # list view requires the token guard either way.
+    _ticket_code = os.getenv("LIBRARIAN_TICKET_CODE", "").strip()
+    from src.api.admin.ticket_router import build_ticket_router
+    app.include_router(build_ticket_router({
+        **_admin_deps, "librarian_code": _ticket_code,
+    }))
+    if _ticket_code:
+        logging.info(
+            "Correction-ticket surfaces mounted: /librarian/ticket "
+            "(code-gated form) + /admin/tickets/view (token-gated queue)."
+        )
+    else:
+        logging.info(
+            "Correction-ticket form is mounted but CLOSED -- set "
+            "LIBRARIAN_TICKET_CODE to open it (fail-closed guard 401s)."
+        )
 else:
     logging.info(
         "Op1 review surface NOT mounted -- ADMIN_API_TOKEN unset "

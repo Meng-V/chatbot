@@ -458,3 +458,24 @@ model DailyCost {
   @@index([date])
   @@index([model])
 }
+
+/// Librarian correction tickets -- "this answer is wrong" reports
+/// submitted through the /librarian/ticket form (src/api/admin/
+/// ticket_router.py). Each submission is stored here AND emailed to
+/// the operator (ALERT_EMAIL_TO) via src/observability/alerting.py.
+model CorrectionTicket {
+  id             String    @id @default(uuid())
+  createdAt      DateTime  @default(now())
+  librarianName  String
+  librarianEmail String // submitter, for follow-up questions
+  question       String // what the patron asked
+  botAnswer      String // what the bot said (paste)
+  expectedAnswer String // what it should have said / where the truth lives
+  sourceUrl      String    @default("") // optional supporting URL
+  status         String    @default("open") // open | reviewed | done
+  reviewedAt     DateTime?
+  emailSent      Boolean   @default(false) // whether the operator alert email went out
+
+  @@index([status])
+  @@index([createdAt])
+}
