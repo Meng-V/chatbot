@@ -201,7 +201,7 @@ def judge_answer(
     judge_llm: JudgeLLM,
     prefix_id: str = "judge_v1",
     model: str = "",
-    samples: int = 3,
+    samples: int = 5,
 ) -> JudgeOutcome:
     """Score one bot answer.
 
@@ -219,13 +219,15 @@ def judge_answer(
             single biggest eval-cost line; consistency matters more
             than reasoning depth here. Pass an explicit id to override.
         samples: how many independent judge calls to take a majority
-            vote across. Default 3. Single-sample judging was
+            vote across. Default 5 (was 3). Single-sample judging was
             empirically noisy on the 2026-05-22 wired-baseline run
             (22 of 79 failing cases flipped on a single re-judge, 11
             flipped worse) -- a 3-shot majority moved the measured
-            score from 50.3% to 59.1% on the SAME bot answers, which
-            is the noise floor of single-sample. Pass 1 to revert to
-            single-sample (e.g., for unit tests that stub the judge).
+            score from 50.3% to 59.1% on the SAME bot answers. The
+            2026-07-16 back-to-back runs showed 3-shot majorities on
+            nano still flip 18% of verdicts on IDENTICAL answers, so
+            the default went to 5. Pass 1 to revert to single-sample
+            (e.g., for unit tests that stub the judge).
 
     Returns:
         JudgeOutcome with parsed Verdict + raw response (for logs).

@@ -235,11 +235,11 @@ def test_judge_answer_default_samples_is_three() -> None:
         JudgeRequest(question="Q?", expected_answer="A.", bot_answer="A.", allowed_urls=[]),
         judge_llm=canned,
     )
-    assert canned.calls == 3, "default samples should be 3"
+    assert canned.calls == 5, "default samples should be 5"
 
 
 def test_judge_answer_majority_vote() -> None:
-    """3 samples; 2 say wrong, 1 says correct -> majority 'wrong'."""
+    """5 samples; 3 say wrong, 2 say correct -> majority 'wrong'."""
     import json as _j
     class StubMaj:
         def __init__(self):
@@ -248,6 +248,8 @@ def test_judge_answer_majority_vote() -> None:
                 {"verdict": "wrong", "reason": "1", "citation_validity": "n_a"},
                 {"verdict": "wrong", "reason": "2", "citation_validity": "n_a"},
                 {"verdict": "correct", "reason": "3", "citation_validity": "n_a"},
+                {"verdict": "wrong", "reason": "4", "citation_validity": "n_a"},
+                {"verdict": "correct", "reason": "5", "citation_validity": "n_a"},
             ]
         def __call__(self, *, prefix_id, dynamic_suffix, model):
             r = self.responses[self.idx]; self.idx += 1
@@ -257,12 +259,12 @@ def test_judge_answer_majority_vote() -> None:
         JudgeRequest(question="Q?", expected_answer="A.", bot_answer="A.", allowed_urls=[]),
         judge_llm=stub,
     )
-    assert stub.idx == 3
+    assert stub.idx == 5
     assert out.verdict.verdict == "wrong"
 
 
 def test_judge_answer_tolerates_subset_parse_errors() -> None:
-    """If 1 of 3 samples is malformed JSON, take majority of the parseable 2."""
+    """If some samples are malformed JSON, take majority of the parseable rest."""
     import json as _j
     class StubPartial:
         def __init__(self):
@@ -271,6 +273,8 @@ def test_judge_answer_tolerates_subset_parse_errors() -> None:
                 {"verdict": "correct", "reason": "ok", "citation_validity": "n_a"},
                 "not-json-at-all",  # parse_verdict will raise
                 {"verdict": "correct", "reason": "ok2", "citation_validity": "n_a"},
+                "still-not-json",
+                {"verdict": "correct", "reason": "ok3", "citation_validity": "n_a"},
             ]
         def __call__(self, *, prefix_id, dynamic_suffix, model):
             r = self.responses[self.idx]; self.idx += 1
