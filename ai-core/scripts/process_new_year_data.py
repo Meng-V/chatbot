@@ -6,7 +6,7 @@ For processing 2026 and future years' data
 Usage:
     python3 scripts/process_new_year_data.py \\
         --year 2026 \\
-        --csv-files ../tran_raw_2026.csv \\
+        --csv-files ../data/raw/tran_raw_2026.csv \\
         --output data/2026_final.json
 
 Complete Workflow:
@@ -305,17 +305,17 @@ Example Usage:
   # Basic usage (process 2026 data)
   python3 scripts/process_new_year_data.py \\
       --year 2026 \\
-      --csv-files ../tran_raw_2026.csv
+      --csv-files ../data/raw/tran_raw_2026.csv
 
   # Process multiple CSV files
   python3 scripts/process_new_year_data.py \\
       --year 2026 \\
-      --csv-files ../tran_raw_2026_part1.csv ../tran_raw_2026_part2.csv
+      --csv-files ../data/raw/tran_raw_2026_part1.csv ../data/raw/tran_raw_2026_part2.csv
 
   # Custom parameters
   python3 scripts/process_new_year_data.py \\
       --year 2026 \\
-      --csv-files ../tran_raw_2026.csv \\
+      --csv-files ../data/raw/tran_raw_2026.csv \\
       --min-confidence 0.8 \\
       --dedup-threshold 0.9 \\
       --ai-batch-size 30
@@ -323,13 +323,13 @@ Example Usage:
   # Skip AI filtering (faster but may retain lower quality data)
   python3 scripts/process_new_year_data.py \\
       --year 2026 \\
-      --csv-files ../tran_raw_2026.csv \\
+      --csv-files ../data/raw/tran_raw_2026.csv \\
       --skip-ai-filter
 
   # Auto-ingest into Weaviate
   python3 scripts/process_new_year_data.py \\
       --year 2026 \\
-      --csv-files ../tran_raw_2026.csv \\
+      --csv-files ../data/raw/tran_raw_2026.csv \\
       --auto-ingest
         """
     )

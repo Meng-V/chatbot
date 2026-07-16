@@ -1,7 +1,23 @@
 # Developer Documentation
 
-**Miami University Libraries Chatbot - Version 3.1.0**  
-**Last Updated:** December 22, 2025 Afternoon
+**Miami University Libraries Chatbot**
+**Last Updated:** July 16, 2026
+
+> The numbered docs below describe the v3.1 legacy serving path and remain
+> correct for what they cover. Newer surfaces are documented separately:
+> - [../ai-core/docs/OPERATOR.md](../ai-core/docs/OPERATOR.md) — operator
+>   runbook for the v2-rebuild endpoints, observability, model tiers
+> - [../ai-core/docs/eval/](../ai-core/docs/eval/) — dated eval run reports,
+>   triage docs, and gold-hygiene history (latest first by filename date)
+> - [./programmer-guide/00-INDEX.md](./programmer-guide/00-INDEX.md) —
+>   architecture deep-dive for the rebuild
+> - [./eval/2026-05-22-wired-baseline/](./eval/2026-05-22-wired-baseline/) —
+>   the original wired-baseline eval archive
+>
+> ⚠️ Post-migration note (2026-07): the app now runs on an AWS host under
+> systemd (`chatbot.service`, port 8081). Parts of 02/09/10 that mention the
+> old host, port 8000, or `server_monitor.py` are superseded — see the
+> banner in [09-SERVER-MONITORING.md](./09-SERVER-MONITORING.md).
 
 ---
 

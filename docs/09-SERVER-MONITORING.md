@@ -1,7 +1,31 @@
 # Server Monitoring and Auto-Restart System
 
-**Last Updated**: December 17, 2025  
-**Version**: 1.0
+**Last Updated**: July 16, 2026
+**Version**: 1.1
+
+---
+
+## ⚠️ Current state after the 2026-07 server migration (READ FIRST)
+
+The stack changed when the app moved to the AWS host; parts of this
+document describe the OLD setup. What is actually true now:
+
+- **Auto-restart** is handled by **systemd** (`chatbot.service`,
+  `Restart=on-failure`) — `server_monitor.py` is NOT running and is no
+  longer needed for restarts (it also probes the old port 8000; the app
+  now listens on 8081 behind nginx).
+- **Email alerts** come from the in-app module
+  `ai-core/src/observability/alerting.py` (dependency down/recovered
+  events). **They are currently broken on this host**: the module
+  defaults to a local MTA on `localhost:25`, no MTA is installed, and
+  AWS blocks outbound port 25 anyway. At least 5 alerts (including a
+  real Weaviate-down on 2026-07-14) failed with "Connection refused"
+  after the migration — check `logs/app.log` for `alert email FAILED`.
+- **Fix**: configure an authenticated relay on port 587 (outbound 587
+  is verified open from this host). See the `ALERT_*` block in
+  `.env.example` — with Miami on Google Workspace, a Gmail App Password
+  for the operator account is the lowest-friction option. Verify with
+  `cd ai-core && .venv/bin/python -m src.observability.alerting`.
 
 ---
 
