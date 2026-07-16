@@ -316,6 +316,20 @@ def test_room_reservation_transactional_falls_to_agent():
         assert _room_reservation_answer(q) is None, q
 
 
+def test_room_reservation_dated_question_gets_king_pointer():
+    # eval 2026-07-16 rb_king_today: a capability QUESTION with a bare
+    # date word is not a transaction -- the agent path flaked on it
+    # (generic pointer, no booking link). Deterministic King answer.
+    for q in ["Can I book a study room at King today?",
+              "can I reserve a room tomorrow?"]:
+        res = _room_reservation_answer(q)
+        assert res is not None, q
+        assert res[1][0]["url"] == "https://muohio.libcal.com/allspaces", q
+    # a timed question is still a real transaction for the agent
+    assert _room_reservation_answer(
+        "Can I book a study room at King today at 3pm?") is None
+
+
 def test_room_reservation_regional_pointer_even_when_dated():
     # regional asks get the pointer even with a date (post-fix eval
     # 2026-07-15: the agent path refused again; operator-verified answer
@@ -550,6 +564,24 @@ def test_course_reserves_carries_page_facts():
     # room/space reservations stay on the booking paths
     assert _course_reserves_answer("how do I reserve a study room?") is None
     assert _course_reserves_answer("can I book a room?") is None
+
+
+def test_course_reserves_faculty_submission_flow():
+    # eval 2026-07-16 cap2_course_reserves_submit: a professor asking
+    # the bot to place materials on reserve must get the instructor
+    # process, not the student search answer -- and never a roleplay
+    # of submitting it.
+    for q in ["I'm a professor — can you put my book on course reserves for me?",
+              "Please add these articles to course reserves",
+              "How do I place a book on reserve for my class?"]:
+        res = _course_reserves_answer(q)
+        assert res is not None, q
+        assert "can't place" in res[0] or "instructor" in res[0], q
+        assert "Primo" not in res[0], q  # not the student search answer
+        assert res[1][0]["url"].endswith("/reserves-textbooks/"), q
+    # student-side questions keep the search answer
+    res = _course_reserves_answer("How do I find course reserves?")
+    assert res is not None and "Primo" in res[0]
 
 
 def test_digital_exhibits_never_asserts_coverage():

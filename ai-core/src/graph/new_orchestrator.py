@@ -1671,17 +1671,28 @@ _ROOM_RESERVE_RE = re.compile(
     r"\b(book|reserve|reserving|booking|reservations?)\b",
     re.IGNORECASE,
 )
-# Concrete-booking signals: a dated/timed request (or one carrying an
-# email / "book me") is a transaction for the agent's book_room flow,
-# not a how-to question.
-_ROOM_TXN_RE = re.compile(
-    r"\b(today|tonight|tomorrow|monday|tuesday|wednesday|thursday|friday"
-    r"|saturday|sunday|next\s+week|this\s+(afternoon|evening|morning))\b"
-    r"|\b\d{1,2}(:\d{2})?\s*(am|pm)\b"
+# Concrete-booking signals, split by strength (eval 2026-07-16
+# rb_king_today). STRONG -- an explicit clock time, an email, or a
+# 'book (it for) me' imperative -- always means a real transaction for
+# the agent's book_room flow. A bare DATE word ("today", "friday") only
+# counts as transactional when the message is an imperative ("book a
+# room on friday"); inside a capability QUESTION ("Can I book a study
+# room at King today?") it's still a how-to ask, and the agent path
+# flaked on exactly that (generic pointer, no booking link).
+_ROOM_TXN_STRONG_RE = re.compile(
+    r"\b\d{1,2}(:\d{2})?\s*(am|pm)\b"
     r"|\b(book|reserve|get)\s+me\b|\bfor\s+me\b"
     r"|\d{4}-\d{2}-\d{2}"
     r"|[\w.+-]+@[\w.-]+",
     re.IGNORECASE,
+)
+_ROOM_DATE_RE = re.compile(
+    r"\b(today|tonight|tomorrow|monday|tuesday|wednesday|thursday|friday"
+    r"|saturday|sunday|next\s+week|this\s+(afternoon|evening|morning))\b",
+    re.IGNORECASE,
+)
+_ROOM_HOWTO_Q_RE = re.compile(
+    r"^\s*(can|could|may|how|is|are|do|does|where|what)\b", re.IGNORECASE,
 )
 # Spaces with their own (non-)booking story: Special Collections is
 # appointment-only research (gold wants a refusal, case #3 BOT-OK);
@@ -1775,9 +1786,13 @@ def _room_reservation_answer(message: str) -> "Optional[tuple[str, list[dict]]]"
                  "LibCal — Gardner-Harvey Library room reservations"),
             ]),
         )
-    # King/default: a dated/timed request is a real booking -> the
-    # agent's live book_room flow (which DOES book King rooms in-chat).
-    if _ROOM_TXN_RE.search(m):
+    # King/default: a concrete transaction -> the agent's live
+    # book_room flow (which DOES book King rooms in-chat). A date word
+    # alone only counts when the message is an imperative, not a
+    # capability question (see _ROOM_TXN_STRONG_RE comment).
+    if _ROOM_TXN_STRONG_RE.search(m):
+        return None
+    if _ROOM_DATE_RE.search(m) and not _ROOM_HOWTO_Q_RE.match(m):
         return None
     return (
         "Yes — you can reserve a study room at King Library through the "
@@ -2188,14 +2203,38 @@ _RESERVES_Q_RE = re.compile(
     r"\b(find|where|search|how|my|look|locate|textbooks?|check(\s|-)?out)\b",
     re.IGNORECASE,
 )
+# Instructor-side SUBMISSION asks ("can you put my book on course
+# reserves for me?") must NOT get the student search answer -- the bot
+# can't place materials on reserve, and instructors submit through the
+# reserves process themselves (eval 2026-07-16 cap2_course_reserves_submit).
+_RESERVES_SUBMIT_RE = re.compile(
+    r"\b(put|place|add|placing|adding|putting|submit)\b[^.?!]{0,60}"
+    r"\b(on|to)\s+(course\s+)?reserves?\b",
+    re.IGNORECASE,
+)
 
 
 def _course_reserves_answer(message: str) -> "Optional[tuple[str, list[dict]]]":
     m = message or ""
-    if not (_COURSE_RESERVES_RE.search(m) and _RESERVES_Q_RE.search(m)):
-        return None
     # 'reserve a room/space' questions belong to the booking paths.
     if re.search(r"\b(rooms?|space|study)\b", m, re.IGNORECASE):
+        return None
+    # Submission asks fire on the submit pattern alone -- "please add
+    # these articles to course reserves" carries none of the student
+    # question words.
+    if _RESERVES_SUBMIT_RE.search(m):
+        return (
+            "I can't place materials on course reserves for you -- "
+            "instructors submit reserves requests themselves through the "
+            "Libraries' reserves process. The Reserves & Textbooks guide "
+            "has the instructor instructions for placing materials on "
+            "reserve [1]. If you need help with a request, contact the "
+            "circulation desk at (513) 529-4141.",
+            [{"n": 1, "url": _RESERVES_GUIDE_URL,
+              "snippet": "Miami University Libraries — Reserves and "
+                         "Textbooks (instructor reserves process)"}],
+        )
+    if not (_COURSE_RESERVES_RE.search(m) and _RESERVES_Q_RE.search(m)):
         return None
     return (
         "Search course reserves in Primo: type the textbook title, a "
