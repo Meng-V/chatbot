@@ -1,58 +1,13 @@
 import os
 import re
-import json
-import time
 import logging
 from decimal import Decimal
 from datetime import datetime, date
 import socketio
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
 from dotenv import load_dotenv
 from pathlib import Path
-from src.utils.logging_config import setup_logging, UVICORN_LOG_CONFIG
-from contextlib import asynccontextmanager
-
-from src.state import AgentState
-from src.utils.logger import AgentLogger
-from src.memory.conversation_store import (
-    create_conversation,
-    add_message,
-    get_conversation_history,
-    update_conversation_tools,
-    update_message_rating,
-    save_conversation_feedback,
-    log_token_usage,
-    log_tool_execution
-)
-from src.database.prisma_client import connect_database, disconnect_database
-from src.utils.weaviate_client import get_weaviate_client, close_weaviate_client, get_weaviate_url
-from src.api.health import router as health_router
-from src.api.summarize import router as summarize_router
-from src.api.ticket import router as ticket_router
-from src.api.askus_hours import router as askus_router
-from src.api.route import router as route_router
-from src.api.readiness_router import (
-    build_readiness_router,
-    make_postgres_probe,
-    make_weaviate_probe,
-    make_openai_probe,
-    make_libcal_probe,
-    make_libguides_probe,
-)
-from src.api.admin.smoketest_router import build_smoketest_router
-from src.observability.request_id_middleware import RequestIdMiddleware
-from src.api.metrics_router import build_metrics_router
-from src.observability.metrics_middleware import MetricsMiddleware
-from src.observability.sentry import init_sentry
-from src.api.rate_limit import (
-    MessageRejected,
-    check_rate,
-    client_ip_from_request,
-    validate_message,
-)
-
 # ---------------------------------------------------------------------------
 # .env loading — MUST NOT follow symlinks on production
 # ---------------------------------------------------------------------------
@@ -78,11 +33,51 @@ else:
 load_dotenv(dotenv_path=env_path, override=True)
 print(f"Loading .env from: {env_path}")
 
-# Initialize logging EARLY (module level) so it takes effect before uvicorn
-# configures its own loggers. This prevents INFO spam in systemd journal.
+
+# .env MUST load before ANY `src` import: several modules (config/models,
+# api/summarize, classification) snapshot env values at import time, and
+# main's import chain used to pull them in before load_dotenv ran -- so
+# production silently ignored .env model settings (found 2026-07-17).
+# (moved above -- see .env loading block)
+from src.utils.logging_config import setup_logging, UVICORN_LOG_CONFIG
+from contextlib import asynccontextmanager
+
+# Initialize logging EARLY (module level) so it takes effect before
+# uvicorn configures its own loggers (prevents INFO spam in journald).
 setup_logging()
-logging.info(f"📂 .env loaded from: {env_path}  (root_dir={root_dir})")
-logging.info(f"📂 __file__ resolved WITHOUT symlinks: {_this_file}")
+
+from src.memory.conversation_store import (
+    create_conversation,
+    add_message,
+    get_conversation_history,
+    update_message_rating,
+    save_conversation_feedback,
+)
+from src.database.prisma_client import connect_database, disconnect_database
+from src.utils.weaviate_client import get_weaviate_client, close_weaviate_client, get_weaviate_url
+from src.api.health import router as health_router
+from src.api.summarize import router as summarize_router
+from src.api.ticket import router as ticket_router
+from src.api.askus_hours import router as askus_router
+from src.api.route import router as route_router
+from src.api.readiness_router import (
+    build_readiness_router,
+    make_postgres_probe,
+    make_weaviate_probe,
+    make_openai_probe,
+    make_libcal_probe,
+    make_libguides_probe,
+)
+from src.api.admin.smoketest_router import build_smoketest_router
+from src.observability.request_id_middleware import RequestIdMiddleware
+from src.api.metrics_router import build_metrics_router
+from src.observability.metrics_middleware import MetricsMiddleware
+from src.observability.sentry import init_sentry
+from src.api.rate_limit import (
+    MessageRejected,
+    check_rate,
+    validate_message,
+)
 
 # Op 3 (non-negotiable launch floor): wire Sentry BEFORE the FastAPI
 # app is created so sentry-sdk's auto-enabled FastAPI/Starlette
@@ -107,36 +102,6 @@ def json_serializable(obj):
         return [json_serializable(item) for item in obj]
     else:
         return obj
-
-
-def clean_response_for_frontend(text: str) -> str:
-    """
-    Remove internal metadata and source annotations from response before sending to frontend.
-    These are useful for internal processing but awkward for end users to see.
-    """
-    if not text:
-        return text
-    
-    # Patterns to remove (internal metadata that shouldn't be shown to users)
-    patterns_to_remove = [
-        # Source attribution lines - remove ALL source lines
-        r'\n*Source:\s*[^\n]+\n*',
-        # Standalone brackets with internal labels
-        r'\s*\[VERIFIED API DATA\]',
-        r'\s*\[CURATED KNOWLEDGE BASE[^\]]*\]',
-        r'\s*\[WEBSITE SEARCH[^\]]*\]',
-        r'\s*\[HIGH PRIORITY\]',
-    ]
-    
-    cleaned = text
-    for pattern in patterns_to_remove:
-        cleaned = re.sub(pattern, '', cleaned, flags=re.IGNORECASE)
-    
-    # Clean up extra whitespace/newlines that might result from removal
-    cleaned = re.sub(r'\n{3,}', '\n\n', cleaned)
-    cleaned = cleaned.strip()
-    
-    return cleaned
 
 
 # Lifecycle management for database connection
@@ -611,6 +576,23 @@ async def _v2_message(sid, data):
         if isinstance(data, str)
         else (data.get("message", "") if isinstance(data, dict) else "")
     )
+    # Abuse / cost guard (unauthenticated public socket): bound input
+    # size + per-sid rate BEFORE any DB write or LLM call. Ported from
+    # the legacy handler during the 2026-07-17 removal -- v2 had NO
+    # guard of its own, so deleting the legacy handler would have left
+    # the socket unlimited. check_rate fails OPEN so a limiter bug
+    # can't lock out a legitimate user; on reject the reason surfaces
+    # in-chat on the same "message" channel, then the turn stops.
+    try:
+        text_input = validate_message(text_input)
+        check_rate(f"ws:{sid}")
+    except MessageRejected as _mr:
+        await sio_v2.emit("message", json_serializable({
+            "message": _mr.reason,
+            "conversationId": client_conversations.get(sid),
+            "error": True,
+        }), to=sid)
+        return
     conversation_id = client_conversations.get(sid)
     if not conversation_id:
         conversation_id = await create_conversation()

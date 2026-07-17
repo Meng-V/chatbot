@@ -2,7 +2,7 @@
 Stable cached prefix for the single tool-calling agent.
 
 Call site: ai-core/src/agent/agent.py (to be created in week 3-4 work).
-Model: gpt-5.4-mini default; gpt-5.2 escalation.
+Model: the configured BASIC tier (LLM_MODEL_BASIC); REASONING-tier escalation (LLM_MODEL_REASONING).
 
 Per plan Layer 4:
   Stable prefix (~1,050 tokens): system rules + tool schemas +

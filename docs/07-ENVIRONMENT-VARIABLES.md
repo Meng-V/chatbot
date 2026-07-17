@@ -51,10 +51,15 @@ workflow.
 ### OpenAI API
 ```bash
 OPENAI_API_KEY=sk-...
-OPENAI_MODEL=o4-mini
+# Model TIERS (OPENAI_MODEL is deprecated -- no longer read):
+LLM_MODEL_BASIC=gpt-5.6-luna        # synthesizer / surface questions
+LLM_MODEL_REASONING=gpt-5.6-terra   # agent loop, escalation, clarify
+LLM_MODEL_CHEAP=gpt-5.4-nano        # eval judge, mechanical extraction
+LLM_MODEL_EMBEDDING=text-embedding-3-large  # changing this invalidates the vector index
 ```
 - **OPENAI_API_KEY**: Your OpenAI API key (required)
-- **OPENAI_MODEL**: AI model to use (default: o4-mini, no temperature parameter)
+- Tier values above are the production settings as of 2026-07-17; swap
+  models per tier without touching call sites (`src/config/models.py`).
 
 ---
 
@@ -164,7 +169,10 @@ PRIMO_VID=01OHIOLINK_MU:MU
 
 # ==================== OpenAI ====================
 OPENAI_API_KEY=sk-...
-OPENAI_MODEL=o4-mini
+LLM_MODEL_BASIC=gpt-5.6-luna
+LLM_MODEL_REASONING=gpt-5.6-terra
+LLM_MODEL_CHEAP=gpt-5.4-nano
+LLM_MODEL_EMBEDDING=text-embedding-3-large
 
 # ==================== Database ====================
 DATABASE_URL=postgresql://user:password@host/database?sslmode=require
@@ -212,4 +220,4 @@ GOOGLE_CSE_CX=your_search_engine_id
 
 ---
 
-**Document Version:** 3.0.0
+**Document Version:** updated 2026-07-17 (model tiers, alerts, admin surfaces)

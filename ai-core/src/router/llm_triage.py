@@ -33,10 +33,12 @@ class LLMTriage:
     }
     
     def __init__(self):
-        """Initialize LLM triage with o4-mini"""
+        """Initialize LLM triage with the configured basic-tier model."""
         api_key = os.getenv("OPENAI_API_KEY", "")
-        # Use o4-mini as specified (no temperature parameter)
-        self.llm = ChatOpenAI(model="o4-mini", api_key=api_key)
+        from src.config.models import resolve_model
+        # Was hardcoded "o4-mini" (pre-rebuild); now follows LLM_MODEL_BASIC.
+        # Reasoning-tier models reject `temperature`, so none is passed.
+        self.llm = ChatOpenAI(model=resolve_model("basic"), api_key=api_key)
     
     async def generate_clarification(
         self,

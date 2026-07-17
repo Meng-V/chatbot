@@ -62,6 +62,8 @@ from typing import Literal
 # (guides/reasoning, /text, /migrate-to-responses):
 #
 #   id              reasoning  ctx      $/1M in / cached / out
+#   gpt-5.6-terra   5/5        1M       2.50 / 0.25 / 15.00   <- REASONING since 2026-07-17
+#   gpt-5.6-luna    4/5        1M       1.00 / 0.10 /  6.00   <- BASIC since 2026-07-17
 #   gpt-5.4         5/5        1.05M    2.50 / 0.25 / 15.00
 #   gpt-5.4-mini    4/5        400K     0.75 / 0.08 /  4.50
 #   gpt-5.4-nano    3/5        400K     0.20 / 0.02 /  1.25
@@ -144,13 +146,21 @@ def resolve_model(tier: ModelTier) -> str:
 
     Raises:
         ValueError: If `tier` is not a recognized tier.
+
+    Reads the env var at CALL time (module constants are only the
+    fallback). The constants are snapshotted at import, and in
+    production this module gets imported through main.py's import
+    chain BEFORE main.py runs load_dotenv() -- so the snapshot never
+    saw the .env values and production silently ran the hardcoded
+    defaults regardless of configuration (found 2026-07-17 when a
+    .env model upgrade didn't change `model_used` in live turns).
     """
     if tier == "basic":
-        return BASIC_MODEL
+        return os.getenv("LLM_MODEL_BASIC", "").strip() or BASIC_MODEL
     if tier == "reasoning":
-        return REASONING_MODEL
+        return os.getenv("LLM_MODEL_REASONING", "").strip() or REASONING_MODEL
     if tier == "cheap":
-        return CHEAP_MODEL
+        return os.getenv("LLM_MODEL_CHEAP", "").strip() or CHEAP_MODEL
     raise ValueError(
         f"Unknown model tier: {tier!r}. Expected 'basic', 'reasoning', "
         f"or 'cheap'."

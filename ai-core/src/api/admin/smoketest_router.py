@@ -74,8 +74,9 @@ def build_smoketest_router(deps: dict) -> Any:
 
     @router.get("/smoketest")
     async def smoketest() -> Any:
-        # Legacy path never returns citations -- don't 503 forever on it.
-        return _run(ask_bot, require_citation=False)
+        # Probes the v2 orchestrator (legacy removed 2026-07-17), which
+        # always cites -- so the citation check gates again.
+        return _run(ask_bot)
 
     if ask_bot_v2 is not None:
         @router.get("/smoketest/v2")

@@ -41,10 +41,10 @@ def test_admin_hub_links_carry_key_and_list_surfaces():
     r = c.get("/admin/?key=admintok")
     assert r.status_code == 200
     for path in ("/admin/tickets/view?key=admintok",
-                 "/admin/reviews/view?key=admintok",
+                 "/admin/review?key=admintok",
                  "/admin/corrections/view?key=admintok",
                  "/admin/cost?key=admintok",
-                 "/smoketest/v2",
+                 "/smoketest",
                  "/librarian/ticket?key=staffcode"):
         assert path in r.text, path
 

@@ -2,7 +2,7 @@
 Stable cached prefix for the grounded synthesizer.
 
 Call site: ai-core/src/synthesis/synthesizer.py (week 5).
-Model: gpt-5.4-mini default; gpt-5.2 promoted per Layer 4 routing rules.
+Model: the configured BASIC tier (LLM_MODEL_BASIC; gpt-5.6-luna as of 2026-07); REASONING tier promoted per Layer 4 routing rules.
 
 The synthesizer's job is "given a question and a numbered evidence bundle,
 produce a structured answer with citations or REFUSAL." This prompt is

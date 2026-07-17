@@ -17,7 +17,7 @@ One turn, five steps:
 The orchestrator owns:
   - Binding request-context fields into the observability logger
   - Composing the SynthesisRequest from agent outputs
-  - Promoting the LLM to gpt-5.2 when escalation conditions hit
+  - Promoting the LLM to the REASONING tier when escalation conditions hit
   - Logging per-turn telemetry (intent, scope, model, tokens, latency,
     fired corrections, refusal trigger) into the existing
     conversation store
@@ -33,7 +33,7 @@ the integration point; each step is already unit-testable in isolation.
 See plan:
   - Architecture -> "Layer overview"
   - Critical files -> ai-core/src/graph/orchestrator.py
-  - Layer 4 -> "Model routing" (when to escalate to gpt-5.2)
+  - Layer 4 -> "Model routing" (when to escalate to the REASONING tier)
 """
 
 from __future__ import annotations
@@ -168,15 +168,27 @@ def run_turn(
     request: TurnRequest,
     deps: OrchestratorDeps,
     *,
-    model_basic: str = "gpt-5.4-mini",
-    model_reasoning: str = "gpt-5.2",
+    model_basic: Optional[str] = None,
+    model_reasoning: Optional[str] = None,
 ) -> TurnResponse:
     """Run one turn end to end.
 
     Returns a TurnResponse either way -- refusals and answers both use
     the same shape, so the UI doesn't have to branch. `is_refusal`
     tells the UI whether to render the handoff button.
+
+    Models default to the configured tiers (LLM_MODEL_BASIC /
+    LLM_MODEL_REASONING). They were hardcoded strings until 2026-07-17,
+    which silently pinned PRODUCTION to gpt-5.4-mini/gpt-5.2 -- the
+    serving path never passes these params, so .env model upgrades
+    only ever reached the eval harness (which resolves its own).
     """
+    if model_basic is None:
+        from src.config.models import resolve_model
+        model_basic = resolve_model("basic")
+    if model_reasoning is None:
+        from src.config.models import resolve_model
+        model_reasoning = resolve_model("reasoning")
     turn_start = time.monotonic()
 
     # --- 1. Resolve scope ---
@@ -713,7 +725,7 @@ def run_turn(
     # --- 4. Run the agent ---
     # Model selection: basic by default, reasoning on comparative /
     # cross-campus / multi-hop intents. Plan: "Synthesizer defaults to
-    # gpt-5.4-mini. Promote to gpt-5.2 when: (a) retrieval returned
+    # the BASIC tier. Promote to the REASONING tier when: (a) retrieval returned
     # >5 chunks across multiple topic tags (multi-hop), (b) classifier
     # confidence was in the clarification band, (c) comparative /
     # multi-step phrasing." We evaluate (c) here; (a) and (b) are
@@ -970,7 +982,7 @@ def run_turn(
 _REASONING_INTENTS = frozenset(
     {"cross_campus_comparison", "loan_policy", "research_consultation"}
 )
-"""Intents that get `gpt-5.2` by default. Comparative + policy + research-
+"""Intents that get the REASONING-tier model by default. Comparative + policy + research-
 consultation questions benefit from the reasoning tier; quick lookups
 don't."""
 

@@ -57,7 +57,7 @@ def render_admin_hub(admin_key: str, librarian_code: str) -> str:
     cards_ops = [
         _card(f"/admin/tickets/view{k}", "Correction tickets",
               "Librarian 'wrong answer' reports — review queue"),
-        _card(f"/admin/reviews/view{k}", "Flagged conversations",
+        _card(f"/admin/review{k}", "Flagged conversations",
               "Thumbs-down / low-confidence turns, full transcripts"),
         _card(f"/admin/corrections/view{k}", "Manual corrections",
               "Suppress / replace / pin / blacklist — fixes without a deploy"),
@@ -67,10 +67,8 @@ def render_admin_hub(admin_key: str, librarian_code: str) -> str:
     cards_health = [
         _card("/health/ready", "Readiness probes",
               "Postgres / Weaviate / OpenAI / LibCal / LibGuides, live"),
-        _card("/smoketest", "Smoke test (legacy path)",
-              "Canned question through the serving path"),
-        _card("/smoketest/v2", "Smoke test (v2 path)",
-              "Same, through the rebuild orchestrator (strict citation check)"),
+        _card("/smoketest", "Smoke test",
+              "Canned question through the serving orchestrator (strict citation check)"),
     ]
     staff = (
         f"<h2>Share with library staff</h2>"
