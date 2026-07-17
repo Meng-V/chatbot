@@ -49,6 +49,7 @@ def run_smoketest(
     ask_bot: Callable[[str], dict],
     question: str = DEFAULT_QUESTION,
     latency_budget_ms: int = DEFAULT_LATENCY_BUDGET_MS,
+    require_citation: bool = True,
 ) -> SmoketestResult:
     """Run the canned question through the bot and validate the shape.
 
@@ -59,6 +60,12 @@ def run_smoketest(
             orchestrator in at /smoketest endpoint time.
         question: The canned question.
         latency_budget_ms: Fail if the full turn takes longer.
+        require_citation: When False, the citation check is recorded
+            in `checks` but does not gate `passed`. The LEGACY serving
+            path never returns a citations array (its answers carry
+            sources differently), so its probe returned a permanent 503
+            and was useless for uptime monitoring (found 2026-07-17).
+            The v2 probe keeps the strict default.
 
     Returns:
         SmoketestResult. Pass means all three checks hit: (a) there's
@@ -87,12 +94,16 @@ def run_smoketest(
     # Check 2: has at least one citation
     citations = response.get("citations") or []
     checks["has_citation"] = len(citations) > 0
+    gating = dict(checks)
+    if not require_citation:
+        gating.pop("has_citation")
 
     # Check 3: under latency budget
     checks["under_latency"] = latency_ms <= latency_budget_ms
+    gating["under_latency"] = checks["under_latency"]
 
-    passed = all(checks.values())
-    reason = "" if passed else _explain_failure(checks, latency_ms, latency_budget_ms)
+    passed = all(gating.values())
+    reason = "" if passed else _explain_failure(gating, latency_ms, latency_budget_ms)
     answer = response.get("answer", "") or ""
     preview = answer[:200]
 

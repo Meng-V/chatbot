@@ -53,11 +53,12 @@ def build_smoketest_router(deps: dict) -> Any:
     )
     question = deps.get("question", DEFAULT_QUESTION)
 
-    def _run(ask: Callable[[str], dict]) -> Any:
+    def _run(ask: Callable[[str], dict], require_citation: bool = True) -> Any:
         result: SmoketestResult = run_smoketest(
             ask_bot=ask,
             question=question,
             latency_budget_ms=latency_budget_ms,
+            require_citation=require_citation,
         )
         payload = {
             "passed": result.passed,
@@ -73,7 +74,8 @@ def build_smoketest_router(deps: dict) -> Any:
 
     @router.get("/smoketest")
     async def smoketest() -> Any:
-        return _run(ask_bot)
+        # Legacy path never returns citations -- don't 503 forever on it.
+        return _run(ask_bot, require_citation=False)
 
     if ask_bot_v2 is not None:
         @router.get("/smoketest/v2")
