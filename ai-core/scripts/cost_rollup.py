@@ -60,6 +60,19 @@ PRICE_PER_1M_TOKENS: dict[str, dict[str, float]] = {
         "cached_input": 0.25,
         "output": 15.00,
     },
+    # GPT-5.6 family (GA 2026-07-09; prices verified against the OpenAI
+    # pricing page 2026-07-17). Note: 5.6 bills cache WRITES at 1.25x
+    # input; this table prices cache READS (the cachedInputTokens column).
+    "gpt-5.6-terra": {
+        "input": 2.50,
+        "cached_input": 0.25,
+        "output": 15.00,
+    },
+    "gpt-5.6-luna": {
+        "input": 1.00,
+        "cached_input": 0.10,
+        "output": 6.00,
+    },
     "gpt-5.4-mini": {
         "input": 0.75,
         "cached_input": 0.08,
