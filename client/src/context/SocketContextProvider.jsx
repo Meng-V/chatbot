@@ -1,7 +1,6 @@
 import { createContext, useState, useContext, useEffect, useRef } from 'react';
 import { io } from 'socket.io-client';
 import { retrieveEnvironmentVariable } from '../services/RetrieveEnvironmentVariable';
-import { resolveV2Flag, socketIoPathForFlag } from '../services/RolloutFlag';
 import { MessageContext } from './MessageContextProvider';
 import { useMemo } from 'react';
 import axios from 'axios';
@@ -26,16 +25,10 @@ const SocketContextProvider = ({ children }) => {
       const isDevelopment = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
       const socketUrl = isDevelopment ? 'http://localhost:8000' : '';
 
-      // Feature-flag routing: flagged sessions hit the new v2 orchestrator;
-      // everyone else stays on the legacy path. See services/RolloutFlag.js.
-      const v2Flag = resolveV2Flag();
-      const socketPath = socketIoPathForFlag(v2Flag);
-      if (v2Flag === 'on') {
-        console.log('Smart chatbot: routing to v2 stack');
-      }
-
+      // 2026-07-17: v2 is the only stack -- the rollout flag is gone
+      // (legacy path removed server-side the same day).
       socket.current = io(socketUrl, {
-        path: socketPath,
+        path: '/smartchatbot/socket.io',
         transports: ['websocket', 'polling'],
         upgrade: true,
         reconnection: true,
