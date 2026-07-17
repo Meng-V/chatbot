@@ -86,9 +86,7 @@ def test_check_account_detected() -> None:
         "What books do I have checked out?",
         "Check my fines",
         "My library account",
-        # NB: "What did I borrow?" is NOT caught by the current regex
-        # (it requires "what (do i|books|items)" prefix; "did i" misses).
-        # Documented gap; see test_known_regex_gaps below.
+        "What did I borrow?",  # gap closed 2026-07-17 (issue #31)
     ]
     for m in msgs:
         out = detect_limitation_request(m)
@@ -428,8 +426,10 @@ def test_capability_summary_lists_limitations() -> None:
 # fill these in; until then the test allows them to keep CI green
 # without hiding the gap. Adding a new key here is fine; removing one
 # is what we want to catch (means someone fixed the gap).
-_KNOWN_UNMAPPED_LIMITATIONS = {"print_scan_copy"}
-"""print_scan_copy is in LIMITATIONS but has no LIMITATION_PATTERNS
+_KNOWN_UNMAPPED_LIMITATIONS: set = set()
+"""Empty since 2026-07-17: print_scan_copy (the one entry) was removed
+from LIMITATIONS entirely -- printing is a CAPABILITY answered from the
+corpus; the entry was stale (issue #31). Historical note: it
 entry. Probably a stale entry -- printing is in CAPABILITIES (a thing
 the bot CAN handle), not a limitation. Either remove from LIMITATIONS
 or add patterns. Either way, not blocking CI."""
@@ -454,13 +454,15 @@ def test_known_regex_gaps_documented() -> None:
     matching -- the test will fail loud, you remove the line, and the
     fix is recorded.
     """
-    # check_account regex doesn't match "what did i borrow":
+    # Gaps 2+3 from issue #31 were CLOSED 2026-07-17 -- these now assert
+    # the fixed behavior (they used to assert the miss):
     out = detect_limitation_request("What did I borrow?")
-    assert not out["is_limitation"], "regex now catches 'what did I borrow' -- update test"
+    assert out["is_limitation"] and out["limitation_type"] == "check_account"
 
-    # loan_periods doesn't match possessive "my books due":
     out = detect_policy_question("When are my books due?")
-    assert not out["is_policy_question"], "regex now catches 'my books due' -- update test"
+    assert out["is_policy_question"], "'my books due' must hit loan_periods"
+    out = detect_policy_question("Late fees")
+    assert out["is_policy_question"], "'late fees' must hit loan_periods"
 
     # 'book on reserve' no longer false-positives because catalog_search
     # is now action-gated and "My professor put..." has no action signal.

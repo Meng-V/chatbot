@@ -121,12 +121,6 @@ LIMITATIONS = {
         # fell through to the catalog_search "currently unavailable" lie.
         "response": "I can't check or submit course reserves for you. Browse current reserves or find the faculty request process at https://libguides.lib.miamioh.edu/reserves-textbooks/ -- the circulation desk staff can take it from there.",
     },
-    "print_scan_copy": {
-        "description": "Help with printing, scanning, or copying (beyond general info)",
-        "reason": "Cannot control physical equipment",
-        "redirect_to": "google_site",  # Can provide general info
-        "response": "For printing help, visit a library service desk or check https://www.lib.miamioh.edu/use/technology/printing/",
-    },
 }
 
 # ============================================================================
@@ -154,7 +148,7 @@ LIMITATION_PATTERNS = {
         # info phrasings about checkouts pass through to the agent loop.
         r'\bmy\s*(library)?\s*(account|fines?|fees?|balance)\b',
         r'\bcheck\s*(library)?\s*(my\s*)?(account|fines?|fees?|balance|checkouts?|loans?|items?)\b',
-        r'\bwhat (do i|books|items).*\b(owe|checked out|have out|borrowed)\b',
+        r'\bwhat (do i|did i|have i|books|items).*\b(owe|checked out|have out|borrow(ed)?)\b',  # 'did i' added per issue #31
         r'\bhow much do i owe\b',
         r'\bwhat.*checked out\b',
         r'\bmy (fines?|fees?|balance)\b',
@@ -494,11 +488,11 @@ POLICY_URLS = {
             r'\b(check\s*out|checkout)\b.*\b(how\s*long|period|time|days?|weeks?)\b',
             r'\bhow\s*(long|many\s*(days?|weeks?))\s*(can\s*i|to)\s*(keep|borrow|check\s*out|have)\b',
             r'\b(loan|lending|borrowing|checkout)\s*(period|policy|policies|time|limit)\b',
-            r'\bwhen\s*(is|are)\s*(it|books?|items?)\s*due\b',
+            r'\bwhen\s*(is|are)\s*(my|the|our)?\s*(it|books?|items?)\s*due\b',  # 'my books due' per issue #31
             r'\bdue\s*date\s*(policy|policies)?\b',
             r'\b(renewal|renew)\s*(policy|policies|limit|period)\b',
             r'\bfines?\s*(policy|policies|amount|rate)\b',
-            r'\b(overdue|late)\s*(fee|fine|charge|policy)\b',
+            r'\b(overdue|late)\s*(fees?|fines?|charges?|policy|policies)\b',  # plurals per issue #31
         ],
     },
     "circulation_policies": {
