@@ -47,6 +47,12 @@ Two env vars (see [07-ENVIRONMENT-VARIABLES.md](./07-ENVIRONMENT-VARIABLES.md)):
 
 Plus the `ALERT_SMTP_*` block for the email notifications.
 
+**nginx**: the site config only proxies an explicit list of paths to the
+backend, so `/librarian/` and `/admin/` each need a `location` block with
+`proxy_pass http://smartchatbot_backend;` (added to
+`/etc/nginx/sites-enabled/default` on 2026-07-17; a missing block shows up
+as a 404 on an otherwise-working host).
+
 ## Security notes
 
 - The staff code is deliberately separate from (and weaker than) the
