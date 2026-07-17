@@ -10,11 +10,15 @@
     "prisma:deploy": "prisma migrate deploy"
   },
   "dependencies": {
-    "@prisma/client": "^7.2.0"
+    "@prisma/client": "^7.8.0"
   },
   "devDependencies": {
-    "@types/node": "^24.10.2",
-    "dotenv": "^17.2.3",
-    "prisma": "^7.2.0"
+    "@types/node": "^26.1.1",
+    "dotenv": "^17.4.2",
+    "prisma": "^7.8.0"
+  },
+  "allowScripts": {
+    "prisma@7.8.0": true,
+    "@prisma/engines@7.8.0": true
   }
 }
