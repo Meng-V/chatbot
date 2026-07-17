@@ -1,9 +1,48 @@
 # Environment Variables Reference
 
-**Last Updated:** December 16, 2025  
-**Version:** 3.0.0
+**Last Updated:** July 17, 2026
 
 Complete reference for all environment variables used in the chatbot.
+
+---
+
+## Operator Alerts & Admin Surfaces (added 2026-07)
+
+### Email alerts (`ai-core/src/observability/alerting.py`)
+
+Sends the operator an email on dependency down/recovered events; the
+correction-ticket system uses the same transport. The AWS host blocks
+outbound port 25, so an authenticated relay on 587 is required
+(configured and verified working 2026-07-17 via a Gmail App Password).
+
+```bash
+ALERT_EMAIL_ENABLED=true                 # "false" silences alerts
+ALERT_EMAIL_TO=qum@miamioh.edu           # operator inbox
+ALERT_EMAIL_FROM=qum@miamioh.edu         # must equal ALERT_SMTP_USER for Gmail
+ALERT_SMTP_HOST=smtp.gmail.com
+ALERT_SMTP_PORT=587
+ALERT_SMTP_STARTTLS=true
+ALERT_SMTP_USER=qum@miamioh.edu
+ALERT_SMTP_PASSWORD=<16-char Gmail App Password, no spaces>
+```
+
+Verify: `cd ai-core && .venv/bin/python -m src.observability.alerting`
+(sends a test email).
+
+### Admin & librarian surfaces (`ai-core/src/main.py`)
+
+```bash
+ADMIN_API_TOKEN=<secret>          # gates /admin/* (reviews, corrections,
+                                  # cost, ticket queue). Unset = routes
+                                  # not mounted at all (fail-closed).
+LIBRARIAN_TICKET_CODE=<secret>    # staff access code for the correction-
+                                  # ticket form at /librarian/ticket?key=...
+                                  # Weaker secret by design: distributable
+                                  # to library staff, exposes no PII.
+```
+
+See [13-CORRECTION-TICKETS.md](./13-CORRECTION-TICKETS.md) for the ticket
+workflow.
 
 ---
 

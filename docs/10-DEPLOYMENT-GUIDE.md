@@ -95,35 +95,14 @@ Runs all three syncs in order.
 
 ## Server Monitoring
 
-### Start Server Monitor
-
-```bash
-cd ai-core
-
-# Start in background
-nohup python server_monitor.py > logs/monitor_console.log 2>&1 &
-
-# Or use screen
-screen -S monitor
-python server_monitor.py
-# Ctrl+A, D to detach
-```
-
-### Configure Email Alerts
-
-Add to `.env`:
-```bash
-SMTP_SERVER=smtp.gmail.com
-SMTP_PORT=587
-SMTP_USERNAME=your-email@gmail.com
-SMTP_PASSWORD=your-app-password
-ALERT_EMAIL=admin@example.com
-```
-
-**For Gmail**:
-1. Enable 2-factor authentication
-2. Generate app-specific password
-3. Use app password in `SMTP_PASSWORD`
+> **Superseded 2026-07**: restarts are handled by systemd
+> (`chatbot.service`, `Restart=on-failure`) and email alerts by the
+> in-app `ai-core/src/observability/alerting.py` using the `ALERT_SMTP_*`
+> variables — see [09-SERVER-MONITORING.md](./09-SERVER-MONITORING.md)
+> and [07-ENVIRONMENT-VARIABLES.md](./07-ENVIRONMENT-VARIABLES.md).
+> The old `server_monitor.py` watchdog (and its `SMTP_SERVER`/
+> `SMTP_USERNAME`/`ALERT_EMAIL` variables) is retired and archived at
+> `ai-core/archived/server_monitor.py.superseded`.
 
 ---
 

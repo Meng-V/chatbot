@@ -51,6 +51,26 @@ This folder contains technical documentation for developers working on the chatb
 8. **[11-CLARIFICATION-SYSTEM.md](./11-CLARIFICATION-SYSTEM.md)**  
    Smart clarification choices system with RAG-based classification, user-in-the-loop decision making, and interactive button UI.
 
+9. **[12-DEPLOYMENT-CHECKLIST.md](./12-DEPLOYMENT-CHECKLIST.md)**
+   Step-by-step pre/post-deploy checklist.
+
+10. **[13-CORRECTION-TICKETS.md](./13-CORRECTION-TICKETS.md)**
+    Librarian "wrong answer" report form + operator review queue (added 2026-07-16).
+
+11. **[ROUTER_REFACTOR_GUIDE.md](./ROUTER_REFACTOR_GUIDE.md)**
+    Intent-router refactor design notes.
+
+### Historical reports (kept for the record, not current state)
+
+- [ACCURACY-AUDIT-2026-06-09.md](./ACCURACY-AUDIT-2026-06-09.md),
+  [BETA-READINESS-2026-06-09.md](./BETA-READINESS-2026-06-09.md),
+  [DEPLOY-2026-06-09.md](./DEPLOY-2026-06-09.md),
+  [DEPLOY-2026-06-16.md](./DEPLOY-2026-06-16.md) — dated snapshots; for
+  current quality numbers see the dated reports in
+  [../ai-core/docs/eval/](../ai-core/docs/eval/).
+- [librarian-services-truthtable-ask.md](./librarian-services-truthtable-ask.md)
+  — operator-verified service-availability truth table.
+
 ---
 
 ## 🚀 Quick Start

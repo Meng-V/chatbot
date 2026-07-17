@@ -5,27 +5,26 @@
 
 ---
 
-## ⚠️ Current state after the 2026-07 server migration (READ FIRST)
+## ✅ Current state after the 2026-07 server migration (READ FIRST)
 
-The stack changed when the app moved to the AWS host; parts of this
-document describe the OLD setup. What is actually true now:
+The stack changed when the app moved to the AWS host; the body of this
+document below describes the OLD setup and is kept for history. What is
+actually true now:
 
 - **Auto-restart** is handled by **systemd** (`chatbot.service`,
-  `Restart=on-failure`) — `server_monitor.py` is NOT running and is no
-  longer needed for restarts (it also probes the old port 8000; the app
-  now listens on 8081 behind nginx).
+  `Restart=on-failure`). The old `server_monitor.py` watchdog is retired
+  (archived at `ai-core/archived/server_monitor.py.superseded`) — it
+  probed the old port 8000 and duplicated what systemd does.
 - **Email alerts** come from the in-app module
   `ai-core/src/observability/alerting.py` (dependency down/recovered
-  events). **They are currently broken on this host**: the module
-  defaults to a local MTA on `localhost:25`, no MTA is installed, and
-  AWS blocks outbound port 25 anyway. At least 5 alerts (including a
-  real Weaviate-down on 2026-07-14) failed with "Connection refused"
-  after the migration — check `logs/app.log` for `alert email FAILED`.
-- **Fix**: configure an authenticated relay on port 587 (outbound 587
-  is verified open from this host). See the `ALERT_*` block in
-  `.env.example` — with Miami on Google Workspace, a Gmail App Password
-  for the operator account is the lowest-friction option. Verify with
-  `cd ai-core && .venv/bin/python -m src.observability.alerting`.
+  events) — **configured and verified working 2026-07-17** via an
+  authenticated Gmail relay on port 587 (AWS blocks outbound 25; the
+  migration silently broke the old localhost:25 path for three days —
+  the `ALERT_SMTP_*` block in `.env` is what fixed it).
+- To re-verify the alert channel at any time:
+  `cd ai-core && .venv/bin/python -m src.observability.alerting`
+- **Librarian correction tickets** also ride this email transport — see
+  [13-CORRECTION-TICKETS.md](./13-CORRECTION-TICKETS.md).
 
 ---
 
