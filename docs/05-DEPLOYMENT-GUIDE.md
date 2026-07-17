@@ -37,7 +37,7 @@ Then open the operator hub (`/admin/?key=…`) and click through the pages.
 
 | Thing | Where | Notes |
 |---|---|---|
-| nginx site config | `/etc/nginx/sites-enabled/default` | path-allowlist proxy; `/librarian/` + `/admin/` blocks required (see [13-CORRECTION-TICKETS.md](./13-CORRECTION-TICKETS.md)) |
+| nginx site config | `/etc/nginx/sites-enabled/default` | path-allowlist proxy; `/librarian/` + `/admin/` blocks required (see [06-CORRECTION-TICKETS.md](./06-CORRECTION-TICKETS.md)) |
 | `.env` | `/opt/chatbot/.env` | secrets incl. `ALERT_SMTP_*`, `ADMIN_API_TOKEN`, `LIBRARIAN_TICKET_CODE`, model tiers |
 | cost rollup cron | root crontab | `0 2 * * *` → `scripts/cost_rollup.py` |
 | systemd unit | `/etc/systemd/system/chatbot.service` | uvicorn `src.main:app_sio`, port 8081 |

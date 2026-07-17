@@ -22,7 +22,7 @@
 state changes. Configured 2026-07-17 via an authenticated Gmail relay on
 port 587 (AWS blocks outbound 25 — this is why alerts silently died for
 three days after the migration). Env: the `ALERT_*` block in
-[07-ENVIRONMENT-VARIABLES.md](./07-ENVIRONMENT-VARIABLES.md).
+[02-ENVIRONMENT-VARIABLES.md](./02-ENVIRONMENT-VARIABLES.md).
 
 Re-verify anytime:
 ```bash

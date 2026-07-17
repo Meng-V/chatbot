@@ -38,7 +38,7 @@ notifications show a ⚠️ marker in the queue.
 
 ## Configuration
 
-Two env vars (see [07-ENVIRONMENT-VARIABLES.md](./07-ENVIRONMENT-VARIABLES.md)):
+Two env vars (see [02-ENVIRONMENT-VARIABLES.md](./02-ENVIRONMENT-VARIABLES.md)):
 
 - `ADMIN_API_TOKEN` — mounts the whole admin block, gates the queue.
 - `LIBRARIAN_TICKET_CODE` — opens the staff form. Without it the form

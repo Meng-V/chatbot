@@ -66,9 +66,9 @@ Every turn logs conversation, tokens (`ModelTokenUsage`, callSite
 - **Operator hub**: `/admin/?key=<ADMIN_API_TOKEN>` — tickets queue,
   flagged conversations, corrections CRUD, cost dashboard, probes.
 - **Staff hub**: `/librarian/?key=<LIBRARIAN_TICKET_CODE>` — the
-  "report a wrong answer" form ([13-CORRECTION-TICKETS.md](./13-CORRECTION-TICKETS.md)).
+  "report a wrong answer" form ([06-CORRECTION-TICKETS.md](./06-CORRECTION-TICKETS.md)).
 - Email alerts on dependency down/recovered: `src/observability/alerting.py`
-  (Gmail relay, port 587; see [07-ENVIRONMENT-VARIABLES.md](./07-ENVIRONMENT-VARIABLES.md)).
+  (Gmail relay, port 587; see [02-ENVIRONMENT-VARIABLES.md](./02-ENVIRONMENT-VARIABLES.md)).
 - Probes: `/health/ready` (5 dependencies), `/smoketest` (full cited turn).
 
 ## Quality loop
@@ -82,4 +82,4 @@ tickets feed new gold cases over time.
 
 - [../ai-core/docs/OPERATOR.md](../ai-core/docs/OPERATOR.md) — runbook
 - [programmer-guide/00-INDEX.md](./programmer-guide/00-INDEX.md) — rebuild deep-dive
-- [08-SUBJECT-LIBRARIAN-SYSTEM.md](./08-SUBJECT-LIBRARIAN-SYSTEM.md) — subject data layer
+- [03-SUBJECT-LIBRARIAN-SYSTEM.md](./03-SUBJECT-LIBRARIAN-SYSTEM.md) — subject data layer

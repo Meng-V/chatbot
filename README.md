@@ -30,7 +30,7 @@ operator-verified library data, with live LibCal integration.
 - **Operator email alerts** (dependency down/recovered) are sent by
   `ai-core/src/observability/alerting.py`. On this AWS host they require an
   authenticated SMTP relay on port 587 — see the `ALERT_*` block in
-  `.env.example` and [docs/09-SERVER-MONITORING.md](docs/09-SERVER-MONITORING.md).
+  `.env.example` and [docs/04-SERVER-MONITORING.md](docs/04-SERVER-MONITORING.md).
 
 ## Quality / eval workflow
 

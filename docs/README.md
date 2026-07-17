@@ -12,11 +12,11 @@ the retired v3.1 stack lives under [archive/](./archive/).
 | Doc | What it covers |
 |---|---|
 | [01-SYSTEM-OVERVIEW.md](./01-SYSTEM-OVERVIEW.md) | Architecture, turn pipeline, model tiers, data stores, quality loop |
-| [07-ENVIRONMENT-VARIABLES.md](./07-ENVIRONMENT-VARIABLES.md) | Every env var: model tiers, Springshare APIs, alerts, admin secrets |
-| [08-SUBJECT-LIBRARIAN-SYSTEM.md](./08-SUBJECT-LIBRARIAN-SYSTEM.md) | Subject → librarian data layer (Postgres tables, course codes, fuzzy match) |
-| [09-SERVER-MONITORING.md](./09-SERVER-MONITORING.md) | systemd, email alerts, probes, logs, cost cron |
-| [10-DEPLOYMENT-GUIDE.md](./10-DEPLOYMENT-GUIDE.md) | build.sh flow, schema changes, post-deploy checks, host-level pieces |
-| [13-CORRECTION-TICKETS.md](./13-CORRECTION-TICKETS.md) | Librarian "wrong answer" report form + operator queue |
+| [02-ENVIRONMENT-VARIABLES.md](./02-ENVIRONMENT-VARIABLES.md) | Every env var: model tiers, Springshare APIs, alerts, admin secrets |
+| [03-SUBJECT-LIBRARIAN-SYSTEM.md](./03-SUBJECT-LIBRARIAN-SYSTEM.md) | Subject → librarian data layer (Postgres tables, course codes, fuzzy match) |
+| [04-SERVER-MONITORING.md](./04-SERVER-MONITORING.md) | systemd, email alerts, probes, logs, cost cron |
+| [05-DEPLOYMENT-GUIDE.md](./05-DEPLOYMENT-GUIDE.md) | build.sh flow, schema changes, post-deploy checks, host-level pieces |
+| [06-CORRECTION-TICKETS.md](./06-CORRECTION-TICKETS.md) | Librarian "wrong answer" report form + operator queue |
 | [librarian-services-truthtable-ask.md](./librarian-services-truthtable-ask.md) | Operator-verified service-availability truth table |
 | [MAINTENANCE-2026-07-17-overnight.md](./MAINTENANCE-2026-07-17-overnight.md) | The post-legacy-removal audit report |
 
@@ -40,9 +40,9 @@ the retired v3.1 stack lives under [archive/](./archive/).
 
 ## Quick starts
 
-**Deploy a change**: [10-DEPLOYMENT-GUIDE.md](./10-DEPLOYMENT-GUIDE.md)
-**A librarian reports a wrong answer**: [13-CORRECTION-TICKETS.md](./13-CORRECTION-TICKETS.md)
-**Alerts stopped / server questions**: [09-SERVER-MONITORING.md](./09-SERVER-MONITORING.md)
+**Deploy a change**: [05-DEPLOYMENT-GUIDE.md](./05-DEPLOYMENT-GUIDE.md)
+**A librarian reports a wrong answer**: [06-CORRECTION-TICKETS.md](./06-CORRECTION-TICKETS.md)
+**Alerts stopped / server questions**: [04-SERVER-MONITORING.md](./04-SERVER-MONITORING.md)
 **New developer orientation**: 01 → programmer-guide → OPERATOR.md
 
 ---

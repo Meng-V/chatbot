@@ -8,12 +8,12 @@ This is the "what's running today, how do I touch it" doc for the
   3-tier model config, admin review surface, cost rollup, ETL gate,
   hours date-window. The things an on-call needs to know to keep them
   alive and figure out what just broke.
-- **Out of scope:** the legacy v3.1 serving path. That's documented
-  under `docs/01-…` through `docs/12-…` and remains correct for what
-  it covers. Today the legacy code still serves **100% of traffic**
-  (`VITE_V2_ROLLOUT_PERCENT=0`). Until that changes, "operating the
-  bot" largely means "operating the legacy bot via those docs."
-
+- **Out of scope:** the legacy v3.1 serving path — **REMOVED
+  2026-07-17** (all-in on v2; commit e883073). v2 had been the primary
+  socket handler since 2026-05-27. Legacy code is archived under
+  `ai-core/archived/legacy_v31/`; legacy docs under
+  `docs/archive/legacy-v31/`. The messageRating / userFeedback socket
+  handlers were ported to v2 during the removal.
 Companion docs you should know about:
 
 | Doc | When to read it |
@@ -27,8 +27,8 @@ Companion docs you should know about:
 
 ## 1. New HTTP surfaces
 
-All mounted from `ai-core/src/main.py`. They live alongside the legacy
-endpoints, so reaching them does **not** turn on the v2 bot.
+All mounted from `ai-core/src/main.py`. Since 2026-07-17 these (plus the v2 socket path) ARE the whole app --
+the legacy endpoints are gone.
 
 | Path | Purpose | When it appears |
 |---|---|---|
@@ -38,14 +38,14 @@ endpoints, so reaching them does **not** turn on the v2 bot.
 | `GET /smoketest` | End-to-end synthetic: pushes a canned question through the agent + asserts citation + non-refusal + latency. | Always. Wire to UptimeRobot / BetterStack hitting every 5 min. |
 | `GET /admin/reviews` | List flagged conversations (thumb-down). | Only when `ADMIN_API_TOKEN` env var is set. Fail-closed. |
 | `GET /admin/reviews/{id}` | Drill into one conversation (tokens, tools, citations, handoff). | Same gate. |
-| `GET /admin/reviews/view` | Server-rendered HTML review page (auth = `?key=<token>`). | Same gate. Bookmarkable. |
+| `GET /admin/review` | Server-rendered HTML review page (auth = `?key=<token>`). | Same gate. Bookmarkable. |
 | `GET/POST /librarian/ticket` | Staff "the bot answered this wrong" report form (added 2026-07-16). Auth = `?key=<LIBRARIAN_TICKET_CODE>` — a distributable staff code, NOT the admin token. Each submission is stored (`CorrectionTicket` table) and emailed to `ALERT_EMAIL_TO`. | Mounted with the admin block; the form 401s until `LIBRARIAN_TICKET_CODE` is set. |
 | `GET /admin/` | **Operator hub** — one bookmarkable page linking every admin surface (tickets, reviews, corrections, cost, probes) with your key carried in each link. | `ADMIN_API_TOKEN` gate. |
 | `GET /librarian/` | **Staff hub** — one page for library staff (ticket form + Ask Us). Distribute THIS link instead of individual URLs. | `LIBRARIAN_TICKET_CODE` gate. |
 | `GET /admin/tickets/view` | Operator queue for those tickets, newest first, with open→reviewed→done status links and a ⚠️ marker on tickets whose alert email failed to send. | `ADMIN_API_TOKEN` gate. Bookmarkable. |
 
-For the agent's own request/response endpoints, see the legacy docs —
-those haven't moved.
+User traffic arrives over Socket.IO at `/smartchatbot/socket.io`
+(handler `_v2_message` in `src/main.py`).
 
 ### Auth note on `/admin/...`
 
@@ -65,7 +65,7 @@ Authorization: Bearer <ADMIN_API_TOKEN>
 is bookmarkable in a librarian's browser:
 
 ```
-https://<host>/admin/reviews/view?key=<ADMIN_API_TOKEN>
+https://<host>/admin/review?key=<ADMIN_API_TOKEN>
 ```
 
 Rotate the token by setting a new value and restarting; there's no
@@ -76,13 +76,13 @@ session state to invalidate.
 ## 2. Environment variables (the new ones)
 
 These are the env vars introduced by the rebuild. Legacy vars are
-documented in `docs/07-ENVIRONMENT-VARIABLES.md`.
+documented in `docs/02-ENVIRONMENT-VARIABLES.md`.
 
 ### Model selection (PR #74)
 
 ```env
-LLM_MODEL_BASIC=gpt-5.4-mini       # default chat agent + synthesizer
-LLM_MODEL_REASONING=gpt-5.4        # promoted for multi-hop / ambiguous
+LLM_MODEL_BASIC=gpt-5.6-luna       # default chat agent + synthesizer (prod 2026-07-17)
+LLM_MODEL_REASONING=gpt-5.6-terra  # promoted for multi-hop / ambiguous (prod 2026-07-17)
 LLM_MODEL_CHEAP=gpt-5.4-nano       # LLM-as-judge in eval, light tasks
 LLM_MODEL_EMBEDDING=text-embedding-3-large
 LLM_ALLOW_TEMPERATURE_CHEAP=0      # opt-in: send temperature to nano
@@ -345,7 +345,7 @@ PR #75 (capacity bumps + hours_source path).
 Once `ADMIN_API_TOKEN` is set:
 
 - Librarian self-service: send them the URL
-  `https://<host>/admin/reviews/view?key=<TOKEN>` and ask them to
+  `https://<host>/admin/review?key=<TOKEN>` and ask them to
   report any conversation by `message_id` + timestamp.
 - API: `curl -H "Authorization: Bearer $ADMIN_API_TOKEN"
   https://<host>/admin/reviews`.

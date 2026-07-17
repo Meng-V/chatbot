@@ -41,7 +41,7 @@ LIBRARIAN_TICKET_CODE=<secret>    # staff access code for the correction-
                                   # to library staff, exposes no PII.
 ```
 
-See [13-CORRECTION-TICKETS.md](./13-CORRECTION-TICKETS.md) for the ticket
+See [06-CORRECTION-TICKETS.md](./06-CORRECTION-TICKETS.md) for the ticket
 workflow.
 
 ---
