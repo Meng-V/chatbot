@@ -19,9 +19,13 @@ Companion docs you should know about:
 | Doc | When to read it |
 |---|---|
 | `ai-core/scripts/etl/FIRST_RUN.md` | Running the ETL prepare→approve→apply flow. |
-| `ai-core/admin/README.md` | Standing up the Metabase v0 review interim. |
-| `ai-core/docs/WEAVIATE_SERVER_DEPLOYMENT.md` | One-time Weaviate-server provisioning. |
-| `docs/notes.md` | Personal notes / SSH tunnel hosts (qum's working file). |
+| `docs/01-SYSTEM-OVERVIEW.md` | Current architecture, model tiers, data stores. |
+| `docs/05-DEPLOYMENT-GUIDE.md` | Deploy, schema sync, host-level pieces, rollback. |
+
+(2026-07-18 cleanup: the Metabase v0 interim was superseded by the real
+admin surfaces and archived to `ai-core/archived/admin-metabase-v0/`;
+two previously-listed docs never existed on this host and were removed
+from this table.)
 
 ---
 

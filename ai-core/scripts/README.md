@@ -1,5 +1,8 @@
 # Scripts Directory
 
+> 2026-07-18: legacy-era scripts (RAG-classifier init, TranscriptQA setup,
+> the /ask comprehensive test) moved to `../archived/legacy_v31/`.
+
 This directory contains utility scripts for database setup, data processing, RAG management, and system maintenance.
 
 ## 📋 Table of Contents

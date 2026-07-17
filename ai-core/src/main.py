@@ -59,7 +59,6 @@ from src.api.health import router as health_router
 from src.api.summarize import router as summarize_router
 from src.api.ticket import router as ticket_router
 from src.api.askus_hours import router as askus_router
-from src.api.route import router as route_router
 from src.api.readiness_router import (
     build_readiness_router,
     make_postgres_probe,
@@ -146,15 +145,6 @@ async def lifespan(app: FastAPI):
             )
     except Exception as e:
         logging.error(f"❌ [Weaviate] Connection FAILED at {weaviate_url}: {e}", exc_info=True)
-
-    # --- Initialize RAG classifier vector store ---
-    try:
-        from src.classification.rag_classifier import RAGQuestionClassifier
-        classifier = RAGQuestionClassifier()
-        await classifier.initialize_vector_store(force_refresh=False)
-        logging.info("✅ [RAG Classifier] Vector store initialized")
-    except Exception as e:
-        logging.error(f"⚠️ [RAG Classifier] Vector store init failed: {e}", exc_info=True)
 
     # --- Springshare (LibCal / LibGuides) pre-flight health check ---
     # Runs BEFORE the bot serves traffic so the operator sees, at boot,
@@ -327,7 +317,6 @@ app.include_router(health_router)
 app.include_router(summarize_router)
 app.include_router(ticket_router)
 app.include_router(askus_router)
-app.include_router(route_router)
 # These are served at the ROOT path and reached via dedicated nginx
 # `location` proxy blocks (/summarize-chat, /askus-hours/status, /health,
 # and -- to be added -- /ticket/create), NOT via the /smartchatbot/
