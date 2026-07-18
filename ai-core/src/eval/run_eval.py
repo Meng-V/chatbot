@@ -599,6 +599,7 @@ def run_eval(
     judge_llm: Optional[Any] = None,
     results_out: Optional[Path] = None,
     skip_ids_in: Optional[Path] = None,
+    judge_model: str = "",
 ) -> EvalReport:
     """Run the eval suite.
 
@@ -851,6 +852,7 @@ def run_eval(
                         outcome = judge_answer(
                             judge_req, judge_llm=judge_llm,
                             prefix_id="judge_v2",
+                            model=judge_model,
                         )
                         result.judge_verdict = outcome.verdict.verdict
                         judge_verdicts.append(outcome.verdict)
@@ -1242,6 +1244,16 @@ def main() -> int:
             "the two files."
         ),
     )
+    parser.add_argument(
+        "--judge-model",
+        default="",
+        help=(
+            "Judge model override (e.g. gpt-5.4-mini). Default: the "
+            "cheap tier (gpt-5.4-nano). Back-to-back 2026-07-16 runs "
+            "measured 18%% verdict-flip noise on nano even with 5-vote "
+            "majorities; mini is ~3.7x judge cost for stabler verdicts."
+        ),
+    )
     parser.add_argument("--verbose", "-v", action="store_true")
     args = parser.parse_args()
 
@@ -1262,6 +1274,7 @@ def main() -> int:
         skip_ids_in=args.skip_ids_in,
         with_real_llm=args.with_real_llm,
         results_out=_results_out,
+        judge_model=args.judge_model,
     )
     _print_report(report, verbose=args.verbose, scope_only=args.scope_only)
 

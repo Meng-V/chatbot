@@ -1281,3 +1281,120 @@ def main() -> int:
 
 if __name__ == "__main__":
     sys.exit(main())
+
+
+# --- LibCal fault injection (2026-07-18) -----------------------------------
+# The retired gold case live_libcal_outage_refusal encoded "when LibCal
+# is unreachable, REFUSE -- never guess hours from training data", but a
+# live eval run can't simulate an outage, so the invariant had no
+# measured coverage after the 2026-07-16 gold hygiene pass. These two
+# tests ARE that fault injection, end to end through run_turn.
+
+def test_libcal_outage_hours_turn_refuses_not_fabricates() -> None:
+    """get_hours fails (LibCal down) AND both LLM stubs try to assert a
+    closing time anyway. The failed tool contributes no evidence, so the
+    grounding gate must turn the whole turn into a refusal -- a
+    hallucinating model must not be able to ship a time."""
+    registry = ToolRegistry()
+
+    def hours_down(args: dict) -> dict:
+        return {"success": False,
+                "hours": "couldn't retrieve hours (LibCal unreachable)"}
+
+    registry.register(Tool(
+        name="get_hours", description="stub hours (down)",
+        parameters={"type": "object"}, handler=hours_down,
+    ))
+    registry.register(_stub_search_kb_tool([]))  # KB has nothing either
+
+    state = {"calls": 0}
+
+    def agent_wants_hours(*, prefix_id, messages, tools, model):
+        state["calls"] += 1
+        if state["calls"] == 1:
+            return (
+                {"role": "assistant", "content": None},
+                [ToolCall(id="tc1", name="get_hours",
+                          arguments={"library": "wertz"})],
+                {"input_tokens": 100, "cached_input_tokens": 0,
+                 "output_tokens": 10},
+            )
+        return (
+            {"role": "assistant", "content": "Wertz closes at 9pm tonight."},
+            [],
+            {"input_tokens": 100, "cached_input_tokens": 0,
+             "output_tokens": 10},
+        )
+
+    deps = OrchestratorDeps(
+        classifier=StubClassifier(_classification("hours")),
+        tool_registry=registry,
+        agent_llm=agent_wants_hours,
+        # The synth even tries to cite the nonexistent evidence.
+        synthesizer_llm=_stub_synth_llm(
+            answer_text="Wertz closes at 9pm tonight [1].",
+            citations_n=[1],
+        ),
+        load_corrections=lambda: [],
+        load_url_allowlist=lambda: set(),
+        lookup_service_availability=lambda intent, campus: None,
+    )
+    resp = run_turn(
+        TurnRequest(user_message="What time does Wertz close tonight?",
+                    conversation_id="c-outage"),
+        deps,
+    )
+    assert resp.is_refusal, (
+        f"LibCal down must refuse, got answer: {resp.answer!r}"
+    )
+    assert "9pm" not in (resp.answer or ""), "fabricated time leaked"
+
+
+def test_libcal_outage_tool_error_also_refuses() -> None:
+    """Same invariant when the tool RAISES (network error path) instead
+    of returning success=False."""
+    registry = ToolRegistry()
+
+    from src.agent.tool_registry import ToolError
+
+    def hours_raises(args: dict) -> dict:
+        raise ToolError("connect timeout to libcal")
+
+    registry.register(Tool(
+        name="get_hours", description="stub hours (raises)",
+        parameters={"type": "object"}, handler=hours_raises,
+    ))
+    registry.register(_stub_search_kb_tool([]))
+
+    state = {"calls": 0}
+
+    def agent(*, prefix_id, messages, tools, model):
+        state["calls"] += 1
+        if state["calls"] == 1:
+            return ({"role": "assistant", "content": None},
+                    [ToolCall(id="tc1", name="get_hours",
+                              arguments={"library": "king"})],
+                    {"input_tokens": 1, "cached_input_tokens": 0,
+                     "output_tokens": 1})
+        return ({"role": "assistant", "content": "King is open until 2am."},
+                [],
+                {"input_tokens": 1, "cached_input_tokens": 0,
+                 "output_tokens": 1})
+
+    deps = OrchestratorDeps(
+        classifier=StubClassifier(_classification("hours")),
+        tool_registry=registry,
+        agent_llm=agent,
+        synthesizer_llm=_stub_synth_llm(
+            answer_text="King is open until 2am [1].", citations_n=[1]),
+        load_corrections=lambda: [],
+        load_url_allowlist=lambda: set(),
+        lookup_service_availability=lambda intent, campus: None,
+    )
+    resp = run_turn(
+        TurnRequest(user_message="Is King open right now?",
+                    conversation_id="c-outage-2"),
+        deps,
+    )
+    assert resp.is_refusal
+    assert "2am" not in (resp.answer or "")
