@@ -16,11 +16,11 @@ The script is intentionally not pretty -- it's an operator checklist
 that exits non-zero on any failure.
 
 Usage:
-    .venv/bin/python -m scripts.verify_v2_serving --host http://localhost:8000
+    .venv/bin/python -m scripts.verify_v2_serving --host http://localhost:8081
 
     # Override the canned question (default: a known-answerable hours-y one)
     .venv/bin/python -m scripts.verify_v2_serving \\
-        --host http://localhost:8000 \\
+        --host http://localhost:8081 \\
         --question "what time does King Library close today?"
 
     # Skip the legacy check (e.g. if legacy creds aren't available in this env)
@@ -306,8 +306,8 @@ def main(argv: Optional[list[str]] = None) -> int:
     parser = argparse.ArgumentParser(description="Live-verify the v2 serving path.")
     parser.add_argument(
         "--host",
-        default="http://localhost:8000",
-        help="Base URL of the chatbot service (default: http://localhost:8000)",
+        default="http://localhost:8081",
+        help="Base URL of the chatbot service (default: http://localhost:8081)",
     )
     parser.add_argument(
         "--question",
