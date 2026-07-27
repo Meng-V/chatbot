@@ -41,7 +41,9 @@ def _msg(**kw):
 class _StubDB:
     """Records the `where` list_flagged builds; returns canned rows."""
 
-    def __init__(self, msgs=None, conv=None, toks=None, tools=None, fb=None):
+    def __init__(self, msgs=None, conv=None, toks=None, tools=None, fb=None,
+                 fb_many=None):
+        self._fb_many = fb_many or []
         self._msgs = msgs or []
         self._conv = conv
         self._toks = toks or []
@@ -65,8 +67,17 @@ class _StubDB:
             find_many=lambda **k: _aw(self._toks))
         self.toolexecution = SimpleNamespace(
             find_many=lambda **k: _aw(self._tools))
+        self.updated: dict = {}
+
+        async def _update(**kw):
+            self.updated = kw
+            return SimpleNamespace(id=kw.get("where", {}).get("id"))
+
+        self.message.update = _update
         self.conversationfeedback = SimpleNamespace(
-            find_unique=lambda **k: _aw(self._fb))
+            find_unique=lambda **k: _aw(self._fb),
+            # list view batches ratings across the page
+            find_many=lambda **k: _aw(self._fb_many))
 
 
 def _aw(v):
@@ -82,15 +93,87 @@ def _run(coro):
 # --- query logic ---------------------------------------------------------
 
 def test_list_flagged_filter_presets_build_right_where() -> None:
+    """Working views are scoped to UNREVIEWED rows (2026-07-27): the
+    queue has to shrink as the operator triages, or fresh and
+    already-handled rows are indistinguishable."""
     db = _StubDB(msgs=[_msg(isPositiveRated=False)])
     _run(list_flagged(db, filter_preset="thumbs_down"))
-    assert db.last_where == {"isPositiveRated": False}, db.last_where
+    assert db.last_where == {
+        "AND": [{"isPositiveRated": False}, {"reviewedAt": None}]
+    }, db.last_where
+    _run(list_flagged(db, filter_preset="thumbs_up"))
+    assert db.last_where == {
+        "AND": [{"isPositiveRated": True}, {"reviewedAt": None}]
+    }, db.last_where
     _run(list_flagged(db, filter_preset="refusal"))
-    assert db.last_where == {"wasRefusal": True}
+    assert db.last_where == {
+        "AND": [{"wasRefusal": True}, {"reviewedAt": None}]
+    }
+    _run(list_flagged(db, filter_preset="bogus"))  # -> flagged union
+    assert "OR" in db.last_where["AND"][0]
+    # The two escape hatches keep showing handled rows.
     _run(list_flagged(db, filter_preset="all"))
     assert db.last_where == {}
-    _run(list_flagged(db, filter_preset="bogus"))  # -> flagged union
-    assert "OR" in db.last_where
+    _run(list_flagged(db, filter_preset="reviewed"))
+    assert db.last_where == {"NOT": [{"reviewedAt": None}]}
+
+
+def test_attach_feedback_annotates_rows_by_conversation() -> None:
+    """Star ratings live on the conversation; the queue lists messages.
+    One batched lookup projects them onto the rows so a reviewer can
+    see WHICH rows have patron feedback without opening each."""
+    from src.api.admin.review_queries import attach_feedback
+
+    class _FBDB:
+        conversationfeedback = SimpleNamespace(
+            find_many=lambda **k: _aw([
+                SimpleNamespace(conversationId="c1", rating=4,
+                                userComment="helpful"),
+            ])
+        )
+
+    rows = [{"conversation_id": "c1"}, {"conversation_id": "c2"}]
+    out = _run(attach_feedback(_FBDB(), rows))
+    assert out[0]["feedback_rating"] == 4
+    assert out[0]["feedback_comment"] == "helpful"
+    assert out[1]["feedback_rating"] is None
+
+
+def test_attach_feedback_never_raises() -> None:
+    from src.api.admin.review_queries import attach_feedback
+
+    class _Boom:
+        conversationfeedback = SimpleNamespace(
+            find_many=lambda **k: (_ for _ in ()).throw(RuntimeError("x")))
+
+    rows = [{"conversation_id": "c1"}]
+    assert _run(attach_feedback(_Boom(), rows)) == rows
+
+
+def test_mark_reviewed_sets_and_clears() -> None:
+    from src.api.admin.review_queries import mark_reviewed
+
+    seen: dict = {}
+
+    class _UpDB:
+        message = SimpleNamespace(
+            update=lambda **k: (seen.update(k), _aw(True))[1])
+
+    assert _run(mark_reviewed(_UpDB(), "m1", reviewed_by="qum")) is True
+    assert seen["data"]["reviewedBy"] == "qum"
+    assert seen["data"]["reviewedAt"] is not None
+    assert _run(mark_reviewed(_UpDB(), "m1", undo=True)) is True
+    assert seen["data"] == {"reviewedAt": None, "reviewedBy": None}
+
+
+def test_mark_reviewed_never_raises() -> None:
+    from src.api.admin.review_queries import mark_reviewed
+
+    class _Boom:
+        message = SimpleNamespace(
+            update=lambda **k: (_ for _ in ()).throw(RuntimeError("x")))
+
+    assert _run(mark_reviewed(_Boom(), "m1")) is False
 
 
 def test_list_flagged_defensive_on_query_error() -> None:
@@ -224,3 +307,61 @@ def main() -> int:
 
 if __name__ == "__main__":
     sys.exit(main())
+
+
+def test_review_list_renders_thumbs_up_and_star_rating() -> None:
+    from fastapi import FastAPI
+    """Positive ratings and patron star ratings had no surface at all
+    before 2026-07-27 -- the data existed but the list couldn't show it."""
+    db = _StubDB(
+        msgs=[_msg(id="m9", isPositiveRated=True, conversationId="c1")],
+        fb_many=[SimpleNamespace(conversationId="c1", rating=5,
+                                 userComment="great answer")],
+    )
+    guard = make_token_guard("s3cret")
+    app = FastAPI()
+    app.include_router(build_review_view_router(
+        {"db": db, "guard": guard, "require_librarian": guard}))
+    from starlette.testclient import TestClient
+    c = TestClient(app, raise_server_exceptions=False)
+    r = c.get("/admin/review?filter=thumbs_up&key=s3cret")
+    assert r.status_code == 200
+    assert "thumbs-up" in r.text
+    assert "5/5" in r.text                    # star rating projected in
+    assert "great answer" in r.text           # patron comment visible
+    assert "thumbs_up" in r.text              # filter tab present
+    assert "mark reviewed" in r.text          # triage action present
+    assert ">view<" in r.text                 # link relabeled from "open"
+
+
+def test_review_mark_updates_and_redirects_back_to_filter() -> None:
+    from fastapi import FastAPI
+    db = _StubDB(msgs=[_msg(id="m9", conversationId="c1")])
+    guard = make_token_guard("s3cret")
+    app = FastAPI()
+    app.include_router(build_review_view_router(
+        {"db": db, "guard": guard, "require_librarian": guard}))
+    from starlette.testclient import TestClient
+    c = TestClient(app, raise_server_exceptions=False)
+    r = c.get("/admin/review/mark/m9?filter=refusal&key=s3cret",
+              follow_redirects=False)
+    assert r.status_code == 200
+    assert db.updated["where"] == {"id": "m9"}
+    assert db.updated["data"]["reviewedAt"] is not None
+    # bounces back to the SAME filter the reviewer was working in
+    assert "/admin/review?filter=refusal" in r.text
+    # undo clears it
+    c.get("/admin/review/mark/m9?filter=refusal&key=s3cret&undo=1")
+    assert db.updated["data"] == {"reviewedAt": None, "reviewedBy": None}
+
+
+def test_review_mark_401_without_token() -> None:
+    from fastapi import FastAPI
+    db = _StubDB(msgs=[])
+    guard = make_token_guard("s3cret")
+    app = FastAPI()
+    app.include_router(build_review_view_router(
+        {"db": db, "guard": guard, "require_librarian": guard}))
+    from starlette.testclient import TestClient
+    c = TestClient(app, raise_server_exceptions=False)
+    assert c.get("/admin/review/mark/m9").status_code == 401

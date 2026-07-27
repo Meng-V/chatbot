@@ -28,11 +28,19 @@ model Message {
   refusalTrigger String? // matches a key in refusal_templates (no_results, low_confidence, ...)
   citedChunkIds  String[]          @default([]) // FK list to ChunkProvenance.chunkId
   reviews        LibrarianReview[]
+  /// Operator triage state for the admin review queue (added 2026-07-27).
+  /// Distinct from LibrarianReview, which is the per-librarian verdict
+  /// system and needs a Librarian identity; this is just "I, the
+  /// maintainer, have dealt with this row" so handled items drop out of
+  /// the default view -- same open/done model as CorrectionTicket.
+  reviewedAt     DateTime?
+  reviewedBy     String?
 
   @@index([conversationId])
   @@index([intent])
   @@index([scopeCampus])
   @@index([wasRefusal])
+  @@index([reviewedAt])
 }
 
 model Conversation {

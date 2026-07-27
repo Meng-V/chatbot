@@ -42,7 +42,8 @@ the legacy endpoints are gone.
 | `GET /smoketest` | End-to-end synthetic: pushes a canned question through the agent + asserts citation + non-refusal + latency. | Always. Wire to UptimeRobot / BetterStack hitting every 5 min. |
 | `GET /admin/reviews` | List flagged conversations (thumb-down). | Only when `ADMIN_API_TOKEN` env var is set. Fail-closed. |
 | `GET /admin/reviews/{id}` | Drill into one conversation (tokens, tools, citations, handoff). | Same gate. |
-| `GET /admin/review` | Server-rendered HTML review page (auth = `?key=<token>`). | Same gate. Bookmarkable. |
+| `GET /admin/review` | Server-rendered HTML review queue (auth = `?key=<token>`). Filters: flagged (default) / thumbs_down / thumbs_up / refusal / low_confidence / rated / reviewed / all. Working views show UNREVIEWED rows only; each row carries its patron star rating + comment and a "mark reviewed" link. | Same gate. Bookmarkable. |
+| `GET /admin/review/mark/{message_id}` | Flip one row's triage state (`&undo=1` to clear), then bounce back to the filter you were in. | Same gate. |
 | `GET/POST /librarian/ticket` | Staff "the bot answered this wrong" report form (added 2026-07-16). Auth = `?key=<LIBRARIAN_TICKET_CODE>` — a distributable staff code, NOT the admin token. Each submission is stored (`CorrectionTicket` table) and emailed to `ALERT_EMAIL_TO`. | Mounted with the admin block; the form 401s until `LIBRARIAN_TICKET_CODE` is set. |
 | `GET /admin/` | **Operator hub** — one bookmarkable page linking every admin surface (tickets, reviews, corrections, cost, probes) with your key carried in each link. | `ADMIN_API_TOKEN` gate. |
 | `GET /librarian/` | **Staff hub** — one page for library staff (ticket form + Ask Us). Distribute THIS link instead of individual URLs. | `LIBRARIAN_TICKET_CODE` gate. |

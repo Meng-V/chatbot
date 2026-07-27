@@ -180,6 +180,15 @@ def turnresponse_to_wire(
             "output": int((resp.tokens or {}).get("output", 0) or 0),
         },
         "latency_ms": int(resp.latency_ms or 0),
+        # Review-queue telemetry (2026-07-27). Same story as the token
+        # passthrough above: Message.wasRefusal / confidence / intent
+        # were never written for v2 traffic, so the admin queue's
+        # "refusal" and "low_confidence" filters matched 0 of 8,185
+        # rows and the flagged view silently degraded to thumbs-down
+        # only. main._v2_message reads these into add_message_v2.
+        "refusal_trigger": resp.refusal_trigger,
+        "scope": dict(resp.scope or {}),
+        "cited_chunk_ids": list(resp.cited_chunk_ids or []),
     }
 
 

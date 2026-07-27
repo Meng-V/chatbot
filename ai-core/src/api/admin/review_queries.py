@@ -29,12 +29,14 @@ primary "questionable answer" trigger), True = up, None = unrated.
 from __future__ import annotations
 
 import logging
+from datetime import datetime, timezone
 from typing import Any, Optional
 
 logger = logging.getLogger(__name__)
 
 # Recognized list filters. Anything else falls back to "flagged".
-FILTERS = ("flagged", "thumbs_down", "refusal", "low_confidence", "all")
+FILTERS = ("flagged", "thumbs_down", "thumbs_up", "refusal",
+           "low_confidence", "rated", "reviewed", "all")
 
 
 def _msg_dict(m: Any) -> dict:
@@ -72,10 +74,22 @@ async def list_flagged(
     fp = filter_preset if filter_preset in FILTERS else "flagged"
     if fp == "thumbs_down":
         where = {"isPositiveRated": False}
+    elif fp == "thumbs_up":
+        # Positive ratings were unreachable before 2026-07-27: the data
+        # was there (Message.isPositiveRated=True) but no preset queried
+        # it, so "what is the bot getting RIGHT" had no surface.
+        where = {"isPositiveRated": True}
     elif fp == "refusal":
         where = {"wasRefusal": True}
     elif fp == "low_confidence":
         where = {"confidence": "low"}
+    elif fp == "reviewed":
+        where = {"NOT": [{"reviewedAt": None}]}
+    elif fp == "rated":
+        # Turns in a conversation the patron left a star rating on.
+        # Conversation-scoped signal projected onto message rows --
+        # resolved after the query (see _rated_conversation_ids).
+        where = {"type": "assistant"}
     elif fp == "all":
         where = {}
     else:  # flagged: the union reviewers actually want
@@ -86,6 +100,11 @@ async def list_flagged(
                 {"confidence": "low"},
             ]
         }
+    # Handled rows drop out of every working view except the explicit
+    # "reviewed" and "all" tabs -- otherwise the queue never shrinks and
+    # a reviewer can't tell fresh from already-triaged.
+    if fp not in ("reviewed", "all"):
+        where = {"AND": [where, {"reviewedAt": None}]} if where else {"reviewedAt": None}
     try:
         rows = await db.message.find_many(
             where=where,
@@ -108,9 +127,68 @@ async def list_flagged(
             "refusal_trigger": getattr(m, "refusalTrigger", None),
             "confidence": getattr(m, "confidence", None),
             "is_positive_rated": getattr(m, "isPositiveRated", None),
+            "reviewed_at": (
+                str(getattr(m, "reviewedAt", "") or "") or None
+            ),
         }
         for m in (rows or [])
     ]
+
+
+async def attach_feedback(db: Any, rows: list[dict]) -> list[dict]:
+    """Annotate list rows with their conversation's patron star rating.
+
+    The star rating + comment ("rate this conversation") lives on
+    ConversationFeedback, keyed by conversation -- so before 2026-07-27
+    the only way to find a rated conversation was to open rows one at a
+    time and hope. One batched query per page adds `feedback_rating` /
+    `feedback_comment` so the list can show them inline.
+
+    Never raises: on a DB error the rows come back unannotated.
+    """
+    conv_ids = list({r.get("conversation_id") for r in rows
+                     if r.get("conversation_id")})
+    if not conv_ids:
+        return rows
+    try:
+        fbs = await db.conversationfeedback.find_many(
+            where={"conversationId": {"in": conv_ids}}
+        )
+    except Exception as e:  # noqa: BLE001 -- annotation is garnish
+        logger.warning("attach_feedback failed: %s", e)
+        return rows
+    by_conv = {
+        getattr(f, "conversationId", None): f for f in (fbs or [])
+    }
+    for r in rows:
+        f = by_conv.get(r.get("conversation_id"))
+        r["feedback_rating"] = getattr(f, "rating", None) if f else None
+        r["feedback_comment"] = getattr(f, "userComment", None) if f else None
+    return rows
+
+
+async def mark_reviewed(
+    db: Any, message_id: str, *, reviewed_by: str = "operator",
+    undo: bool = False,
+) -> bool:
+    """Flip one queue row's triage state. Returns True on success.
+
+    Idempotent by construction: setting an already-set value is a no-op
+    write. `undo` clears it so a mis-click is recoverable.
+    """
+    try:
+        await db.message.update(
+            where={"id": str(message_id)},
+            data=(
+                {"reviewedAt": None, "reviewedBy": None} if undo
+                else {"reviewedAt": datetime.now(timezone.utc),
+                      "reviewedBy": reviewed_by}
+            ),
+        )
+        return True
+    except Exception as e:  # noqa: BLE001 -- admin action must not 500
+        logger.warning("mark_reviewed(%s) failed: %s", message_id, e)
+        return False
 
 
 async def conversation_detail(db: Any, conversation_id: str) -> Optional[dict]:
@@ -207,4 +285,5 @@ async def conversation_detail(db: Any, conversation_id: str) -> Optional[dict]:
     }
 
 
-__all__ = ["FILTERS", "list_flagged", "conversation_detail"]
+__all__ = ["FILTERS", "attach_feedback", "conversation_detail",
+           "list_flagged", "mark_reviewed"]

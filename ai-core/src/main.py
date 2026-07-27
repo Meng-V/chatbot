@@ -49,6 +49,7 @@ setup_logging()
 from src.memory.conversation_store import (
     create_conversation,
     add_message,
+    add_message_v2,
     get_conversation_history,
     update_message_rating,
     save_conversation_feedback,
@@ -631,10 +632,31 @@ async def _v2_message(sid, data):
         )
         # Log the assistant turn, but NEVER let a logging failure swallow a
         # successfully-generated reply -- the emit happens regardless.
+        #
+        # add_message_v2 (NOT add_message): the plain writer stores only
+        # type/content/timestamp, so wasRefusal / confidence / intent
+        # stayed null for every v2 turn and the admin review queue's
+        # "refusal" + "low_confidence" filters matched nothing -- the
+        # flagged view silently showed thumbs-down only (operator report
+        # 2026-07-27; 0 of 8,185 rows carried telemetry). Same return
+        # contract: the id feeds wire["messageId"], which the client
+        # sends back with messageRating.
         message_id = None
+        _scope = wire.get("scope") or {}
         try:
-            message_id = await add_message(
-                conversation_id, "assistant", wire.get("message", "") or ""
+            message_id = await add_message_v2(
+                conversation_id,
+                message_type="assistant",
+                content=wire.get("message", "") or "",
+                intent=wire.get("intent"),
+                scope_campus=_scope.get("campus"),
+                scope_library=_scope.get("library"),
+                scope_source=_scope.get("source"),
+                model_used=wire.get("model_used"),
+                confidence=wire.get("confidence"),
+                was_refusal=bool(wire.get("is_refusal")),
+                refusal_trigger=wire.get("refusal_trigger"),
+                cited_chunk_ids=wire.get("cited_chunk_ids") or [],
             )
         except Exception as le:  # noqa: BLE001
             logging.warning(f"⚠️ [v2] assistant-message log failed (reply still delivered): {le}")

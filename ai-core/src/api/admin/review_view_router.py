@@ -26,7 +26,13 @@ from __future__ import annotations
 import html
 from typing import Any
 
-from src.api.admin.review_queries import conversation_detail, list_flagged
+from src.api.admin.review_queries import (
+    FILTERS,
+    attach_feedback,
+    conversation_detail,
+    list_flagged,
+    mark_reviewed,
+)
 
 # Module-level so FastAPI/Starlette can resolve the `request: Request`
 # annotation on the guard + handlers (it resolves annotations against
@@ -70,6 +76,10 @@ _STYLE = (
     "a{color:#06c;text-decoration:none}a:hover{text-decoration:underline}"
     ".tag{display:inline-block;padding:1px 6px;border-radius:3px;"
     "background:#eee;font-size:12px}.down{background:#fdd}"
+    ".up{background:#dfd}.rated{background:#e3ecff}"
+    ".done{background:#ddd;color:#666}"
+    ".act{font-size:12px;color:#0a6}"
+    ".cmt{color:#446;font-style:italic}"
     ".refuse{background:#fe8}.role{font-weight:600}"
     "pre{white-space:pre-wrap;background:#fafafa;padding:8px;"
     "border:1px solid #eee;border-radius:4px;margin:4px 0}"
@@ -107,45 +117,100 @@ def build_review_view_router(deps: dict) -> Any:
         _g=Depends(guard),
     ) -> Any:
         rows = await list_flagged(db, filter_preset=filter, limit=limit)
+        # Patron star ratings live on the conversation, so project them
+        # onto the message rows -- otherwise "who rated us" is invisible
+        # from the list (operator report 2026-07-27).
+        rows = await attach_feedback(db, rows)
+        _kq = ("&key=" + _e(key)) if key else ""
         opts = "".join(
-            f"<a class='tag' href='/admin/review?filter={f}"
-            f"{('&key=' + _e(key)) if key else ''}'>{f}</a> "
-            for f in ("flagged", "thumbs_down", "refusal",
-                      "low_confidence", "all")
+            f"<a class='tag' href='/admin/review?filter={f}{_kq}'>{f}</a> "
+            for f in FILTERS
         )
         trs = []
         for r in rows:
             cid = r.get("conversation_id") or ""
+            mid = r.get("message_id") or ""
             flags = []
             if r.get("is_positive_rated") is False:
-                flags.append("<span class='tag down'>thumbs-down</span>")
+                flags.append("<span class='tag down'>&#128078; thumbs-down</span>")
+            elif r.get("is_positive_rated") is True:
+                flags.append("<span class='tag up'>&#128077; thumbs-up</span>")
             if r.get("was_refusal"):
                 flags.append(
                     f"<span class='tag refuse'>refusal:"
                     f"{_e(r.get('refusal_trigger'))}</span>")
             if r.get("confidence") == "low":
                 flags.append("<span class='tag'>low-conf</span>")
-            link = (
-                f"/admin/review/{_e(cid)}"
-                + (f"?key={_e(key)}" if key else "")
+            fr = r.get("feedback_rating")
+            if fr is not None:
+                stars = "&#9733;" * max(0, min(int(fr), 5))
+                cmt = (r.get("feedback_comment") or "").strip()
+                flags.append(
+                    f"<span class='tag rated' title='{_e(cmt)}'>"
+                    f"{stars} {_e(str(fr))}/5"
+                    f"{' &#128172;' if cmt else ''}</span>")
+            if r.get("reviewed_at"):
+                flags.append("<span class='tag done'>reviewed</span>")
+            link = f"/admin/review/{_e(cid)}" + (f"?key={_e(key)}" if key else "")
+            # Triage action, inline so the queue can be worked from the
+            # list. Returns to the current filter view.
+            act_label, act_q = (
+                ("undo", "&undo=1") if r.get("reviewed_at")
+                else ("mark reviewed", "")
+            )
+            act = (
+                f"<a class='act' href='/admin/review/mark/{_e(mid)}"
+                f"?filter={_e(filter)}{_kq}{act_q}'>{act_label}</a>"
+                if mid else ""
+            )
+            cmt_row = (
+                f"<br><small class='cmt'>&#128172; "
+                f"{_e((r.get('feedback_comment') or '')[:160])}</small>"
+                if (r.get("feedback_comment") or "").strip() else ""
             )
             trs.append(
                 f"<tr><td>{_e(r.get('time'))}</td>"
                 f"<td>{_e(r.get('role'))}</td>"
-                f"<td>{_e(r.get('preview'))}</td>"
+                f"<td>{_e(r.get('preview'))}{cmt_row}</td>"
                 f"<td>{' '.join(flags)}</td>"
-                f"<td><a href='{link}'>open</a><br>"
+                f"<td><a href='{link}'>view</a><br>{act}<br>"
                 f"<small>{_e(cid)}</small></td></tr>"
             )
+        _scope_note = (
+            "" if filter in ("reviewed", "all")
+            else " &mdash; unreviewed only"
+        )
         body = (
-            f"<h2>Review queue &mdash; {len(rows)} flagged "
-            f"(filter: {_e(filter)})</h2><p>{opts}</p>"
+            f"<h2>Review queue &mdash; {len(rows)} rows "
+            f"(filter: {_e(filter)}{_scope_note})</h2><p>{opts}</p>"
             f"<table><tr><th>time</th><th>role</th><th>preview</th>"
             f"<th>flags</th><th>conversation</th></tr>"
             f"{''.join(trs) or '<tr><td colspan=5>none</td></tr>'}"
             f"</table>"
         )
         return HTMLResponse(_page("Review queue", body))
+
+    @router.get("/admin/review/mark/{message_id}", response_class=HTMLResponse)
+    async def review_mark(
+        message_id: str,
+        filter: str = "flagged",
+        key: str = "",
+        undo: int = 0,
+        _g=Depends(guard),
+    ) -> Any:
+        """Flip one row's triage state, then bounce back to the list.
+
+        GET (not POST) so it works as a plain link in this
+        dependency-free HTML surface, same as the ticket queue's status
+        links. The action is idempotent and reversible via `undo`.
+        """
+        await mark_reviewed(db, message_id, undo=bool(undo))
+        back = f"/admin/review?filter={_e(filter)}" + (
+            f"&key={_e(key)}" if key else "")
+        return HTMLResponse(
+            f"<!doctype html><meta charset='utf-8'>"
+            f"<meta http-equiv='refresh' content='0;url={back}'>ok"
+        )
 
     @router.get("/admin/review/{conversation_id}",
                 response_class=HTMLResponse)
