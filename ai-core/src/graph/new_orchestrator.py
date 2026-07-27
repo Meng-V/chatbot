@@ -171,6 +171,30 @@ def run_turn(
     model_basic: Optional[str] = None,
     model_reasoning: Optional[str] = None,
 ) -> TurnResponse:
+    """Run one turn, then apply cross-cutting answer policy.
+
+    Thin wrapper over `_run_turn`. The research-question disclaimer has
+    to cover EVERY exit -- the turn body has 25 return points, several of
+    which are research-shaped short-circuits (peer-reviewed filter,
+    digital-collections rights). Applying it at the single exit is the
+    only way to guarantee no path is missed; doing it per-return was
+    tried first and immediately leaked two of them (live check
+    2026-07-27).
+    """
+    response = _run_turn(
+        request, deps,
+        model_basic=model_basic, model_reasoning=model_reasoning,
+    )
+    return _add_research_disclaimer(response, response.intent)
+
+
+def _run_turn(
+    request: TurnRequest,
+    deps: OrchestratorDeps,
+    *,
+    model_basic: Optional[str] = None,
+    model_reasoning: Optional[str] = None,
+) -> TurnResponse:
     """Run one turn end to end.
 
     Returns a TurnResponse either way -- refusals and answers both use
@@ -994,6 +1018,85 @@ def run_turn(
     )
 
     return response
+
+
+# --- Research-question disclaimer (operator + subject librarians, 2026-07-27)
+#
+# Subject-librarian consensus: a research question the bot can't answer
+# from one direct lookup should visibly point the patron at a human. It
+# still answers -- but the answer is framed as reference material, not
+# as the professional consultation a librarian would give.
+#
+# WHERE this fires is the whole design. It sits at the end of the
+# SYNTHESIS path, which every deterministic short-circuit and every
+# live-API answer returns BEFORE reaching: hours, room booking, staff
+# and liaison lookups, reserves, newspapers routing, equipment pages,
+# tickets. So "directly answerable" and "one API call" turns are
+# structurally excluded -- no phrase matching needed. What's left is
+# exactly "the LLM had to read evidence and compose an answer", and of
+# those we tag only the research-shaped intents.
+_RESEARCH_DISCLAIMER = (
+    "This might be a research question. You are encouraged to consult a "
+    "librarian for further assistance. The following information is "
+    "provided for reference only."
+)
+
+_RESEARCH_DISCLAIMER_INTENTS = frozenset({
+    "databases",
+    "citation_help",
+    "research_consultation",
+    "data_services",
+    "digital_collections",
+    "special_collections",
+    "copyright_permissions",
+    "scholarly_publishing",
+    "instruction_request",
+    "find_resource",
+})
+"""Research-cluster intents. Deliberately EXCLUDED: newspapers and
+remote_access (both resolve to a specific access route, not research
+judgment), and every operational intent (hours/rooms/circulation/
+printing/tech) -- tagging those would train patrons to ignore the
+banner, which costs more than it buys."""
+
+
+_DISCLAIMER_EXEMPT_REASONS = frozenset({
+    # Factual notices, not research help. These fire on their own
+    # message patterns and are right regardless of the classifier, so a
+    # misclassification must not drag the banner in: "Where is the music
+    # library?" scores as `databases` (live check 2026-07-27) but the
+    # answer is a closure notice.
+    "closed_library_short_circuit",
+    "greeting_short_circuit",
+    "staff_directory_short_circuit",
+    "my_librarian_ask_subject_short_circuit",
+    "injection_backstop",
+})
+
+
+def _add_research_disclaimer(
+    response: "TurnResponse", intent: "Optional[str]"
+) -> "TurnResponse":
+    """Prefix the librarian-consultation banner to research answers.
+
+    Skipped for refusals: those already route the patron to a human, and
+    stacking "consult a librarian" on "ask a librarian" reads as broken.
+    Also skipped for the notice-style short-circuits above, which are
+    pattern-driven and shouldn't inherit a bad intent guess.
+    Idempotent -- re-prefixing an already-tagged answer is a no-op.
+    """
+    if intent not in _RESEARCH_DISCLAIMER_INTENTS:
+        return response
+    if response.is_refusal:
+        return response
+    if response.agent_stopped_reason in _DISCLAIMER_EXEMPT_REASONS:
+        return response
+    answer = response.answer or ""
+    if not answer.strip() or answer.startswith(_RESEARCH_DISCLAIMER):
+        return response
+    return _dc_replace(
+        response, answer=f"{_RESEARCH_DISCLAIMER}\n\n{answer}"
+    )
 
 
 # --- Helpers -------------------------------------------------------------
@@ -3142,6 +3245,25 @@ def _extract_evidence(agent_outcome: AgentOutcome) -> list[EvidenceChunk]:
 # Weaviate; this filter is the serving-side guarantee.
 _EVIDENCE_URL_DENYLIST = (
     "https://www.lib.miamioh.edu/libraryhealthy",
+    # NOTE (2026-07-27): curbside pickup was NOT denylisted. It looks
+    # COVID-era, but lib.miamioh.edu/use/borrow/curbside/ describes it
+    # in the present tense as a current service and /use/borrow/lola/ +
+    # /home-delivery/ reference it too -- denying a service the
+    # Libraries' own site advertises is worse than the staleness risk.
+    # Pending operator confirmation; if it IS dead, the WEBSITE needs
+    # fixing first, then add the prefix here.
+    # The Amos Music Library CLOSED Sept 2023. The Music LIBRARIAN still
+    # exists (Barry Zaslow) and must keep working -- this denies only
+    # the closed building's location page.
+    "https://www.lib.miamioh.edu/about/locations/music-library",
+    # Dated news/blog archive (lib.miamioh.edu/YYYY-MM-DD-slug, 2014
+    # onward). `events_news` is already a REFUSE-tier intent precisely
+    # because "old event listings are a common source of misleading
+    # answers" -- but the posts stayed in the index and could still
+    # contaminate OTHER intents' evidence. This aligns the corpus with
+    # the policy. Verified 2026-07-27: all 158 dated URLs match the
+    # news-post pattern, no service/policy page starts with /20.
+    "https://www.lib.miamioh.edu/20",
 )
 
 

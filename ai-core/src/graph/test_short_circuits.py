@@ -714,3 +714,101 @@ def test_my_librarian_does_not_swallow_unrelated_staff_asks() -> None:
               "Who is the dean of the libraries?",
               "Who works at the Hamilton library?"]:
         assert _my_librarian_ask_subject(q) is None, q
+
+
+# --- research-question disclaimer (subject-librarian request 2026-07-27) ---
+
+def test_research_disclaimer_prefixes_research_answers() -> None:
+    from src.graph.new_orchestrator import (
+        _add_research_disclaimer, _RESEARCH_DISCLAIMER, TurnResponse,
+    )
+
+    def _resp(answer="Use the A-Z databases list [1].", refusal=False):
+        return TurnResponse(
+            answer=answer, is_refusal=refusal, refusal_trigger=None,
+            citations=[], confidence="high", intent="databases",
+            scope={}, model_used="m", tokens={}, fired_corrections=[],
+            agent_stopped_reason="clean", latency_ms=1, cited_chunk_ids=[],
+        )
+
+    for intent in ("databases", "citation_help", "research_consultation",
+                   "data_services", "special_collections", "find_resource",
+                   "copyright_permissions", "scholarly_publishing"):
+        out = _add_research_disclaimer(_resp(), intent)
+        assert out.answer.startswith(_RESEARCH_DISCLAIMER), intent
+        assert "Use the A-Z databases list [1]." in out.answer, intent
+
+
+def test_research_disclaimer_skips_operational_intents() -> None:
+    """Hours/rooms/circulation answers must stay clean -- banner fatigue
+    would make patrons ignore it where it matters."""
+    from src.graph.new_orchestrator import (
+        _add_research_disclaimer, _RESEARCH_DISCLAIMER, TurnResponse,
+    )
+    r = TurnResponse(
+        answer="King is open until 9pm [1].", is_refusal=False,
+        refusal_trigger=None, citations=[], confidence="high",
+        intent="hours", scope={}, model_used="m", tokens={},
+        fired_corrections=[], agent_stopped_reason="clean",
+        latency_ms=1, cited_chunk_ids=[],
+    )
+    for intent in ("hours", "room_booking", "renewal", "printing_wifi",
+                   "tech_checkout", "subject_librarian", "course_reserves",
+                   "newspapers", "remote_access", None):
+        out = _add_research_disclaimer(r, intent)
+        assert not out.answer.startswith(_RESEARCH_DISCLAIMER), intent
+
+
+def test_research_disclaimer_skips_refusals_and_is_idempotent() -> None:
+    from src.graph.new_orchestrator import (
+        _add_research_disclaimer, _RESEARCH_DISCLAIMER, TurnResponse,
+    )
+    refusal = TurnResponse(
+        answer="I don't have a reliable answer to that.", is_refusal=True,
+        refusal_trigger="no_results", citations=[], confidence="low",
+        intent="databases", scope={}, model_used="m", tokens={},
+        fired_corrections=[], agent_stopped_reason="clean",
+        latency_ms=1, cited_chunk_ids=[],
+    )
+    # a refusal already sends them to a human; don't stack the banner
+    assert not _add_research_disclaimer(
+        refusal, "databases").answer.startswith(_RESEARCH_DISCLAIMER)
+
+    ok = TurnResponse(
+        answer="Cite it like this [1].", is_refusal=False,
+        refusal_trigger=None, citations=[], confidence="high",
+        intent="citation_help", scope={}, model_used="m", tokens={},
+        fired_corrections=[], agent_stopped_reason="clean",
+        latency_ms=1, cited_chunk_ids=[],
+    )
+    once = _add_research_disclaimer(ok, "citation_help")
+    twice = _add_research_disclaimer(once, "citation_help")
+    assert once.answer == twice.answer            # idempotent
+    assert twice.answer.count(_RESEARCH_DISCLAIMER) == 1
+
+    empty = TurnResponse(
+        answer="", is_refusal=False, refusal_trigger=None, citations=[],
+        confidence="high", intent="databases", scope={}, model_used="m",
+        tokens={}, fired_corrections=[], agent_stopped_reason="clean",
+        latency_ms=1, cited_chunk_ids=[],
+    )
+    assert _add_research_disclaimer(empty, "databases").answer == ""
+
+
+def test_research_disclaimer_skips_notice_short_circuits() -> None:
+    """A closure notice must not inherit the banner from a bad intent
+    guess: "Where is the music library?" classifies as `databases`
+    (live 2026-07-27) but the answer is a factual notice."""
+    from src.graph.new_orchestrator import (
+        _add_research_disclaimer, _RESEARCH_DISCLAIMER, TurnResponse,
+    )
+    r = TurnResponse(
+        answer="The Amos Music Library has permanently closed.",
+        is_refusal=False, refusal_trigger=None, citations=[],
+        confidence="high", intent="databases", scope={}, model_used="m",
+        tokens={}, fired_corrections=[],
+        agent_stopped_reason="closed_library_short_circuit",
+        latency_ms=1, cited_chunk_ids=[],
+    )
+    assert not _add_research_disclaimer(
+        r, "databases").answer.startswith(_RESEARCH_DISCLAIMER)
