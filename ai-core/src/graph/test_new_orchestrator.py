@@ -1398,3 +1398,51 @@ def test_libcal_outage_tool_error_also_refuses() -> None:
     )
     assert resp.is_refusal
     assert "2am" not in (resp.answer or "")
+
+
+def test_bare_hours_question_prefetches_flagship_library() -> None:
+    """"What are the hours?" names no library, so the scope resolver
+    yields campus-only (oxford/None). Before 2026-07-18 the agent had
+    nothing to call get_hours with and the synthesizer self-flag-refused
+    on one of the most common student questions (found live). Operator
+    rule: fall back to the campus flagship (Oxford -> King)."""
+    calls: list = []
+
+    def hours_handler(args: dict) -> dict:
+        calls.append(dict(args))
+        return {"success": True, "library": args.get("library"),
+                "hours": "King Library is open today 7:30am to 9:00pm",
+                "source_url": "https://www.lib.miamioh.edu/about/locations/hours/"}
+
+    registry = ToolRegistry()
+    registry.register(Tool(
+        name="get_hours", description="stub hours",
+        parameters={"type": "object"}, handler=hours_handler,
+    ))
+    registry.register(_stub_search_kb_tool([]))
+
+    deps = OrchestratorDeps(
+        classifier=StubClassifier(_classification("hours")),
+        tool_registry=registry,
+        # Agent terminates immediately with no tool calls, so the only
+        # possible get_hours call is the prefetch under test.
+        agent_llm=lambda **kw: (
+            {"role": "assistant", "content": "done"}, [],
+            {"input_tokens": 1, "cached_input_tokens": 0, "output_tokens": 1},
+        ),
+        synthesizer_llm=_stub_synth_llm(
+            answer_text="King Library is open today 7:30am to 9:00pm [1].",
+            citations_n=[1],
+        ),
+        load_corrections=lambda: [],
+        load_url_allowlist=lambda: set(),
+        lookup_service_availability=lambda intent, campus: None,
+    )
+    resp = run_turn(
+        TurnRequest(user_message="What are the hours?", conversation_id="c-bare"),
+        deps,
+    )
+    assert calls and calls[0]["library"] == "king", (
+        f"expected a King hours prefetch, got {calls!r}"
+    )
+    assert not resp.is_refusal

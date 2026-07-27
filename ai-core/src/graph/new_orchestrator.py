@@ -901,6 +901,22 @@ def run_turn(
     ):
         evidence = _ensure_makerspace_hours_evidence(evidence, deps)
 
+    # Bare "What are the hours?" -- no library named anywhere in the
+    # message. The scope resolver returns campus without a library, the
+    # agent has no library to call get_hours with, and the synthesizer
+    # self-flag-refused on one of the most common questions students
+    # ask (found live 2026-07-18; gold clr_which_library_chips).
+    # Operator rule: no library named -> answer the campus's flagship
+    # (Oxford -> King) directly rather than refusing or asking which.
+    elif (
+        classification.intent == "hours"
+        and scope.library is None
+        and not _is_long_period_hours(request.user_message)
+    ):
+        evidence = _ensure_default_library_hours_evidence(
+            evidence, deps, scope.campus
+        )
+
     # Promote to reasoning model when CRAWLED evidence is multi-hop:
     # >5 chunks across multiple topics. Tool facts (live_api /
     # authoritative_db) are excluded -- they have no topic and a
@@ -2713,6 +2729,44 @@ def _special_collections_hours_answer(
          "snippet": "Walter Havighurst Special Collections & University Archives"},
     ]
     return answer, citations
+
+
+_CAMPUS_FLAGSHIP_LIBRARY = {
+    "oxford": "king",
+    "hamilton": "rentschler",
+    "middletown": "gardner_harvey",
+}
+"""Which library "the library" means on each campus, for hours questions
+that name none. Oxford -> King is the operator's standing default."""
+
+
+def _ensure_default_library_hours_evidence(
+    evidence: list["EvidenceChunk"],
+    deps: "OrchestratorDeps",
+    campus: "Optional[str]",
+) -> list["EvidenceChunk"]:
+    """Prepend get_hours(<campus flagship>) when an hours question named
+    no library. Same failure-tolerance contract as the MakerSpace
+    prefetch: any error returns the evidence unchanged, so a LibCal
+    outage still degrades to the no-evidence refusal rather than a
+    guess."""
+    lib = _CAMPUS_FLAGSHIP_LIBRARY.get(campus or "oxford", "king")
+    if any(
+        getattr(c, "chunk_id", "") == f"tool:get_hours:{lib}"
+        for c in evidence
+    ):
+        return evidence
+    try:
+        from src.agent.tool_registry import ToolCall
+        result = deps.tool_registry.dispatch(
+            ToolCall(id="prefetch-default-hours", name="get_hours",
+                     arguments={"library": lib})
+        )
+        if result.error:
+            return evidence
+        return _tool_fact_evidence(result, {"library": lib}) + evidence
+    except Exception:  # noqa: BLE001 -- prefetch must never break the turn
+        return evidence
 
 
 def _ensure_makerspace_hours_evidence(
