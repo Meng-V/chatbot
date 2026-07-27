@@ -37,6 +37,7 @@ from src.graph.new_orchestrator import (
     _special_collections_hours_answer,
     _is_long_period_hours,
     _staff_directory_answer,
+    _my_librarian_ask_subject,
     _locker_answer,
     _alumni_borrowing_answer,
     _always_open_answer,
@@ -676,3 +677,40 @@ if __name__ == "__main__":
         print(f"== short-circuit tests: {len(tests) - failed} ok, {failed} FAILED ==")
         sys.exit(1)
     print(f"== short-circuit tests: all {len(tests)} ok ==")
+
+
+# --- "Who is my personal librarian?" (operator report 2026-07-27) ------
+# The roster-dump bug: lookup_librarian with a campus but no subject
+# returned every Oxford librarian and the synth named whoever sorted
+# first, so every student got the same unrelated person.
+
+def test_my_librarian_asks_which_subject() -> None:
+    for q in ["Who is my personal librarian?",
+              "who is my librarian",
+              "Do I have a librarian?",
+              "Can I talk to my subject librarian?",
+              "How do I find my liaison librarian?"]:
+        res = _my_librarian_ask_subject(q)
+        assert res is not None, q
+        answer = res[0]
+        # Asks for the subject rather than naming anyone.
+        assert "subject" in answer.lower(), q
+        assert "?" in answer or "Tell me" in answer, q
+        assert res[1][0]["url"].endswith("/liaisons/"), q
+
+
+def test_my_librarian_does_not_fire_when_subject_named() -> None:
+    """A named subject/course is answerable -- look it up, don't ask."""
+    for q in ["Who is my librarian for Biology?",
+              "who is my librarian for PSY 201",
+              "Who is the librarian for Chemistry?",
+              "who is my biology librarian",
+              "I am majoring in nursing, who is my librarian?"]:
+        assert _my_librarian_ask_subject(q) is None, q
+
+
+def test_my_librarian_does_not_swallow_unrelated_staff_asks() -> None:
+    for q in ["How do I find the staff directory?",
+              "Who is the dean of the libraries?",
+              "Who works at the Hamilton library?"]:
+        assert _my_librarian_ask_subject(q) is None, q

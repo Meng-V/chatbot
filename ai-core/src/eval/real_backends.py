@@ -514,6 +514,20 @@ def _make_lookup_librarian() -> Callable[[dict], list[dict]]:
             return []
         if not name and not campus:
             return []
+        if not name:
+            # Campus-only lookup: no name, no subject. The agent ALWAYS
+            # passes a campus, so this fell through to the roster query
+            # below and returned every active librarian on that campus --
+            # the synth then presented whoever sorted first as the
+            # answer, which is why "who is my personal librarian?"
+            # named the same unrelated person for every student
+            # (found live 2026-07-27). It also pushed the whole staff
+            # roster into the model context, against the operator's
+            # no-enumeration rule (June review #42/#72). Staff-directory
+            # asks have their own short-circuit, so a lookup with
+            # neither a name nor a subject has no legitimate consumer:
+            # return empty and let the caller ask WHICH subject.
+            return []
 
         # Fresh-client _db pattern, NOT the bridge'd singleton:
         # `get_prisma_client()` is sync (the old `await` of it made this

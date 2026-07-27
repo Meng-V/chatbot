@@ -513,6 +513,10 @@ def run_turn(
     # peer-reviewed filter (#79), MakerSpace equipment page (#58).
     if not booking_flow:
         for _status, _fn in (
+            # BEFORE staff_directory: "who is my librarian?" is a
+            # liaison ask, not a directory ask, and deserves the
+            # which-subject question rather than a directory pointer.
+            ("my_librarian_ask_subject", _my_librarian_ask_subject),
             ("staff_directory", _staff_directory_answer),
             ("lockers", _locker_answer),
             ("alumni_borrowing", _alumni_borrowing_answer),
@@ -2105,6 +2109,46 @@ _APPT_EXCLUDE_RE = re.compile(
     r"\b(archivist|special\s+collections|archives|maker\s*space)\b",
     re.IGNORECASE,
 )
+
+
+# "Who is my personal librarian?" -- the patron assumes each student is
+# assigned one. Miami assigns liaisons by SUBJECT, so the only useful
+# reply is to ask which subject. Before this existed the agent called
+# lookup_librarian with a campus and no subject, got the whole campus
+# roster back, and the synth named whoever sorted first -- every student
+# was pointed at the same unrelated person (found live 2026-07-27,
+# operator-reported). The roster leak itself is now blocked in
+# real_backends.lookup(); this is the answer-side half: ask, don't guess.
+_MY_LIBRARIAN_RE = re.compile(
+    r"\b(who\s+(is|'s)\s+my"
+    r"|do\s+i\s+have\s+an?"
+    r"|can\s+i\s+(talk|speak|meet)\s+(to|with)\s+my"
+    r"|how\s+(do|can)\s+i\s+(find|reach|contact|get)\s+(a\s+hold\s+of\s+)?my)"
+    r"\s*(personal|own|assigned|subject|liaison)?\s*librarian\b",
+    re.IGNORECASE,
+)
+# A subject/course named anywhere means we can look it up -- don't ask.
+_SUBJECT_NAMED_RE = re.compile(
+    r"\b(for|in|about|studying|majoring\s+in|major\s+in|department\s+of)\s+\w"
+    r"|\b[A-Za-z]{2,4}\s?\d{3}\b",
+    re.IGNORECASE,
+)
+
+
+def _my_librarian_ask_subject(message: str) -> "Optional[tuple[str, list[dict]]]":
+    m = message or ""
+    if not _MY_LIBRARIAN_RE.search(m) or _SUBJECT_NAMED_RE.search(m):
+        return None
+    return (
+        "Miami's subject librarians are assigned by subject area rather "
+        "than to individual students, so there isn't one specific "
+        "librarian tied to your account. Tell me your subject, major, or "
+        "course (for example \"Biology\" or \"PSY 201\") and I'll look up "
+        "the right librarian for you. You can also browse the full list "
+        "on the subject librarians page [1].",
+        [{"n": 1, "url": _LIAISONS_URL,
+          "snippet": "Miami University Libraries — subject librarians"}],
+    )
 
 
 def _research_appointment_answer(message: str) -> "Optional[tuple[str, list[dict]]]":
