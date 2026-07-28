@@ -1746,6 +1746,12 @@ def _cancel_reservation_answer(message: str) -> "Optional[tuple[str, list[dict]]
 # phrased text and refused ('email of the university archivist', prod eval
 # 2026-06-28). Answer deterministically from the verified staff page: the
 # archivist is Jacky Johnson (spec.lib.miamioh.edu/home/staff/, curl-verified).
+# Verified against the roster 2026-07-28: same email, active. Note the
+# roster spells her "Jacqueline Johnson" -- we say "Jacky" here because
+# that is how the CITED page names her. Consequence: a by-name ask
+# ("contact Jacky Johnson") does not match the roster row, so it falls to
+# the synth instead of the deterministic contact answer. Fix belongs in
+# the DATA, not here -- see docs/07-DATA-SOURCES.md "preferred names".
 _ARCHIVIST_RE = re.compile(r"\barchivist\b", re.IGNORECASE)
 _ARCHIVES_STAFF_URL = "https://spec.lib.miamioh.edu/home/staff/"
 
@@ -1756,8 +1762,9 @@ def _archives_contact_answer(message: str) -> "Optional[tuple[str, list[dict]]]"
     if not _ARCHIVIST_RE.search(message or ""):
         return None
     answer = (
-        "The University Archivist is Jacky Johnson, Department Head & "
-        "University Archivist (johnsoj@miamioh.edu), in Special Collections & "
+        "The University Archivist is Jacky Johnson, University Archivist "
+        "and Head of Special Collections and Archives "
+        "(johnsoj@miamioh.edu), in Special Collections & "
         "University Archives on the 3rd floor of King Library. General "
         "contacts: SpecColl@MiamiOH.edu, Archives@MiamiOH.edu, (513) 529-3323 [1]."
         + _VERIFIED_PAGE_SOURCE
@@ -3565,9 +3572,11 @@ _EVIDENCE_URL_DENYLIST = (
     # matching the live /use/borrow/curbside/ page and the /lola/ +
     # /home-delivery/ references. Left retrievable on purpose; do not
     # "clean it up" without re-confirming with the operator.
-    # The Amos Music Library CLOSED Sept 2023. The Music LIBRARIAN still
-    # exists (Barry Zaslow) and must keep working -- this denies only
-    # the closed building's location page.
+    # The Amos Music Library CLOSED Sept 2023. The music LIBRARIAN role
+    # still exists and those questions must keep working -- this denies
+    # only the closed building's location page. Whoever holds the role is
+    # resolved through the normal subject-liaison lookup; deliberately
+    # not named here, so a staffing change needs no code edit.
     "https://www.lib.miamioh.edu/about/locations/music-library",
     # Dated news/blog archive (lib.miamioh.edu/YYYY-MM-DD-slug, 2014
     # onward). `events_news` is already a REFUSE-tier intent precisely

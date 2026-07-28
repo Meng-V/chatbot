@@ -80,6 +80,22 @@ label instead of inventing one.
   own** copy of the librarian mapping and the same matching flaw. Zero
   callers outside the file. Only `extract_course_codes` and
   `extract_keywords` are live.
+- **`scripts/sync_liaisons_from_website.py`** — **deleted 2026-07-28.**
+  A fourth hand-typed copy of the subject↔librarian relationship (82
+  lines of `{subject: [emails]}`), and a script that WRITES to
+  `LibrarianSubject` — the table this page names as the single source.
+  Of its 15 distinct emails, **9 do not exist in the roster at all**
+  (`adamskk@` vs the real `adamsk3@`, `morgana3@` vs `morgan55@`,
+  `hilless@` vs `hillessa@`, `gibsonkr@` vs `gibsonke@`, `revellam@` vs
+  `revellaa@`, `dahlqumw@` vs `dahlqumj@`, plus `birkenla@`, `obrier@`
+  and departed `spraetjr@`), and a 10th pointed at Erica Freed's
+  **inactive** duplicate row. Running it would have overwritten correct
+  liaison data with wrong addresses. It was never referenced by anything
+  and had never been run — the 70 live `LibrarianSubject` rows contain
+  none of its bad emails. Someone had already tried to hide it by adding
+  it to `.gitignore`, which does nothing to an already-tracked file.
+  Recoverable from git history if the *subject list* is ever wanted; the
+  emails are not.
 - **Stale corpus pages** — COVID-era `/libraryhealthy/*`, the closed Amos
   Music Library's location page, the dated news archive
   (`/YYYY-MM-DD-slug`, 398 chunks) and the 2021–2024 annual goal
@@ -88,14 +104,62 @@ label instead of inventing one.
 
 ## What is *intentionally* still in code
 
-Six people are named directly in `new_orchestrator.py` — Sarah Nagle
-(MakerSpace), Carla Myers (scholarly communication), Jacky Johnson
-(University Archivist), Barry Zaslow (music), plus two liaison examples.
-These are **functional specialists the operator verified by hand**, not
-subject-liaison data; they answer questions the lookup path gets wrong.
-They need a deploy to change — that's the accepted trade for
-reliability. Don't grow this list: if it's subject-liaison data, it
-belongs in `LibrarianSubject`.
+**Eight people are named in hardcoded answers**, all in
+`new_orchestrator.py`. Six of those answers state an email; two name the
+person and send the patron to a page for contact details. These are
+**functional specialists**, not subject-liaison data — they answer
+questions the lookup path gets wrong. Changing one needs a deploy; that's
+the accepted trade for reliability.
+
+Every row below was checked against the `Librarian` roster on
+**2026-07-28**:
+
+| Named in | Person | Email in code | Roster check |
+|---|---|---|---|
+| MakerSpace answer | Sarah Nagle | `pricesb@` | ✅ active, email matches |
+| MakerSpace answer | Lori Chapin | `pheanila@` | ✅ active, email matches |
+| MakerSpace answer | Lindsey Masters | `masterlr@` | ✅ active, email matches |
+| MakerSpace answer | John Williams | `williajc@` | ✅ active, email matches |
+| MakerSpace answer | Nathan Hall | `hallnj3@` | ✅ active, email matches |
+| Archivist answer | Jacky Johnson | `johnsoj@` | ✅ active, email matches — but roster spells her **Jacqueline** (see below) |
+| Scholarly-comm answer | Carla Myers | — | ✅ active (`myersc2@`) |
+| Gov-docs answer | Jenny Presnell | — | ✅ active (`presnejl@`) |
+
+**Barry Zaslow was never hardcoded.** An earlier version of this page
+said he was; that was wrong. His name appeared only in a code *comment*
+explaining why denylisting the closed Amos Music Library's page doesn't
+break music questions. The comment no longer names him — whoever holds
+the role is resolved through the normal liaison lookup, so a staffing
+change needs no code edit. ("Who is the music librarian?" still answers
+correctly, from the LibGuides API.)
+
+Don't grow this list: if it's subject-liaison data, it belongs in
+`LibrarianSubject`.
+
+### Preferred names / nicknames — an open gap
+
+The roster stores legal names, so **`Jacky Johnson` does not match the
+roster's `Jacqueline Johnson`**. A patron asking "how do I contact Jacky
+Johnson?" therefore misses the deterministic contact answer and falls
+through to the synthesizer, which composes from a crawled staff page —
+they get her phone and office but **not her email**. Nothing wrong is
+said; the answer is just weaker.
+
+Nicknames are NOT middle names, so `person_names.py` cannot fold them.
+The fix belongs in the data, and it needs no code and no new lookup
+table: put the preferred name in the roster's own `name` field as a
+middle element —
+
+```
+Jacqueline (Jacky) Johnson
+```
+
+`names_match` then accepts **both** "Jacky Johnson" and "Jacqueline
+Johnson", while `display_name` still says **"Jacqueline Johnson"** —
+middles are dropped on the way out. This works for any colleague who goes
+by something other than their legal first name. **Operator decision
+needed:** whether to say "Jacqueline" or "Jacky" to patrons, and which
+roster rows need a preferred name added.
 
 ## Known gaps (need operator decisions, not code)
 
@@ -110,7 +174,11 @@ belongs in `LibrarianSubject`.
 4. **12 subjects where MyGuide and Primo name different librarians** with
    no overlap — several are Oxford-vs-regional and resolve by labelling
    the campus; the rest need a human call.
-5. `MYGUIDE_API_URL` points at **myguidedev** — only the ingest script
+5. **Duplicate roster row:** Erica Freed has two `Librarian` rows —
+   `freede@` (active) and `freedea@` (inactive). Lookups filter on
+   `isActive`, so answers are correct today, but the stale row is what
+   a hand-written script had wired up (see below).
+6. `MYGUIDE_API_URL` points at **myguidedev** — only the ingest script
    reads it, but the next import would pull from a dev host.
 
 The operator's review snapshot backing items 1–4 is archived at
