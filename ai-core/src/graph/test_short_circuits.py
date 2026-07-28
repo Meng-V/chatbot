@@ -946,6 +946,62 @@ def test_staff_contact_never_substitutes_a_different_person() -> None:
     assert out is not None and "justusra@miamioh.edu" in out[0]
 
 
+def test_middle_names_are_ignored_in_the_question() -> None:
+    """Operator rule 2026-07-28: a middle name or initial the patron types
+    must not stop us finding the person. Before this, the two-word capture
+    couldn't get past the initial at all -- "contact Roger A Justus"
+    extracted no name and the whole short-circuit never fired."""
+    from src.graph.new_orchestrator import _extract_person_name
+
+    # a middle INITIAL is skipped by the pattern itself
+    assert _extract_person_name("How do I contact Roger A Justus?") == \
+        "Roger Justus"
+    assert _extract_person_name("How do I contact Roger A. Justus?") == \
+        "Roger Justus"
+    assert _extract_person_name("What is Roger A Justus's email?") == \
+        "Roger Justus"
+    # a FULL middle name leaves a two-word capture, which person_names
+    # still resolves against the roster's spelling
+    from src.utils.person_names import names_match
+    got = _extract_person_name("How do I contact Patricia Kay Russell?")
+    assert got == "Patricia Kay"
+    assert names_match(got, "Patricia Kay Russell")
+    # punctuated surnames still work
+    got = _extract_person_name("How do I contact Anthony Jones-Scott?")
+    assert names_match(got, "Anthony Jones-Scott")
+
+
+def test_personnel_answers_state_their_source() -> None:
+    """Operator rule 2026-07-28: whenever the bot gives a person's contact
+    details it says which system they came from, so a librarian who spots
+    a wrong email knows whether to fix LibGuides or our database."""
+    from src.graph.new_orchestrator import _format_staff_contact
+
+    answer, _ = _format_staff_contact([{
+        "name": "Jennifer Hicks", "email": "hicksjl2@miamioh.edu",
+        "campus": "Middletown", "source": "database",
+    }])
+    assert "Source: Libraries staff directory database." in answer
+
+    answer, _ = _format_staff_contact([{
+        "name": "Ginny Boehme", "email": "boehmemv@miamioh.edu",
+        "source": "libguides_api",
+    }])
+    assert "Source: LibGuides API (live)." in answer
+
+    # both sources in one result -> name both, don't credit just the first
+    answer, _ = _format_staff_contact([
+        {"name": "A Smith", "email": "a@x.edu", "source": "database"},
+        {"name": "B Smith", "email": "b@x.edu", "source": "libguides_api"},
+    ])
+    assert "database and LibGuides API (live)" in answer
+
+    # an unlabelled row gains no dangling "Source:"
+    answer, _ = _format_staff_contact([
+        {"name": "C Smith", "email": "c@x.edu"}])
+    assert "Source:" not in answer
+
+
 def test_departed_staff_notice_is_honest_and_scoped() -> None:
     """A departed colleague's name must produce "no current listing",
     not someone else's details and not "contact them via the directory"

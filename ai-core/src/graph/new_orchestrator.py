@@ -58,6 +58,7 @@ from src.router.intent_capabilities import (
 )
 from src.router.intent_knn import Classification, IntentKNN, MARGIN_HIGH, MARGIN_LOW
 from src.scope.resolver import Scope, resolve_scope, resolve_session_origin
+from src.utils.person_names import display_name, names_match
 from src.synthesis.corrections import EvidenceChunk, ManualCorrection
 from src.synthesis.post_processor import PostProcessorResult
 from src.synthesis.refusal_templates import RefusalContext, RefusalTrigger
@@ -1547,6 +1548,7 @@ def _makerspace_staff_answer(message: str) -> "Optional[tuple[str, list[dict]]]"
         "Lindsey Masters, Creative Technologist (masterlr@miamioh.edu); "
         "John Williams, MakerSpace Technology Specialist (williajc@miamioh.edu); "
         "and Nathan Hall, MakerSpace Specialist (hallnj3@miamioh.edu) [1]."
+        + _VERIFIED_PAGE_SOURCE
     )
     return answer, [{
         "n": 1, "url": _MAKERSPACE_STAFF_URL,
@@ -1758,6 +1760,7 @@ def _archives_contact_answer(message: str) -> "Optional[tuple[str, list[dict]]]"
         "University Archivist (johnsoj@miamioh.edu), in Special Collections & "
         "University Archives on the 3rd floor of King Library. General "
         "contacts: SpecColl@MiamiOH.edu, Archives@MiamiOH.edu, (513) 529-3323 [1]."
+        + _VERIFIED_PAGE_SOURCE
     )
     return answer, [{
         "n": 1, "url": _ARCHIVES_STAFF_URL,
@@ -2636,8 +2639,9 @@ def _scholarly_comm_answer(message: str) -> "Optional[tuple[str, list[dict]]]":
     answer = (
         "For open access, scholarly communication, author rights, and the "
         "institutional repository, the contact is Carla Myers, Coordinator of "
-        "Scholarly Communication. The Scholarly Commons page has the details "
-        "and her contact info [1]."
+        "Scholarly Communication. The Scholarly Commons page has the "
+        "details and the contact info [1]."
+        + _VERIFIED_PAGE_SOURCE
     )
     return answer, [{
         "n": 1, "url": _SCHOLARLY_COMMONS_URL,
@@ -2735,14 +2739,14 @@ def _departed_staff_answer(message: str) -> "Optional[tuple[str, list[dict]]]":
     name = _extract_person_name(message)
     if not name:
         return None
-    words = {w for w in re.findall(r"[a-z']+", name.lower()) if len(w) > 1}
     for departed in _DEPARTED_STAFF:
-        dwords = {w for w in departed.split() if len(w) > 1}
-        # require the FULL name to match, so a shared surname doesn't
-        # wrongly declare a current colleague gone
-        if dwords and dwords <= words:
+        # names_match requires first+last (or every asked word), so a
+        # shared surname never wrongly declares a current colleague gone,
+        # and a middle name or initial in either spelling is ignored.
+        if names_match(name, departed):
             return (
-                f"I don't have a current listing for {name} — that person "
+                f"I don't have a current listing for {display_name(name)} — "
+                f"that person "
                 f"may no longer be with Miami University Libraries. For who "
                 f"covers their area now, use the staff directory [1] or ask "
                 f"a librarian through Ask Us [2].",
@@ -2803,11 +2807,14 @@ def _staff_contact_by_name(
         # Presenting one person's contact details as another's is the
         # worst error this bot can make, so require a real name-word
         # overlap and otherwise return nothing.
-        want = {w for w in re.findall(r"[a-z']+", name.lower()) if len(w) > 1}
+        # Compare against `full_name` (the roster's own spelling,
+        # middles included), NOT the display name -- a two-word capture
+        # like "Patricia Kay" from "contact Patricia Kay Russell" matches
+        # the stored "Patricia Kay Russell" but not the shortened
+        # "Patricia Russell" we say out loud.
         people = [
             p for p in people
-            if want & {w for w in re.findall(
-                r"[a-z']+", str(p.get("name") or "").lower()) if len(w) > 1}
+            if names_match(name, p.get("full_name") or p.get("name"))
         ]
     except Exception:  # noqa: BLE001 -- never break a turn over a prefetch
         return None
@@ -2816,10 +2823,42 @@ def _staff_contact_by_name(
     return _format_staff_contact(people)
 
 
+# These specialist answers are hand-verified against the Libraries' own
+# staff pages rather than looked up, so they get their own label -- the
+# operator's rule is that the patron always learns WHERE a person's
+# details came from, and "a page a human checked" is a different promise
+# from "the live API".
+_VERIFIED_PAGE_SOURCE = (
+    " Source: Libraries staff pages, verified by library staff."
+)
+
+
+def _provenance_note(people: "list[dict]") -> str:
+    """" Source: ..." for any answer carrying personnel details.
+
+    Operator rule 2026-07-28: whenever the bot states a person's contact
+    information, it says which system that came from. Two reasons. A
+    patron can judge how current it is, and -- the reason it was asked
+    for -- a librarian who spots something wrong knows immediately WHERE
+    to correct it, since these two systems are edited by different people
+    in different places. Returns "" when the rows carry no source, so an
+    answer never gains a dangling label.
+    """
+    from src.eval.real_backends import source_label
+    label = source_label(people)
+    return f" Source: {label}." if label else ""
+
+
 def _format_staff_contact(
     people: list[dict],
 ) -> "tuple[str, list[dict]]":
-    """Render 1-3 people as a contact answer. Pure."""
+    """Render 1-3 people as a contact answer. Pure.
+
+    Always names the SOURCE of the contact details (operator rule
+    2026-07-28): a librarian who spots a wrong phone number needs to know
+    whether to fix it in LibGuides or in our staff directory, and that
+    has to be visible in the answer itself rather than in a log.
+    """
 
     def _one(p: dict) -> str:
         bits = [str(p.get("name") or "").strip()]
@@ -2842,6 +2881,7 @@ def _format_staff_contact(
         listed = "\n".join(f"• {_one(p)}" for p in people)
         answer = (f"There are a few matches — here is each one [1]:\n"
                   f"{listed}")
+    answer += _provenance_note(people)
     return answer, [{"n": 1, "url": _STAFF_DIRECTORY_URL,
                      "snippet": "Miami University Libraries — staff directory"}]
 
@@ -2932,6 +2972,9 @@ def _subject_liaison_short_circuit(
         answer += f" You can also use the subject research guide [2]."
         citations.append({"n": 2, "url": guide_url,
                           "snippet": f"{guide_name} subject guide"})
+    # Source note LAST, after the guide sentence -- appended before it, it
+    # read as an interruption mid-answer.
+    answer += _provenance_note(liaisons)
     return answer, citations
 
 
@@ -3272,10 +3315,17 @@ def _tool_fact_evidence(
                 lib.get("department"),
             ]
             head = ", ".join(p for p in parts if p)
+            # `Source:` is part of the evidence TEXT, not just metadata,
+            # because the synthesizer can only state what it can cite --
+            # and the operator's rule is that every personnel answer names
+            # the system the details came from (prompt rule 9).
+            from src.eval.real_backends import SOURCE_LABELS
+            _src = SOURCE_LABELS.get(str(lib.get("source") or ""), "")
             text = (
                 f"{head}. Email: {lib.get('email')}. "
                 f"Phone: {lib.get('phone') or 'n/a'}. "
                 f"Campus: {lib.get('campus') or 'n/a'}."
+                + (f" Source: {_src}." if _src else "")
             )
             out.append(EvidenceChunk(
                 chunk_id=f"tool:lookup_librarian:{lib.get('email')}",
@@ -3567,7 +3617,13 @@ _CONTACT_BY_NAME_RE = re.compile(
     r"\b(?:contact|email|e-?mail|reach|get\s+in\s+touch\s+with|"
     r"who\s+is|talk\s+to|speak\s+(?:to|with)|find)\s+"
     r"(?:dr\.?\s+|prof\.?\s+|professor\s+)?"
-    r"([a-z][\w'-]+)\s+([a-z][\w'-]+)",
+    # An optional middle INITIAL is skipped, so "contact Roger A Justus"
+    # is read as "Roger Justus" (operator rule 2026-07-28). Only a
+    # single letter is allowed here: a real name word is 2+ characters,
+    # so this can never swallow the surname. A FULL middle name needs no
+    # special case -- the two captures become "Alia Levar", which
+    # person_names.names_match still resolves to "Alia Levar Wegner".
+    r"([a-z][\w'-]+)\s+(?:[a-z]\.?\s+)?([a-z][\w'-]+)",
     re.IGNORECASE,
 )
 # Library vocabulary that reads like a two-word name but isn't a person.
@@ -3585,7 +3641,7 @@ _NOT_A_NAME = frozenset({
 # The possessive shape puts the noun AFTER the name, so the verb-first
 # pattern above misses it: "What is John Burke's email?"
 _NAME_POSSESSIVE_RE = re.compile(
-    r"\b([a-z][\w'-]+)\s+([a-z][\w'-]+)['\u2019]s?\s+"
+    r"\b([a-z][\w'-]+)\s+(?:[a-z]\.?\s+)?([a-z][\w'-]+)['\u2019]s?\s+"
     r"(?:email|e-?mail|phone|number|contact|address|office)\b",
     re.IGNORECASE,
 )

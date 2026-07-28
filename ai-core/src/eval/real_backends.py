@@ -70,6 +70,34 @@ from src.tools.url_allowlist import (
 )
 from src.tools_v2.registry import ToolBackends
 from src.agent.tool_registry import ToolError
+from src.utils.person_names import display_name, names_match
+
+# Provenance labels. Operator rule 2026-07-28: any answer carrying
+# personnel information states whether it came from the live API or from
+# our database, so a librarian reading a wrong answer knows immediately
+# WHICH system to go correct.
+SOURCE_API = "libguides_api"
+SOURCE_DB = "database"
+
+SOURCE_LABELS = {
+    SOURCE_API: "LibGuides API (live)",
+    SOURCE_DB: "Libraries staff directory database",
+}
+
+
+def source_label(rows: object) -> str:
+    """One human-readable provenance phrase for a set of person rows.
+
+    Rows from one lookup can in principle mix sources, so name both
+    rather than silently crediting the first."""
+    seen: list[str] = []
+    for r in (rows if isinstance(rows, (list, tuple)) else [rows]):
+        s = (r or {}).get("source") if isinstance(r, dict) else None
+        lbl = SOURCE_LABELS.get(s or "")
+        if lbl and lbl not in seen:
+            seen.append(lbl)
+    return " and ".join(seen)
+
 
 logger = logging.getLogger(__name__)
 
@@ -201,13 +229,23 @@ def _librarian_dict(row: Any) -> dict:
     fields (email/phone) must survive verbatim -- the plan requires the
     bot to return the real email, not a paraphrase."""
     return {
-        "name": getattr(row, "name", None),
+        # The roster stores middle names and initials ("Roger A Justus",
+        # "Patricia Kay Russell"); the operator's rule is that we never
+        # SAY them. Punctuated surnames survive intact
+        # ("Anthony Jones-Scott"), only middle words are dropped.
+        "name": display_name(getattr(row, "name", None)),
+        # The roster's own spelling, for name MATCHING only -- never
+        # shown to a patron. Callers that re-verify "is this really the
+        # person asked for?" must compare against this, not the
+        # middle-stripped display name.
+        "full_name": getattr(row, "name", None),
         "email": getattr(row, "email", None),
         "title": getattr(row, "title", None),
         "department": getattr(row, "department", None),
         "phone": getattr(row, "phone", None),
         "campus": getattr(row, "campus", None),
         "profile_url": getattr(row, "profileUrl", None),
+        "source": SOURCE_DB,
     }
 
 
@@ -272,13 +310,19 @@ def _libguide_lib_to_dict(lib_entry: dict) -> dict:
     last = lib_entry.get("last_name") or ""
     full = f"{first} {last}".strip() or lib_entry.get("name", "")
     return {
-        "name": full,
+        # Middles dropped on the way OUT too, so the same person reads
+        # identically whether this turn hit the API or the DB.
+        "name": display_name(full),
+        "full_name": full,
         "email": lib_entry.get("email"),
         "title": lib_entry.get("title"),
         "department": lib_entry.get("department"),
         "phone": lib_entry.get("phone"),
         "campus": lib_entry.get("campus"),
         "profile_url": lib_entry.get("profile_url"),
+        # Operator rule 2026-07-28: every person record says where it
+        # came from, and the answer repeats it to the patron.
+        "source": SOURCE_API,
     }
 
 
@@ -550,26 +594,23 @@ def _make_lookup_librarian() -> Callable[[dict], list[dict]]:
         # name/campus lookup since it shipped -- found 2026-06-10).
         async def _q_by_name(client) -> list[dict]:
             where: dict = {"isActive": True}
-            if name:
-                # Match on name WORDS, not one contiguous substring: the
-                # roster stores middle initials ("Roger A Justus") while
-                # patrons and spreadsheets write "Roger Justus", and a
-                # `contains` on the full string misses that entirely
-                # (found 2026-07-28 when the name->subject inference that
-                # had been papering over it was removed). Every word must
-                # appear, so unrelated people still don't match.
-                _words = [w for w in re.split(r"[^\w']+", name) if len(w) > 1]
-                if _words:
-                    where["AND"] = [
-                        {"name": {"contains": w, "mode": "insensitive"}}
-                        for w in _words
-                    ]
-                else:
-                    where["name"] = {"contains": name, "mode": "insensitive"}
             if campus:
                 where["campus"] = campus
             rows = await client.librarian.find_many(where=where)
-            return [_librarian_dict(r) for r in rows]
+            if not name:
+                return [_librarian_dict(r) for r in rows]
+            # Filter in PYTHON, not in the query. Prisma's `contains`
+            # can't ignore a middle name, a middle initial, or an
+            # apostrophe, and every attempt to approximate that in SQL
+            # has misfired: a whole-string `contains` made "Roger
+            # Justus" miss the roster's "Roger A Justus", and matching
+            # loose substrings made "Krista McDonald" match "roger *a*
+            # justus" and hand out his email (both live, 2026-07-28).
+            # The roster is ~95 rows, so pulling it and applying the one
+            # shared rule costs nothing and behaves identically for
+            # every spelling of a name.
+            return [_librarian_dict(r) for r in rows
+                    if names_match(name, getattr(r, "name", None))]
 
         try:
             return _order_for_scope(_db(_q_by_name))

@@ -20,6 +20,47 @@ source, and everything else is derived or deleted.**
 | Answers the operator has hand-fixed | **Postgres `ManualCorrection`** | `/admin/corrections/view` |
 | Staff who have LEFT | `_DEPARTED_STAFF` in `new_orchestrator.py` | edit + deploy |
 
+## Two rules about people (2026-07-28)
+
+**1. Middle names never appear — anywhere.** Not in what we say, not in
+what we match on. `src/utils/person_names.py` is the only place names are
+compared, and every caller goes through it: the DB lookup, the
+contact-by-name short-circuit, the wrong-person guard, the departed-staff
+check, and the synthesizer prompt. It ignores middle names *and* middle
+initials on **both** sides of a comparison, folds accents, and drops
+punctuation (`O'Brien` → `obrien`, `Jones-Scott` → `jonesscott`) so a
+hyphenated or apostrophised surname stays one word instead of matching by
+halves.
+
+This matters because one human appears in three spellings across our
+sources, and matching used to be a `contains` on the whole string:
+
+| Roster | LibGuides API | Patron types |
+|---|---|---|
+| `Roger A Justus` | `Roger Justus` | `roger justus` |
+| `Patricia Kay Russell` | `Patricia Russell` | `patricia russell` |
+| `Rob O'Brien Withers` | `Rob Withers` | `rob withers` |
+
+All 14 spelling variants of those names now resolve to the right person,
+and the bot says `Roger Justus` regardless of which one was typed.
+`Anthony Jones-Scott` keeps his full surname — a hyphen is not a middle
+name.
+
+**2. Every personnel answer states its source.** When the bot gives a
+person's name, email, phone, or title, it ends with one of:
+
+- `Source: Libraries staff directory database.` — Postgres `Librarian`
+- `Source: LibGuides API (live).` — the Springshare API
+- `Source: Libraries staff pages, verified by library staff.` — the
+  hand-verified specialist answers below
+
+The reason is operational: these systems are edited by **different people
+in different places**. A librarian who spots a wrong phone number can now
+tell from the answer alone whether to fix it in LibGuides or ask the
+operator to correct the database. Rows carry a `source` field from the
+lookup all the way into the evidence text, so the synthesizer repeats the
+label instead of inventing one.
+
 ## What was removed (2026-07-28) and why
 
 - **`LIBRARIAN_SUBJECTS`** (hand-maintained person→subjects map in
