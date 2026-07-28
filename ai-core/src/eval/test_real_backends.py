@@ -216,7 +216,11 @@ def test_resolve_subject_terms_alias_and_course_code() -> None:
     assert "Biology" in _resolve_subject_terms("biology", "")
     assert "English" in _resolve_subject_terms("", "who helps with ENG 111")
     # librarian-name -> their subjects (Ginny Boehme is the bio liaison)
-    assert "Biology" in _resolve_subject_terms("", "ginny boehme")
+    # Name -> subject inference was REMOVED 2026-07-28: the roster is no
+    # longer duplicated in code, and inferring subjects from a name
+    # produced wrong-person answers twice in one day. A name now resolves
+    # through the direct Postgres name lookup instead.
+    assert _resolve_subject_terms("", "ginny boehme") == []
     # nothing resolvable -> empty (DB contains-match fallback handles it)
     assert _resolve_subject_terms("", "") == []
 

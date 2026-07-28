@@ -307,29 +307,16 @@ SUBJECT_ALIASES = {
 
 # Librarian name to subjects mapping (from liaisons page)
 # This allows direct search by librarian name
-LIBRARIAN_SUBJECTS = {
-    "ginny boehme": ["Biology", "Environmental Sciences", "Kinesiology, Nutrition, and Health", "Microbiology", "Neuroscience", "Nursing"],
-    "kristen adams": ["Chemical, Paper, and Biomedical Engineering", "Chemistry and Biochemistry", "Geography", "Geology", "Mechanical and Manufacturing Engineering", "Physics"],
-    "roger justus": ["Computer Science and Software Engineering", "Electrical and Computer Engineering", "Information Systems & Analytics", "Mathematics", "Statistics"],
-    "roger a justus": ["Computer Science and Software Engineering", "Electrical and Computer Engineering", "Information Systems & Analytics", "Mathematics", "Statistics"],
-    "megan jaskowiak": ["Criminology", "Family Science and Social Work", "Gerontology", "Physician Associate Studies", "Psychology", "Sociology", "Speech Pathology and Audiology"],
-    "jenny presnell": ["American Studies", "Government Information and Law", "History", "Law", "Political Science", "Women's, Gender and Sexuality Studies"],
-    "erica freed": ["Accountancy", "Business", "Economics", "Entrepreneurship", "Finance", "Management", "Marketing"],
-    "abigail morgan": ["Anthropology", "Business", "Business Legal Studies", "Education", "Juvenile Literature", "Marketing", "Teacher Education"],
-    "katie gibson": ["Asian/Asian-American Studies", "Black World Studies", "French", "German", "Individualized Studies - Western Program", "International Studies", "Italian", "Latin American Studies", "Middle Eastern and Islamic Studies", "Spanish and Portuguese"],
-    "mark dahlquist": ["English", "Media, Journalism, and Film"],
-    "rob o'brien withers": ["Classics, Latin, and Greek", "Philosophy", "Religion"],
-    "rob obrien withers": ["Classics, Latin, and Greek", "Philosophy", "Religion"],
-    "stefanie hilles": ["Architecture & Interior Design", "Art", "Interactive Media Studies / Emerging Technology in Business and Design", "Theater"],
-    "barry zaslow": ["Music"],
-    "laura birkenhauer": ["Military Studies", "Student Affairs"],
-    # Jaclyn Spraetz removed 2026-07-28 -- departed. Leaving her here
-    # routed Educational Leadership / Educational Psychology asks through
-    # her name, and made "contact Jaclyn Spraetz" resolve to whoever
-    # covers those subjects now. Those two subjects currently have NO
-    # liaison in this map; the operator is reassigning them.
-    "andrew revelle": ["Sports Leadership and Management"],
-}
+# LIBRARIAN_SUBJECTS was DELETED 2026-07-28.
+#
+# It was a hand-maintained copy of "which librarian covers which
+# subjects" -- the same fact Postgres (LibrarianSubject) and the live
+# LibGuides API already own. Keeping a third copy in code meant it went
+# stale silently, and it caused two wrong-person answers in one day:
+# a substring match on the middle initial in "roger a justus" matched
+# almost any name, and a departed colleague's entry resolved her name to
+# whoever covers her old subjects. Subject/name resolution now goes to
+# Postgres + the LibGuides API only. Contents remain in git history.
 
 # Course code to subject mapping (common course prefixes)
 COURSE_CODE_SUBJECTS = {
@@ -425,42 +412,9 @@ def find_subject_by_alias(query: str) -> str | None:
 
 
 def find_subjects_by_librarian_name(name: str) -> list[str]:
-    """
-    Find subjects covered by a librarian name.
-    
-    Args:
-        name: Librarian name to search for
-    
-    Returns:
-        List of subject names the librarian covers
-    """
-    name_lower = name.lower().strip()
-
-    # Direct match
-    if name_lower in LIBRARIAN_SUBJECTS:
-        return LIBRARIAN_SUBJECTS[name_lower]
-
-    # Partial match on WHOLE name words.
-    #
-    # This used to be a substring test (`part in name_lower`), which the
-    # middle initial in "roger a justus" turned into a wildcard: "a" is a
-    # substring of almost every name, so the loop returned Roger's
-    # subjects for anyone whose name contains an "a" -- and because the
-    # caller feeds the result to the LibGuides lookup, "How do I contact
-    # Krista McDonald?" answered with Roger Justus's contact details
-    # (live repro 2026-07-28). Wrong-person answers are the worst class
-    # of error this bot can make.
-    #
-    # Now: tokenize both sides and require a full-word match, ignoring
-    # one-letter initials entirely.
-    query_words = set(re.findall(r"[a-z']+", name_lower))
-    if not query_words:
-        return []
-    for librarian_name, subjects in LIBRARIAN_SUBJECTS.items():
-        parts = [p for p in librarian_name.split() if len(p) > 1]
-        if any(p in query_words for p in parts):
-            return subjects
-
+    """Deprecated: always returns []. See the LIBRARIAN_SUBJECTS note
+    above -- the roster is no longer duplicated in code. Kept as a stub
+    so any stray import fails soft rather than at import time."""
     return []
 
 

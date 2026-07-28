@@ -18,6 +18,7 @@ the retired v3.1 stack lives under [archive/](./archive/).
 | [05-DEPLOYMENT-GUIDE.md](./05-DEPLOYMENT-GUIDE.md) | build.sh flow, schema changes, post-deploy checks, host-level pieces |
 | [06-CORRECTION-TICKETS.md](./06-CORRECTION-TICKETS.md) | Librarian "wrong answer" report form + operator queue |
 | [librarian-services-truthtable-ask.md](./librarian-services-truthtable-ask.md) | Operator-verified service-availability truth table |
+| [07-DATA-SOURCES.md](./07-DATA-SOURCES.md) | **Which single source owns each fact** (people, subjects, hours, corrections) + known data gaps |
 | [MAINTENANCE-2026-07-17-overnight.md](./MAINTENANCE-2026-07-17-overnight.md) | The post-legacy-removal audit report |
 | [STUDENT-TEST-2026-07.md](./STUDENT-TEST-2026-07.md) | 10-question student acceptance test + grading rubric (80% pass gate) |
 

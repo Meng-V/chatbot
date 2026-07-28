@@ -54,13 +54,13 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import re
 from typing import Any, Awaitable, Callable, Iterable, Optional
 
 from src.config.capability_scope import ILL_URLS
 from src.tools.subject_aliases import (
     find_subject_by_alias,
     find_subject_by_course_code,
-    find_subjects_by_librarian_name,
 )
 from src.tools.enhanced_subject_search import extract_course_codes
 from src.tools.url_allowlist import (
@@ -234,9 +234,24 @@ def _resolve_subject_terms(subject: str, name: str) -> list[str]:
         if a:
             out.append(a)
 
-    # "the <name> librarian" / a liaison's own name -> their subjects.
-    if name:
-        out.extend(find_subjects_by_librarian_name(name))
+    # NAME -> SUBJECTS INFERENCE REMOVED 2026-07-28.
+    #
+    # This used to call find_subjects_by_librarian_name(name), turning a
+    # person's name into their subject list and then letting the caller
+    # query LibGuides for it. Two consequences, both live incidents in a
+    # single day:
+    #   * "How do I contact Krista McDonald?" -> Roger Justus's details,
+    #     via a substring match on the middle initial in "roger a justus".
+    #   * "How do I contact Jaclyn Spraetz?" (departed) -> whoever covers
+    #     her old subjects now, presented as the person asked for.
+    # Both are wrong-person answers, the worst error this bot can make.
+    #
+    # The legitimate use ("who is the Boehme librarian?") is now served
+    # better by the direct name path below, which returns the actual
+    # person from Postgres instead of guessing via their subjects. That
+    # also means the roster lives in ONE place (Postgres + the LibGuides
+    # API) rather than being duplicated in a hand-maintained code map
+    # that went stale the moment someone left.
 
     seen: set[str] = set()
     deduped: list[str] = []
@@ -536,7 +551,21 @@ def _make_lookup_librarian() -> Callable[[dict], list[dict]]:
         async def _q_by_name(client) -> list[dict]:
             where: dict = {"isActive": True}
             if name:
-                where["name"] = {"contains": name, "mode": "insensitive"}
+                # Match on name WORDS, not one contiguous substring: the
+                # roster stores middle initials ("Roger A Justus") while
+                # patrons and spreadsheets write "Roger Justus", and a
+                # `contains` on the full string misses that entirely
+                # (found 2026-07-28 when the name->subject inference that
+                # had been papering over it was removed). Every word must
+                # appear, so unrelated people still don't match.
+                _words = [w for w in re.split(r"[^\w']+", name) if len(w) > 1]
+                if _words:
+                    where["AND"] = [
+                        {"name": {"contains": w, "mode": "insensitive"}}
+                        for w in _words
+                    ]
+                else:
+                    where["name"] = {"contains": name, "mode": "insensitive"}
             if campus:
                 where["campus"] = campus
             rows = await client.librarian.find_many(where=where)

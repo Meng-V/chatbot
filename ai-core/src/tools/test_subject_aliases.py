@@ -29,15 +29,17 @@ def test_middle_initial_is_not_a_wildcard() -> None:
         assert find_subjects_by_librarian_name(name) == [], name
 
 
-def test_real_liaison_names_still_resolve() -> None:
-    """The fix must not break the feature: "the Boehme librarian" and
-    full names still map to their subject lists."""
-    assert "Biology" in find_subjects_by_librarian_name("Ginny Boehme")
-    assert "Biology" in find_subjects_by_librarian_name("Boehme")
-    assert "Business" in find_subjects_by_librarian_name("Erica Freed")
-    # the middle-initial entry itself must keep working
-    for variant in ("Roger Justus", "roger a justus", "Justus"):
-        assert "Mathematics" in find_subjects_by_librarian_name(variant), variant
+def test_librarian_name_map_is_gone() -> None:
+    """The hand-maintained person->subjects map was DELETED 2026-07-28.
+    It duplicated Postgres + the LibGuides API, went stale silently (a
+    departed colleague stayed in it), and its substring matching handed
+    out the wrong person's contact details twice in one day. The accessor
+    is a soft-fail stub; names resolve via the direct Postgres lookup."""
+    import src.tools.subject_aliases as sa
+    assert not hasattr(sa, "LIBRARIAN_SUBJECTS")
+    for name in ["Ginny Boehme", "Boehme", "Erica Freed", "Roger Justus",
+                 "roger a justus", "Krista McDonald"]:
+        assert find_subjects_by_librarian_name(name) == [], name
 
 
 def test_empty_and_garbage_names() -> None:
