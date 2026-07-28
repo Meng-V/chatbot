@@ -837,3 +837,69 @@ def test_awaiting_subject_detects_our_own_question() -> None:
     assert _awaiting_subject(hist2) is False
     assert _awaiting_subject([]) is False
     assert _awaiting_subject(None) is False
+
+
+# --- contact a librarian by name (live matrix 2026-07-28) ------------------
+
+def test_looks_like_person_name_detects_real_asks() -> None:
+    """Most of the 96-person roster was unreachable by name: the kNN only
+    routed correctly for names that happened to be in the exemplars
+    (Erica Freed 0.710 vs Jennifer Hicks 0.414 -> out_of_scope)."""
+    from src.graph.new_orchestrator import _looks_like_person_name
+    for q in ["How do I contact Jennifer Hicks?",
+              "how do i contact jennifer hicks",      # patrons type lowercase
+              "What is John Burke's email?",
+              "I need to reach Krista McDonald",
+              "Who is Barry Zaslow?",
+              "can I talk to Sarah Nagle",
+              "get in touch with Dr. Carla Myers"]:
+        assert _looks_like_person_name(q), q
+
+
+def test_looks_like_person_name_ignores_library_nouns() -> None:
+    """Two-word phrases that read like names but aren't people."""
+    from src.graph.new_orchestrator import _looks_like_person_name
+    for q in ["How do I contact the library?",
+              "How do I contact Ask Us?",
+              "who is my librarian",
+              "I need to reach a librarian",
+              "how do I contact circulation services",
+              "who is the subject liaison",
+              "How do I contact King Library?",
+              "What are the hours?",
+              "can I talk to someone else"]:
+        assert not _looks_like_person_name(q), q
+
+
+def test_extract_person_name_and_contact_format() -> None:
+    """The name is in the question, so look it up ourselves rather than
+    hoping the agent picks lookup_librarian: it often answered from
+    crawled staff-page text and ended at "use the directory and click
+    Contact Me" while the email sat in Postgres (live 2026-07-28)."""
+    from src.graph.new_orchestrator import (
+        _extract_person_name, _format_staff_contact,
+    )
+    assert _extract_person_name("How do I contact Jennifer Hicks?") == \
+        "Jennifer Hicks"
+    assert _extract_person_name("What is John Burke's email?") == "John Burke"
+    assert _extract_person_name("How do I contact the library?") is None
+
+    answer, cites = _format_staff_contact([{
+        "name": "Jennifer Hicks", "email": "hicksjl2@miamioh.edu",
+        "title": "Outreach and Instruction Librarian",
+        "phone": "(513) 727-3221", "campus": "Middletown",
+    }])
+    # the exact contact data must survive verbatim, not be paraphrased
+    assert "hicksjl2@miamioh.edu" in answer
+    assert "(513) 727-3221" in answer
+    assert "Middletown" in answer
+    assert cites[0]["url"].endswith("/staff/")
+
+
+def test_staff_contact_lists_multiple_matches() -> None:
+    from src.graph.new_orchestrator import _format_staff_contact
+    answer, _ = _format_staff_contact([
+        {"name": "A Smith", "email": "a@x.edu", "campus": "Oxford"},
+        {"name": "B Smith", "email": "b@x.edu", "campus": "Hamilton"},
+    ])
+    assert "a@x.edu" in answer and "b@x.edu" in answer

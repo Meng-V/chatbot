@@ -7,6 +7,8 @@ in the database. This ensures users can find librarians using natural language.
 Based on: https://www.lib.miamioh.edu/about/organization/liaisons/
 """
 
+import re
+
 # Comprehensive mapping from search terms to subject names
 # Keys are lowercase search terms, values are the official Subject names in DB
 SUBJECT_ALIASES = {
@@ -429,17 +431,32 @@ def find_subjects_by_librarian_name(name: str) -> list[str]:
         List of subject names the librarian covers
     """
     name_lower = name.lower().strip()
-    
+
     # Direct match
     if name_lower in LIBRARIAN_SUBJECTS:
         return LIBRARIAN_SUBJECTS[name_lower]
-    
-    # Partial match (first name, last name)
+
+    # Partial match on WHOLE name words.
+    #
+    # This used to be a substring test (`part in name_lower`), which the
+    # middle initial in "roger a justus" turned into a wildcard: "a" is a
+    # substring of almost every name, so the loop returned Roger's
+    # subjects for anyone whose name contains an "a" -- and because the
+    # caller feeds the result to the LibGuides lookup, "How do I contact
+    # Krista McDonald?" answered with Roger Justus's contact details
+    # (live repro 2026-07-28). Wrong-person answers are the worst class
+    # of error this bot can make.
+    #
+    # Now: tokenize both sides and require a full-word match, ignoring
+    # one-letter initials entirely.
+    query_words = set(re.findall(r"[a-z']+", name_lower))
+    if not query_words:
+        return []
     for librarian_name, subjects in LIBRARIAN_SUBJECTS.items():
-        name_parts = librarian_name.split()
-        if any(part in name_lower for part in name_parts):
+        parts = [p for p in librarian_name.split() if len(p) > 1]
+        if any(p in query_words for p in parts):
             return subjects
-    
+
     return []
 
 

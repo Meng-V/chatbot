@@ -277,6 +277,40 @@ def _run_turn(
         bind_request_context(intent="subject_librarian",
                              margin=classification.margin)
 
+    # --- 2.03. Contact-a-person-by-name override ---
+    # See _looks_like_person_name: the by-name lookup works, but the
+    # classifier only routed to it for names it had memorised.
+    if (
+        not booking_flow
+        and not subject_reply
+        and classification.intent in ("out_of_scope", "human_handoff")
+        and _looks_like_person_name(request.user_message)
+    ):
+        classification = _dc_replace(
+            classification, intent="staff_lookup", needs_clarification=False,
+        )
+        bind_request_context(intent="staff_lookup",
+                             margin=classification.margin)
+
+    # --- 2.04. Contact a named person (deterministic, pre-agent) ---
+    if not booking_flow and not subject_reply:
+        _sc = _staff_contact_by_name(request.user_message, deps, scope)
+        if _sc is not None:
+            _ans, _cites = _sc
+            latency_ms = int((time.monotonic() - turn_start) * 1000)
+            record_request(endpoint="/chat", status="staff_contact",
+                           latency_s=latency_ms / 1000)
+            return TurnResponse(
+                answer=_ans, is_refusal=False, refusal_trigger=None,
+                citations=_cites, confidence="high",
+                intent=classification.intent, scope=scope.as_filter(),
+                model_used=model_basic,
+                tokens={"input": 0, "cached_input": 0, "output": 0},
+                fired_corrections=[],
+                agent_stopped_reason="staff_contact_short_circuit",
+                latency_ms=latency_ms, cited_chunk_ids=[],
+            )
+
     # --- 2.05. Greeting short-circuit ---
     # A bare "hi"/"hello" has no library signal, so the kNN sends it to
     # out_of_scope and the user gets a refusal for saying hello. Greet
@@ -889,6 +923,29 @@ def _run_turn(
                 latency_ms=latency_ms, cited_chunk_ids=[],
             )
 
+    if classification.intent in ("staff_lookup", "subject_librarian",
+                                "research_consultation", "human_handoff"):
+        _contact = _staff_contact_short_circuit(agent_outcome)
+        if _contact is not None:
+            _ans, _cites = _contact
+            latency_ms = int((time.monotonic() - turn_start) * 1000)
+            record_request(endpoint="/chat", status="staff_contact",
+                           latency_s=latency_ms / 1000)
+            return TurnResponse(
+                answer=_ans, is_refusal=False, refusal_trigger=None,
+                citations=_cites, confidence="high",
+                intent=classification.intent, scope=scope.as_filter(),
+                model_used=model,
+                tokens={
+                    "input": agent_outcome.input_tokens,
+                    "cached_input": agent_outcome.cached_input_tokens,
+                    "output": agent_outcome.output_tokens,
+                },
+                fired_corrections=[],
+                agent_stopped_reason="staff_contact_short_circuit",
+                latency_ms=latency_ms, cited_chunk_ids=[],
+            )
+
     if classification.intent in ("subject_librarian", "research_consultation"):
         _liaison = _subject_liaison_short_circuit(agent_outcome, scope)
         if _liaison is not None:
@@ -1086,6 +1143,7 @@ _DISCLAIMER_EXEMPT_REASONS = frozenset({
     # library?" scores as `databases` (live check 2026-07-27) but the
     # answer is a closure notice.
     "closed_library_short_circuit",
+    "staff_contact_short_circuit",
     "greeting_short_circuit",
     "staff_directory_short_circuit",
     "my_librarian_ask_subject_short_circuit",
@@ -2600,6 +2658,132 @@ def _admin_role_answer(message: str) -> "Optional[tuple[str, list[dict]]]":
     }]
 
 
+_STAFF_DIRECTORY_URL = "https://www.lib.miamioh.edu/about/organization/staff/"
+
+
+def _staff_contact_short_circuit(
+    agent_outcome: "AgentOutcome",
+) -> "Optional[tuple[str, list[dict]]]":
+    """Deterministic answer for "how do I contact <person>?".
+
+    Same reasoning as _subject_liaison_short_circuit: lookup_librarian
+    returns the exact row from Postgres, but the synthesizer kept
+    deflecting to "use the staff directory and click Contact Me" instead
+    of stating the email it had been handed -- and once mislabelled a
+    Hamilton librarian's listing as the "Oxford Staff Directory" (live
+    2026-07-28). We hold the contact data, so we format it.
+
+    Fires only for NAME lookups (a `name` arg, no `subject`), so subject
+    asks keep their own short-circuit. Returns None when the lookup
+    found nobody, letting the normal no-evidence refusal happen rather
+    than inventing a contact.
+    """
+    people: list[dict] = []
+    seen: set = set()
+    for turn in (agent_outcome.turns or []):
+        args_by_id = {tc.id: (tc.arguments or {})
+                      for tc in (turn.tool_calls or [])}
+        for res in (turn.tool_results or []):
+            if res.name != "lookup_librarian" or res.error or not res.data:
+                continue
+            args = args_by_id.get(res.call_id) or {}
+            if not str(args.get("name") or "").strip():
+                continue           # not a by-name ask
+            if str(args.get("subject") or "").strip():
+                continue           # subject asks -> the liaison path
+            for row in (res.data.get("librarians") or []):
+                if not isinstance(row, dict) or not row.get("email"):
+                    continue
+                if row["email"] in seen:
+                    continue
+                seen.add(row["email"])
+                people.append(row)
+    if not people or len(people) > 3:
+        # >3 hits means the name was too vague to answer with confidence;
+        # let the synth hedge rather than pick someone.
+        return None
+
+    return _format_staff_contact(people)
+
+
+def _extract_person_name(message: str) -> "Optional[str]":
+    """The "First Last" a contact ask names, or None."""
+    msg = message or ""
+    m = _CONTACT_BY_NAME_RE.search(msg) or _NAME_POSSESSIVE_RE.search(msg)
+    if not m:
+        return None
+    first, last = m.group(1), m.group(2)
+    if first.lower() in _NOT_A_NAME or last.lower() in _NOT_A_NAME:
+        return None
+    return f"{first} {last}"
+
+
+def _staff_contact_by_name(
+    message: str, deps: "OrchestratorDeps", scope: "Scope"
+) -> "Optional[tuple[str, list[dict]]]":
+    """Look the named person up directly, before the agent runs.
+
+    The post-agent scan below only helps when the agent CHOSE to call
+    lookup_librarian with a name -- and it often doesn't, answering from
+    crawled staff-page text instead, which is how "How do I contact
+    Jennifer Hicks?" still ended at "use the directory and click Contact
+    Me" while her email sat in Postgres (live 2026-07-28). The name is
+    right there in the question, so look it up ourselves. Same
+    failure-tolerance as the hours prefetches: any error returns None
+    and the normal path runs.
+    """
+    name = _extract_person_name(message)
+    if not name:
+        return None
+    try:
+        from src.agent.tool_registry import ToolCall
+        result = deps.tool_registry.dispatch(ToolCall(
+            id="prefetch-staff-contact", name="lookup_librarian",
+            arguments={"name": name},
+        ))
+        if result.error or not result.data:
+            return None
+        people = [
+            r for r in (result.data.get("librarians") or [])
+            if isinstance(r, dict) and r.get("email")
+        ]
+    except Exception:  # noqa: BLE001 -- never break a turn over a prefetch
+        return None
+    if not people or len(people) > 3:
+        return None
+    return _format_staff_contact(people)
+
+
+def _format_staff_contact(
+    people: list[dict],
+) -> "tuple[str, list[dict]]":
+    """Render 1-3 people as a contact answer. Pure."""
+
+    def _one(p: dict) -> str:
+        bits = [str(p.get("name") or "").strip()]
+        title = str(p.get("title") or "").strip()
+        if title:
+            bits.append(f", {title}")
+        out = "".join(bits)
+        contacts = [c for c in (str(p.get("email") or "").strip(),
+                                str(p.get("phone") or "").strip()) if c]
+        if contacts:
+            out += " — " + " · ".join(contacts)
+        campus = str(p.get("campus") or "").strip()
+        if campus:
+            out += f" ({campus} campus)"
+        return out
+
+    if len(people) == 1:
+        answer = f"You can reach {_one(people[0])} [1]."
+    else:
+        listed = "\n".join(f"• {_one(p)}" for p in people)
+        answer = (f"There are a few matches — here is each one [1]:\n"
+                  f"{listed}")
+    return answer, [{"n": 1, "url": _STAFF_DIRECTORY_URL,
+                     "snippet": "Miami University Libraries — staff directory"}]
+
+
 def _subject_liaison_short_circuit(
     agent_outcome: "AgentOutcome", scope: "Scope"
 ) -> "Optional[tuple[str, list[dict]]]":
@@ -3307,6 +3491,58 @@ def _booking_flow_active(history: Optional[list]) -> bool:
             content = str(entry.get("content") or "")
             return any(m in content for m in _BOOKING_FLOW_MARKERS)
     return False
+
+
+# "How do I contact Jennifer Hicks?" -- a patron who already knows a
+# name. The lookup_librarian name path handles these fine, but the
+# stateless kNN only classified them correctly when the specific name
+# happened to appear in the exemplar set: Erica Freed scored 0.710,
+# while Jennifer Hicks / John Burke / Krista McDonald all fell to
+# out_of_scope at 0.35-0.49 (live matrix 2026-07-28). That meant most of
+# the 96-person roster was unreachable by name. Detect the SHAPE instead
+# of memorising names, so every librarian is findable.
+_CONTACT_BY_NAME_RE = re.compile(
+    r"\b(?:contact|email|e-?mail|reach|get\s+in\s+touch\s+with|"
+    r"who\s+is|talk\s+to|speak\s+(?:to|with)|find)\s+"
+    r"(?:dr\.?\s+|prof\.?\s+|professor\s+)?"
+    r"([a-z][\w'-]+)\s+([a-z][\w'-]+)",
+    re.IGNORECASE,
+)
+# Library vocabulary that reads like a two-word name but isn't a person.
+_NOT_A_NAME = frozenset({
+    "ask", "the", "a", "an", "my", "your", "our", "this", "that", "some",
+    "any", "library", "libraries", "librarian", "librarians", "staff",
+    "circulation", "reference", "front", "service", "help", "desk",
+    "special", "digital", "interlibrary", "course", "study", "makerspace",
+    "king", "wertz", "rentschler", "gardner", "middletown", "hamilton",
+    "oxford", "someone", "somebody", "anyone", "customer", "tech",
+    "technical", "it", "web", "subject", "liaison", "research", "data",
+})
+
+
+# The possessive shape puts the noun AFTER the name, so the verb-first
+# pattern above misses it: "What is John Burke's email?"
+_NAME_POSSESSIVE_RE = re.compile(
+    r"\b([a-z][\w'-]+)\s+([a-z][\w'-]+)['\u2019]s?\s+"
+    r"(?:email|e-?mail|phone|number|contact|address|office)\b",
+    re.IGNORECASE,
+)
+
+
+def _looks_like_person_name(message: str) -> bool:
+    """True when the message asks to reach a specific PERSON by name.
+
+    Shape-based on purpose: requiring capitalisation would miss the
+    patrons who type in lower case, and an allow-list of names would go
+    stale every time staffing changes. A false positive costs nothing --
+    the name lookup simply finds no one and the turn refuses exactly as
+    it does today."""
+    msg = message or ""
+    m = _CONTACT_BY_NAME_RE.search(msg) or _NAME_POSSESSIVE_RE.search(msg)
+    if not m:
+        return False
+    first, last = m.group(1).lower(), m.group(2).lower()
+    return first not in _NOT_A_NAME and last not in _NOT_A_NAME
 
 
 _ASK_SUBJECT_MARKER = "Tell me your subject, major, or course"
