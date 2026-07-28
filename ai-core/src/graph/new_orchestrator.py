@@ -294,7 +294,10 @@ def _run_turn(
 
     # --- 2.04. Contact a named person (deterministic, pre-agent) ---
     if not booking_flow and not subject_reply:
-        _sc = _staff_contact_by_name(request.user_message, deps, scope)
+        # departed staff first: their name must never reach the lookup,
+        # which would resolve it to a current colleague's details
+        _sc = (_departed_staff_answer(request.user_message)
+               or _staff_contact_by_name(request.user_message, deps, scope))
         if _sc is not None:
             _ans, _cites = _sc
             latency_ms = int((time.monotonic() - turn_start) * 1000)
@@ -2706,6 +2709,51 @@ def _staff_contact_short_circuit(
     return _format_staff_contact(people)
 
 
+# Staff who have LEFT. A patron asking for one of them used to be told
+# either someone else's contact details or "contact them through the
+# directory" -- both assert a person is reachable when they are not
+# (operator-reported departures 2026-07-28). Same shape as the
+# closed-library notice: state the fact, then route to something real.
+#
+# TO MAINTAIN: add the departed person's full name in lower case. Removal
+# from the Librarian table alone is NOT enough -- crawled staff pages in
+# the corpus keep mentioning them, and the LLM will happily compose an
+# answer from that.
+#
+# PENDING (add when the departure is effective):
+#   * Alia Levar Wegner -- Digital Collections Librarian, leaving soon
+#     (still current as of 2026-07-28, so deliberately NOT listed yet)
+_DEPARTED_STAFF = frozenset({
+    "jaclyn spraetz",
+    "nate floyd",
+})
+
+
+def _departed_staff_answer(message: str) -> "Optional[tuple[str, list[dict]]]":
+    """Say plainly that we have no current listing for a departed
+    colleague, instead of implying they can still be reached."""
+    name = _extract_person_name(message)
+    if not name:
+        return None
+    words = {w for w in re.findall(r"[a-z']+", name.lower()) if len(w) > 1}
+    for departed in _DEPARTED_STAFF:
+        dwords = {w for w in departed.split() if len(w) > 1}
+        # require the FULL name to match, so a shared surname doesn't
+        # wrongly declare a current colleague gone
+        if dwords and dwords <= words:
+            return (
+                f"I don't have a current listing for {name} — that person "
+                f"may no longer be with Miami University Libraries. For who "
+                f"covers their area now, use the staff directory [1] or ask "
+                f"a librarian through Ask Us [2].",
+                [{"n": 1, "url": _STAFF_DIRECTORY_URL,
+                  "snippet": "Miami University Libraries — staff directory"},
+                 {"n": 2, "url": _ASKUS_URL,
+                  "snippet": "Ask Us — talk to a librarian"}],
+            )
+    return None
+
+
 def _extract_person_name(message: str) -> "Optional[str]":
     """The "First Last" a contact ask names, or None."""
     msg = message or ""
@@ -2746,6 +2794,20 @@ def _staff_contact_by_name(
         people = [
             r for r in (result.data.get("librarians") or [])
             if isinstance(r, dict) and r.get("email")
+        ]
+        # The row we get back MUST actually be the person asked for.
+        # lookup_librarian falls back to inferring subjects FROM the name
+        # and then returns whoever covers them, so asking for a departed
+        # colleague answered with a current one: "How do I contact Jaclyn
+        # Spraetz?" -> "You can reach Roger Justus" (live 2026-07-28).
+        # Presenting one person's contact details as another's is the
+        # worst error this bot can make, so require a real name-word
+        # overlap and otherwise return nothing.
+        want = {w for w in re.findall(r"[a-z']+", name.lower()) if len(w) > 1}
+        people = [
+            p for p in people
+            if want & {w for w in re.findall(
+                r"[a-z']+", str(p.get("name") or "").lower()) if len(w) > 1}
         ]
     except Exception:  # noqa: BLE001 -- never break a turn over a prefetch
         return None

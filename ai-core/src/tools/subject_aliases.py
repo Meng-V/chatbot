@@ -323,7 +323,11 @@ LIBRARIAN_SUBJECTS = {
     "stefanie hilles": ["Architecture & Interior Design", "Art", "Interactive Media Studies / Emerging Technology in Business and Design", "Theater"],
     "barry zaslow": ["Music"],
     "laura birkenhauer": ["Military Studies", "Student Affairs"],
-    "jaclyn spraetz": ["Educational Leadership", "Educational Psychology"],
+    # Jaclyn Spraetz removed 2026-07-28 -- departed. Leaving her here
+    # routed Educational Leadership / Educational Psychology asks through
+    # her name, and made "contact Jaclyn Spraetz" resolve to whoever
+    # covers those subjects now. Those two subjects currently have NO
+    # liaison in this map; the operator is reassigning them.
     "andrew revelle": ["Sports Leadership and Management"],
 }
 

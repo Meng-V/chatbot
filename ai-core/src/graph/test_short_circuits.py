@@ -903,3 +903,74 @@ def test_staff_contact_lists_multiple_matches() -> None:
         {"name": "B Smith", "email": "b@x.edu", "campus": "Hamilton"},
     ])
     assert "a@x.edu" in answer and "b@x.edu" in answer
+
+
+def test_staff_contact_never_substitutes_a_different_person() -> None:
+    """Asking for a departed colleague must NOT answer with a current
+    one. lookup_librarian falls back to inferring subjects FROM the name
+    and returning whoever covers them, so "How do I contact Jaclyn
+    Spraetz?" answered "You can reach Roger Justus" (live 2026-07-28).
+    The prefetch now requires a real name-word overlap."""
+    from src.agent.tool_registry import Tool, ToolRegistry
+    from src.graph.new_orchestrator import (
+        OrchestratorDeps, _staff_contact_by_name,
+    )
+    from src.scope.resolver import Scope
+
+    registry = ToolRegistry()
+
+    def wrong_person(args):
+        # what the real backend does for an unmatched name
+        return {"librarians": [{"name": "Roger A Justus",
+                                "email": "justusra@miamioh.edu",
+                                "campus": "Oxford"}]}
+
+    registry.register(Tool(
+        name="lookup_librarian", description="stub",
+        parameters={"type": "object"}, handler=wrong_person,
+    ))
+    deps = OrchestratorDeps(
+        classifier=None, tool_registry=registry, agent_llm=None,
+        synthesizer_llm=None, load_corrections=lambda: [],
+        load_url_allowlist=lambda: set(),
+        lookup_service_availability=lambda intent, campus: None,
+    )
+    scope = Scope(campus="oxford", library=None, source="default")
+    # name doesn't match what came back -> answer nothing, don't
+    # hand the patron somebody else's address
+    assert _staff_contact_by_name(
+        "How do I contact Jaclyn Spraetz?", deps, scope) is None
+    # the same lookup for a MATCHING name still answers
+    out = _staff_contact_by_name(
+        "How do I contact Roger Justus?", deps, scope)
+    assert out is not None and "justusra@miamioh.edu" in out[0]
+
+
+def test_departed_staff_notice_is_honest_and_scoped() -> None:
+    """A departed colleague's name must produce "no current listing",
+    not someone else's details and not "contact them via the directory"
+    (which asserts they're reachable). Operator-reported departures
+    2026-07-28."""
+    from src.graph.new_orchestrator import _departed_staff_answer
+    for q in ["How do I contact Jaclyn Spraetz?",
+              "how do i contact nate floyd",
+              "What is Jaclyn Spraetz's email?"]:
+        res = _departed_staff_answer(q)
+        assert res is not None, q
+        assert "don't have a current listing" in res[0], q
+        assert res[1][0]["url"].endswith("/staff/")
+
+    # current staff are untouched
+    for q in ["How do I contact Jennifer Hicks?",
+              "How do I contact Erica Freed?",
+              "How do I contact the library?"]:
+        assert _departed_staff_answer(q) is None, q
+
+
+def test_departed_match_requires_the_full_name() -> None:
+    """A shared surname must not declare a current colleague gone: only
+    the complete departed name matches."""
+    from src.graph.new_orchestrator import _departed_staff_answer
+    # "Floyd" alone, or a different Floyd, is not a match
+    assert _departed_staff_answer("How do I contact Sarah Floyd?") is None
+    assert _departed_staff_answer("How do I contact Jaclyn Miller?") is None
