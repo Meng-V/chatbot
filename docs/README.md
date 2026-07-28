@@ -19,6 +19,7 @@ the retired v3.1 stack lives under [archive/](./archive/).
 | [06-CORRECTION-TICKETS.md](./06-CORRECTION-TICKETS.md) | Librarian "wrong answer" report form + operator queue |
 | [librarian-services-truthtable-ask.md](./librarian-services-truthtable-ask.md) | Operator-verified service-availability truth table |
 | [MAINTENANCE-2026-07-17-overnight.md](./MAINTENANCE-2026-07-17-overnight.md) | The post-legacy-removal audit report |
+| [STUDENT-TEST-2026-07.md](./STUDENT-TEST-2026-07.md) | 10-question student acceptance test + grading rubric (80% pass gate) |
 
 ## Deeper / adjacent
 
