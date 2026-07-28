@@ -283,7 +283,18 @@ model LibrarySpace_v2 {
 // Librarian/Staff Directory (verified contacts only)
 model Librarian {
   id                String   @id @default(uuid())
+  /// The name we DISPLAY. Authoritative for output -- see
+  /// docs/07-DATA-SOURCES.md. Usually the formal name; for a colleague
+  /// who goes by something else entirely, whatever they are actually
+  /// called (e.g. "Jerry Yarnetsky", whose formal first name is Eric).
   name              String
+  /// A second full spelling of the SAME person, accepted when matching a
+  /// name and NEVER displayed. Holds the nickname when `name` is formal
+  /// ("Jacky Johnson" for Jacqueline) and the formal name when `name` is
+  /// the one they go by ("Eric Yarnetsky" for Jerry). Nicknames are not
+  /// middle names, so src/utils/person_names.py cannot derive them --
+  /// this column is the only place they live.
+  alternateName     String?
   email             String   @unique
   title             String?
   department        String?

@@ -234,11 +234,12 @@ def _librarian_dict(row: Any) -> dict:
         # SAY them. Punctuated surnames survive intact
         # ("Anthony Jones-Scott"), only middle words are dropped.
         "name": display_name(getattr(row, "name", None)),
-        # The roster's own spelling, for name MATCHING only -- never
+        # The roster's own spellings, for name MATCHING only -- never
         # shown to a patron. Callers that re-verify "is this really the
-        # person asked for?" must compare against this, not the
+        # person asked for?" must compare against these, not the
         # middle-stripped display name.
         "full_name": getattr(row, "name", None),
+        "alternate_name": getattr(row, "alternateName", None),
         "email": getattr(row, "email", None),
         "title": getattr(row, "title", None),
         "department": getattr(row, "department", None),
@@ -609,8 +610,14 @@ def _make_lookup_librarian() -> Callable[[dict], list[dict]]:
             # The roster is ~95 rows, so pulling it and applying the one
             # shared rule costs nothing and behaves identically for
             # every spelling of a name.
+            # `alternateName` is the OTHER spelling of the same person --
+            # a nickname when `name` is formal ("Jacky Johnson" for
+            # Jacqueline), or the formal name when `name` is what they go
+            # by ("Eric Yarnetsky" for Jerry). Matched here, never
+            # displayed: `_librarian_dict` always speaks `name`.
             return [_librarian_dict(r) for r in rows
-                    if names_match(name, getattr(r, "name", None))]
+                    if names_match(name, getattr(r, "name", None))
+                    or names_match(name, getattr(r, "alternateName", None))]
 
         try:
             return _order_for_scope(_db(_q_by_name))

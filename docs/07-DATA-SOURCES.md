@@ -136,30 +136,33 @@ correctly, from the LibGuides API.)
 Don't grow this list: if it's subject-liaison data, it belongs in
 `LibrarianSubject`.
 
-### Preferred names / nicknames — an open gap
+### Nicknames — solved with a data column, not code
 
-The roster stores legal names, so **`Jacky Johnson` does not match the
-roster's `Jacqueline Johnson`**. A patron asking "how do I contact Jacky
-Johnson?" therefore misses the deterministic contact answer and falls
-through to the synthesizer, which composes from a crawled staff page —
-they get her phone and office but **not her email**. Nothing wrong is
-said; the answer is just weaker.
+`Librarian.name` is **what the bot says**. `Librarian.alternateName` is a
+second spelling of the same person that the bot **accepts when matching
+and never speaks**. Nicknames are not middle names — no normalization
+gets from "Jacky" to "Jacqueline" — so this column is the only place they
+can live.
 
-Nicknames are NOT middle names, so `person_names.py` cannot fold them.
-The fix belongs in the data, and it needs no code and no new lookup
-table: put the preferred name in the roster's own `name` field as a
-middle element —
+It works in **both directions**, which is the whole point:
 
-```
-Jacqueline (Jacky) Johnson
-```
+| Asked | Bot says | Why |
+|---|---|---|
+| Jacky Johnson | **Jacqueline Johnson** | formal in `name`, nickname in `alternateName` |
+| Andy Revelle | **Andrew Revelle** | same |
+| Eric Yarnetsky | **Jerry Yarnetsky** | reversed — his formal first name is Eric, but everyone including him uses Jerry, and the operator's rule is that the bot must **not** display "Eric", so `name` is Jerry and the formal spelling is the alternate |
 
-`names_match` then accepts **both** "Jacky Johnson" and "Jacqueline
-Johnson", while `display_name` still says **"Jacqueline Johnson"** —
-middles are dropped on the way out. This works for any colleague who goes
-by something other than their legal first name. **Operator decision
-needed:** whether to say "Jacqueline" or "Jacky" to patrons, and which
-roster rows need a preferred name added.
+Set with `ai-core/scripts/set_alternate_names.py` (idempotent, has
+`--dry-run`). Add a colleague there rather than in code.
+
+**Hazard to know about:** three scripts write `Librarian.name` —
+`sync_librarians_from_csv.py`, `sync_staff_directory.py`, and
+`populate_librarian_subject_mapping.py`. None of them know about
+`alternateName`, so they will not erase it, but one **could** overwrite
+`name` itself from an upstream source. If Jerry ever starts showing up as
+"Eric", that is what happened: re-run the script above. (Those three are
+themselves overlapping copies of the same job and should be reduced to
+one — not yet done.)
 
 ## Known gaps (need operator decisions, not code)
 

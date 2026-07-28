@@ -1745,13 +1745,12 @@ def _cancel_reservation_answer(message: str) -> "Optional[tuple[str, list[dict]]
 # Data Services, not the archivist) -> the synth saw contradictory instruction-
 # phrased text and refused ('email of the university archivist', prod eval
 # 2026-06-28). Answer deterministically from the verified staff page: the
-# archivist is Jacky Johnson (spec.lib.miamioh.edu/home/staff/, curl-verified).
-# Verified against the roster 2026-07-28: same email, active. Note the
-# roster spells her "Jacqueline Johnson" -- we say "Jacky" here because
-# that is how the CITED page names her. Consequence: a by-name ask
-# ("contact Jacky Johnson") does not match the roster row, so it falls to
-# the synth instead of the deterministic contact answer. Fix belongs in
-# the DATA, not here -- see docs/07-DATA-SOURCES.md "preferred names".
+# archivist is Jacqueline Johnson (spec.lib.miamioh.edu/home/staff/,
+# curl-verified; email + active status re-verified against the roster
+# 2026-07-28). The cited page calls her "Jacky", but the operator's rule
+# is that the bot SPEAKS the formal name, so this says Jacqueline. Asking
+# for "Jacky Johnson" still finds her -- Librarian.alternateName carries
+# the nickname for matching only. See docs/07-DATA-SOURCES.md.
 _ARCHIVIST_RE = re.compile(r"\barchivist\b", re.IGNORECASE)
 _ARCHIVES_STAFF_URL = "https://spec.lib.miamioh.edu/home/staff/"
 
@@ -1762,7 +1761,7 @@ def _archives_contact_answer(message: str) -> "Optional[tuple[str, list[dict]]]"
     if not _ARCHIVIST_RE.search(message or ""):
         return None
     answer = (
-        "The University Archivist is Jacky Johnson, University Archivist "
+        "The University Archivist is Jacqueline Johnson, University Archivist "
         "and Head of Special Collections and Archives "
         "(johnsoj@miamioh.edu), in Special Collections & "
         "University Archives on the 3rd floor of King Library. General "
@@ -2822,6 +2821,7 @@ def _staff_contact_by_name(
         people = [
             p for p in people
             if names_match(name, p.get("full_name") or p.get("name"))
+            or names_match(name, p.get("alternate_name"))
         ]
     except Exception:  # noqa: BLE001 -- never break a turn over a prefetch
         return None

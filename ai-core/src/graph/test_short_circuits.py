@@ -251,12 +251,17 @@ def test_cancel_does_not_overfire():
         assert _cancel_reservation_answer(q) is None, q
 
 
-def test_archivist_names_jacky_johnson():
+def test_archivist_names_the_archivist_formally():
+    """Operator rule 2026-07-28: the bot SPEAKS the formal name. The cited
+    archives page calls her "Jacky"; we say "Jacqueline Johnson". Asking
+    for "Jacky Johnson" still finds her -- Librarian.alternateName carries
+    the nickname for matching only, never for output."""
     for q in ["What is the email of the university archivist?",
               "who is the archivist?"]:
         res = _archives_contact_answer(q)
         assert res is not None, q
-        assert "jacky johnson" in res[0].lower(), q
+        assert "jacqueline johnson" in res[0].lower(), q
+        assert "jacky" not in res[0].lower(), q
         assert "johnsoj@miamioh.edu" in res[0].lower(), q
     # must NOT name the wrong rubric example
     assert "roger justus" not in _archives_contact_answer("archivist email")[0].lower()

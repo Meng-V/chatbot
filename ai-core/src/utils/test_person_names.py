@@ -130,3 +130,53 @@ def test_display_name_never_drops_a_needed_word():
                    "Rob O'Brien Withers", "Alia Levar Wegner",
                    "Anthony Jones-Scott", "Cheyenne K Partridge"]:
         assert names_match(display_name(stored), stored), stored
+
+
+# --- nicknames are NOT middle names -------------------------------------
+
+def test_nicknames_cannot_be_derived_and_need_the_data_column():
+    """The reason Librarian.alternateName exists.
+
+    A nickname shares no letters-rule with the formal name, so no amount
+    of normalization gets from "Jacky" to "Jacqueline". These MUST NOT
+    match on their own -- if they did, the rule would be matching loosely
+    enough to confuse different people, which is the failure mode the
+    whole module exists to prevent.
+    """
+    assert not names_match("Jacky Johnson", "Jacqueline Johnson")
+    assert not names_match("Andy Revelle", "Andrew Revelle")
+    assert not names_match("Jerry Yarnetsky", "Eric Yarnetsky")
+
+
+def test_the_alternate_spelling_matches_when_supplied():
+    """What the lookup actually does: try `name`, then `alternateName`.
+
+    Both directions, because the operator has both -- Jacqueline goes by
+    Jacky (formal stored, nickname alternate), while Jerry's formal first
+    name is Eric but he is displayed as Jerry (nickname stored, formal
+    alternate).
+    """
+    ROSTER = [
+        # (name we display, alternate we accept)
+        ("Jacqueline Johnson", "Jacky Johnson"),
+        ("Andrew Revelle", "Andy Revelle"),
+        ("Jerry Yarnetsky", "Eric Yarnetsky"),
+    ]
+
+    def lookup(asked):
+        return [shown for shown, alt in ROSTER
+                if names_match(asked, shown) or names_match(asked, alt)]
+
+    assert lookup("Jacky Johnson") == ["Jacqueline Johnson"]
+    assert lookup("Jacqueline Johnson") == ["Jacqueline Johnson"]
+    assert lookup("Andy Revelle") == ["Andrew Revelle"]
+    assert lookup("Andrew Revelle") == ["Andrew Revelle"]
+    # the reverse direction: asking the formal name yields the name he
+    # actually goes by, never "Eric"
+    assert lookup("Eric Yarnetsky") == ["Jerry Yarnetsky"]
+    assert lookup("Jerry Yarnetsky") == ["Jerry Yarnetsky"]
+    # an alternate must not become a wildcard: a shared first OR last
+    # name is still not a match
+    assert lookup("Jacky Smith") == []
+    assert lookup("Andy Johnson") == []
+    assert lookup("Eric Adams") == []
