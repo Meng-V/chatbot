@@ -26,8 +26,10 @@ from __future__ import annotations
 import html
 from typing import Any
 
+from src.api.admin import admin_ui as ui
 from src.api.admin.review_queries import (
     FILTERS,
+    dashboard_counts,
     attach_feedback,
     conversation_detail,
     list_flagged,
@@ -64,34 +66,15 @@ def make_token_guard(expected_token: str):
     return guard
 
 
-def _e(v: Any) -> str:
-    return html.escape("" if v is None else str(v))
+# Presentation comes from the shared admin UI module so every operator
+# surface looks like one tool (redesign 2026-07-28 -- five pages had
+# grown five stylesheets).
+_e = ui.e
 
 
-_STYLE = (
-    "body{font:14px/1.5 system-ui,sans-serif;margin:24px;color:#111}"
-    "table{border-collapse:collapse;width:100%}"
-    "td,th{border:1px solid #ddd;padding:6px 8px;text-align:left;"
-    "vertical-align:top}th{background:#f4f4f4}"
-    "a{color:#06c;text-decoration:none}a:hover{text-decoration:underline}"
-    ".tag{display:inline-block;padding:1px 6px;border-radius:3px;"
-    "background:#eee;font-size:12px}.down{background:#fdd}"
-    ".up{background:#dfd}.rated{background:#e3ecff}"
-    ".done{background:#ddd;color:#666}"
-    ".act{font-size:12px;color:#0a6}"
-    ".cmt{color:#446;font-style:italic}"
-    ".refuse{background:#fe8}.role{font-weight:600}"
-    "pre{white-space:pre-wrap;background:#fafafa;padding:8px;"
-    "border:1px solid #eee;border-radius:4px;margin:4px 0}"
-)
-
-
-def _page(title: str, body: str) -> str:
-    return (
-        f"<!doctype html><html><head><meta charset='utf-8'>"
-        f"<title>{_e(title)}</title><style>{_STYLE}</style></head>"
-        f"<body>{body}</body></html>"
-    )
+def _page(title: str, body: str, *, current: str = "", key: str = "",
+          counts: "Any" = None) -> str:
+    return ui.page(title, body, current=current, key=key, counts=counts)
 
 
 def build_review_view_router(deps: dict) -> Any:
@@ -116,6 +99,7 @@ def build_review_view_router(deps: dict) -> Any:
         key: str = "",
         _g=Depends(guard),
     ) -> Any:
+        counts = await dashboard_counts(db)
         rows = await list_flagged(db, filter_preset=filter, limit=limit)
         # Patron star ratings live on the conversation, so project them
         # onto the message rows -- otherwise "who rated us" is invisible
@@ -181,14 +165,19 @@ def build_review_view_router(deps: dict) -> Any:
             else " &mdash; unreviewed only"
         )
         body = (
-            f"<h2>Review queue &mdash; {len(rows)} rows "
-            f"(filter: {_e(filter)}{_scope_note})</h2><p>{opts}</p>"
+            f"<h1>Flagged conversations</h1>"
+            f"<p class='lede'>{len(rows)} row(s) &middot; filter: "
+            f"{_e(filter)}{_scope_note}. Patron star ratings and comments "
+            f"show inline; marking a row reviewed drops it out of the "
+            f"working views.</p><p>{opts}</p>"
             f"<table><tr><th>time</th><th>role</th><th>preview</th>"
             f"<th>flags</th><th>conversation</th></tr>"
             f"{''.join(trs) or '<tr><td colspan=5>none</td></tr>'}"
             f"</table>"
         )
-        return HTMLResponse(_page("Review queue", body))
+        return HTMLResponse(_page("Flagged conversations", body,
+                                  current="/admin/review", key=key,
+                                  counts=counts))
 
     @router.get("/admin/review/mark/{message_id}", response_class=HTMLResponse)
     async def review_mark(

@@ -477,6 +477,8 @@ if _admin_token:
     app.include_router(build_hub_router({
         "admin_token": _admin_token,
         "librarian_code": _ticket_code,
+        # the dashboard leads with live counts (tickets / flagged / corrections)
+        "db": _admin_deps["db"],
     }))
     if _ticket_code:
         logging.info(

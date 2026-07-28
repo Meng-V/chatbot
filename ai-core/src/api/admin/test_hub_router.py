@@ -45,8 +45,13 @@ def test_admin_hub_links_carry_key_and_list_surfaces():
                  "/admin/corrections/view?key=admintok",
                  "/admin/cost?key=admintok",
                  "/smoketest",
-                 "/librarian/ticket?key=staffcode"):
+                 # the dashboard shares the staff HUB, not the bare form:
+                 # one link for staff to bookmark, and it shows them no
+                 # admin surfaces (redesign 2026-07-28)
+                 "/librarian/?key=staffcode"):
         assert path in r.text, path
+    # counts render as the lead element, colored by whether work waits
+    assert "waiting on you" in r.text or "Nothing needs you" in r.text
 
 
 def test_librarian_hub_scoped_to_staff():

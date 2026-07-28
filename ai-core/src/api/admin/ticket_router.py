@@ -29,9 +29,10 @@ SECURITY:
 
 from __future__ import annotations
 
-import html
 import logging
-from typing import Any
+from typing import Any, Optional
+
+from src.api.admin import admin_ui as ui
 
 try:
     from starlette.requests import Request  # type: ignore
@@ -39,6 +40,10 @@ except Exception:  # noqa: BLE001 -- keep importable in a no-fastapi sandbox
     Request = Any  # type: ignore
 
 logger = logging.getLogger("ticket_router")
+
+
+def key_present(request) -> bool:
+    return bool(request.query_params.get("key"))
 
 _MAX_FIELD = 8000  # hard cap per field; keeps a paste-bomb out of the DB
 
@@ -93,55 +98,39 @@ def ticket_email_body(t: dict) -> str:
 
 # --- HTML rendering (zero-dependency, same approach as review_view) -------
 
-_PAGE_CSS = """
-body{font-family:system-ui,sans-serif;max-width:720px;margin:2rem auto;
-padding:0 1rem;color:#222}
-h1{font-size:1.3rem}
-label{display:block;margin:.9rem 0 .25rem;font-weight:600}
-input[type=text],input[type=email],textarea{width:100%;padding:.5rem;
-border:1px solid #bbb;border-radius:4px;font:inherit;box-sizing:border-box}
-textarea{min-height:6rem}
-button{margin-top:1.2rem;padding:.6rem 1.4rem;font:inherit;cursor:pointer;
-background:#b61e2e;color:#fff;border:0;border-radius:4px}
-.err{background:#fdecea;border:1px solid #e0a9a9;padding:.7rem;border-radius:4px}
-.ok{background:#e8f5e9;border:1px solid #a5d6a7;padding:.9rem;border-radius:4px}
-table{border-collapse:collapse;width:100%;font-size:.9rem}
-td,th{border:1px solid #ddd;padding:.45rem;vertical-align:top;text-align:left}
-tr.done{opacity:.55}
-small{color:#666}
-"""
-
-
 def render_form(key: str, values: dict | None = None,
                 errors: list[str] | None = None) -> str:
     v = values or {}
     err_html = ""
     if errors:
-        items = "".join(f"<li>{html.escape(e)}</li>" for e in errors)
-        err_html = f'<div class="err"><ul>{items}</ul></div>'
+        items = "".join(f"<li>{ui.e(x)}</li>" for x in errors)
+        err_html = (f"<div class='card attn'><b>Please fix:</b>"
+                    f"<ul>{items}</ul></div>")
     rows = []
     for name, label, required, textarea in _FORM_FIELDS:
-        val = html.escape(v.get(name, ""))
+        val = ui.e(v.get(name, ""))
         req = " *" if required else ""
-        rows.append(f'<label for="{name}">{html.escape(label)}{req}</label>')
+        rows.append(f"<label for='{name}'>{ui.e(label)}{req}</label>")
         if textarea:
-            rows.append(f'<textarea id="{name}" name="{name}">{val}</textarea>')
+            rows.append(f"<textarea id='{name}' name='{name}'>{val}</textarea>")
         else:
-            rows.append(f'<input type="text" id="{name}" name="{name}" value="{val}">')
-    return (
-        f"<!doctype html><meta charset='utf-8'>"
-        f"<title>Report a wrong chatbot answer</title><style>{_PAGE_CSS}</style>"
-        f"<h1>Report a wrong chatbot answer</h1>"
-        f"<p>Spotted the Smart Chatbot giving a wrong or outdated answer? "
-        f"Describe it below — the report goes straight to the maintainer "
-        f"(<a href='mailto:qum@miamioh.edu'>qum@miamioh.edu</a>).</p>"
+            rows.append(
+                f"<input type='text' id='{name}' name='{name}' value='{val}'>")
+    body = (
+        "<h1>Report a wrong chatbot answer</h1>"
+        "<p class='lede'>Spotted the Smart Chatbot giving a wrong or "
+        "outdated answer? Describe it below &mdash; the report goes straight "
+        "to the maintainer (<a href='mailto:qum@miamioh.edu'>qum@miamioh.edu"
+        "</a>).</p>"
         f"{err_html}"
-        f"<form method='post'>"
-        f"<input type='hidden' name='key' value='{html.escape(key)}'>"
+        "<div class='card'><form method='post'>"
+        f"<input type='hidden' name='key' value='{ui.e(key)}'>"
         f"{''.join(rows)}"
-        f"<button type='submit'>Submit report</button>"
-        f"</form>"
+        "<div style='margin-top:1.2rem'>"
+        "<button type='submit'>Submit report</button></div>"
+        "</form></div>"
     )
+    return _staff_page("Report a wrong answer", body)
 
 
 def render_thanks(ticket_id: str, email_sent: bool, key: str) -> str:
@@ -151,45 +140,114 @@ def render_thanks(ticket_id: str, email_sent: bool, key: str) -> str:
         "The report is saved; the email notification could not be sent "
         "right now, but the maintainer will still see it in the queue."
     )
+    body = (
+        "<h1>Thank you!</h1>"
+        f"<div class='card'><p>Your report was received "
+        f"(id <code>{ui.e(ticket_id)}</code>). {ui.e(mail_note)}</p>"
+        f"<div class='acts'>"
+        f"{ui.action('/librarian/ticket?key=' + ui.e(key), 'Report another', primary=True)}"
+        f"{ui.action('/librarian/?key=' + ui.e(key), 'Back to staff hub')}"
+        f"</div></div>"
+    )
+    return _staff_page("Report received", body)
+
+
+def _staff_page(title: str, body: str) -> str:
+    """Staff pages share the visual language but NOT the operator nav --
+    library staff must never see links into the admin console."""
     return (
-        f"<!doctype html><meta charset='utf-8'><title>Report received</title>"
-        f"<style>{_PAGE_CSS}</style>"
-        f"<h1>Thank you!</h1>"
-        f"<div class='ok'>Your report was received (id "
-        f"<code>{html.escape(ticket_id)}</code>). {html.escape(mail_note)}</div>"
-        f"<p><a href='/librarian/ticket?key={html.escape(key)}'>Report another</a></p>"
+        "<!doctype html><html lang='en'><head><meta charset='utf-8'>"
+        "<meta name='viewport' content='width=device-width,initial-scale=1'>"
+        f"<title>{ui.e(title)} — Miami University Libraries</title>"
+        f"<style>{ui.STYLE}</style></head><body>"
+        "<header class='top'><div class='wrap'><b>Smart Chatbot</b>"
+        "<span style='opacity:.85'>library staff</span></div></header>"
+        f"<main>{body}</main></body></html>"
     )
 
 
-_STATUS_NEXT = {"open": "reviewed", "reviewed": "done", "done": "open"}
+# Explicit states, explicit transitions. This used to be a single
+# "mark <next>" link cycling open -> reviewed -> done -> OPEN, so a
+# finished ticket silently reopened on an extra click and there was no
+# way to jump straight to done (operator: "the handoffs are muddled",
+# 2026-07-28). Now every transition is its own button.
+VALID_STATUSES = ("open", "in_progress", "done")
+_LEGACY_STATUS = {"reviewed": "in_progress"}
 
 
-def render_admin_list(tickets: list[dict], token_qs: str) -> str:
-    rows = []
+def normalize_status(status: object) -> str:
+    """Map stored values (incl. the legacy 'reviewed') onto the current
+    three. Unknown values fall back to open so a row is never stranded
+    in a state the UI can't act on."""
+    s = str(status or "open").strip().lower()
+    s = _LEGACY_STATUS.get(s, s)
+    return s if s in VALID_STATUSES else "open"
+
+
+def _ticket_actions(tid: str, status: str, kq: str) -> str:
+    """The transitions available FROM `status`, as labelled buttons."""
+    base = f"/admin/tickets/{tid}/status?{kq}"
+    if status == "open":
+        return (ui.action(f"{base}&to=in_progress", "Start working",
+                          primary=True)
+                + ui.action(f"{base}&to=done", "Mark done"))
+    if status == "in_progress":
+        return (ui.action(f"{base}&to=done", "Mark done", primary=True)
+                + ui.action(f"{base}&to=open", "Back to open", ghost=True))
+    return ui.action(f"{base}&to=open", "Reopen", ghost=True)
+
+
+def render_admin_list(tickets: list[dict], key: str,
+                      counts: "Optional[dict]" = None,
+                      show_done: bool = False) -> str:
+    kq = f"key={ui.e(key)}" if key else ""
+    kq_amp = f"?{kq}" if kq else ""
+    cards = []
     for t in tickets:
-        tid = html.escape(str(t.get("id", "")))
-        status = html.escape(str(t.get("status", "open")))
-        nxt = _STATUS_NEXT.get(t.get("status", "open"), "reviewed")
-        mail = "✉️" if t.get("emailSent") else "⚠️ no email"
-        rows.append(
-            f"<tr class='{status}'>"
-            f"<td><small>{html.escape(str(t.get('createdAt', ''))[:16])}</small><br>"
-            f"<b>{status}</b><br><small>{mail}</small><br>"
-            f"<a href='/admin/tickets/{tid}/mark?{token_qs}'>mark {nxt}</a></td>"
-            f"<td>{html.escape(str(t.get('librarianName', '')))}<br>"
-            f"<small>{html.escape(str(t.get('librarianEmail', '')))}</small></td>"
-            f"<td><b>Q:</b> {html.escape(str(t.get('question', '')))}<br>"
-            f"<b>Bot:</b> {html.escape(str(t.get('botAnswer', '')))}<br>"
-            f"<b>Should:</b> {html.escape(str(t.get('expectedAnswer', '')))}<br>"
-            f"<small>{html.escape(str(t.get('sourceUrl', '')))}</small></td>"
-            f"</tr>"
+        tid = str(t.get("id", ""))
+        status = normalize_status(t.get("status"))
+        mail_pill = (
+            "" if t.get("emailSent")
+            else " <span class='pill warn'>email failed</span>"
         )
-    body = "".join(rows) or "<tr><td colspan='3'>No tickets.</td></tr>"
-    return (
-        f"<!doctype html><meta charset='utf-8'><title>Correction tickets</title>"
-        f"<style>{_PAGE_CSS}</style><h1>Correction tickets</h1>"
-        f"<table><tr><th>status</th><th>from</th><th>report</th></tr>{body}</table>"
+        src = str(t.get("sourceUrl") or "").strip()
+        # The handoff the old page was missing: from a ticket straight to
+        # the tool that fixes it, with the ticket's URL prefilled.
+        fix_href = "/admin/corrections/view" + (f"?{kq}" if kq else "")
+        if src:
+            sep = "&" if kq else "?"
+            fix_href = f"/admin/corrections/view{kq_amp}{sep}target={ui.e(src)}"
+        cards.append(
+            f"<div class='card{' attn' if status == 'open' else ''}'>"
+            f"<div class='meta'>{ui.pill(status, extra=mail_pill)}"
+            f"<span>{ui.e(str(t.get('createdAt', ''))[:16])}</span>"
+            f"<span>{ui.e(t.get('librarianName'))} "
+            f"&lt;{ui.e(t.get('librarianEmail'))}&gt;</span></div>"
+            f"<div class='q'>{ui.e(t.get('question'))}</div>"
+            f"<dl>"
+            f"<dt>Bot said</dt><dd>{ui.e(t.get('botAnswer'))}</dd>"
+            f"<dt>Should say</dt><dd>{ui.e(t.get('expectedAnswer'))}</dd>"
+            + (f"<dt>Source</dt><dd><a href='{ui.e(src)}'>{ui.e(src)}</a></dd>"
+               if src else "")
+            + f"</dl>"
+            f"<div class='acts'>{_ticket_actions(tid, status, kq)}"
+            f"{ui.action(fix_href, 'Fix content →')}</div>"
+            f"</div>"
+        )
+    toggle = ui.action(
+        f"/admin/tickets/view?{kq}" + ("" if show_done else "&show=all"),
+        "Hide finished" if show_done else "Show finished too", ghost=True)
+    body = (
+        f"<h1>Correction tickets</h1>"
+        f"<p class='lede'>Reports from library staff. Work them "
+        f"open &rarr; in progress &rarr; done; each ticket links straight "
+        f"to the corrections tool.</p>"
+        f"<div class='acts' style='margin-bottom:1rem'>{toggle}</div>"
+        + ("".join(cards) or ui.empty(
+            "No tickets waiting. Staff submit them from the librarian hub."))
     )
+    return ui.page("Correction tickets", body,
+                   current="/admin/tickets/view", key=key, counts=counts)
 
 
 # --- Router builder --------------------------------------------------------
@@ -259,31 +317,53 @@ def build_ticket_router(deps: dict):
     @router.get("/admin/tickets/view", response_class=HTMLResponse,
                 dependencies=[Depends(admin_guard)])
     async def tickets_list(request: Request):
+        key = request.query_params.get("key", "")
+        show_done = request.query_params.get("show", "") == "all"
+        where = {} if show_done else {"status": {"not": "done"}}
         rows = await db.correctionticket.find_many(
-            order={"createdAt": "desc"}, take=200,
+            where=where, order={"createdAt": "desc"}, take=200,
         )
-        token_qs = "key=" + request.query_params.get("key", "")
+        from src.api.admin.review_queries import dashboard_counts
+        counts = await dashboard_counts(db)
         return HTMLResponse(render_admin_list(
-            [r.model_dump() if hasattr(r, "model_dump") else vars(r) for r in rows],
-            token_qs,
+            [r.model_dump() if hasattr(r, "model_dump") else vars(r)
+             for r in rows],
+            key, counts=counts, show_done=show_done,
         ))
 
-    @router.get("/admin/tickets/{ticket_id}/mark", response_class=HTMLResponse,
+    @router.get("/admin/tickets/{ticket_id}/status",
+                response_class=HTMLResponse,
                 dependencies=[Depends(admin_guard)])
-    async def ticket_mark(ticket_id: str, request: Request):
+    async def ticket_set_status(ticket_id: str, request: Request):
+        """Set an EXPLICIT target state (?to=open|in_progress|done).
+
+        Replaces the old cycling /mark endpoint, which advanced to
+        whatever came next and wrapped done back to open -- so a
+        finished ticket could silently reopen (operator report
+        2026-07-28). An unknown/absent target is rejected rather than
+        guessed at.
+        """
+        target = normalize_status(request.query_params.get("to"))
+        if request.query_params.get("to") not in VALID_STATUSES:
+            raise HTTPException(status_code=400,
+                                detail=f"to= must be one of {VALID_STATUSES}")
         row = await db.correctionticket.find_unique(where={"id": ticket_id})
         if row is None:
             raise HTTPException(status_code=404, detail="no such ticket")
-        nxt = _STATUS_NEXT.get(row.status, "reviewed")
         from datetime import datetime, timezone
-        await db.correctionticket.update(where={"id": ticket_id}, data={
-            "status": nxt,
-            "reviewedAt": datetime.now(timezone.utc),
-        })
-        token_qs = "key=" + request.query_params.get("key", "")
+        data: dict = {"status": target}
+        # reviewedAt records when it LEFT the open pile; reopening clears
+        # it so the timestamp never contradicts the status.
+        data["reviewedAt"] = (
+            None if target == "open" else datetime.now(timezone.utc)
+        )
+        await db.correctionticket.update(where={"id": ticket_id}, data=data)
+        back = "/admin/tickets/view" + (
+            f"?key={request.query_params.get('key', '')}" if key_present(request)
+            else "")
         return HTMLResponse(
-            f"<!doctype html><meta http-equiv='refresh' "
-            f"content='0;url=/admin/tickets/view?{token_qs}'>ok"
+            f"<!doctype html><meta charset='utf-8'>"
+            f"<meta http-equiv='refresh' content='0;url={ui.e(back)}'>ok"
         )
 
     return router

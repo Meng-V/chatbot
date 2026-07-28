@@ -59,8 +59,12 @@ class _FakeTickets:
     async def find_unique(self, where):
         return self.rows.get(where["id"])
 
-    async def find_many(self, order=None, take=None):
-        return list(self.rows.values())
+    async def find_many(self, where=None, order=None, take=None):
+        rows = list(self.rows.values())
+        # mirror the real "hide finished unless asked" filter
+        if where and where.get("status", {}).get("not") == "done":
+            rows = [r for r in rows if r.status != "done"]
+        return rows
 
 
 def _mk_client(monkeypatch, sent_log=None, send_ok=True, code="opensesame"):
@@ -154,19 +158,51 @@ def test_submit_validation_errors_rerender(monkeypatch):
     assert len(db.correctionticket.rows) == 0
 
 
-def test_admin_queue_and_status_cycle(monkeypatch):
+def test_admin_queue_explicit_status_transitions(monkeypatch):
+    """Explicit target states, no cycling. The old endpoint advanced to
+    'whatever is next' and wrapped done -> open, so an extra click
+    silently reopened a finished ticket (operator report 2026-07-28)."""
     client, db = _mk_client(monkeypatch)
     client.post("/librarian/ticket?key=opensesame", data=_VALID)
     # queue requires the admin token, not the librarian code
     assert client.get("/admin/tickets/view").status_code == 401
     r = client.get("/admin/tickets/view?key=admintoken")
     assert r.status_code == 200 and "Jane Doe" in r.text
-    tid = next(iter(db.correctionticket.rows))
-    client.get(f"/admin/tickets/{tid}/mark?key=admintoken")
-    assert db.correctionticket.rows[tid].status == "reviewed"
-    client.get(f"/admin/tickets/{tid}/mark?key=admintoken")
-    assert db.correctionticket.rows[tid].status == "done"
+    assert "Start working" in r.text     # explicit buttons, not "mark <next>"
+    assert "Mark done" in r.text
+    assert "Fix content" in r.text       # handoff to the corrections tool
 
+    tid = next(iter(db.correctionticket.rows))
+    base = f"/admin/tickets/{tid}/status?key=admintoken"
+    client.get(f"{base}&to=in_progress")
+    assert db.correctionticket.rows[tid].status == "in_progress"
+    client.get(f"{base}&to=done")
+    assert db.correctionticket.rows[tid].status == "done"
+    client.get(f"{base}&to=done")        # idempotent, no wrap-around
+    assert db.correctionticket.rows[tid].status == "done"
+    client.get(f"{base}&to=open")        # explicit reopen clears the stamp
+    assert db.correctionticket.rows[tid].status == "open"
+    assert db.correctionticket.rows[tid].reviewedAt is None
+    assert client.get(f"{base}&to=banana").status_code == 400
+    assert client.get(
+        f"/admin/tickets/{tid}/status?key=admintoken").status_code == 400
+
+
+def test_normalize_status_handles_legacy_reviewed():
+    from src.api.admin.ticket_router import normalize_status
+    assert normalize_status("reviewed") == "in_progress"   # legacy rows
+    assert normalize_status("done") == "done"
+    assert normalize_status(None) == "open"
+    assert normalize_status("nonsense") == "open"
+
+
+def test_finished_tickets_hidden_by_default(monkeypatch):
+    client, db = _mk_client(monkeypatch)
+    client.post("/librarian/ticket?key=opensesame", data=_VALID)
+    tid = next(iter(db.correctionticket.rows))
+    client.get(f"/admin/tickets/{tid}/status?key=admintoken&to=done")
+    assert "Show finished too" in client.get(
+        "/admin/tickets/view?key=admintoken").text
 
 def test_html_escapes_ticket_content(monkeypatch):
     client, _ = _mk_client(monkeypatch)

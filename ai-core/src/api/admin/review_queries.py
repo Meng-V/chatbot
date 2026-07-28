@@ -135,6 +135,50 @@ async def list_flagged(
     ]
 
 
+async def dashboard_counts(db: Any) -> dict:
+    """The numbers the dashboard leads with.
+
+    Operator feedback 2026-07-28: the hub was a list of links, so
+    answering "is there anything waiting for me?" meant opening every
+    page. These counts make that the first thing on screen.
+
+    Never raises: a failed count returns 0 rather than 500ing the
+    dashboard, and 0 renders as the calm state -- worth knowing if you
+    are debugging a suspiciously quiet console.
+    """
+    async def _count(make_coro):
+        """Takes a THUNK, not a coroutine: building the coroutine is
+        itself what raises when a table or column is missing, so an
+        eagerly-constructed argument would blow past this handler and
+        500 the whole dashboard."""
+        try:
+            return int(await make_coro())
+        except Exception as e:  # noqa: BLE001
+            logger.warning("dashboard count failed: %s", e)
+            return 0
+
+    tickets = await _count(lambda: db.correctionticket.count(
+        where={"status": {"in": ["open", "in_progress", "reviewed"]}}))
+    tickets_open = await _count(lambda: db.correctionticket.count(
+        where={"status": "open"}))
+    flagged = await _count(lambda: db.message.count(where={"AND": [
+        {"OR": [{"isPositiveRated": False}, {"wasRefusal": True},
+                {"confidence": "low"}]},
+        {"reviewedAt": None},
+    ]}))
+    praised = await _count(lambda: db.message.count(where={"AND": [
+        {"isPositiveRated": True}, {"reviewedAt": None}]}))
+    corrections = await _count(lambda: db.manualcorrection.count(
+        where={"active": True}))
+    return {
+        "tickets": tickets,
+        "tickets_open": tickets_open,
+        "flagged": flagged,
+        "praised": praised,
+        "corrections": corrections,
+    }
+
+
 async def attach_feedback(db: Any, rows: list[dict]) -> list[dict]:
     """Annotate list rows with their conversation's patron star rating.
 
@@ -286,4 +330,4 @@ async def conversation_detail(db: Any, conversation_id: str) -> Optional[dict]:
 
 
 __all__ = ["FILTERS", "attach_feedback", "conversation_detail",
-           "list_flagged", "mark_reviewed"]
+           "dashboard_counts", "list_flagged", "mark_reviewed"]

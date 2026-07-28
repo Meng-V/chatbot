@@ -246,7 +246,8 @@ def test_html_and_json_401_without_token() -> None:
 def test_html_and_json_ok_with_token() -> None:
     c = _client("s3cret")
     r = c.get("/admin/review?key=s3cret")
-    assert r.status_code == 200 and "Review queue" in r.text
+    # renamed to match the nav label in the 2026-07-28 redesign
+    assert r.status_code == 200 and "Flagged conversations" in r.text
     rj = c.get("/admin/reviews", headers={"X-Admin-Token": "s3cret"})
     assert rj.status_code == 200 and "results" in rj.json()
 

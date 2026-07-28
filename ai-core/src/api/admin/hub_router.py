@@ -20,8 +20,7 @@ presented (their own key).
 
 from __future__ import annotations
 
-import html
-from typing import Any
+from typing import Any, Optional
 
 try:
     from starlette.requests import Request  # type: ignore
@@ -29,77 +28,135 @@ except Exception:  # noqa: BLE001
     Request = Any  # type: ignore
 
 
-_CSS = """
-body{font-family:system-ui,sans-serif;max-width:680px;margin:2rem auto;
-padding:0 1rem;color:#222}
-h1{font-size:1.35rem} h2{font-size:1.05rem;margin-top:1.6rem;color:#555}
-a.card{display:block;padding:.8rem 1rem;margin:.5rem 0;border:1px solid #ddd;
-border-radius:6px;text-decoration:none;color:#1a4480}
-a.card:hover{background:#f6f8fa}
-a.card b{display:block;color:#111}
-a.card small{color:#666}
-code{background:#f2f2f2;padding:.1rem .3rem;border-radius:3px}
-.note{background:#fff8e1;border:1px solid #e6d9a8;padding:.7rem;
-border-radius:4px;font-size:.9rem}
-"""
+from src.api.admin import admin_ui as ui
 
 
-def _card(href: str, title: str, desc: str) -> str:
-    return (f"<a class='card' href='{html.escape(href)}'>"
-            f"<b>{html.escape(title)}</b>"
-            f"<small>{html.escape(desc)}</small></a>")
+def render_admin_hub(admin_key: str, librarian_code: str,
+                     counts: "Optional[dict]" = None) -> str:
+    """The operator dashboard.
 
+    Rebuilt 2026-07-28: it used to be a flat list of card links, so the
+    only way to answer "is there anything waiting for me?" was to open
+    every page. Now the counts lead, colored by whether they need
+    action, and the links live under them.
+    """
+    c = counts or {}
+    k = f"?key={ui.e(admin_key)}"
+    tickets = int(c.get("tickets") or 0)
+    flagged = int(c.get("flagged") or 0)
+    praised = int(c.get("praised") or 0)
+    corrections = int(c.get("corrections") or 0)
+    total_todo = tickets + flagged
 
-def render_admin_hub(admin_key: str, librarian_code: str) -> str:
-    k = f"?key={html.escape(admin_key)}"
-    lib_url = f"/librarian/ticket?key={html.escape(librarian_code)}" \
-        if librarian_code else ""
-    cards_ops = [
-        _card(f"/admin/tickets/view{k}", "Correction tickets",
-              "Librarian 'wrong answer' reports — review queue"),
-        _card(f"/admin/review{k}", "Flagged conversations",
-              "Thumbs-down / low-confidence turns, full transcripts"),
-        _card(f"/admin/corrections/view{k}", "Manual corrections",
-              "Suppress / replace / pin / blacklist — fixes without a deploy"),
-        _card(f"/admin/cost{k}", "Cost dashboard",
-              "Daily LLM spend by model and call site (nightly rollup)"),
-    ]
-    cards_health = [
-        _card("/health/ready", "Readiness probes",
-              "Postgres / Weaviate / OpenAI / LibCal / LibGuides, live"),
-        _card("/smoketest", "Smoke test",
-              "Canned question through the serving orchestrator (strict citation check)"),
-    ]
-    staff = (
-        f"<h2>Share with library staff</h2>"
-        + (_card(lib_url, "Report a wrong answer (staff form)",
-                 "This is the link to distribute to librarians — code included")
-           if lib_url else
-           "<div class='note'>LIBRARIAN_TICKET_CODE is not set — the staff "
-           "form is closed.</div>")
+    stats = (
+        ui.stat_card(f"/admin/tickets/view{k}", tickets,
+                     "staff tickets to work", needs=tickets > 0)
+        + ui.stat_card(f"/admin/review{k}", flagged,
+                       "flagged turns to review", needs=flagged > 0)
+        + ui.stat_card(f"/admin/review?filter=thumbs_up&key={ui.e(admin_key)}",
+                       praised, "thumbs-up to skim")
+        + ui.stat_card(f"/admin/corrections/view{k}", corrections,
+                       "corrections live now")
     )
-    return (f"<!doctype html><meta charset='utf-8'><title>Chatbot admin</title>"
-            f"<style>{_CSS}</style><h1>Smart Chatbot — operator hub</h1>"
-            f"<h2>Operations</h2>{''.join(cards_ops)}"
-            f"<h2>Health</h2>{''.join(cards_health)}"
-            f"{staff}"
-            f"<p><small>Bookmark this page — the links carry your key.</small></p>")
+    headline = (
+        "Nothing needs you right now."
+        if total_todo == 0 else
+        f"{total_todo} item{'s' if total_todo != 1 else ''} waiting on you."
+    )
+
+    tools = "".join(
+        f"<div class='card'><div class='q'>{ui.e(title)}</div>"
+        f"<div><small class='dim'>{ui.e(desc)}</small></div>"
+        f"<div class='acts'>{ui.action(href, 'Open', primary=primary)}</div>"
+        f"</div>"
+        for href, title, desc, primary in [
+            (f"/admin/tickets/view{k}", "Correction tickets",
+             "Staff reports of wrong answers. Work them open → in "
+             "progress → done; each links to the corrections tool.",
+             tickets > 0),
+            (f"/admin/review{k}", "Flagged conversations",
+             "Thumbs-down, refusals and low-confidence turns, with the "
+             "patron's star rating and comment inline.", flagged > 0),
+            (f"/admin/corrections/view{k}", "Manual corrections",
+             "Suppress, replace, pin or blacklist a source. Takes effect "
+             "on the next message — no deploy.", False),
+            (f"/admin/cost{k}", "Cost dashboard",
+             "Daily LLM spend by model and call site (nightly rollup).",
+             False),
+        ]
+    )
+
+    health = (
+        "<div class='card'><div class='q'>Health checks</div>"
+        "<div class='acts'>"
+        + ui.action("/health/ready", "Dependency probes")
+        + ui.action("/smoketest", "End-to-end smoke test")
+        + "</div><div><small class='dim'>Probes are public (no key) so an "
+          "external monitor can poll them.</small></div></div>"
+    )
+
+    staff_link = (
+        f"/librarian/?key={ui.e(librarian_code)}" if librarian_code else ""
+    )
+    staff = (
+        "<h2>Share with library staff</h2>"
+        + (f"<div class='card'><div class='q'>Staff hub</div>"
+           f"<div><small class='dim'>Send library staff THIS link — it "
+           f"carries their access code and shows no admin surfaces.</small>"
+           f"</div><div class='acts'>"
+           f"{ui.action(staff_link, 'Open staff hub')}</div>"
+           f"<div style='margin-top:.5rem'><code>{ui.e(staff_link)}</code>"
+           f"</div></div>"
+           if staff_link else
+           "<div class='note'>LIBRARIAN_TICKET_CODE is not set — the "
+           "staff form is closed.</div>")
+    )
+
+    body = (
+        f"<h1>Dashboard</h1><p class='lede'>{ui.e(headline)}</p>"
+        f"<div class='stats'>{stats}</div>"
+        f"<h2>Tools</h2>{tools}{health}{staff}"
+        f"<p><small class='dim'>Bookmark this page — every link carries "
+        f"your key.</small></p>"
+    )
+    return ui.page("Dashboard", body, current="/admin/", key=admin_key,
+                   counts=counts)
 
 
 def render_librarian_hub(code: str) -> str:
-    k = f"?key={html.escape(code)}"
-    cards = [
-        _card(f"/librarian/ticket{k}", "Report a wrong chatbot answer",
-              "Goes straight to the maintainer (stored + emailed)"),
-        _card("https://www.lib.miamioh.edu/research/research-support/ask/",
-              "Ask Us — talk to a librarian",
-              "For questions the bot should hand off"),
-    ]
-    return (f"<!doctype html><meta charset='utf-8'><title>Chatbot staff hub</title>"
-            f"<style>{_CSS}</style><h1>Smart Chatbot — staff hub</h1>"
-            f"{''.join(cards)}"
-            f"<p><small>Bookmark this page — the links carry the access "
-            f"code.</small></p>")
+    """Staff hub. Deliberately has NO operator nav or counts."""
+    k = f"?key={ui.e(code)}"
+    cards = "".join(
+        f"<div class='card'><div class='q'>{ui.e(title)}</div>"
+        f"<div><small class='dim'>{ui.e(desc)}</small></div>"
+        f"<div class='acts'>{ui.action(href, label, primary=primary)}</div>"
+        f"</div>"
+        for href, title, desc, label, primary in [
+            (f"/librarian/ticket{k}", "Report a wrong chatbot answer",
+             "Goes straight to the maintainer — stored and emailed.",
+             "Open the form", True),
+            ("https://www.lib.miamioh.edu/research/research-support/ask/",
+             "Ask Us", "For questions the bot should hand off to a person.",
+             "Ask Us", False),
+        ]
+    )
+    body = (
+        "<h1>Smart Chatbot &mdash; staff hub</h1>"
+        "<p class='lede'>Found the chatbot giving a wrong or outdated "
+        "answer? Tell us here and the maintainer will fix it.</p>"
+        f"{cards}"
+        "<p><small class='dim'>Bookmark this page &mdash; the links carry "
+        "the access code.</small></p>"
+    )
+    return (
+        "<!doctype html><html lang='en'><head><meta charset='utf-8'>"
+        "<meta name='viewport' content='width=device-width,initial-scale=1'>"
+        "<title>Staff hub — Miami University Libraries</title>"
+        f"<style>{ui.STYLE}</style></head><body>"
+        "<header class='top'><div class='wrap'><b>Smart Chatbot</b>"
+        "<span style='opacity:.85'>library staff</span></div></header>"
+        f"<main>{body}</main></body></html>"
+    )
 
 
 def build_hub_router(deps: dict):
@@ -108,6 +165,7 @@ def build_hub_router(deps: dict):
 
     admin_token: str = (deps.get("admin_token") or "").strip()
     librarian_code: str = (deps.get("librarian_code") or "").strip()
+    db = deps.get("db")
     router = APIRouter(tags=["hub"])
 
     @router.get("/admin/", response_class=HTMLResponse)
@@ -116,7 +174,12 @@ def build_hub_router(deps: dict):
         supplied = request.query_params.get("key", "")
         if not admin_token or supplied != admin_token:
             raise HTTPException(status_code=401, detail="admin token required")
-        return HTMLResponse(render_admin_hub(supplied, librarian_code))
+        counts = None
+        if db is not None:
+            from src.api.admin.review_queries import dashboard_counts
+            counts = await dashboard_counts(db)
+        return HTMLResponse(
+            render_admin_hub(supplied, librarian_code, counts))
 
     @router.get("/librarian/", response_class=HTMLResponse)
     @router.get("/librarian", response_class=HTMLResponse, include_in_schema=False)
