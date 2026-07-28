@@ -3245,13 +3245,11 @@ def _extract_evidence(agent_outcome: AgentOutcome) -> list[EvidenceChunk]:
 # Weaviate; this filter is the serving-side guarantee.
 _EVIDENCE_URL_DENYLIST = (
     "https://www.lib.miamioh.edu/libraryhealthy",
-    # NOTE (2026-07-27): curbside pickup was NOT denylisted. It looks
-    # COVID-era, but lib.miamioh.edu/use/borrow/curbside/ describes it
-    # in the present tense as a current service and /use/borrow/lola/ +
-    # /home-delivery/ reference it too -- denying a service the
-    # Libraries' own site advertises is worse than the staleness risk.
-    # Pending operator confirmation; if it IS dead, the WEBSITE needs
-    # fixing first, then add the prefix here.
+    # NOT denylisted -- curbside pickup. It reads as COVID-era, but the
+    # OPERATOR CONFIRMED 2026-07-27 that the service is still running,
+    # matching the live /use/borrow/curbside/ page and the /lola/ +
+    # /home-delivery/ references. Left retrievable on purpose; do not
+    # "clean it up" without re-confirming with the operator.
     # The Amos Music Library CLOSED Sept 2023. The Music LIBRARIAN still
     # exists (Barry Zaslow) and must keep working -- this denies only
     # the closed building's location page.
