@@ -258,6 +258,25 @@ def _run_turn(
         )
         bind_request_context(intent="room_booking", margin=classification.margin)
 
+    # --- 2.02. Subject-liaison continuation override ---
+    # We asked "which subject?"; this turn answers it. Force the intent
+    # so the agent runs lookup_librarian with the named subject instead
+    # of the classifier's out_of_scope guess. Bounded to short replies:
+    # a patron who instead types a whole new question keeps normal
+    # routing.
+    subject_reply = (
+        not booking_flow
+        and _awaiting_subject(request.conversation_history)
+        and len((request.user_message or "").split()) <= 6
+    )
+    if subject_reply:
+        classification = _dc_replace(
+            classification, intent="subject_librarian",
+            needs_clarification=False,
+        )
+        bind_request_context(intent="subject_librarian",
+                             margin=classification.margin)
+
     # --- 2.05. Greeting short-circuit ---
     # A bare "hi"/"hello" has no library signal, so the kNN sends it to
     # out_of_scope and the user gets a refusal for saying hello. Greet
@@ -3287,6 +3306,29 @@ def _booking_flow_active(history: Optional[list]) -> bool:
         if isinstance(entry, dict) and entry.get("role") == "assistant":
             content = str(entry.get("content") or "")
             return any(m in content for m in _BOOKING_FLOW_MARKERS)
+    return False
+
+
+_ASK_SUBJECT_MARKER = "Tell me your subject, major, or course"
+"""Byte-stable substring of _my_librarian_ask_subject's reply. When the
+previous assistant turn contains it, this turn is the patron naming
+their subject."""
+
+
+def _awaiting_subject(history: Optional[list]) -> bool:
+    """True when the last assistant turn asked WHICH subject.
+
+    Without this, the answer to our own question dies: a bare subject
+    noun carries no library vocabulary, so the stateless kNN sends
+    "Psychology" / "History" / "Nursing" to out_of_scope and the patron
+    gets a scope refusal one turn after we asked them to name a subject
+    (live repro 2026-07-27 -- "Biology" happened to classify correctly,
+    which is why the flow looked fine when it shipped). Same shape as
+    _booking_flow_active: our own byte-stable text is the state.
+    """
+    for entry in reversed(history or []):
+        if isinstance(entry, dict) and entry.get("role") == "assistant":
+            return _ASK_SUBJECT_MARKER in str(entry.get("content") or "")
     return False
 
 

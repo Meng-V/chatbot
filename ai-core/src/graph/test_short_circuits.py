@@ -812,3 +812,28 @@ def test_research_disclaimer_skips_notice_short_circuits() -> None:
     )
     assert not _add_research_disclaimer(
         r, "databases").answer.startswith(_RESEARCH_DISCLAIMER)
+
+
+def test_awaiting_subject_detects_our_own_question() -> None:
+    """The ask-which-subject reply is the flow's state marker, so the
+    patron's one-word answer routes to the liaison lookup instead of
+    the stateless kNN's out_of_scope guess (live repro 2026-07-27:
+    'Biology' worked, 'Psychology'/'History'/'Nursing' got refused)."""
+    from src.graph.new_orchestrator import (
+        _awaiting_subject, _my_librarian_ask_subject,
+    )
+    ask = _my_librarian_ask_subject("Who is my personal librarian?")
+    assert ask is not None
+    hist = [
+        {"role": "user", "content": "Who is my personal librarian?"},
+        {"role": "assistant", "content": ask[0]},
+    ]
+    assert _awaiting_subject(hist) is True
+    # a later ordinary answer closes the flow
+    hist2 = hist + [
+        {"role": "user", "content": "Psychology"},
+        {"role": "assistant", "content": "Your subject librarian is X."},
+    ]
+    assert _awaiting_subject(hist2) is False
+    assert _awaiting_subject([]) is False
+    assert _awaiting_subject(None) is False
