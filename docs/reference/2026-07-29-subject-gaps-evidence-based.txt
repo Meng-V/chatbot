@@ -1,0 +1,32 @@
+# Subject gaps that REAL PATRONS actually asked about
+#
+# Derived from 4,432 real user messages, not from guessing which
+# registrar strings look academic. An earlier version of this file
+# listed 150 'gaps' filtered by my own guess at what looked like a
+# subject; checked against real questions, only 4 of them were ever
+# asked, so that list was 95% noise and was deleted.
+#
+# For each: the phrase, how many real messages used it, and what the
+# bot answers today. Decide whether it deserves an alias.
+
+## Energy   (9 real messages)
+   bot today: NO MATCH -- points to the directory
+   asked: find me 8 scholarly sources comparing the economic impacts of renewable energy adoption in developing vs devel
+   asked: find me 8 scholarly sources comparing the economic impacts of renewable energy adoption in developing vs devel
+   asked: i am a graduate student in the interdisciplinary program combining environmental science, public policy, and e
+
+## Pre-Law Studies   (8 real messages)
+   bot today: NO MATCH -- points to the directory
+   asked: who is the librarian for russian studies?
+   asked: i need empirical studies with sample sizes over 1000 participants examining the correlation between childhood 
+   asked: who is the justice and community studies librarian at hamilton?
+
+## Art Therapy   (3 real messages)
+   bot today: ['Stefanie Hilles']
+   asked: looking for meta-analyses or systematic reviews on the effectiveness of cognitive behavioral therapy for ptsd 
+   asked: looking for meta-analyses or systematic reviews on the effectiveness of cognitive behavioral therapy for ptsd 
+   asked: looking for meta-analyses or systematic reviews on the effectiveness of cognitive behavioral therapy for ptsd 
+
+## Justice & Community Studies   (1 real messages)
+   bot today: NO MATCH -- points to the directory
+   asked: who is the justice and community studies librarian at hamilton?

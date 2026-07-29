@@ -513,6 +513,44 @@ returning empty — "Miami has no librarian for that" is a claim we cannot
 support during an outage. A genuine miss with a *healthy* API still returns
 an empty list, because that one is a fact.
 
+## How you know the data is still good (2026-07-29)
+
+The operator's real worry was not any single table — it was **not knowing
+whether something had quietly gone wrong**. Reading 740 rows by hand does
+not fix that; it moves the worry. `scripts/data_health.py` runs daily
+(06:40) and **emails only when something needs action**, so a quiet inbox
+means every check passed.
+
+| Check | Catches |
+|---|---|
+| roster vs CSV | someone joined or left and nobody ran the reconciler |
+| duplicate people | the two-address problem growing back |
+| stale liaison links | a departed colleague still named as a subject contact |
+| **refused real questions** | actual patrons who asked and got nothing — shows the QUESTION, not the bot's refusal text |
+| corpus freshness | the weekly ETL diff is produced but never signed |
+| dependencies | LibGuides / LibCal / OpenAI / Weaviate / Postgres |
+| **memory + OOM kills** | today's near-miss, where the service was first in line to be killed |
+
+### The measurement that replaced a bad one
+
+"**664 of 740 subjects have no liaison (9% coverage)**" was reported as the
+top data gap. **That framing was wrong and it generated anxiety instead of
+information.** Most of those rows are registrar program codes and
+administrative units — `Provost`, `Degree Audit Reporting System`,
+`Assist VP Student Leadership` — which are not supposed to have a librarian.
+
+The honest measurement is against **real traffic**. Of the 35 subjects
+patrons actually asked a librarian question about across 4,432 messages, the
+bot answers **32**. The three misses are a typo (`makerspce`), a test
+placeholder (`underwater basket weaving`), and a pronoun (`my major`, from
+"who is the librarian for my major"). **There is no subject-data gap.**
+
+A 150-line "subject gaps for review" file was produced from my own guess at
+which registrar strings looked academic; checked against real questions, 95%
+of it was noise, so it was deleted. The health check now reports what real
+users were refused instead — a list that is short, current, and always
+worth reading.
+
 ## Known gaps (need operator decisions, not code)
 
 1. **`LibrarianSubject` covers 67 of 734 subjects (9%)**, and **zero**
