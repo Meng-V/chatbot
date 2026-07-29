@@ -370,7 +370,22 @@ EMBED_BATCH_SIZE: Final[int] = 100  # OpenAI text-embedding-3-large allows up to
 # Sized for memory, not throughput: a chunk's embedding is 3072 boxed Python
 # floats, roughly 74 KB, so 500 chunks is ~37 MB of vectors at peak. Embedding
 # the whole corpus first held ~1.5 GB and was OOM-killed (2026-07-29).
-APPLY_SLICE_SIZE: Final[int] = 500
+#
+# Lowered 500 -> 200 after a second failure the same night, with a different
+# cause worth writing down. The slice loop DOES bound live objects -- but RSS
+# still ratcheted 850 MB -> 1,432 MB across 14,500 chunks while the live set
+# stayed flat. That is allocator fragmentation: each slice allocates and frees
+# ~37 MB of 3072-element float lists, and glibc does not return those arenas
+# to the OS, so the process footprint grows even though nothing leaks. (The
+# giveaway was RSS falling back at one point -- a leak does not do that.)
+#
+# Smaller slices mean smaller arenas and a slower ratchet. What made the run
+# unsurvivable was not the cap: it was that 1.4 GB of apply plus the serving
+# process plus Weaviate exceeded this 4 GB box, swap hit 100%, and the bot --
+# protected from being OOM-KILLED but not from being STARVED -- stopped
+# answering for over 30 seconds. Peak footprint here is a serving-latency
+# setting, not just a throughput one.
+APPLY_SLICE_SIZE: Final[int] = 200
 
 
 # --- Output paths -----------------------------------------------------------
