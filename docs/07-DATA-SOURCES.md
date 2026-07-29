@@ -164,6 +164,49 @@ Set with `ai-core/scripts/set_alternate_names.py` (idempotent, has
 themselves overlapping copies of the same job and should be reduced to
 one — not yet done.)
 
+## Subject matching: words, not character distance (2026-07-28)
+
+The LibGuides lookup accepted the closest subject name by
+Damerau-Levenshtein distance at a **0.45** threshold — 45% of characters
+aligning. On the live liaison list that silently swapped the subject and
+then answered with **that** subject's librarian, reporting success:
+
+| Patron asked | Matched | Bot answered with |
+|---|---|---|
+| Botany | **Accountancy** | the Business Librarian's email |
+| Chinese | **Business** | the Business Librarians |
+| Data Science | **Political Science** | the Humanities Librarian |
+| Paper Science and Engineering | **Computer Science and Software Eng.** | wrong liaison |
+
+**No threshold can fix this.** The tightest genuine typo we must keep,
+`biolgy` → `Biology`, scores **0.857**. The worst wrong match we must
+reject, `paper science and engineering` → `computer science and software
+engineering`, scores **0.844** — higher than several real typos, purely on
+a shared tail.
+
+So admission is now a **word-level** decision
+([subject_match.py](../ai-core/src/tools/subject_match.py)), the same
+discipline as person names: no character-soup matching across different
+words. A match is real if the names share the same words, one is a
+whole-word subset of the other, they share a **distinctive** word, the
+whole string is a genuine typo (≥0.85), or the head words share a 6-char
+stem (`Accounting` ~ `Accountancy`).
+
+"Distinctive" is **derived from the candidate list**, not hand-written: a
+word appearing in 3+ subject names can't prove two subjects are the same.
+On the current list that yields `{and, american, business, engineering,
+science, studies}` — which is exactly why *Data Science* / *Political
+Science* is rejected.
+
+This also **admits** matches the old threshold wrongly rejected —
+`Kinesiology` scores only 0.32 against `Kinesiology, Nutrition, and
+Health` but is a whole-word subset of it — and fixed two answers outright:
+*Paper Science and Engineering* now resolves to `Chemical, Paper, and
+Biomedical Engineering`, and *Art and Architecture History* to the Art
+librarian instead of the Humanities one. A rejection now produces "no
+liaison listed for that, here is the directory" instead of a confident
+wrong name.
+
 ## Known gaps (need operator decisions, not code)
 
 1. **`LibrarianSubject` covers 67 of 734 subjects (9%)**, and **zero**

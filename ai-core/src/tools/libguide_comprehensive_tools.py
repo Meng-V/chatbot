@@ -63,14 +63,30 @@ def _fuzzy_best_match(
     num_results: int = 2,
     threshold: float = 0.45
 ) -> List[Tuple[float, str]]:
-    """Fuzzy match query to choices using Levenshtein distance."""
+    """Rank subject candidates, admitting only real matches.
+
+    The Levenshtein score still RANKS, but it no longer decides. A score
+    threshold cannot tell a typo from a different subject: the tightest
+    genuine typo we must keep ("biolgy"/"Biology") scores 0.857 and the
+    worst wrong match we must reject ("paper science and engineering"/
+    "Computer Science and Software Engineering") scores 0.844. At the old
+    0.45 gate, "Botany" matched "Accountancy" and the bot answered with
+    the Business Librarian's name and email, reporting success
+    (found live 2026-07-28). Admission is now a WORD-level decision --
+    see src/tools/subject_match.py.
+
+    `threshold` is kept in the signature for callers that still pass it,
+    but is deliberately unused.
+    """
+    from src.tools.subject_match import generic_words, match_reason
+
     query = query.lower().strip()
-    
+
     # Check for exact match in synonyms first
     if query in synonym_mapping:
         return [(1.0, synonym_mapping[query])]
-    
-    # Fuzzy matching
+
+    generic = generic_words(list(choices))
     results = []
     for choice in choices:
         # Calculate match score
@@ -79,17 +95,21 @@ def _fuzzy_best_match(
             1 - distance / max(len(query), len(choice)),
             0
         )
-        
+
         # Also try synonym matching
         if choice.lower() in synonym_mapping:
             synonym = synonym_mapping[choice.lower()]
             synonym_distance = _levenshtein_distance(query, synonym)
             synonym_score = 1 - synonym_distance / max(len(query), len(synonym))
             match_score = max(match_score, synonym_score)
-        
-        if match_score >= threshold:
+
+        # The gate: do these actually name the same subject? Note this
+        # also ADMITS legitimate matches the old threshold rejected --
+        # "Kinesiology" scores only 0.32 against "Kinesiology, Nutrition,
+        # and Health" but is a whole-word subset of it.
+        if match_reason(query, choice, generic):
             results.append((match_score, choice))
-    
+
     # Sort by score descending
     results.sort(key=lambda x: x[0], reverse=True)
     return results[:num_results]
