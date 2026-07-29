@@ -56,6 +56,22 @@ class UpsertResult:
     total_chunks_in_index: Optional[int] = None
     weaviate_collection_version: Optional[str] = None
 
+    def absorb(self, other: "UpsertResult") -> None:
+        """Fold another result in. The embed->upsert loop is batched, so it
+        produces one result per batch and the report needs one total."""
+        self.new_chunk_ids += other.new_chunk_ids
+        self.changed_chunk_ids += other.changed_chunk_ids
+        self.deduped_chunk_ids += other.deduped_chunk_ids
+        self.tombstoned_urls += other.tombstoned_urls
+        self.gc_deleted_chunk_count += other.gc_deleted_chunk_count
+        self.orphaned_chunk_count += other.orphaned_chunk_count
+        self.new_url_count += other.new_url_count
+        # The index total is a snapshot, not a sum -- keep the latest.
+        if other.total_chunks_in_index is not None:
+            self.total_chunks_in_index = other.total_chunks_in_index
+        if other.weaviate_collection_version:
+            self.weaviate_collection_version = other.weaviate_collection_version
+
 
 # --- Backend protocols (transport-agnostic seam) -----------------------------
 

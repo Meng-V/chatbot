@@ -40,6 +40,7 @@ from __future__ import annotations
 
 import datetime as dt
 import logging
+import time
 import uuid
 from dataclasses import dataclass, field
 from typing import Any, Iterable, Optional
@@ -53,6 +54,29 @@ logger = logging.getLogger(__name__)
 # emits arbitrary strings, so we hash them through uuid5 at this boundary.
 # Same chunk_id -> same UUID across runs, preserving idempotency.
 _CHUNK_NS = uuid.UUID("c0000000-0000-0000-c0c0-c0c0c0c0c0c0")
+
+
+# Failures where the request never got a verdict, so the SAME verb should be
+# retried rather than switching to the other one. Matched on type name and
+# message rather than by importing every httpx/weaviate class, because the
+# client library wraps and re-wraps these across versions.
+_TRANSIENT_MARKERS = (
+    "remoteprotocolerror", "connecterror", "connecttimeout", "readtimeout",
+    "writetimeout", "pooltimeout", "server disconnected", "connection reset",
+    "connection refused", "broken pipe", "timed out",
+    "502", "503", "504",
+)
+
+
+def _is_transient(exc: BaseException) -> bool:
+    """True when the request's outcome is UNKNOWN (transport-level), as
+    opposed to Weaviate answering that the verb was wrong."""
+    blob = f"{type(exc).__name__} {exc}".lower()
+    # A 500 naming a missing object is Weaviate ANSWERING -- semantic, not
+    # transport -- so it must not be swept in by the "50x" markers.
+    if "no object with id" in blob:
+        return False
+    return any(m in blob for m in _TRANSIENT_MARKERS)
 
 
 def _chunk_uuid(chunk_id: str) -> str:
@@ -250,20 +274,44 @@ class WeaviateETLAdapter:
             primary, fallback = _replace, _insert
             primary_name, fallback_name = "replace", "insert"
 
-        try:
-            primary()
-        except Exception as e:  # noqa: BLE001
-            # Primary verb failed: either the existence snapshot was
-            # stale, or this build raises on replace-of-nonexistent.
-            # The other verb is the correct one in both those cases.
+        # Two failure kinds, two correct responses. Conflating them broke a
+        # real apply on 2026-07-29: the connection dropped mid-insert
+        # ("Server disconnected without sending a response"), the code took
+        # that as "wrong verb" and switched to `replace`, which 500'd with
+        # "no object with id" because the insert had never landed -- and the
+        # whole run died 2,664 chunks in.
+        #
+        #   TRANSPORT failure -> outcome UNKNOWN -> retry the SAME verb
+        #   SEMANTIC failure  -> wrong verb      -> switch verbs
+        last = None
+        for attempt, delay in enumerate((0.0, 0.5, 2.0, 5.0)):
+            if delay:
+                time.sleep(delay)
             try:
-                fallback()
-            except Exception as e2:  # noqa: BLE001
-                raise RuntimeError(
-                    f"Weaviate upsert failed for chunk_id={chunk_id!r} "
-                    f"(uuid={obj_uuid}) in {collection!r}: "
-                    f"{primary_name}={e!r}, {fallback_name}={e2!r}"
-                ) from e2
+                primary()
+                return
+            except Exception as e:  # noqa: BLE001
+                last = e
+                if not _is_transient(e):
+                    break
+                logger.warning(
+                    "transient Weaviate failure, retrying same verb",
+                    extra={"collection": collection, "chunk_id": chunk_id,
+                           "verb": primary_name, "attempt": attempt + 1,
+                           "error": str(e)[:200]},
+                )
+        # Either a semantic failure (the existence snapshot was stale, or
+        # this build raises on replace-of-nonexistent) or transport retries
+        # exhausted. The other verb is the correct one in the first case and
+        # the only remaining option in the second.
+        try:
+            fallback()
+        except Exception as e2:  # noqa: BLE001
+            raise RuntimeError(
+                f"Weaviate upsert failed for chunk_id={chunk_id!r} "
+                f"(uuid={obj_uuid}) in {collection!r}: "
+                f"{primary_name}={last!r}, {fallback_name}={e2!r}"
+            ) from e2
 
     def get_chunk(
         self,

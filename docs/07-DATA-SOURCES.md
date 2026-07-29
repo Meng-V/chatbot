@@ -551,6 +551,58 @@ of it was noise, so it was deleted. The health check now reports what real
 users were refused instead — a list that is short, current, and always
 worth reading.
 
+## Why the ETL apply still has not run (2026-07-29)
+
+Three attempts, three distinct bugs, each one hidden behind the previous:
+
+**Attempt 1 — OOM-killed at a 1.2 GB cap.** `embeddings = pipeline.embed(all_chunks)`
+embedded the *entire* corpus before upserting anything. 20,068 chunks × 3072
+boxed Python floats ≈ **1.5 GB**. Fixed by slicing: embed 500 → upsert 500 →
+discard, so peak is one slice (~37 MB). Verified by re-running under an
+**800 MB** cap — tighter than the one that had just failed — and it held.
+
+**Attempt 2 — died 2,664 chunks in, and NOT from memory.** I assumed memory
+again and was wrong: Weaviate was never OOM-killed (`OOMKilled=false`,
+`Restarts=0`, no kernel OOM at that time). The real cause was a retry-strategy
+bug in `etl_adapter.upsert_chunk`:
+
+```
+connection drops mid-insert  ->  code treats ANY error as "wrong verb"
+                             ->  switches to `replace`
+                             ->  500 "no object with id" (the insert never landed)
+                             ->  whole run dies
+```
+
+Two failure kinds need two responses, and they were conflated:
+
+| Failure | Outcome | Correct response |
+|---|---|---|
+| transport (disconnect, timeout, 502/503/504) | **unknown** | retry the **same** verb, with backoff |
+| semantic (already exists / no such object) | known: wrong verb | **switch** verbs |
+
+Note the trap in classifying them: the semantic error's message *contains
+"500"*, so a naive "50x means transient" rule would retry it forever instead
+of switching. The classifier tests that string explicitly.
+
+**Still outstanding:** the apply has not completed a full run. What is fixed
+is the memory ceiling and the retry logic; whether the corpus writes cleanly
+end to end is unproven, and the diff signed at 16:18 is still valid and
+unapplied.
+
+### The cost problem this did NOT fix
+
+A real apply embeds **all 20,068** chunks even though only **693** are new —
+about **$1.30** and 200 API batches weekly, 96% of it discarded at the dedupe
+step. The preview already computes the new/changed set read-only in 9 seconds.
+
+Fixing it properly means either copying the unchanged vectors from the live
+collection (needs a vector-read the adapter does not expose) or indexing
+incrementally into the serving collection instead of building a fresh
+versioned one. **The second changes the promotion model** — versioned
+collections exist so eval can run against a new index before the alias swap —
+so it is an architecture decision, not a bug fix, and is left for the
+operator.
+
 ## Known gaps (need operator decisions, not code)
 
 1. **`LibrarianSubject` covers 67 of 734 subjects (9%)**, and **zero**

@@ -364,9 +364,30 @@ def run(
         except Exception as e:  # noqa: BLE001 -- a preview must never fail a run
             logger.warning("change preview failed: %s", e)
     else:
-        embeddings = pipeline.embed(all_chunks)
         version = started.strftime("v%Y%m%d_%H%M")
-        report.upsert = pipeline.upsert_chunks(all_chunks, embeddings, version)
+        # Embed and upsert in SLICES rather than embedding everything first.
+        # `embeddings = pipeline.embed(all_chunks)` held one Python float
+        # list per chunk for the whole corpus -- 20,068 chunks x 3072 dims of
+        # boxed floats is roughly 1.5 GB, which is why the first real apply
+        # was OOM-killed at a 1.2 GB cgroup cap (2026-07-29). Peak is now one
+        # slice: ~500 chunks, tens of MB.
+        #
+        # Each slice is upserted before the next is embedded, so a run that
+        # dies half way leaves a partial NEW collection -- harmless, because
+        # nothing serves from it until `promote_collection` swaps the alias,
+        # and the next run starts a fresh version.
+        report.upsert = upsert.UpsertResult(weaviate_collection_version=version)
+        for _start in range(0, len(all_chunks), config.APPLY_SLICE_SIZE):
+            _slice = all_chunks[_start:_start + config.APPLY_SLICE_SIZE]
+            _vecs = pipeline.embed(_slice)
+            report.upsert.absorb(
+                pipeline.upsert_chunks(_slice, _vecs, version))
+            del _vecs
+            logger.info(
+                "indexed %d/%d chunks",
+                min(_start + config.APPLY_SLICE_SIZE, len(all_chunks)),
+                len(all_chunks),
+            )
         tomb = pipeline.tombstone(seen_urls, version)
         report.upsert.tombstoned_urls = tomb.tombstoned_urls
         report.upsert.gc_deleted_chunk_count = tomb.gc_deleted_chunk_count

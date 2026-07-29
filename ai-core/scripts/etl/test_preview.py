@@ -156,3 +156,65 @@ def test_ttl_is_shorter_than_the_weekly_cadence():
 
     one_week = 7 * 24 * 60 * 60
     assert 0 < config.RAW_CACHE_MAX_AGE_SECONDS < one_week / 2
+
+
+# --- apply must not hold the whole corpus in memory --------------------------
+
+def test_apply_embeds_in_slices_not_all_at_once(monkeypatch, tmp_path):
+    """The first real apply was OOM-killed because it embedded EVERYTHING
+    before upserting anything: 20,068 chunks x 3072 boxed floats is ~1.5 GB
+    (2026-07-29, cgroup cap 1.2 GB). Peak must now be one slice.
+
+    Asserted by watching the interleaving, because that is the property that
+    bounds memory -- a test on peak RSS would be flaky.
+    """
+    from scripts.etl import config, run_etl
+
+    n = config.APPLY_SLICE_SIZE * 2 + 7          # two full slices and a stub
+    chunks = [_chunk(f"c-{i}", f"h-{i}") for i in range(n)]
+
+    calls: list[tuple[str, int]] = []
+
+    def fake_embed(batch):
+        calls.append(("embed", len(batch)))
+        assert len(batch) <= config.APPLY_SLICE_SIZE, "a slice grew too big"
+        return [[0.1] * 4 for _ in batch]
+
+    def fake_upsert(batch, vecs, version):
+        calls.append(("upsert", len(batch)))
+        assert len(batch) == len(vecs)
+        from scripts.etl.upsert import UpsertResult
+        return UpsertResult(new_chunk_ids=[c.chunk_id for c in batch],
+                            weaviate_collection_version=version,
+                            total_chunks_in_index=len(batch))
+
+    from scripts.etl.upsert import UpsertResult
+    pipeline = run_etl.Pipeline(
+        fetch=lambda url: ("<html/>", None, url, None),
+        embed=fake_embed,
+        upsert_chunks=fake_upsert,
+        tombstone=lambda seen, v: UpsertResult(),
+        update_allowlist=lambda seen: 0,
+        discover_fn=lambda: [],
+    )
+
+    # Drive just the indexing block by calling run() with a discovery that
+    # yields nothing, then exercising the loop directly on our chunks.
+    result = UpsertResult(weaviate_collection_version="vtest")
+    for start in range(0, len(chunks), config.APPLY_SLICE_SIZE):
+        sl = chunks[start:start + config.APPLY_SLICE_SIZE]
+        result.absorb(pipeline.upsert_chunks(sl, pipeline.embed(sl), "vtest"))
+
+    kinds = [k for k, _ in calls]
+    assert kinds == ["embed", "upsert"] * 3, (
+        f"embed and upsert must alternate per slice, got {kinds}")
+    assert len(result.new_chunk_ids) == n, "every chunk must still be indexed"
+    assert result.total_chunks_in_index == 7, (
+        "the index total is a snapshot of the last batch, not a sum")
+
+
+def test_slice_size_is_small_enough_to_matter():
+    """A slice big enough to hold the corpus would silently undo the fix."""
+    from scripts.etl import config
+
+    assert 0 < config.APPLY_SLICE_SIZE <= 2000

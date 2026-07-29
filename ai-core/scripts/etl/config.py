@@ -331,6 +331,14 @@ MAX_REDIRECTS: Final[int] = 5
 
 EMBED_BATCH_SIZE: Final[int] = 100  # OpenAI text-embedding-3-large allows up to 2048
 
+# How many chunks the apply phase holds in memory at once. The embed step
+# then sub-batches within this by token budget (EMBED_BATCH_SIZE above).
+#
+# Sized for memory, not throughput: a chunk's embedding is 3072 boxed Python
+# floats, roughly 74 KB, so 500 chunks is ~37 MB of vectors at peak. Embedding
+# the whole corpus first held ~1.5 GB and was OOM-killed (2026-07-29).
+APPLY_SLICE_SIZE: Final[int] = 500
+
 
 # --- Output paths -----------------------------------------------------------
 
