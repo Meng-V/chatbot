@@ -170,13 +170,47 @@ async def lifespan(app: FastAPI):
     # the backend never crashed. Warming here, before any traffic, moves
     # that cost off the request path. `to_thread` keeps even boot's event
     # loop responsive while the heavy build runs on a worker thread.
-    try:
-        import asyncio as _asyncio
-        await _asyncio.to_thread(_get_v2_deps)
-        logging.info("✅ [v2] serving deps warmed (classifier + backends ready)")
-    except Exception as e:  # noqa: BLE001
-        logging.warning(
-            f"⚠️ [v2] deps warm-up failed; first message will lazy-load: {e}"
+    # RETRY, and ALERT if it never succeeds. A single warning was not enough:
+    # on 2026-07-29 a ~seconds-long OpenAI embeddings blip ("Invalid URL (POST
+    # /v1/embeddings)", a gateway error that cleared on its own) happened to
+    # land during a restart. The warm-up failed, the classifier never loaded,
+    # and every turn afterwards had NO intent -- which silently switched off
+    # the research disclaimer and intent-based routing. The only visible
+    # symptom was a missing banner, and nothing alerted. Answers still
+    # appeared, so this degrades quietly, which is the dangerous kind.
+    _warmed = False
+    for _attempt, _delay in enumerate((0.0, 3.0, 10.0, 30.0)):
+        if _delay:
+            await asyncio.sleep(_delay)
+        try:
+            await asyncio.to_thread(_get_v2_deps)
+            logging.info("✅ [v2] serving deps warmed "
+                         "(classifier + backends ready)%s",
+                         f" after {_attempt} retries" if _attempt else "")
+            _warmed = True
+            break
+        except Exception as e:  # noqa: BLE001
+            logging.warning("⚠️ [v2] deps warm-up attempt %d failed: %s",
+                            _attempt + 1, e)
+    if not _warmed:
+        try:
+            from src.observability.alerting import send_alert_email
+            send_alert_email(
+                "🔴 Smart Chatbot: the intent classifier did not load",
+                "Warm-up failed on every retry, so the classifier is not "
+                "loaded.\n\nThe bot will still ANSWER, which is why this "
+                "needs an email: the failure is invisible in the UI. What is "
+                "lost is intent classification -- and with it the research/"
+                "reference disclaimer and intent-based routing.\n\n"
+                "Usually a transient OpenAI embeddings error during startup. "
+                "Check the service log, then: sudo systemctl restart "
+                "chatbot.service\n",
+            )
+        except Exception as _e:  # noqa: BLE001
+            logging.error("could not alert on warm-up failure: %s", _e)
+        logging.error(
+            "🔴 [v2] deps warm-up failed on every retry; intent classification "
+            "is DEGRADED until the service is restarted"
         )
 
     # Background health watcher -- email the operator (ALERT_EMAIL_TO,

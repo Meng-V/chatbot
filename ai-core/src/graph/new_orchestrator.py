@@ -1119,22 +1119,48 @@ _RESEARCH_DISCLAIMER = (
 )
 
 _RESEARCH_DISCLAIMER_INTENTS = frozenset({
-    "databases",
-    "citation_help",
+    # --- research help ---------------------------------------------------
     "research_consultation",
+    "instruction_request",
+    "citation_help",
+    "scholarly_publishing",
+    "copyright_permissions",
     "data_services",
+    # --- reference: helping someone FIND information ---------------------
+    "databases",
+    "find_resource",
     "digital_collections",
     "special_collections",
-    "copyright_permissions",
-    "scholarly_publishing",
-    "instruction_request",
-    "find_resource",
+    # Added 2026-07-29 on the operator's instruction that the banner cover
+    # "all possible research OR REFERENCE questions". Locating a newspaper,
+    # reaching a licensed resource from off campus, or getting something we
+    # do not own are classic reference questions -- a patron is being pointed
+    # at a route through our collections, which is exactly where a librarian
+    # adds judgment the bot cannot.
+    #
+    # `newspapers` was previously excluded as "a specific access route".
+    # That was wrong by the operator's own example: the announcement cites
+    # the Wall Street Journal question as the case the banner exists for,
+    # and it was the one question of that set NOT getting it.
+    "newspapers",
+    "remote_access",
+    "interlibrary_loan",
 })
-"""Research-cluster intents. Deliberately EXCLUDED: newspapers and
-remote_access (both resolve to a specific access route, not research
-judgment), and every operational intent (hours/rooms/circulation/
-printing/tech) -- tagging those would train patrons to ignore the
-banner, which costs more than it buys."""
+# NOTE: only labels the classifier actually emits belong in the set above. A
+# first draft of this widening included "gov_docs", "archives" and
+# "course_reserves_find", none of which are real intent labels -- they would
+# have sat there looking like coverage while matching nothing. Government
+# documents and archives questions already arrive as `special_collections` or
+# `find_resource`, which ARE in the set.
+"""Research- and reference-cluster intents.
+
+Still deliberately EXCLUDED, and the reason matters: every OPERATIONAL
+intent -- hours, room booking, printing, wifi, renewals, account, fines,
+directions, staff and subject-librarian lookups, employment. Those are
+facts with one right answer, most of them straight from a live API. Tagging
+them would put the banner on nearly every turn, and a banner on everything
+is a banner nobody reads -- which would cost us the research questions it
+exists for."""
 
 
 _DISCLAIMER_EXEMPT_REASONS = frozenset({

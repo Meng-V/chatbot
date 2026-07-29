@@ -757,9 +757,14 @@ def test_research_disclaimer_skips_operational_intents() -> None:
         fired_corrections=[], agent_stopped_reason="clean",
         latency_ms=1, cited_chunk_ids=[],
     )
+    # `newspapers` and `remote_access` were HERE until 2026-07-29. The
+    # operator widened the banner to "all possible research or reference
+    # questions", and their announcement cites the Wall Street Journal
+    # question as the example it exists for -- so those two moved into the
+    # tagged set and this list keeps only the operational ones.
     for intent in ("hours", "room_booking", "renewal", "printing_wifi",
                    "tech_checkout", "subject_librarian", "course_reserves",
-                   "newspapers", "remote_access", None):
+                   None):
         out = _add_research_disclaimer(r, intent)
         assert not out.answer.startswith(_RESEARCH_DISCLAIMER), intent
 
@@ -1121,3 +1126,42 @@ def test_a_current_colleague_is_still_answered_normally() -> None:
     assert "hicksjl2@miamioh.edu" in ans
     assert "don't have a listing" not in ans
 
+
+
+def test_disclaimer_covers_reference_questions_not_just_research() -> None:
+    """Operator instruction 2026-07-29: the banner must cover "all possible
+    research OR REFERENCE questions".
+
+    The trigger for widening it: the announcement to colleagues cites the
+    Wall Street Journal question as the example the banner exists for, and
+    `newspapers` was the one intent in that cluster explicitly EXCLUDED --
+    so the operator's own example was the one question not getting it.
+    """
+    from src.graph.new_orchestrator import _RESEARCH_DISCLAIMER_INTENTS as INC
+
+    # reference = helping someone find or reach information
+    for intent in ("newspapers", "remote_access", "interlibrary_loan",
+                   "databases", "find_resource", "special_collections",
+                   "digital_collections"):
+        assert intent in INC, f"{intent} is a reference question"
+
+    # research help
+    for intent in ("research_consultation", "citation_help",
+                   "instruction_request", "data_services",
+                   "scholarly_publishing", "copyright_permissions"):
+        assert intent in INC, f"{intent} is research help"
+
+
+def test_disclaimer_does_not_swallow_operational_intents() -> None:
+    """A banner on every answer is a banner nobody reads, which would cost us
+    the research questions it exists for. Operational intents are facts with
+    one right answer, most straight from a live API."""
+    from src.graph.new_orchestrator import _RESEARCH_DISCLAIMER_INTENTS as INC
+
+    for intent in ("hours", "room_booking", "printing_wifi", "renewal",
+                   "account", "location_directions", "staff_lookup",
+                   "subject_librarian", "library_employment",
+                   "circulation_basic", "space_info", "software_access",
+                   "cross_campus_comparison", "human_handoff",
+                   "out_of_scope", "service_howto"):
+        assert intent not in INC, f"{intent} is operational, not research"
