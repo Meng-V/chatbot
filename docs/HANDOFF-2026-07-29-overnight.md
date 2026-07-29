@@ -163,18 +163,22 @@ sleeping or something automated did. Flagging it because I cannot tell which,
 and because it means those commits went out **before** the eval number
 existed.
 
-**7 commits remain local** — counted with `git rev-list --count
+**11 commits remain local** — counted with `git rev-list --count
 origin/main..HEAD`, not estimated, because I got this number wrong earlier
 today by extrapolating instead of measuring:
 
 ```
-eac5ef2  fix(etl): record which collection an apply wrote
-9c4a974  docs: the eval number, every regression classified
-440ab74  fix(staff): "find" is not a person-seeking verb
-51f64b0  docs: correct the handoff's commit count
-c0465db  docs: overnight handoff
-86afc9f  fix(etl): exclude stale pages at crawl time
-3729f25  fix(etl): one bad chunk no longer loses the whole run
+  4213b1f docs: remove three claims that contradicted the outcome
+  55fd1bf docs: the corpus apply cannot complete on this box, with the measurements
+  f01dba6 fix(etl): smaller apply slices -- and I caused the outage they follow
+  2db41f1 fix(staff): one guard for both readers of the name regex
+  eac5ef2 fix(etl): record which collection an apply wrote -- I deleted a good corpus
+  9c4a974 docs: the eval number, and every regression classified by cause
+  440ab74 fix(staff): "find" is not a person-seeking verb -- it cost 3 right answers
+  51f64b0 docs: correct the handoff's commit count -- the remote moved at 21:07, not by me
+  c0465db docs: overnight handoff -- what needs the operator, and how much to trust tonight
+  86afc9f fix(etl): exclude stale pages at crawl time -- tombstones do not survive a refresh
+  3729f25 fix(etl): one bad chunk no longer loses the whole run
 ```
 
 I have not pushed them, and will not while you are asleep.
