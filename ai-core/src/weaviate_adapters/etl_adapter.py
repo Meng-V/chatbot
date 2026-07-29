@@ -310,6 +310,41 @@ class WeaviateETLAdapter:
         # v4 returns a `DataObject`; properties are at `.properties`.
         return dict(obj.properties)
 
+    def snapshot_hashes(self, *, collection: str) -> dict:
+        """`{object_uuid: content_hash}` for every LIVE chunk in `collection`.
+
+        One bulk read, used to PREVIEW what an ETL run would change without
+        writing anything. The dry-run used to skip the upsert step wholesale,
+        so the diff a librarian is asked to sign showed "new: 0, changed: 0,
+        tombstoned: 0" no matter what had actually changed on the website
+        (found 2026-07-29). Comparing a fresh crawl against this snapshot is
+        what makes that diff mean something.
+
+        Keyed by UUID rather than chunk_id because chunk_id is not stored as
+        a property -- it only exists as the UUID5 the ETL derives from it, so
+        callers compare with `_chunk_uuid(chunk.chunk_id)`.
+
+        Tombstoned rows are excluded: a soft-deleted chunk should read as
+        absent, so re-crawling its page counts as NEW rather than unchanged.
+        """
+        try:
+            if not self.client.collections.exists(collection):
+                return {}
+        except Exception:  # noqa: BLE001
+            return {}
+        coll = self.client.collections.get(collection)
+        out: dict = {}
+        try:
+            for obj in coll.iterator(return_properties=["content_hash", "deleted"]):
+                if obj.properties.get("deleted"):
+                    continue
+                out[str(obj.uuid)] = obj.properties.get("content_hash") or ""
+        except Exception as e:  # noqa: BLE001 -- a preview must never break a run
+            logger.warning("snapshot_hashes failed",
+                           extra={"collection": collection, "error": str(e)})
+            return {}
+        return out
+
     def soft_delete_by_url(
         self,
         *,

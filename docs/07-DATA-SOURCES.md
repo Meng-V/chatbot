@@ -16,7 +16,7 @@ source, and everything else is derived or deleted.**
 | What subjects exist (+ course / dept / major codes) | **Postgres `Subject`** + its code tables | same ingest |
 | Which librarian covers which subject | **Postgres `LibrarianSubject`**, with the **live LibGuides API** as fallback | ingest / LibGuides |
 | Live hours, room availability | **LibCal API** — never cached, never crawled | n/a (live) |
-| Page content, policies, guides | **Weaviate corpus** (ETL'd website) | `scripts/etl/` |
+| Page content, policies, guides | **Weaviate corpus** (ETL'd website) | `scripts/etl_watch.py` weekly → librarian signs → `run_etl --phase apply` |
 | Answers the operator has hand-fixed | **Postgres `ManualCorrection`** | `/admin/corrections/view` |
 
 ## Two rules about people (2026-07-28)
@@ -362,6 +362,59 @@ pages and would happily reconstruct contact details for someone the roster
 no longer carries. Tests assert both halves: the name is stated, and the
 words "no longer", "left", "departed", "former", "resigned" and "used to"
 appear nowhere in the answer.
+
+## Keeping the corpus fresh (2026-07-29)
+
+The corpus had been frozen at **2026-05-14** for two and a half months. Not
+because the ETL was broken — because it is a **two-phase gated** pipeline
+(`prepare` → a librarian signs → `apply`) and **nobody was running
+`prepare`**. No diff, no signature, no refresh. The bot answered from a May
+snapshot of the website.
+
+Two things were needed, and neither was "run the ETL":
+
+**1. The diff had to say something.** `prepare` skipped the upsert step
+wholesale, so every diff reported `new: 0, changed: 0, tombstoned: 0`
+however far the site had moved. **The gate was asking for a signature on an
+invisible change.** The dry run now previews against the *live* collection —
+one bulk read of `{uuid: content_hash}` plus in-memory comparison, ~9
+seconds, no API spend, no writes. Today's real numbers:
+
+```
+Chunks crawled                     20,068
+New or rewritten                      693
+Unchanged                           19,375
+No longer produced by the crawl        852
+```
+
+> **Reading it.** `chunk_id` is `hash(url, position, content_hash)`, so
+> **edited text never shows as "changed"** — it appears as a new chunk and
+> orphans the old one. `changed` is structurally always 0. Read *new* and
+> *no longer produced* together: they are the size of one rewrite, not two
+> events. The diff report now says this in prose, because "0 changed" reads
+> as "nothing changed", which is the opposite of the truth.
+
+**2. Someone had to be told.** `scripts/etl_watch.py` runs `prepare` weekly
+(Mondays 06:10) and emails the operator **only when something changed** — so
+a message in the inbox always means there is something to look at. It never
+applies anything; the signature gate is untouched.
+
+A full prepare is ~410 fetches of our own public pages, ~25 seconds, **$0.00**.
+
+### Still worth cleaning
+
+Weaviate holds **three orphaned collections** from abandoned May runs —
+`Chunk_vv20260517_1629` (4,596), `Chunk_vv20260517_1702` (20,335) and
+`Chunk_vv20260518_0124` (2,799) — about **27,700 dead chunks**. The
+20,335-chunk one is *larger* than what is serving, so a run finished and was
+never promoted. Harmless to answers (only the aliased collection is queried)
+but it is memory and disk.
+
+Also: **Hamilton publishes no sitemap** (`www.ham.miamioh.edu/sitemap.xml`
+→ 404), so that campus is crawled from a short hand-curated seed list in
+`scripts/etl/config.py`. Middletown's sitemap is a 2,487-entry *regional*
+sitemap with zero library URLs, which the host filter correctly discards.
+Only Oxford is genuinely sitemap-driven (395 URLs).
 
 ## Known gaps (need operator decisions, not code)
 

@@ -46,6 +46,12 @@ class UpsertResult:
     deduped_chunk_ids: list[str] = field(default_factory=list)
     tombstoned_urls: list[str] = field(default_factory=list)
     gc_deleted_chunk_count: int = 0
+    # PREVIEW only: live chunks the fresh crawl no longer produces. Kept
+    # separate from `gc_deleted_chunk_count` (which counts rows physically
+    # removed after 30 days of tombstoning) because conflating them told a
+    # librarian that 852 chunks had been hard-deleted when nothing had been
+    # written at all.
+    orphaned_chunk_count: int = 0
     new_url_count: int = 0
     total_chunks_in_index: Optional[int] = None
     weaviate_collection_version: Optional[str] = None
@@ -324,6 +330,67 @@ def make_upsert_step(
 
 
 # --- Step 9: Tombstone -------------------------------------------------------
+
+
+def preview_against_live(
+    weaviate: Any,
+    chunks: list[Chunk],
+    seen_urls: set[str],
+    *,
+    live_collection: str,
+) -> UpsertResult:
+    """What WOULD change, computed without writing anything.
+
+    The dry-run path used to skip the upsert step wholesale, so every diff a
+    librarian was asked to sign reported "new: 0, changed: 0, tombstoned: 0"
+    regardless of what had actually changed on the website (found
+    2026-07-29). The gate was asking for a signature on an invisible change.
+
+    Two things make this a genuine preview rather than a copy of the write
+    path:
+
+      * it compares against the LIVE collection, not the fresh
+        `Chunk_v{version}` destination. The destination is empty by
+        construction -- a new version every run -- so classifying against it
+        marks everything "new" even in a real run.
+      * it is one bulk read plus in-memory comparison, so previewing 20k
+        chunks costs about 9 seconds and no API spend.
+
+    `changed_chunk_ids` is always empty here, and that is not a bug:
+    `chunk_id` is derived from (url, position, CONTENT_HASH), so edited text
+    yields a NEW chunk_id and orphans the old one. Read the pair together --
+    "693 new / 852 orphaned" means roughly 850 chunks' worth of text was
+    rewritten or removed and 693 chunks' worth is new or rewritten. The diff
+    report spells this out so nobody reads "0 changed" as "nothing changed".
+
+    `deleted` chunks are absent from the snapshot, so a re-crawled page whose
+    chunks were tombstoned correctly reads as NEW.
+    """
+    from src.weaviate_adapters.etl_adapter import _chunk_uuid
+
+    result = UpsertResult(weaviate_collection_version="(preview)")
+    snapshot = weaviate.snapshot_hashes(collection=live_collection)
+
+    still_present: set[str] = set()
+    for chunk in chunks:
+        uid = _chunk_uuid(chunk.chunk_id)
+        existing_hash = snapshot.get(uid)
+        if existing_hash is None:
+            result.new_chunk_ids.append(chunk.chunk_id)
+        elif existing_hash == chunk.content_hash:
+            result.deduped_chunk_ids.append(chunk.chunk_id)
+            still_present.add(uid)
+        else:
+            result.changed_chunk_ids.append(chunk.chunk_id)
+            still_present.add(uid)
+
+    # Live chunks the crawl no longer produces -> they would be tombstoned.
+    # Reported as a COUNT of chunks; the URL-level list needs source_url,
+    # which the snapshot deliberately does not carry (it would triple the
+    # read for a number the operator reads as "how much is going away").
+    result.orphaned_chunk_count = len(set(snapshot) - still_present)
+    result.total_chunks_in_index = len(snapshot)
+    return result
 
 
 def make_tombstone_step(

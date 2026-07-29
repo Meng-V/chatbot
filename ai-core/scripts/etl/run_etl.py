@@ -106,6 +106,7 @@ class Pipeline:
     upsert_chunks: UpsertFn
     tombstone: TombstoneFn
     update_allowlist: AllowlistFn
+    preview: Any = None
     discover_fn: Callable[[], list[discover.DiscoveredUrl]] = discover.discover
 
 
@@ -137,6 +138,25 @@ def _default_tombstone(seen: set[str], version: str) -> upsert.UpsertResult:
 
 def _default_allowlist(seen: list[tuple[str, int, str, Optional[str]]]) -> int:
     raise NotImplementedError("Pipeline.update_allowlist not configured")
+
+
+def _default_preview(
+    chunks: list[chunker.Chunk], seen: set[str]
+) -> upsert.UpsertResult:
+    """Read-only "what would change" against the collection currently
+    SERVING answers. Wired to a real implementation rather than left as
+    NotImplementedError, because a dry-run with no preview is exactly the
+    state that made the librarian gate meaningless."""
+    import os
+
+    from src.weaviate_adapters.etl_adapter import WeaviateETLAdapter
+
+    live = os.getenv("WEAVIATE_CHUNK_COLLECTION") or ""
+    if not live:
+        logger.warning("WEAVIATE_CHUNK_COLLECTION unset -- cannot preview")
+        return upsert.UpsertResult(weaviate_collection_version="(preview)")
+    return upsert.preview_against_live(
+        WeaviateETLAdapter(), chunks, seen, live_collection=live)
 
 
 # --- Real fetcher (lazy, requests-based) -------------------------------------
@@ -217,6 +237,7 @@ def run(
         upsert_chunks=_default_upsert,
         tombstone=_default_tombstone,
         update_allowlist=_default_allowlist,
+        preview=_default_preview,
     )
 
     started = dt.datetime.now(dt.timezone.utc)
@@ -308,7 +329,18 @@ def run(
 
     # 7-9. Embed + upsert + tombstone (DESTRUCTIVE -- skip on dry-run)
     if dry_run:
-        logger.info("dry-run: skipping embed/upsert/tombstone/allowlist")
+        # Skipping the writes is right; skipping the COMPARISON was not.
+        # Without this the diff said "new 0, changed 0, tombstoned 0" however
+        # much the website had moved, so the librarian gate asked for a
+        # signature on an invisible change (found 2026-07-29). This is a
+        # bulk read of the live collection plus in-memory hashing: no
+        # embedding spend, no writes.
+        logger.info("dry-run: skipping embed/upsert/tombstone/allowlist; "
+                    "previewing changes against the live index instead")
+        try:
+            report.upsert = pipeline.preview(all_chunks, seen_urls)
+        except Exception as e:  # noqa: BLE001 -- a preview must never fail a run
+            logger.warning("change preview failed: %s", e)
     else:
         embeddings = pipeline.embed(all_chunks)
         version = started.strftime("v%Y%m%d_%H%M")
@@ -488,6 +520,7 @@ def main() -> int:
         upsert_chunks=_default_upsert,
         tombstone=_default_tombstone,
         update_allowlist=_default_allowlist,
+        preview=_default_preview,
     )
 
     try:

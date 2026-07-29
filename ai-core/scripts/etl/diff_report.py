@@ -69,13 +69,40 @@ def render_markdown(report: DiffReport) -> str:
                  f"({len(report.extraction_rejects)} rejected at extract step)")
     lines.append(f"- Chunks created: **{report.chunks_created}** "
                  f"(dropped {report.chunks_dropped_short} as too short)")
-    lines.append(f"- New chunks indexed: **{len(report.upsert.new_chunk_ids)}**")
-    lines.append(f"- Changed chunks re-indexed: **{len(report.upsert.changed_chunk_ids)}**")
-    lines.append(f"- Deduped (unchanged): **{len(report.upsert.deduped_chunk_ids)}**")
-    lines.append(f"- Tombstoned URLs: **{len(report.upsert.tombstoned_urls)}**")
-    lines.append(f"- Hard-deleted (>30d tombstoned): **{report.upsert.gc_deleted_chunk_count}**")
-    lines.append(f"- New URLs added to allowlist: **{report.upsert.new_url_count}**")
+    preview = report.upsert.weaviate_collection_version == "(preview)"
+    verb = "would be" if preview else ""
+    lines.append(f"- New or rewritten chunks{' that ' + verb + ' indexed' if preview else ' indexed'}: "
+                 f"**{len(report.upsert.new_chunk_ids)}**")
+    lines.append(f"- Unchanged (already in the index): "
+                 f"**{len(report.upsert.deduped_chunk_ids)}**")
+    if preview:
+        lines.append(f"- No longer produced by the crawl: "
+                     f"**{report.upsert.orphaned_chunk_count}**")
+        lines.append(f"- Live chunks in the serving index: "
+                     f"**{report.upsert.total_chunks_in_index}**")
+    else:
+        lines.append(f"- Changed chunks re-indexed: "
+                     f"**{len(report.upsert.changed_chunk_ids)}**")
+        lines.append(f"- Tombstoned URLs: **{len(report.upsert.tombstoned_urls)}**")
+        lines.append(f"- Hard-deleted (>30d tombstoned): "
+                     f"**{report.upsert.gc_deleted_chunk_count}**")
+        lines.append(f"- New URLs added to allowlist: "
+                     f"**{report.upsert.new_url_count}**")
     lines.append("")
+    if preview:
+        # Without this note a librarian reads "0 changed" as "nothing
+        # changed on the website", which is the opposite of the truth.
+        lines.append("> **How to read this.** `chunk_id` is derived from the "
+                     "page URL, the position, and a hash of the text, so "
+                     "EDITED text does not show up as \"changed\" -- it "
+                     "appears as a new chunk and orphans the old one. Read "
+                     "the first and third numbers together: they are the "
+                     "size of the rewrite, not two separate events.")
+        lines.append("")
+        lines.append("> Nothing has been written. This is a dry run against "
+                     "the live index; approving this diff is what authorises "
+                     "the write.")
+        lines.append("")
 
     if report.upsert.tombstoned_urls:
         lines.append("## ⚠️ Tombstoned URLs (no longer in source sitemaps)")
