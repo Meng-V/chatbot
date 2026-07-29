@@ -401,6 +401,19 @@ COURSE_CODE_SUBJECTS = {
 }
 
 
+# A containment match must be at least this long. Anything shorter is a
+# course-code abbreviation ("cs", "ee", "the", "ita", "art") that only
+# names a subject when it is the entire query -- as a fragment it lands
+# inside ordinary words ("digital", "meeting", "quarterly", "start").
+_MIN_CONTAINMENT_ALIAS = 5
+
+# Longest first, so "organic chemistry" wins over "chem" and the result
+# never depends on dict insertion order.
+_ALIASES_LONGEST_FIRST = tuple(sorted(
+    (a for a in SUBJECT_ALIASES if len(a) >= _MIN_CONTAINMENT_ALIAS),
+    key=len, reverse=True))
+
+
 def find_subject_by_alias(query: str) -> str | None:
     """
     Find the official subject name for a search query using aliases.
@@ -412,16 +425,36 @@ def find_subject_by_alias(query: str) -> str | None:
         Official subject name if found, None otherwise
     """
     query_lower = query.lower().strip()
-    
-    # Direct alias match
+
+    # 1. The whole query IS an alias. Always allowed, however short: "cs",
+    #    "ee" and "the" are course-code abbreviations and only mean a
+    #    subject when they are the entire ask.
     if query_lower in SUBJECT_ALIASES:
         return SUBJECT_ALIASES[query_lower]
-    
-    # Check if query contains any alias as a substring
-    for alias, subject in SUBJECT_ALIASES.items():
-        if alias in query_lower or query_lower in alias:
-            return subject
-    
+
+    # 2. An alias appearing INSIDE the query, on word boundaries, longest
+    #    alias first.
+    #
+    #    This used to be a bare substring test in dict order, which turned
+    #    the alias table into a misrouting engine (found 2026-07-29):
+    #
+    #        "digital collections" -> 'ita'  -> Italian
+    #        "the reserve desk"    -> 'the'  -> Theater
+    #        "meeting rooms"       -> 'ee'   -> Electrical Engineering
+    #        "quarterly reports"   -> 'art'  -> Art
+    #        "start a paper"       -> 'sta'  -> Statistics
+    #        "relevant databases"  -> 'rel'  -> Religion
+    #
+    #    and the bot then answered with that subject's librarian, by name
+    #    and email. Word boundaries alone are not enough -- "the" IS a word
+    #    in "the reserve desk" -- so a containment match additionally has to
+    #    be long enough to be a real subject word rather than a code.
+    #    Longest-first replaces dict order, which made the winner depend on
+    #    insertion sequence.
+    for alias in _ALIASES_LONGEST_FIRST:
+        if re.search(rf"(?<!\w){re.escape(alias)}(?!\w)", query_lower):
+            return SUBJECT_ALIASES[alias]
+
     return None
 
 
@@ -442,13 +475,15 @@ def find_subject_by_course_code(code: str) -> str | None:
     Returns:
         Subject name if found
     """
-    # Extract the department prefix (first 2-4 letters)
-    import re
-    match = re.match(r'^([A-Za-z]{2,4})', code.upper())
-    if match:
-        prefix = match.group(1)
-        return COURSE_CODE_SUBJECTS.get(prefix)
-    return None
+    # The WHOLE argument has to look like a course code: 2-4 letters, then
+    # optionally a space and a course number. Previously this matched the
+    # first 2-4 letters of ANY string, so "the reserve desk" yielded the
+    # prefix "THE" and answered with the Theater liaison (same root cause as
+    # the alias bug above, found 2026-07-29).
+    m = re.fullmatch(r"\s*([A-Za-z]{2,4})\s*\d{0,3}[A-Za-z]?\s*", code or "")
+    if not m:
+        return None
+    return COURSE_CODE_SUBJECTS.get(m.group(1).upper())
 
 
 def get_all_aliases_for_subject(subject_name: str) -> list[str]:

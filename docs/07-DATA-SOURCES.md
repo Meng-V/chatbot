@@ -206,6 +206,43 @@ librarian instead of the Humanities one. A rejection now produces "no
 liaison listed for that, here is the directory" instead of a confident
 wrong name.
 
+## The same bug, three times: substring matching (2026-07-28/29)
+
+Three separate wrong-person defects turned out to be one root cause —
+**matching fragments of text instead of whole words.** Recording it here
+because it will be tempting again:
+
+| Where | What it did |
+|---|---|
+| Person names | `"roger a justus"` contains `"a"`, so **Krista McDonald** matched **Roger Justus** and the bot gave out his email |
+| Subject names | `"botany"` scored 0.45 against `"Accountancy"`, so Botany answered with the **Business Librarian** |
+| Subject aliases | `"digital collections"` contains `"ita"`, so it resolved to **Italian** and answered with the Humanities Librarian |
+
+The alias case was the worst, because the table holds 56 course-code
+abbreviations (`cs`, `ee`, `the`, `ita`, `art`) and a bare substring test
+put every one of them inside ordinary English:
+
+```
+"the reserve desk"    -> 'the' -> Theater
+"meeting rooms"       -> 'ee'  -> Electrical and Computer Engineering
+"quarterly reports"   -> 'art' -> Art
+"start a paper"       -> 'sta' -> Statistics
+"relevant databases"  -> 'rel' -> Religion
+```
+
+Each then had a real librarian's name and email attached. Which one you
+got depended on **dict insertion order**, so an unrelated edit could
+change the answer.
+
+The fix is the same discipline in all three places: **compare words, not
+character runs.** For aliases specifically, word boundaries alone are not
+enough — `"the"` *is* a word in `"the reserve desk"` — so a match inside a
+phrase must also be **≥5 characters**; anything shorter is a code that only
+names a subject when it is the entire query. Longest alias wins, which also
+removes the dict-order dependency. `find_subject_by_course_code` had the
+same flaw (it read the first 2–4 letters of *any* string) and now requires
+the whole argument to look like a course code.
+
 ## Regional campuses: label, don't hide (option C, 2026-07-28)
 
 **Operator decision:** when a subject has liaisons on more than one
@@ -333,17 +370,19 @@ appear nowhere in the answer.
    therefore come from the live LibGuides API, which the operator can't
    edit and which can't be campus-scoped. Filling this table is the
    single highest-value data task.
-2. **`Subject` last changed 2026-01-06** (~7 months).
-3. **60 subjects lost their only librarian** to the July departures
-   (Jaclyn Spraetz, Nate Floyd) and more will follow Alia Wegner's.
+2. **`Subject` last changed 2026-01-06** for the bulk of its rows.
+3. **Subjects can be left without a liaison when someone leaves.** The
+   reconciler drops a departing colleague's `LibrarianSubject` links along
+   with their row, which is correct — a stale link is how a former
+   colleague keeps being named as a subject's contact — but it does not
+   reassign the subject. After any departure, check which subjects lost
+   their only liaison and set the replacement in the CSV's `liaison`
+   column. (Names deliberately not listed here: this page is shared, and
+   who has left is not the bot's business to publish.)
 4. **12 subjects where MyGuide and Primo name different librarians** with
    no overlap — several are Oxford-vs-regional and resolve by labelling
    the campus; the rest need a human call.
-5. **Duplicate roster row:** Erica Freed has two `Librarian` rows —
-   `freede@` (active) and `freedea@` (inactive). Lookups filter on
-   `isActive`, so answers are correct today, but the stale row is what
-   a hand-written script had wired up (see below).
-6. `MYGUIDE_API_URL` points at **myguidedev** — only the ingest script
+5. `MYGUIDE_API_URL` points at **myguidedev** — only the ingest script
    reads it, but the next import would pull from a dev host.
 
 The operator's review snapshot backing items 1–4 is archived at

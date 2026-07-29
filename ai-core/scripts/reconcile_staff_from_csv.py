@@ -113,6 +113,12 @@ async def main(dry: bool, csv_path: str) -> int:
     today = datetime.date.today()
     current, departed, future = load_csv(csv_path, today)  # future ⊆ current
     keep_emails = {(r["email"] or "").strip().lower() for r in current}
+    # Reason lookup for the run log. "Their last day has passed" and "they
+    # are not in this file at all" are different facts and the operator
+    # needs to tell them apart -- the first is a recorded departure, the
+    # second could just as easily be a gap in the export.
+    off_dates = {(r["email"] or "").strip().lower(): (r.get("last-date") or "")
+                 for r in departed}
 
     db = Prisma()
     await db.connect()
@@ -135,8 +141,12 @@ async def main(dry: bool, csv_path: str) -> int:
             # a duplicate row, not a departure -- but either way this row
             # should stop being served.
             twin = next((c for c in current if names_match(r.name, _disp(c))), None)
-            why = ("duplicate row -- CSV uses "
-                   f"{twin['email']}" if twin else "not in the CSV")
+            if email in off_dates:
+                why = f"CSV records a last day of {off_dates[email]}"
+            elif twin:
+                why = f"duplicate row -- CSV uses {twin['email']}"
+            else:
+                why = "not in the CSV"
             print(f"  {'would ' if dry else ''}remove      {r.email:32} "
                   f"{r.name:24} ({why})")
             if not dry:
