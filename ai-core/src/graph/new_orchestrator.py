@@ -2811,15 +2811,12 @@ def _extract_person_name(message: str) -> "Optional[str]":
     # 2. Match the library-vocabulary stop-list on each HYPHEN part, not on
     #    the whole token: the list already had "gardner", but the captured
     #    word was "Gardner-Harvey", so an exact comparison missed it.
-    for token in (first, last):
-        parts = [p for p in re.split(r"[-\u2013\u2014]", token.lower()) if p]
-        if any(p in _NOT_A_NAME for p in parts):
-            return None
-        # 3. A function word is never part of a name. Catches the class that
-        #    `_NOT_A_NAME` cannot, because that list only holds nouns some-
-        #    body remembered to add.
-        if any(p in _FUNCTION_WORDS for p in parts):
-            return None
+    # 3. Both captured words must be plausible name words -- library
+    #    vocabulary AND function words are rejected, per hyphen part.
+    #    Shared with `_looks_like_person_name` so the two readers of this
+    #    regex cannot disagree about what a name looks like.
+    if not _name_words_are_plausible(first, last):
+        return None
 
     return f"{first} {last}"
 
@@ -3782,20 +3779,43 @@ _NAME_POSSESSIVE_RE = re.compile(
 )
 
 
+def _name_words_are_plausible(first: str, last: str) -> bool:
+    """Could this captured pair be a person's two name words?
+
+    ONE implementation, used by both readers of the capture -- this
+    function and `_extract_person_name`. They previously each carried
+    their own version of the check and drifted: the extractor gained a
+    function-word guard on 2026-07-29 while this one kept matching "in
+    charge" out of "who is in charge of the makerspace". Two functions
+    deciding the same question from the same regex must not disagree.
+    """
+    for token in (first, last):
+        parts = [p for p in re.split(r"[-–—]", (token or "").lower()) if p]
+        if not parts:
+            return False
+        if any(p in _NOT_A_NAME or p in _FUNCTION_WORDS for p in parts):
+            return False
+    return True
+
+
 def _looks_like_person_name(message: str) -> bool:
     """True when the message asks to reach a specific PERSON by name.
 
     Shape-based on purpose: requiring capitalisation would miss the
     patrons who type in lower case, and an allow-list of names would go
-    stale every time staffing changes. A false positive costs nothing --
-    the name lookup simply finds no one and the turn refuses exactly as
-    it does today."""
+    stale every time staffing changes.
+
+    The original note here said a false positive costs nothing, because
+    the lookup would simply find no one. That stopped being true when the
+    no-listing answer became deterministic -- a false positive now
+    reroutes an `out_of_scope` question to `staff_lookup` and can spend
+    the turn on a person who was never asked about.
+    """
     msg = message or ""
     m = _CONTACT_BY_NAME_RE.search(msg) or _NAME_POSSESSIVE_RE.search(msg)
     if not m:
         return False
-    first, last = m.group(1).lower(), m.group(2).lower()
-    return first not in _NOT_A_NAME and last not in _NOT_A_NAME
+    return _name_words_are_plausible(m.group(1), m.group(2))
 
 
 _ASK_SUBJECT_MARKER = "Tell me your subject, major, or course"

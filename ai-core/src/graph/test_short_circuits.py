@@ -1060,6 +1060,39 @@ def test_find_a_thing_is_not_a_person_lookup() -> None:
     assert _extract_person_name("Who is Mark Shores?") == "Mark Shores"
 
 
+def test_both_readers_of_the_name_regex_agree() -> None:
+    """`_extract_person_name` and `_looks_like_person_name` read the same
+    capture and must not disagree about what a name is.
+
+    They did: the extractor gained the function-word guard, while
+    `_looks_like_person_name` still matched "in charge" out of "who is in
+    charge of the makerspace" and forced that turn to `staff_lookup`. Both
+    now go through `_name_words_are_plausible`.
+    """
+    from src.graph.new_orchestrator import (
+        _extract_person_name, _looks_like_person_name,
+    )
+
+    not_people = (
+        "who is in charge of the makerspace",
+        "How do I find articles in PsycINFO?",
+        "can I email me a copy of my receipt",
+        "What's Gardner-Harvey's address?",
+    )
+    for q in not_people:
+        assert _looks_like_person_name(q) is False, q
+        assert _extract_person_name(q) is None, q
+
+    people = (
+        "How do I contact Jennifer Hicks?",
+        "What is John Burke's email?",
+        "who is elias jones-scott",
+    )
+    for q in people:
+        assert _looks_like_person_name(q) is True, q
+        assert _extract_person_name(q) is not None, q
+
+
 def test_personnel_answers_state_their_source() -> None:
     """Operator rule 2026-07-28: whenever the bot gives a person's contact
     details it says which system they came from, so a librarian who spots
