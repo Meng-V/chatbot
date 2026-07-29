@@ -647,30 +647,9 @@ def _make_lookup_librarian() -> Callable[[dict], list[dict]]:
             # Jacqueline), or the formal name when `name` is what they go
             # by ("Eric Yarnetsky" for Jerry). Matched here, never
             # displayed: `_librarian_dict` always speaks `name`.
-            hits = [r for r in rows
+            return [_librarian_dict(r) for r in rows
                     if names_match(name, getattr(r, "name", None))
                     or names_match(name, getattr(r, "alternateName", None))]
-            if hits:
-                return [_librarian_dict(r) for r in hits]
-            # Nobody CURRENT by that name. Before answering "no idea",
-            # check whether we used to have them: a former colleague
-            # deserves "they are no longer listed here", not a silent miss
-            # that lets the synthesizer reconstruct stale contact details
-            # from a crawled staff page. Tagged `is_former` so callers can
-            # never mistake these for reachable people.
-            former = await client.librarian.find_many(
-                where={"isActive": False})
-            out = []
-            for r in former:
-                if (names_match(name, getattr(r, "name", None))
-                        or names_match(name, getattr(r, "alternateName", None))):
-                    d = _librarian_dict(r)
-                    # Contact details of someone who has left must not
-                    # travel any further than this flag.
-                    d.update({"email": None, "phone": None,
-                              "profile_url": None, "is_former": True})
-                    out.append(d)
-            return out
 
         try:
             return _order_for_scope(_db(_q_by_name))

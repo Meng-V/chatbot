@@ -941,10 +941,16 @@ def test_staff_contact_never_substitutes_a_different_person() -> None:
         lookup_service_availability=lambda intent, campus: None,
     )
     scope = Scope(campus="oxford", library=None, source="default")
-    # name doesn't match what came back -> answer nothing, don't
-    # hand the patron somebody else's address
-    assert _staff_contact_by_name(
-        "How do I contact Jaclyn Spraetz?", deps, scope) is None
+    # The name doesn't match what came back, so the patron must NOT get
+    # somebody else's address. Since 2026-07-29 this answers "no listing"
+    # rather than falling through -- the guarantee is about what is NOT
+    # said, so assert that directly.
+    res = _staff_contact_by_name(
+        "How do I contact Jaclyn Spraetz?", deps, scope)
+    assert res is not None
+    assert "justusra@miamioh.edu" not in res[0]
+    assert "Roger" not in res[0]
+    assert "don't have a listing" in res[0]
     # the same lookup for a MATCHING name still answers
     out = _staff_contact_by_name(
         "How do I contact Roger Justus?", deps, scope)
@@ -1039,17 +1045,20 @@ def test_personnel_answers_state_their_source() -> None:
         {"name": "C Smith", "email": "c@x.edu"}])
     assert "Source:" not in answer
 
+def test_unknown_name_says_no_listing_and_nothing_more() -> None:
+    """Operator instruction 2026-07-29: the bot must NOT tell patrons that
+    someone has left.
 
-def test_former_staff_is_data_driven_not_a_hardcoded_list() -> None:
-    """A name that only matches DEACTIVATED roster rows gets the honest
-    "no current listing" notice -- and never a reconstructed contact.
+    This replaced a hardcoded list of departed colleagues and wording that
+    said "that person may no longer be with Miami University Libraries",
+    inferred from their absence from the roster. The bot has no standing to
+    characterise anyone's employment and cannot actually know -- a gap in
+    the roster is not a resignation, and the person may be on leave, newly
+    hired, or not library staff at all.
 
-    This replaced a hardcoded name list. 25 colleagues were deactivated
-    from the HR CSV on 2026-07-29; without this they would have fallen
-    through to the synthesizer, which composes from crawled staff pages and
-    would have handed out contact details for people who have left. The
-    roster's isActive flag decides now, so the next departure needs no code
-    change and nobody has to be named in source.
+    It still has to be DETERMINISTIC: without it the turn falls through to
+    the synthesizer, which composes from crawled staff pages and would
+    reconstruct contact details for someone the roster no longer carries.
     """
     from src.agent.tool_registry import Tool, ToolRegistry
     from src.graph.new_orchestrator import (
@@ -1058,17 +1067,11 @@ def test_former_staff_is_data_driven_not_a_hardcoded_list() -> None:
     from src.scope.resolver import Scope
 
     registry = ToolRegistry()
-
-    def former_only(args):
-        # what the backend returns for a name that matches only an
-        # inactive row: identity, but contact fields stripped
-        return {"librarians": [{"name": "Elias Tzoc", "email": None,
-                                "phone": None, "campus": "Oxford",
-                                "is_former": True}]}
-
-    registry.register(Tool(name="lookup_librarian", description="stub",
-                           parameters={"type": "object"},
-                           handler=former_only))
+    registry.register(Tool(
+        name="lookup_librarian", description="stub",
+        parameters={"type": "object"},
+        handler=lambda args: {"librarians": []},      # no such person
+    ))
     deps = OrchestratorDeps(
         classifier=None, tool_registry=registry, agent_llm=None,
         synthesizer_llm=None, load_corrections=lambda: [],
@@ -1078,38 +1081,43 @@ def test_former_staff_is_data_driven_not_a_hardcoded_list() -> None:
     scope = Scope(campus="oxford", library=None, source="default")
 
     res = _staff_contact_by_name("How do I contact Elias Tzoc?", deps, scope)
-    assert res is not None
-    assert "don't have a current listing" in res[0]
-    assert "Elias Tzoc" in res[0]
-    assert "@" not in res[0]                       # no address invented
+    assert res is not None, "must answer, not fall through to the synth"
+    answer = res[0]
+    assert "don't have a listing for Elias Tzoc" in answer
+    assert "@" not in answer                      # no address invented
+    # and NOT a single word about why they are absent
+    for forbidden in ["no longer", "left", "departed", "former",
+                      "resigned", "used to"]:
+        assert forbidden not in answer.lower(), forbidden
     assert res[1][0]["url"].endswith("/staff/")
 
 
-def test_departed_staff_notice_is_honest_and_scoped() -> None:
-    """A departed colleague's name must produce "no current listing",
-    not someone else's details and not "contact them via the directory"
-    (which asserts they're reachable). Operator-reported departures
-    2026-07-28."""
-    from src.graph.new_orchestrator import _departed_staff_answer
-    for q in ["How do I contact Jaclyn Spraetz?",
-              "how do i contact nate floyd",
-              "What is Jaclyn Spraetz's email?"]:
-        res = _departed_staff_answer(q)
-        assert res is not None, q
-        assert "don't have a current listing" in res[0], q
-        assert res[1][0]["url"].endswith("/staff/")
+def test_a_current_colleague_is_still_answered_normally() -> None:
+    """The no-listing path must not swallow real matches."""
+    from src.agent.tool_registry import Tool, ToolRegistry
+    from src.graph.new_orchestrator import (
+        OrchestratorDeps, _staff_contact_by_name,
+    )
+    from src.scope.resolver import Scope
 
-    # current staff are untouched
-    for q in ["How do I contact Jennifer Hicks?",
-              "How do I contact Erica Freed?",
-              "How do I contact the library?"]:
-        assert _departed_staff_answer(q) is None, q
+    registry = ToolRegistry()
+    registry.register(Tool(
+        name="lookup_librarian", description="stub",
+        parameters={"type": "object"},
+        handler=lambda args: {"librarians": [{
+            "name": "Jennifer Hicks", "full_name": "Jennifer Hicks",
+            "email": "hicksjl2@miamioh.edu", "campus": "Middletown",
+            "source": "database"}]},
+    ))
+    deps = OrchestratorDeps(
+        classifier=None, tool_registry=registry, agent_llm=None,
+        synthesizer_llm=None, load_corrections=lambda: [],
+        load_url_allowlist=lambda: set(),
+        lookup_service_availability=lambda intent, campus: None,
+    )
+    scope = Scope(campus="middletown", library=None, source="default")
+    ans, _ = _staff_contact_by_name(
+        "How do I contact Jennifer Hicks?", deps, scope)
+    assert "hicksjl2@miamioh.edu" in ans
+    assert "don't have a listing" not in ans
 
-
-def test_departed_match_requires_the_full_name() -> None:
-    """A shared surname must not declare a current colleague gone: only
-    the complete departed name matches."""
-    from src.graph.new_orchestrator import _departed_staff_answer
-    # "Floyd" alone, or a different Floyd, is not a match
-    assert _departed_staff_answer("How do I contact Sarah Floyd?") is None
-    assert _departed_staff_answer("How do I contact Jaclyn Miller?") is None

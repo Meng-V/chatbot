@@ -295,10 +295,7 @@ def _run_turn(
 
     # --- 2.04. Contact a named person (deterministic, pre-agent) ---
     if not booking_flow and not subject_reply:
-        # departed staff first: their name must never reach the lookup,
-        # which would resolve it to a current colleague's details
-        _sc = (_departed_staff_answer(request.user_message)
-               or _staff_contact_by_name(request.user_message, deps, scope))
+        _sc = _staff_contact_by_name(request.user_message, deps, scope)
         if _sc is not None:
             _ans, _cites = _sc
             latency_ms = int((time.monotonic() - turn_start) * 1000)
@@ -2732,55 +2729,34 @@ def _staff_contact_short_circuit(
     return _format_staff_contact(people)
 
 
-# Staff who have LEFT. A patron asking for one of them used to be told
-# either someone else's contact details or "contact them through the
-# directory" -- both assert a person is reachable when they are not
-# (operator-reported departures 2026-07-28). Same shape as the
-# closed-library notice: state the fact, then route to something real.
-#
-# TO MAINTAIN: add the departed person's full name in lower case. Removal
-# from the Librarian table alone is NOT enough -- crawled staff pages in
-# the corpus keep mentioning them, and the LLM will happily compose an
-# answer from that.
-#
-# PENDING (add when the departure is effective):
-#   * Alia Levar Wegner -- Digital Collections Librarian, leaving soon
-#     (still current as of 2026-07-28, so deliberately NOT listed yet)
-_DEPARTED_STAFF = frozenset({
-    "jaclyn spraetz",
-    "nate floyd",
-})
+def _no_listing_answer(who: str) -> "tuple[str, list[dict]]":
+    """"I have no listing for that name" -- and nothing more.
 
+    Operator instruction 2026-07-29: the bot does NOT tell patrons that
+    someone has left. This function replaced a hardcoded list of departed
+    colleagues plus wording that said "that person may no longer be with
+    Miami University Libraries", inferred from their absence from the
+    roster. That is the bot editorialising about somebody's employment,
+    which it has no standing to do and cannot actually know -- a gap in the
+    roster is not a resignation, and the person may be on leave, newly
+    hired, or simply not library staff at all.
 
-def _former_staff_answer(who: str) -> "tuple[str, list[dict]]":
-    """Say plainly that someone is no longer listed. Shared by the
-    data-driven path (roster `isActive=False`) and the hardcoded pair
-    below, so both phrase it identically."""
+    So this states only the fact we actually have: no listing, here is the
+    directory. It still matters that this is DETERMINISTIC -- without it the
+    turn falls through to the synthesizer, which composes from crawled staff
+    pages and would happily reconstruct contact details for someone the
+    roster no longer carries.
+    """
     return (
-        f"I don't have a current listing for {who} — that person "
-        f"may no longer be with Miami University Libraries. For who "
-        f"covers their area now, use the staff directory [1] or ask "
-        f"a librarian through Ask Us [2].",
+        f"I don't have a listing for {who} in the Libraries staff "
+        f"directory. You can search the directory yourself [1], or ask a "
+        f"librarian through Ask Us and they can point you to the right "
+        f"person [2].",
         [{"n": 1, "url": _STAFF_DIRECTORY_URL,
           "snippet": "Miami University Libraries — staff directory"},
          {"n": 2, "url": _ASKUS_URL,
           "snippet": "Ask Us — talk to a librarian"}],
     )
-
-
-def _departed_staff_answer(message: str) -> "Optional[tuple[str, list[dict]]]":
-    """Say plainly that we have no current listing for a departed
-    colleague, instead of implying they can still be reached."""
-    name = _extract_person_name(message)
-    if not name:
-        return None
-    for departed in _DEPARTED_STAFF:
-        # names_match requires first+last (or every asked word), so a
-        # shared surname never wrongly declares a current colleague gone,
-        # and a middle name or initial in either spelling is ignored.
-        if names_match(name, departed):
-            return _former_staff_answer(display_name(name))
-    return None
 
 
 def _extract_person_name(message: str) -> "Optional[str]":
@@ -2820,18 +2796,8 @@ def _staff_contact_by_name(
         ))
         if result.error or not result.data:
             return None
-        _rows = [r for r in (result.data.get("librarians") or [])
-                 if isinstance(r, dict)]
-        # A name that only matches FORMER staff gets the honest notice,
-        # never a reconstructed contact. This is data-driven: the roster's
-        # isActive flag decides, so a departure needs no code change --
-        # 25 colleagues were deactivated from the HR CSV on 2026-07-29 and
-        # all of them are covered without being named anywhere in code.
-        if _rows and all(r.get("is_former") for r in _rows):
-            return _former_staff_answer(
-                display_name(_rows[0].get("name")) or name)
-        people = [r for r in _rows
-                  if r.get("email") and not r.get("is_former")]
+        people = [r for r in (result.data.get("librarians") or [])
+                  if isinstance(r, dict) and r.get("email")]
         # The row we get back MUST actually be the person asked for.
         # lookup_librarian falls back to inferring subjects FROM the name
         # and then returns whoever covers them, so asking for a departed
@@ -2852,8 +2818,16 @@ def _staff_contact_by_name(
         ]
     except Exception:  # noqa: BLE001 -- never break a turn over a prefetch
         return None
-    if not people or len(people) > 3:
+    if len(people) > 3:
+        # Too many to present as "the" person; let the normal path handle it.
         return None
+    if not people:
+        # No listing for a name the patron clearly asked about. Answer that
+        # DETERMINISTICALLY rather than falling through: the synthesizer
+        # composes from crawled staff pages and would reconstruct contact
+        # details for someone the roster no longer carries. The wording makes
+        # no claim about why they are absent -- see `_no_listing_answer`.
+        return _no_listing_answer(display_name(name))
     return _format_staff_contact(people)
 
 
@@ -3386,12 +3360,6 @@ def _tool_fact_evidence(
         # asks a narrower query if it needs more.
         for lib in librarians[:5]:
             if not isinstance(lib, dict) or not lib.get("email"):
-                continue
-            # A former colleague must never reach the synthesizer as
-            # evidence -- it would compose a contact answer from a person
-            # the roster has already retired. The by-name short-circuit
-            # handles these with an explicit "no current listing".
-            if lib.get("is_former"):
                 continue
             parts = [
                 lib.get("name"), lib.get("title"),

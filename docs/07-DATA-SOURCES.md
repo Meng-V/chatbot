@@ -18,7 +18,6 @@ source, and everything else is derived or deleted.**
 | Live hours, room availability | **LibCal API** — never cached, never crawled | n/a (live) |
 | Page content, policies, guides | **Weaviate corpus** (ETL'd website) | `scripts/etl/` |
 | Answers the operator has hand-fixed | **Postgres `ManualCorrection`** | `/admin/corrections/view` |
-| Staff who have LEFT | `_DEPARTED_STAFF` in `new_orchestrator.py` | edit + deploy |
 
 ## Two rules about people (2026-07-28)
 
@@ -277,12 +276,13 @@ idempotent and has `--dry-run`.
 
 It settled four things the other sources couldn't:
 
-1. **Who is current.** A row with a past `last-date` has left; a future
-   `start-date` hasn't arrived. The roster was carrying **25 stale rows as
-   active** — 21 people absent from the CSV entirely, 1 with a recorded
-   departure date, and 3 duplicate rows. All deactivated (`isActive=False`
-   — nothing is deleted, and every lookup already filters on it). Active
-   went 94 → **73, exactly matching the CSV.**
+1. **Who is on the roster.** A row with a past `last-date` is off it. A
+   future `start-date` is **included** — an incoming colleague should be
+   findable before their first day. The table was carrying **26 rows the
+   CSV doesn't have**: 21 people absent from it entirely, 1 with a recorded
+   departure date, 3 duplicate rows, and 1 more. All **deleted**, not
+   deactivated (see below). The table is now **74 rows, all current,
+   exactly matching the CSV**, with no history left behind.
 2. **The two-address problem.** Miami issues two addresses per person: a
    `firstname.lastname@` alias and a `uniqueid@` primary
    (`aaron.shrimplin@` / `shrimpak@`). Both deliver, different systems
@@ -302,13 +302,29 @@ would out them. `legal-first-name` is deliberately **not** copied into
 `alternateName` either: that column exists so a *patron's* wording finds
 the right person, and patrons don't type colleagues' legal names.
 
-### Departures need no code change any more
+### The bot never says someone has left
 
-`_DEPARTED_STAFF` in the orchestrator used to be a hardcoded list. A name
-matching only **deactivated** roster rows now gets an explicit "I don't
-have a current listing for X" — with contact fields stripped at the
-backend, so nothing can leak downstream. The two names still hardcoded are
-people absent from the roster entirely, which the data path can't see.
+**Operator instruction 2026-07-29.** Rows absent from the CSV are
+**deleted outright**, and the answer for an unknown name says only:
+
+> I don't have a listing for *X* in the Libraries staff directory. You can
+> search the directory yourself, or ask a librarian through Ask Us and
+> they can point you to the right person.
+
+An earlier version kept departed rows with `isActive=False` so the bot
+could say *"that person may no longer be with Miami University
+Libraries"*. That was wrong on two counts: the bot has **no standing** to
+characterise anyone's employment, and it **cannot actually know** — a gap
+in the roster is not a resignation, and the person may be on leave, newly
+hired, or not library staff at all. The hardcoded `_DEPARTED_STAFF` list
+is gone too; nobody's departure is recorded in source any more.
+
+What still matters is that this answer is **deterministic**. Without it the
+turn falls through to the synthesizer, which composes from crawled staff
+pages and would happily reconstruct contact details for someone the roster
+no longer carries. Tests assert both halves: the name is stated, and the
+words "no longer", "left", "departed", "former", "resigned" and "used to"
+appear nowhere in the answer.
 
 ## Known gaps (need operator decisions, not code)
 

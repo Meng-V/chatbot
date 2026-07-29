@@ -11,8 +11,11 @@ WHY A SCRIPT AND NOT A ONE-OFF
     reports what it changed. Run it after every CSV refresh.
 
 WHAT THE CSV IS AUTHORITATIVE FOR
-    * who currently works here   -- a row with a past `last-date` has left,
-                                    a future `start-date` has not arrived
+    * who is on the roster       -- a row with a past `last-date` is off it.
+                                    A future `start-date` is INCLUDED
+                                    (operator instruction 2026-07-29): an
+                                    incoming colleague should be findable
+                                    before their first day, not after.
     * the name we DISPLAY        -- `first-name` is what they go by, which
                                     is NOT always the legal name. This
                                     matters for dignity, not just style:
@@ -34,9 +37,18 @@ THE TWO-ADDRESS PROBLEM
     and a `uniqueid@` primary (`aaron.shrimplin@` / `shrimpak@`). Both
     deliver. Different systems picked different ones, so the roster grew a
     second row per person, and the second row had no title. This script
-    keeps the row matching the CSV's `email` column and deactivates the
-    other -- one row per human. Nothing is deleted; `isActive=False`
-    preserves the history and every lookup already filters on it.
+    keeps the row matching the CSV's `email` column and REMOVES the other
+    -- one row per human.
+
+REMOVED, NOT DEACTIVATED
+    Operator instruction 2026-07-29: rows absent from the CSV are deleted
+    outright. An earlier version kept them with `isActive=False` so the bot
+    could say "that person may no longer be with the Libraries" -- but that
+    is the bot editorialising about someone's employment, which it has no
+    standing to do and cannot actually know (a gap in the CSV is not a
+    resignation). With the row gone, the bot says only what is true: it has
+    no listing for that name. Verified before the first deletion that no
+    LibrarianSubject or LibrarianReview rows depended on them.
 """
 
 import argparse
@@ -75,9 +87,12 @@ def _disp(row: dict) -> str:
 
 
 def load_csv(path: str, today: datetime.date):
-    """-> (current, departed, not_yet_started). Second entries dropped:
-    one human, one row, even when they serve two campuses."""
-    current, departed, future = [], [], []
+    """-> (on_roster, off_roster, starting_soon). Second entries dropped:
+    one human, one row, even when they serve two campuses.
+
+    `starting_soon` is a subset of `on_roster`, reported separately so the
+    run log shows who is new -- they ARE listed, per the operator."""
+    on, off, soon = [], [], []
     for row in csv.DictReader(open(path, encoding="utf-8-sig")):
         if (row.get("second-entry-for-person") or "").strip().upper() == "TRUE":
             continue
@@ -86,31 +101,33 @@ def load_csv(path: str, today: datetime.date):
         last = (row.get("last-date") or "").strip()
         start = (row.get("start-date") or "").strip()
         if last and last <= today.isoformat():
-            departed.append(row)
-        elif start and start > today.isoformat():
-            future.append(row)
-        else:
-            current.append(row)
-    return current, departed, future
+            off.append(row)
+            continue
+        on.append(row)
+        if start and start > today.isoformat():
+            soon.append(row)
+    return on, off, soon
 
 
 async def main(dry: bool, csv_path: str) -> int:
     today = datetime.date.today()
-    current, departed, future = load_csv(csv_path, today)
+    current, departed, future = load_csv(csv_path, today)  # future ⊆ current
     keep_emails = {(r["email"] or "").strip().lower() for r in current}
 
     db = Prisma()
     await db.connect()
     changes = {k: 0 for k in
-               ("deactivated", "added", "titles", "phones", "subjects_made",
+               ("removed", "added", "titles", "phones", "subjects_made",
                 "links_added", "links_removed")}
     try:
         rows = await db.librarian.find_many()
 
-        # --- 1. anyone active here but absent from the CSV has left ------
+        # --- 1. anyone absent from the CSV comes off the roster ----------
+        # Deliberately NOT limited to isActive rows: the point is that the
+        # table matches the CSV exactly, so previously-deactivated rows go
+        # too. Leaving them behind is what made the bot able to speculate
+        # about people's employment.
         for r in rows:
-            if not r.isActive:
-                continue
             email = (r.email or "").lower()
             if email in keep_emails:
                 continue
@@ -120,12 +137,11 @@ async def main(dry: bool, csv_path: str) -> int:
             twin = next((c for c in current if names_match(r.name, _disp(c))), None)
             why = ("duplicate row -- CSV uses "
                    f"{twin['email']}" if twin else "not in the CSV")
-            print(f"  {'would ' if dry else ''}deactivate  {r.email:32} "
+            print(f"  {'would ' if dry else ''}remove      {r.email:32} "
                   f"{r.name:24} ({why})")
             if not dry:
-                await db.librarian.update(where={"email": r.email},
-                                          data={"isActive": False})
-            changes["deactivated"] += 1
+                await db.librarian.delete(where={"email": r.email})
+            changes["removed"] += 1
 
         # --- 2. CSV rows we are missing, plus title/phone drift ----------
         by_email = {(r.email or "").lower(): r for r in rows}
@@ -215,10 +231,11 @@ async def main(dry: bool, csv_path: str) -> int:
     finally:
         await db.disconnect()
 
-    print(f"\nCSV: {len(current)} current, {len(departed)} departed, "
-          f"{len(future)} not yet started")
+    print(f"\nCSV: {len(current)} on the roster "
+          f"(incl. {len(future)} starting soon), "
+          f"{len(departed)} with a past last-date")
     for r in future:
-        print(f"   not listed yet: {_disp(r)} starts {r['start-date']}")
+        print(f"   starting soon, listed: {_disp(r)} on {r['start-date']}")
     verb = "would change" if dry else "changed"
     print(f"{verb}: " + ", ".join(f"{k}={v}" for k, v in changes.items() if v))
     return 0
