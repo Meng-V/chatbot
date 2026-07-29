@@ -45,11 +45,12 @@ ALTERNATES: dict[str, tuple[str, str]] = {
     "johnsoj@miamioh.edu": ("Jacqueline Johnson", "Jacky Johnson"),
     # Goes by Andy; the bot says his formal name.
     "revellaa@miamioh.edu": ("Andrew Revelle", "Andy Revelle"),
-    # The reverse: his formal first name is Eric, but everyone -- himself
-    # included -- calls him Jerry, and the operator's instruction is that
-    # the bot must NOT display "Eric". So `name` stays Jerry and the
-    # formal spelling becomes the accepted alternate.
-    "yarnete@miamioh.edu": ("Jerry Yarnetsky", "Eric Yarnetsky"),
+    # The reverse case: everyone -- himself included -- calls him Jerry,
+    # and the operator's instruction is that the bot must NOT display his
+    # legal first name. So `name` stays Jerry and the legal spelling is
+    # only the accepted alternate. NOTE the operator recalled it as "Eric";
+    # the HR CSV's `legal-first-name` says EARL, and the CSV wins.
+    "yarnete@miamioh.edu": ("Jerry Yarnetsky", "Earl Yarnetsky"),
 }
 
 

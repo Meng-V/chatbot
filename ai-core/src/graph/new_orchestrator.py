@@ -1745,12 +1745,14 @@ def _cancel_reservation_answer(message: str) -> "Optional[tuple[str, list[dict]]
 # Data Services, not the archivist) -> the synth saw contradictory instruction-
 # phrased text and refused ('email of the university archivist', prod eval
 # 2026-06-28). Answer deterministically from the verified staff page: the
-# archivist is Jacqueline Johnson (spec.lib.miamioh.edu/home/staff/,
-# curl-verified; email + active status re-verified against the roster
-# 2026-07-28). The cited page calls her "Jacky", but the operator's rule
-# is that the bot SPEAKS the formal name, so this says Jacqueline. Asking
-# for "Jacky Johnson" still finds her -- Librarian.alternateName carries
-# the nickname for matching only. See docs/07-DATA-SOURCES.md.
+# archivist. STAFFING CHANGE, operator-confirmed 2026-07-29: the
+# University Archivist is now ANI KARAGIANIS (started 2026-07-01);
+# Jacqueline Johnson's title is now "Head of Special Collections and
+# Archives" and no longer includes "University Archivist". This answer
+# named Jacqueline for weeks after the change -- caught by diffing the
+# public staff directory against the roster, then confirmed by the
+# operator's HR CSV. Both are current colleagues in the same department,
+# so the answer names both roles rather than replacing one with the other.
 _ARCHIVIST_RE = re.compile(r"\barchivist\b", re.IGNORECASE)
 _ARCHIVES_STAFF_URL = "https://spec.lib.miamioh.edu/home/staff/"
 
@@ -1761,9 +1763,10 @@ def _archives_contact_answer(message: str) -> "Optional[tuple[str, list[dict]]]"
     if not _ARCHIVIST_RE.search(message or ""):
         return None
     answer = (
-        "The University Archivist is Jacqueline Johnson, University Archivist "
-        "and Head of Special Collections and Archives "
-        "(johnsoj@miamioh.edu), in Special Collections & "
+        "The University Archivist is Ani Karagianis "
+        "(karagia@miamioh.edu). The department is led by Jacqueline "
+        "Johnson, Head of Special Collections and Archives "
+        "(johnsoj@miamioh.edu). They are in Special Collections & "
         "University Archives on the 3rd floor of King Library. General "
         "contacts: SpecColl@MiamiOH.edu, Archives@MiamiOH.edu, (513) 529-3323 [1]."
         + _VERIFIED_PAGE_SOURCE
@@ -2749,6 +2752,22 @@ _DEPARTED_STAFF = frozenset({
 })
 
 
+def _former_staff_answer(who: str) -> "tuple[str, list[dict]]":
+    """Say plainly that someone is no longer listed. Shared by the
+    data-driven path (roster `isActive=False`) and the hardcoded pair
+    below, so both phrase it identically."""
+    return (
+        f"I don't have a current listing for {who} — that person "
+        f"may no longer be with Miami University Libraries. For who "
+        f"covers their area now, use the staff directory [1] or ask "
+        f"a librarian through Ask Us [2].",
+        [{"n": 1, "url": _STAFF_DIRECTORY_URL,
+          "snippet": "Miami University Libraries — staff directory"},
+         {"n": 2, "url": _ASKUS_URL,
+          "snippet": "Ask Us — talk to a librarian"}],
+    )
+
+
 def _departed_staff_answer(message: str) -> "Optional[tuple[str, list[dict]]]":
     """Say plainly that we have no current listing for a departed
     colleague, instead of implying they can still be reached."""
@@ -2760,17 +2779,7 @@ def _departed_staff_answer(message: str) -> "Optional[tuple[str, list[dict]]]":
         # shared surname never wrongly declares a current colleague gone,
         # and a middle name or initial in either spelling is ignored.
         if names_match(name, departed):
-            return (
-                f"I don't have a current listing for {display_name(name)} — "
-                f"that person "
-                f"may no longer be with Miami University Libraries. For who "
-                f"covers their area now, use the staff directory [1] or ask "
-                f"a librarian through Ask Us [2].",
-                [{"n": 1, "url": _STAFF_DIRECTORY_URL,
-                  "snippet": "Miami University Libraries — staff directory"},
-                 {"n": 2, "url": _ASKUS_URL,
-                  "snippet": "Ask Us — talk to a librarian"}],
-            )
+            return _former_staff_answer(display_name(name))
     return None
 
 
@@ -2811,10 +2820,18 @@ def _staff_contact_by_name(
         ))
         if result.error or not result.data:
             return None
-        people = [
-            r for r in (result.data.get("librarians") or [])
-            if isinstance(r, dict) and r.get("email")
-        ]
+        _rows = [r for r in (result.data.get("librarians") or [])
+                 if isinstance(r, dict)]
+        # A name that only matches FORMER staff gets the honest notice,
+        # never a reconstructed contact. This is data-driven: the roster's
+        # isActive flag decides, so a departure needs no code change --
+        # 25 colleagues were deactivated from the HR CSV on 2026-07-29 and
+        # all of them are covered without being named anywhere in code.
+        if _rows and all(r.get("is_former") for r in _rows):
+            return _former_staff_answer(
+                display_name(_rows[0].get("name")) or name)
+        people = [r for r in _rows
+                  if r.get("email") and not r.get("is_former")]
         # The row we get back MUST actually be the person asked for.
         # lookup_librarian falls back to inferring subjects FROM the name
         # and then returns whoever covers them, so asking for a departed
@@ -3369,6 +3386,12 @@ def _tool_fact_evidence(
         # asks a narrower query if it needs more.
         for lib in librarians[:5]:
             if not isinstance(lib, dict) or not lib.get("email"):
+                continue
+            # A former colleague must never reach the synthesizer as
+            # evidence -- it would compose a contact answer from a person
+            # the roster has already retired. The by-name short-circuit
+            # handles these with an explicit "no current listing".
+            if lib.get("is_former"):
                 continue
             parts = [
                 lib.get("name"), lib.get("title"),

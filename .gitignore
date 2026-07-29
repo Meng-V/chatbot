@@ -199,6 +199,11 @@ node_modules
 /ai-core/ai-core/
 /ai-core/docker-compose.weaviate.local.yml
 /test
+# Staff roster exports. PERSONAL DATA -- legal names, pronouns, phone
+# numbers, start/end dates. Never commit. The entry below only covered a
+# differently-named copy, so `git add -A` staged staff-members.csv into a
+# commit on 2026-07-29; caught before any push and stripped.
+staff-members*.csv
 staff-members - staff-members.csv
 ai-core/docs/WEAVIATE_SERVER_DEPLOYMENT.md
 log/deploy.sh

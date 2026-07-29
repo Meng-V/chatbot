@@ -145,7 +145,7 @@ def test_nicknames_cannot_be_derived_and_need_the_data_column():
     """
     assert not names_match("Jacky Johnson", "Jacqueline Johnson")
     assert not names_match("Andy Revelle", "Andrew Revelle")
-    assert not names_match("Jerry Yarnetsky", "Eric Yarnetsky")
+    assert not names_match("Jerry Yarnetsky", "Earl Yarnetsky")
 
 
 def test_the_alternate_spelling_matches_when_supplied():
@@ -160,7 +160,7 @@ def test_the_alternate_spelling_matches_when_supplied():
         # (name we display, alternate we accept)
         ("Jacqueline Johnson", "Jacky Johnson"),
         ("Andrew Revelle", "Andy Revelle"),
-        ("Jerry Yarnetsky", "Eric Yarnetsky"),
+        ("Jerry Yarnetsky", "Earl Yarnetsky"),
     ]
 
     def lookup(asked):
@@ -171,12 +171,12 @@ def test_the_alternate_spelling_matches_when_supplied():
     assert lookup("Jacqueline Johnson") == ["Jacqueline Johnson"]
     assert lookup("Andy Revelle") == ["Andrew Revelle"]
     assert lookup("Andrew Revelle") == ["Andrew Revelle"]
-    # the reverse direction: asking the formal name yields the name he
-    # actually goes by, never "Eric"
-    assert lookup("Eric Yarnetsky") == ["Jerry Yarnetsky"]
+    # the reverse direction: asking by the legal name yields the name he
+    # actually goes by -- the legal one is never spoken
+    assert lookup("Earl Yarnetsky") == ["Jerry Yarnetsky"]
     assert lookup("Jerry Yarnetsky") == ["Jerry Yarnetsky"]
     # an alternate must not become a wildcard: a shared first OR last
     # name is still not a match
     assert lookup("Jacky Smith") == []
     assert lookup("Andy Johnson") == []
-    assert lookup("Eric Adams") == []
+    assert lookup("Earl Adams") == []

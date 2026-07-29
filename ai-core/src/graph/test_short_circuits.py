@@ -1040,6 +1040,51 @@ def test_personnel_answers_state_their_source() -> None:
     assert "Source:" not in answer
 
 
+def test_former_staff_is_data_driven_not_a_hardcoded_list() -> None:
+    """A name that only matches DEACTIVATED roster rows gets the honest
+    "no current listing" notice -- and never a reconstructed contact.
+
+    This replaced a hardcoded name list. 25 colleagues were deactivated
+    from the HR CSV on 2026-07-29; without this they would have fallen
+    through to the synthesizer, which composes from crawled staff pages and
+    would have handed out contact details for people who have left. The
+    roster's isActive flag decides now, so the next departure needs no code
+    change and nobody has to be named in source.
+    """
+    from src.agent.tool_registry import Tool, ToolRegistry
+    from src.graph.new_orchestrator import (
+        OrchestratorDeps, _staff_contact_by_name,
+    )
+    from src.scope.resolver import Scope
+
+    registry = ToolRegistry()
+
+    def former_only(args):
+        # what the backend returns for a name that matches only an
+        # inactive row: identity, but contact fields stripped
+        return {"librarians": [{"name": "Elias Tzoc", "email": None,
+                                "phone": None, "campus": "Oxford",
+                                "is_former": True}]}
+
+    registry.register(Tool(name="lookup_librarian", description="stub",
+                           parameters={"type": "object"},
+                           handler=former_only))
+    deps = OrchestratorDeps(
+        classifier=None, tool_registry=registry, agent_llm=None,
+        synthesizer_llm=None, load_corrections=lambda: [],
+        load_url_allowlist=lambda: set(),
+        lookup_service_availability=lambda intent, campus: None,
+    )
+    scope = Scope(campus="oxford", library=None, source="default")
+
+    res = _staff_contact_by_name("How do I contact Elias Tzoc?", deps, scope)
+    assert res is not None
+    assert "don't have a current listing" in res[0]
+    assert "Elias Tzoc" in res[0]
+    assert "@" not in res[0]                       # no address invented
+    assert res[1][0]["url"].endswith("/staff/")
+
+
 def test_departed_staff_notice_is_honest_and_scoped() -> None:
     """A departed colleague's name must produce "no current listing",
     not someone else's details and not "contact them via the directory"

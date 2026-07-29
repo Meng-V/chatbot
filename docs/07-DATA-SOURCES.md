@@ -12,7 +12,7 @@ source, and everything else is derived or deleted.**
 
 | Fact | Single source | How it's updated |
 |---|---|---|
-| Who works here (name, email, phone, title, campus) | **Postgres `Librarian`** | `scripts/ingest_myguide.py` |
+| Who works here (name, email, phone, title, campus) | **Postgres `Librarian`**, reconciled from the operator's **staff CSV** | `scripts/reconcile_staff_from_csv.py` |
 | What subjects exist (+ course / dept / major codes) | **Postgres `Subject`** + its code tables | same ingest |
 | Which librarian covers which subject | **Postgres `LibrarianSubject`**, with the **live LibGuides API** as fallback | ingest / LibGuides |
 | Live hours, room availability | **LibCal API** — never cached, never crawled | n/a (live) |
@@ -267,6 +267,48 @@ Three things had to be fixed before that data could reach a student:
    "studying" but not "study", so the student got the generic "tell me
    your subject" reply after already saying it. Anchored to a pronoun —
    a bare `study\s+\w` would swallow "I need a study room".
+
+## The staff CSV is the roster's source (2026-07-29)
+
+The operator's HR export (`staff-members.csv`, **not** in git — it holds
+personal data) is authoritative for who works here. Run
+`scripts/reconcile_staff_from_csv.py` after every refresh; it is
+idempotent and has `--dry-run`.
+
+It settled four things the other sources couldn't:
+
+1. **Who is current.** A row with a past `last-date` has left; a future
+   `start-date` hasn't arrived. The roster was carrying **25 stale rows as
+   active** — 21 people absent from the CSV entirely, 1 with a recorded
+   departure date, and 3 duplicate rows. All deactivated (`isActive=False`
+   — nothing is deleted, and every lookup already filters on it). Active
+   went 94 → **73, exactly matching the CSV.**
+2. **The two-address problem.** Miami issues two addresses per person: a
+   `firstname.lastname@` alias and a `uniqueid@` primary
+   (`aaron.shrimplin@` / `shrimpak@`). Both deliver, different systems
+   picked different ones, and the roster grew a second row per person —
+   always the one with no title. The CSV's `email` column decides. Active
+   duplicates: **4 → 0.**
+3. **Titles.** Rows with no title: **19 → 0.**
+4. **Liaison duties.** The `liaison` column is the operator's own subject
+   assignment, and 71 of its 77 entries matched `Subject` exactly. The 6
+   that didn't are now created (one real subject the table was missing,
+   plus five new service areas).
+
+**The name we display is `first-name`, not `legal-first-name`.** Fifteen
+colleagues go by something other than their legal first name, and for at
+least one the difference reflects a name change — printing the legal name
+would out them. `legal-first-name` is deliberately **not** copied into
+`alternateName` either: that column exists so a *patron's* wording finds
+the right person, and patrons don't type colleagues' legal names.
+
+### Departures need no code change any more
+
+`_DEPARTED_STAFF` in the orchestrator used to be a hardcoded list. A name
+matching only **deactivated** roster rows now gets an explicit "I don't
+have a current listing for X" — with contact fields stripped at the
+backend, so nothing can leak downstream. The two names still hardcoded are
+people absent from the roster entirely, which the data path can't see.
 
 ## Known gaps (need operator decisions, not code)
 
