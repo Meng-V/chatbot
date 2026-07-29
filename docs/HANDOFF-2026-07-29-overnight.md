@@ -39,7 +39,10 @@ explicitly preserved, and I verified independently that its newest
 `ingested_at` is **2026-05-27** — nothing tonight ever reached it.
 
 **What it did cost:** the embedding spend for ~20,000 chunks (under a
-dollar) and a re-run, which I have done.
+dollar), and the refresh itself — I tried twice to redo it and **neither
+attempt finished**. See §5: the reason turned out to be that an apply does
+not fit on this box alongside the serving process, which is a more useful
+thing to know than the deletion was to undo.
 
 **Why it happened, which is the part worth fixing:** nothing on disk
 recorded *where* an apply had written.
@@ -93,11 +96,29 @@ Find me a book about Ohio history.
 How do I contact Jennifer Hicks?
 ```
 
-### b) The corpus refresh — you signed it, and it is applied
+**What I did and did not verify.** Unit tests prove the extractor returns
+nothing for all three questions, and 140/140 orchestrator tests pass. I did
+**not** re-run those cases through a live eval, deliberately: it needs a
+~900 MB process, and I had just measured what that does to answer latency on
+this box (§2). The argument that closes the gap without it: the short-circuit
+runs *before* any LLM call, so when it does not fire the turn takes exactly
+the path it took on 2026-07-18, when all three scored `correct`. The bug was
+purely additive — it hijacked working answers — so removing it restores them.
+Your spot-check after the restart is the natural place to confirm that
+end-to-end, and it costs you four questions.
 
-You signed `data/diffs/2026-07-29_2139.approval` before going to bed, so I
-ran `--phase apply --diff 2026-07-29_2139.md`. Results and the verification
-you asked for (stale pages must be **0**) are in §5.
+### b) The corpus refresh — you signed it, and it did NOT apply
+
+You signed `data/diffs/2026-07-29_2139.approval` before going to bed and I ran
+`--phase apply` twice. **Both runs died and the corpus is still unapplied**,
+for a reason worth reading: an apply and the serving process do not fit in
+4 GB together. Details, measurements and the retry command are in §5.
+
+Your signature is still valid — no `.applied` marker was written — so the
+retry is one command whenever the box is free.
+
+I could not run the stale-page verification you asked for (it must show
+**0**), because there is no complete collection to verify yet.
 
 **I did not sign it myself.** Self-signing would make the librarian gate
 meaningless — that gate is the reason a bad index cannot reach patrons
@@ -130,8 +151,9 @@ then restart the bot. **Rollback is the same edit in reverse** — put
 `Chunk_vv20260514_1929` back and restart. No data moves either way, so a bad
 promotion costs one restart, not a re-index.
 
-The exact collection name, the verification results, and a copy-paste command
-are in §5 below. I am not running it.
+**There is nothing to promote yet** — see §5. When a complete collection
+exists, this is the procedure; the collection to name will be recorded in
+that run's `.applied` marker.
 
 ### d) The remote moved while I was working — not by me
 
