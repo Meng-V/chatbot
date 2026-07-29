@@ -52,6 +52,11 @@ class UpsertResult:
     # librarian that 852 chunks had been hard-deleted when nothing had been
     # written at all.
     orphaned_chunk_count: int = 0
+    # Chunks that could not be written after retries. Non-fatal by design:
+    # see the comment in make_upsert_step. A run with a handful of these is
+    # still a good index; a run with thousands is not, which is why the count
+    # reaches the diff report rather than only the log.
+    failed_chunk_ids: list[str] = field(default_factory=list)
     new_url_count: int = 0
     total_chunks_in_index: Optional[int] = None
     weaviate_collection_version: Optional[str] = None
@@ -65,6 +70,7 @@ class UpsertResult:
         self.tombstoned_urls += other.tombstoned_urls
         self.gc_deleted_chunk_count += other.gc_deleted_chunk_count
         self.orphaned_chunk_count += other.orphaned_chunk_count
+        self.failed_chunk_ids += other.failed_chunk_ids
         self.new_url_count += other.new_url_count
         # The index total is a snapshot, not a sum -- keep the latest.
         if other.total_chunks_in_index is not None:
@@ -324,13 +330,32 @@ def make_upsert_step(
             # Pass it through so upsert_chunk leads with the correct
             # verb instead of a guaranteed-to-fail replace-of-nonexistent
             # on the fresh `Chunk_v{version}` collection.
-            weaviate.upsert_chunk(
-                collection=collection,
-                chunk_id=chunk.chunk_id,
-                properties=properties,
-                vector=vector,
-                exists=existing is not None,
-            )
+            #
+            # ONE CHUNK'S FAILURE MUST NOT LOSE THE RUN. Four apply attempts
+            # on 2026-07-29 died this way: a single insert timed out after
+            # its retries, the opposite-verb fallback 500'd, and the
+            # exception unwound a job that had already indexed 14,880 of
+            # 20,068 chunks. A batch job of this size will always have the
+            # occasional bad write; the right response is to count it, name
+            # it in the diff, and keep going. The run is only unusable if
+            # MANY fail, which `failed_chunk_ids` makes visible.
+            try:
+                weaviate.upsert_chunk(
+                    collection=collection,
+                    chunk_id=chunk.chunk_id,
+                    properties=properties,
+                    vector=vector,
+                    exists=existing is not None,
+                )
+            except Exception as e:  # noqa: BLE001
+                result.failed_chunk_ids.append(chunk.chunk_id)
+                logger.warning(
+                    "chunk failed to index; continuing",
+                    extra={"chunk_id": chunk.chunk_id,
+                           "source_url": chunk.source_url,
+                           "error": str(e)[:300]},
+                )
+                continue
             if existing:
                 result.changed_chunk_ids.append(chunk.chunk_id)
             else:

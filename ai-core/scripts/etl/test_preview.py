@@ -218,3 +218,52 @@ def test_slice_size_is_small_enough_to_matter():
     from scripts.etl import config
 
     assert 0 < config.APPLY_SLICE_SIZE <= 2000
+
+
+# --- one bad chunk must not lose the run -------------------------------------
+
+def test_a_single_failed_chunk_does_not_abort_the_run():
+    """Four apply attempts on 2026-07-29 died exactly this way: one insert
+    timed out after its retries, the opposite-verb fallback 500'd, and the
+    exception unwound a job that had already indexed 14,880 of 20,068 chunks.
+
+    A batch this size will always have the occasional bad write. The right
+    response is to count it and keep going.
+    """
+    from scripts.etl.upsert import make_upsert_step
+
+    class Weav:
+        def __init__(self):
+            self.written = []
+
+        def get_chunk(self, *, collection, chunk_id):
+            return None
+
+        def upsert_chunk(self, *, collection, chunk_id, properties, vector,
+                         exists=None):
+            if chunk_id == "c-bad":
+                raise RuntimeError("Weaviate upsert failed ... timed out")
+            self.written.append(chunk_id)
+
+        def count(self, *, collection):
+            return len(self.written)
+
+    wv = Weav()
+    step = make_upsert_step(wv)
+    chunks = [_chunk("c-1", "h1"), _chunk("c-bad", "h2"), _chunk("c-3", "h3")]
+    res = step(chunks, [[0.1]] * 3, "vtest")
+
+    assert wv.written == ["c-1", "c-3"], "the good chunks must still land"
+    assert res.failed_chunk_ids == ["c-bad"], "the failure must be recorded"
+    assert res.new_chunk_ids == ["c-1", "c-3"], "and not counted as indexed"
+
+
+def test_the_failure_count_survives_slice_merging():
+    """The apply loop merges one result per slice; a failure in an early slice
+    must still appear in the report."""
+    from scripts.etl.upsert import UpsertResult
+
+    total = UpsertResult()
+    total.absorb(UpsertResult(failed_chunk_ids=["c-a"]))
+    total.absorb(UpsertResult(new_chunk_ids=["c-b"]))
+    assert total.failed_chunk_ids == ["c-a"]

@@ -88,6 +88,10 @@ def render_markdown(report: DiffReport) -> str:
                      f"**{report.upsert.gc_deleted_chunk_count}**")
         lines.append(f"- New URLs added to allowlist: "
                      f"**{report.upsert.new_url_count}**")
+        _failed = getattr(report.upsert, "failed_chunk_ids", [])
+        if _failed:
+            lines.append(f"- ⚠️ Chunks that FAILED to index: **{len(_failed)}** "
+                         f"(the run continued; see the log for URLs)")
     lines.append("")
     if preview:
         # Without this note a librarian reads "0 changed" as "nothing

@@ -84,13 +84,36 @@ def get_weaviate_client() -> Optional[weaviate.WeaviateClient]:
         try:
             # CRITICAL: Use POSITIONAL arguments only (team requirement)
             # connect_to_custom(http_host, http_port, http_secure, grpc_host, grpc_port, grpc_secure)
+            # Timeouts are raised above the library default. On this box
+            # (t4g.medium, 4 GB, Weaviate sharing it with the app and
+            # Postgres) a single object insert timed out mid-ETL and killed
+            # an apply that had written 14,880 of 20,068 chunks
+            # (2026-07-29). The write itself was fine -- Weaviate was just
+            # busy. The batch job no longer dies on one bad write either,
+            # but not provoking the timeout in the first place is better.
+            #
+            # Still passed POSITIONALLY per the team requirement; the config
+            # object is the one keyword the signature has no slot for.
+            _timeouts = None
+            try:
+                from weaviate.classes.init import AdditionalConfig, Timeout
+                _timeouts = AdditionalConfig(timeout=Timeout(
+                    init=int(os.getenv("WEAVIATE_TIMEOUT_INIT", "10")),
+                    query=int(os.getenv("WEAVIATE_TIMEOUT_QUERY", "60")),
+                    insert=int(os.getenv("WEAVIATE_TIMEOUT_INSERT", "120")),
+                ))
+            except Exception as _e:  # noqa: BLE001 -- older client, no config
+                logger.info(f"[Weaviate] default timeouts in use: {_e}")
+
+            _kwargs = {"additional_config": _timeouts} if _timeouts else {}
             _client = weaviate.connect_to_custom(
                 host,           # http_host
                 http_port,      # http_port
                 False,          # http_secure (always False for local)
                 host,           # grpc_host (same as http_host)
                 grpc_port,      # grpc_port
-                False           # grpc_secure (always False for local)
+                False,          # grpc_secure (always False for local)
+                **_kwargs
             )
             
             # V4 client connects automatically, verify it's ready
