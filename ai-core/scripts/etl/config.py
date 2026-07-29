@@ -99,6 +99,39 @@ EXCLUDE_URL_PREFIXES: Final[tuple[str, ...]] = (
     "/staging/",
     "/dev/",
     "/_",
+    # --- Content the operator has ruled stale -------------------------------
+    # Added 2026-07-29. These pages are STILL LIVE on the website, so a
+    # re-crawl re-collects them: the 2026-07-28 tombstoning was applied to
+    # the collection then serving, and the first completed re-crawl brought
+    # all 418 chunks straight back (COVID-era 14, closed music library 2,
+    # dated news 398, superseded annual goals 4).
+    #
+    # Tombstoning a collection therefore does NOT survive a refresh -- only
+    # excluding at CRAWL time does. Doing it here also stops us paying to
+    # embed pages the serving layer would discard anyway.
+    #
+    # COVID-era "library healthy" guidance, superseded.
+    "/libraryhealthy",
+    # The Amos Music Library CLOSED Sept 2023. The music LIBRARIAN still
+    # exists and those questions must keep working -- this is the closed
+    # building's location page only.
+    "/about/locations/music-library",
+    # Superseded annual strategic-goal documents (2021/2022/2024); one still
+    # named a colleague who has since left.
+    "/strategic/2021",
+    "/strategic/2022",
+    "/strategic/2024",
+    "/strategic/hidden-for",
+)
+
+# Dated news/blog posts: `/YYYY-MM-DD-slug`, 2014 onward. `events_news` is
+# already a REFUSE-tier intent precisely because old event listings mislead,
+# but the posts stayed in the index and could contaminate OTHER intents'
+# evidence. A prefix tuple cannot express a date, so this is a regex.
+# Verified 2026-07-27 against all 158 dated URLs: no service or policy page
+# starts with a date.
+EXCLUDE_URL_REGEXES: Final[tuple[str, ...]] = (
+    r"^/20\d\d-\d\d-\d\d-",
 )
 
 # Specific path patterns to drop in addition to the prefixes above.

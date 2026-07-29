@@ -20,6 +20,8 @@ from dataclasses import dataclass
 from typing import Optional
 from urllib.parse import urlparse
 
+import re
+
 import requests
 
 from . import config
@@ -71,6 +73,14 @@ def _is_excluded(url: str) -> tuple[bool, Optional[str]]:
       2. Path-prefix exclusion list (news, events, exhibits, internal
          `/_*` template paths).
       3. Substring exclusion (404 pages, test pages, READMEs).
+      4. Path regexes, for shapes a prefix cannot express (the dated news
+         archive `/YYYY-MM-DD-slug`).
+
+    Steps 2-4 are what make "this content is stale" survive a re-crawl.
+    Tombstoning a collection does not: the pages are still live on the
+    website, so the next crawl collects them again (proved 2026-07-29 -- a
+    completed refresh brought back all 418 chunks that had been tombstoned
+    the day before).
     """
     if not _is_library_url(url):
         return True, "not_library_url"
@@ -83,6 +93,11 @@ def _is_excluded(url: str) -> tuple[bool, Optional[str]]:
     for substr in config.EXCLUDE_URL_SUBSTRINGS:
         if substr in lowered:
             return True, f"substring={substr}"
+    # Path regexes, for shapes a prefix cannot express -- currently the dated
+    # news archive (`/YYYY-MM-DD-slug`).
+    for pattern in getattr(config, "EXCLUDE_URL_REGEXES", ()):
+        if re.search(pattern, path):
+            return True, f"regex={pattern}"
     return False, None
 
 

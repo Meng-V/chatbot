@@ -603,6 +603,62 @@ collections exist so eval can run against a new index before the alias swap —
 so it is an architecture decision, not a bug fix, and is left for the
 operator.
 
+## Tombstones do not survive a re-crawl (2026-07-29)
+
+The most important thing learned from finally getting an apply to complete.
+
+The 2026-07-28 cleanup **tombstoned** 418 chunks of stale content in the
+collection then serving. Those pages are **still live on the website**, so the
+first successful re-crawl collected every one of them again:
+
+```
+COVID-era /libraryhealthy        14 chunks   back
+closed Amos Music Library page    2 chunks   back
+dated news archive              398 chunks   back
+superseded annual goals           4 chunks   back
+```
+
+**Promoting that collection would have undone the fix the operator had just
+announced to colleagues.** Caught by checking the new collection before
+recommending promotion, not after.
+
+**Tombstoning is a property of one collection; exclusion is a property of the
+pipeline.** The stale prefixes now live in `scripts/etl/config.py`
+(`EXCLUDE_URL_PREFIXES`, plus a new `EXCLUDE_URL_REGEXES` because a date
+pattern is not a prefix), so they never enter any future collection. Effect on
+the next crawl:
+
+| | before | after |
+|---|---|---|
+| URLs discovered | 407 | **236** |
+| chunks created | 20,068 | **19,648** |
+
+Cheaper as well as correct — we no longer fetch or embed pages the serving
+layer would discard anyway.
+
+**Both layers are kept, deliberately.** The crawl filter keeps stale pages out
+of NEW collections; the serving denylist (`_EVIDENCE_URL_DENYLIST`) protects
+the collection already in production, which cannot be re-crawled
+retroactively. A test asserts the two lists agree, because a page filtered by
+one and allowed by the other becomes a surprise at promotion time.
+
+### Getting the apply to complete took five attempts
+
+Worth recording, because each fix revealed the next and four of the five
+diagnoses were initially wrong:
+
+| # | Died at | Actual cause |
+|---|---|---|
+| 1 | ~0 | embedded the whole corpus before writing (~1.5 GB) → OOM |
+| 2 | 2,664 | a dropped connection answered by switching verbs, not retrying |
+| 3 | 3,500 | killed by a memory cap **I** set too low, after I called it "holding" at 90 seconds |
+| 4 | 14,880 | one insert timed out; the exception discarded the whole run |
+| 5 | **20,068 ✅** | 747s, 0 chunk failures |
+
+The durable lessons are in the code: slice the embed→upsert loop, classify
+transport vs semantic failures, and never let one chunk lose a 20,000-chunk
+job.
+
 ## Known gaps (need operator decisions, not code)
 
 1. **`LibrarianSubject` covers 67 of 734 subjects (9%)**, and **zero**
