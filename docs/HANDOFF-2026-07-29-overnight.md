@@ -168,3 +168,96 @@ command I ran, because that is the part that held up.
 
 The eval result is appended below when it finishes — that is the one number
 that says whether tonight's 16 commits helped or hurt.
+
+---
+
+## 4. The eval: 90.2% against a 92.7% baseline
+
+**It went down.** 211/234 versus 217/234. I am not going to dress that up,
+so here is every one of the twelve regressions, classified by cause and with
+the classification method stated, because "regression" and "the judge changed
+its mind" look identical in a summary table.
+
+| Cause | n | Evidence |
+|---|---|---|
+| **A real bug I introduced** | 3 | fixed, `440ab74` |
+| Judge flipped on a **byte-identical** answer | 4 | string-compared old vs new answer text |
+| Behaviour **you asked** me to change | 1 | `xc_regional_unspecified` |
+| Gold answer is **stale**, bot is right | 1 | `sc_archivist_contact` |
+| **Flaky**, reproduced live at ~1-in-3 | 2 | 6 live re-runs |
+| Downgraded to `partial`, answer looks sound | 1 | `xc2_silent_study_compare` |
+
+### The real bug — one word cost three answers
+
+`find` was in the list of verbs that trigger the staff-contact
+short-circuit. So:
+
+```
+"How do I find articles in PsycINFO?"    -> looked up a person named "articles in"
+"How do I find only peer-reviewed ...?"  -> ... "only peer-reviewed"
+"Find me a book about Ohio history."     -> ... "me book"
+```
+
+Each found nobody, and then answered **"I don't have a listing for articles
+in in the Libraries staff directory"** instead of pointing at Databases A-Z.
+
+This is the *same mechanism* as the `loc_gardner_harvey_address` bug I fixed
+earlier today: making the no-listing answer deterministic turned a harmless
+false positive into a lost answer. I fixed the instance this morning and did
+not go looking for the rest of the family. That was the error — not the one
+word.
+
+Removed `find` (in a library, "find" asks about a thing — the golden set has
+no "find *Person*" question at all) and added a function-word guard, so a
+capture containing `in`/`me`/`only` is rejected however it was reached.
+139/139 graph tests pass, plus a new regression test naming all three
+questions.
+
+### The judge is noisy — 2.1%, measured
+
+Five cases got a **different verdict on a byte-identical answer**. That is
+the floor on any comparison between two runs: **±5 cases**, and four of the
+five happened to fall in the bad direction tonight.
+
+I checked this in both directions before reporting it, because checking only
+the regressions would have been cherry-picking. **All 6 improvements have
+genuinely different answer text** — none is judge noise.
+
+### Two cases where the gold answer is now the wrong one
+
+- `xc_regional_unspecified` — "Tell me about the regional library." Gold
+  wants a clarifying refusal. The bot now names **both** regional libraries
+  and labels them, which is **option C, the one you picked today**.
+- `sc_archivist_contact` — gold says "Jacky Johnson, Department Head &
+  University Archivist". The bot says Ani Karagianis is University Archivist
+  and Jacqueline Johnson heads the department — **the staffing change you
+  confirmed tonight**.
+
+**I did not touch either gold answer.** Editing the test to match the bot is
+how a score stops meaning anything, and both are yours to decide. Fixing
+them would move the number to roughly 216/234, but that is an estimate, not
+a measurement, and I would rather hand you the honest 211.
+
+### Two flaky room-booking cases — not diagnosed
+
+`rb_wertz_no_bookable` and `svc2_group_room_six_people` refused with the
+generic "I don't have a reliable answer to that." I re-asked both live three
+times each: **five answered, one refused** — so it is intermittent, roughly
+1-in-3, and reproducible today.
+
+I have **not** found the cause, and it is not the name bug above (different
+refusal template, different code path). Two things I noticed that you should
+know:
+
+- Live, both questions enter the **booking slot-filling flow** and ask for
+  first name / last name / email. For "Can I book a room at Wertz?" — a
+  yes/no question — that is arguably wrong on its own, independent of the
+  flakiness.
+- This is the one finding tonight I am leaving open rather than claiming
+  fixed.
+
+### What the number does *not* cover
+
+The eval uses realistic-fake `search_kb` evidence, so it does **not** test
+the corpus refresh. A good eval score says nothing about whether the new
+index is right; that is the separate check in §1(b).
