@@ -346,16 +346,33 @@ def _make_lookup_librarian() -> Callable[[dict], list[dict]]:
 
     libguide_tool = LibGuideSubjectLookupTool()
 
-    def _lookup_by_subject_via_libguides(subject_term: str, campus: Optional[str]) -> list[dict]:
+    def _lookup_by_subject_via_libguides(
+        subject_term: str, campus: Optional[str], api_state: dict,
+    ) -> list[dict]:
         """Call the LibApps API. Returns a list of librarian dicts in our
-        canonical shape."""
+        canonical shape.
+
+        An API failure DEGRADES to the Postgres path below rather than
+        aborting the lookup. It used to `raise ToolError` here, which meant
+        a Springshare outage took out every subject question -- including
+        the ones the operator's own `LibrarianSubject` table could answer.
+        Proved 2026-07-29 by stubbing the tool to raise: all seven regional
+        subject lookups failed even though the data was sitting in Postgres.
+
+        `api_state["failed"]` is set so the caller can tell the two
+        outcomes apart. "The API says nobody covers this" and "we could not
+        reach the API" look identical from an empty list, and only the first
+        one justifies telling a patron no liaison exists.
+        """
         try:
             res = _bridge(libguide_tool.execute(query=subject_term, subject_name=subject_term))
         except Exception as e:  # noqa: BLE001
-            raise ToolError(
-                f"lookup_librarian (LibGuides API): {e}. The bot should "
-                f"hand off rather than guess a name."
-            ) from e
+            api_state["failed"] = True
+            logger.warning(
+                "LibGuides subject lookup failed; falling back to Postgres",
+                extra={"subject": subject_term, "error": str(e)},
+            )
+            return []
         if not res or not res.get("success"):
             return []
         librarians = res.get("librarians") or []
@@ -376,11 +393,32 @@ def _make_lookup_librarian() -> Callable[[dict], list[dict]]:
         campus_raw = (filters.get("campus") or "").strip().lower()
         campus = _CAMPUS_DB.get(campus_raw)
         resolved = _resolve_subject_terms(subject, name)
+        # Set by the LibGuides helper when the API could not be reached, so
+        # an outage is never reported to a patron as "no such subject".
+        api_state: dict = {"failed": False}
 
         # Subject terms incl. campus variants -- shared by the DB
         # fallback AND the guide-attach wrapper below.
-        _SUFFIX = {"hamilton": " - HC", "middletown": " - MC"}
-        terms0 = list(resolved) if resolved else ([subject] if subject else [])
+        # Keyed on the CANONICAL campus value (`_CAMPUS_DB`'s output,
+        # "Hamilton"/"Middletown"), not the lower-cased request. This map
+        # used lower-case keys while `campus` here is title-cased, so
+        # `campus in _SUFFIX` was ALWAYS False and the " - HC" / " - MC"
+        # variants were never queried -- 108 campus-variant Subject rows the
+        # operator had created were unreachable by construction (found
+        # 2026-07-29 by a test asserting the variant reached the query).
+        _SUFFIX = {"Hamilton": " - HC", "Middletown": " - MC"}
+        # The user's OWN wording comes FIRST, then the alias rewrites.
+        # `list(resolved) if resolved else [subject]` dropped the raw term
+        # whenever an alias existed, which is the same defect already fixed
+        # on the API path -- and it bit exactly the regional programme
+        # names: "Criminal Justice" was rewritten to "Criminology", so the
+        # DB never looked for the subject Jennifer Hicks is actually linked
+        # to, and "Applied Biology" became "Biology" (found 2026-07-29 while
+        # testing the outage fallback).
+        terms0: list[str] = []
+        for term in ([subject] if subject else []) + list(resolved):
+            if term and term not in terms0:
+                terms0.append(term)
         expanded: list[str] = []
         for t in terms0:
             if campus in _SUFFIX:
@@ -499,7 +537,7 @@ def _make_lookup_librarian() -> Callable[[dict], list[dict]]:
         # below, instead of latching onto a lookalike. Verified: "chem"
         # still needs the alias and still gets it.
         if subject:
-            rows = _lookup_by_subject_via_libguides(subject, campus)
+            rows = _lookup_by_subject_via_libguides(subject, campus, api_state)
             if rows:
                 return _with_guides(rows)
 
@@ -507,7 +545,7 @@ def _make_lookup_librarian() -> Callable[[dict], list[dict]]:
         # match on its own ("chem", "orgo", "BIO 203").
         if resolved:
             for s in resolved:
-                rows = _lookup_by_subject_via_libguides(s, campus)
+                rows = _lookup_by_subject_via_libguides(s, campus, api_state)
                 if rows:
                     return _with_guides(rows)
 
@@ -603,6 +641,16 @@ def _make_lookup_librarian() -> Callable[[dict], list[dict]]:
         # underwater basket weaving librarian?" -> the first two Oxford
         # staff). A subject miss must be an empty result, not a roster.
         if subject:
+            if api_state["failed"]:
+                # The API was unreachable AND Postgres had nothing. Saying
+                # "Miami has no librarian for that" would be a claim we
+                # cannot support right now, so hand off instead.
+                raise ToolError(
+                    "lookup_librarian: the LibGuides directory is "
+                    "unreachable and this subject is not in the local "
+                    "liaison table, so coverage is unknown. The bot should "
+                    "hand off rather than state that nobody covers it."
+                )
             return []
         if not name and not campus:
             return []

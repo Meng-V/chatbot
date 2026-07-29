@@ -27,9 +27,13 @@ echo "results -> $OUT"
 echo "memory cap -> $LIMIT (the eval dies before the box does)"
 echo
 
+# NOTE: OOMScoreAdjust is a *service* property -- `systemd-run --scope`
+# rejects it ("Unknown assignment"). Set it on the process itself instead,
+# which works everywhere and needs no privilege to RAISE the score.
 exec systemd-run --scope --quiet \
-  -p "MemoryMax=$LIMIT" -p "OOMScoreAdjust=500" \
-  bash -c "set -a; . /opt/chatbot/.env; set +a; \
-    .venv/bin/python -m src.eval.run_eval \
+  -p "MemoryMax=$LIMIT" \
+  bash -c "echo 500 > /proc/self/oom_score_adj 2>/dev/null; \
+    set -a; . /opt/chatbot/.env; set +a; \
+    exec .venv/bin/python -m src.eval.run_eval \
       --with-real-llm --with-judge --judge-model gpt-5.4-mini \
       --results-out '$OUT' $*"

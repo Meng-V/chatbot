@@ -203,8 +203,12 @@ node_modules
 # numbers, start/end dates. Never commit. The entry below only covered a
 # differently-named copy, so `git add -A` staged staff-members.csv into a
 # commit on 2026-07-29; caught before any push and stripped.
-staff-members*.csv
-staff-members - staff-members.csv
+# Any file whose name starts with staff-members, whatever the extension.
+# `staff-members*.csv` was too narrow: it did not match the backup
+# `staff-members.csv.bak-20260729`, which `git add -A` then staged into a
+# commit on 2026-07-29 (second time this happened -- caught before any push
+# both times, by git's own CRLF warning rather than by me looking).
+staff-members*
 ai-core/docs/WEAVIATE_SERVER_DEPLOYMENT.md
 log/deploy.sh
 docs/az_database_list.csv

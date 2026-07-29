@@ -470,6 +470,49 @@ enough. Watch **memory and OOM events** — the failure mode here was the
 service being killed and staying dead, which a "is the port open" probe
 only catches after the fact.
 
+## Regional liaisons now survive an outage (2026-07-29)
+
+The operator filled the CSV's `liaison` column for the four regional
+librarians, so their duties finally live in Postgres as well as LibGuides:
+**`LibrarianSubject` 70 → 98 rows, regional 0 → 19.**
+
+| Librarian | Campus | Subjects |
+|---|---|---|
+| Krista McDonald | Hamilton | Civic and Regional Development, Community Arts, Engineering Technology, Liberal Studies, Nursing, Psychological Science |
+| Mark Shores | Hamilton | Appalachian Studies, Applied Social Research, Commerce, Communication Studies, Criminal Justice |
+| Jennifer Hicks | Middletown | Applied Biology, Criminal Justice, Health Communication, Liberal Studies, Psychological Science |
+| John Burke | Middletown | Commerce, Community Arts, Information Technology |
+
+**Loading the data revealed that the fallback it was meant to feed did not
+work.** Three defects, each found by testing the outage rather than assuming:
+
+1. **An API failure aborted the whole lookup.**
+   `_lookup_by_subject_via_libguides` raised `ToolError` on any exception,
+   which returned before the Postgres path ran. A Springshare outage took
+   out *every* subject question — including the ones our own table could
+   answer. It now logs and degrades.
+2. **The DB path dropped the user's own wording.**
+   `terms0 = resolved if resolved else [subject]` discarded the raw term
+   whenever an alias existed, so "Criminal Justice" was rewritten to
+   "Criminology" and the DB never looked for the subject Jennifer Hicks is
+   linked to. Same defect already fixed on the API path; raw wording is now
+   queried first here too.
+3. **The `- HC` / `- MC` campus variants were never queried at all.**
+   The suffix map was keyed lower-case (`"middletown"`) while `campus` at
+   that point is title-cased (`"Middletown"`), so `campus in _SUFFIX` was
+   **always False**. All 108 campus-variant `Subject` rows the operator had
+   created were unreachable by construction.
+
+Verified by stubbing the LibGuides tool to raise: **7 of 7** regional and
+Oxford subject lookups now answer from Postgres during a total outage, and
+the healthy path is unchanged.
+
+**Honesty is preserved in both directions.** If the API is unreachable *and*
+the subject is not in the local table, the lookup raises rather than
+returning empty — "Miami has no librarian for that" is a claim we cannot
+support during an outage. A genuine miss with a *healthy* API still returns
+an empty list, because that one is a fact.
+
 ## Known gaps (need operator decisions, not code)
 
 1. **`LibrarianSubject` covers 67 of 734 subjects (9%)**, and **zero**
