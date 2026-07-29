@@ -90,9 +90,20 @@ class LocationService:
         
         return None
     
+    # A `contains` probe shorter than this is a fragment, not a building
+    # name. Every lookup below is a substring match, so "a" resolved to King
+    # Library, "e" to Wertz Art & Architecture and "s" to Rentschler --
+    # whichever row happened to contain that letter (found 2026-07-29 while
+    # sweeping for the substring-matching class of bug). Not reachable
+    # through the hours path, which resolves a canonical building first,
+    # but the tool argument is LLM-filled and unconstrained.
+    _MIN_PROBE = 3
+
     async def get_location_id(self, location_name: str) -> Optional[str]:
         """Get LibCal location ID for libraries or spaces by name."""
-        location_lower = location_name.lower().strip()
+        location_lower = (location_name or "").lower().strip()
+        if len(location_lower) < self._MIN_PROBE:
+            return None
         
         cache_key = f"location_id:{location_lower}"
         if cache_key in self._cache:

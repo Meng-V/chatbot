@@ -132,8 +132,30 @@ def match_reason(
     if cs <= qs:
         return "candidate is a whole-word subset of the query"
 
-    distinctive = (qs & cs) - (generic if generic is not None else set())
-    if distinctive:
+    gen = generic if generic is not None else set()
+    distinctive = (qs & cs) - gen
+    # Coverage is measured over the query's DISTINCTIVE words only. Counting
+    # generic ones in the denominator made "film studies" fail against
+    # "Media, Journalism, and Film": "studies" appears in several subject
+    # names, so it carries no information and must not dilute the match.
+    q_signal = qs - gen
+    if distinctive and len(distinctive) * 2 > len(q_signal):
+        # The shared word must carry MOST of the query, not just appear in
+        # it. `generic` is derived from the subject list, so a word that is
+        # common in English but rare among subjects still looks
+        # distinctive: "paper" occurs in exactly one subject name, which
+        # made "start a paper" match "Chemical, Paper, and Biomedical
+        # Engineering" and answer with its liaison (found 2026-07-29 while
+        # re-verifying the alias fix -- unreachable through the agent,
+        # which never passes a phrase like that as a subject, but a latent
+        # path all the same).
+        #
+        # Requiring a strict majority of the query's words to appear in the
+        # candidate separates the two cleanly: "paper engineering" has both
+        # its words in that subject (2 of 2), "start a paper" has one of
+        # two. The subset rules above already cover the short, legitimate
+        # asks ("Journalism", "Kinesiology"), so this only tightens the
+        # single-shared-word case.
         return f"shares distinctive word(s): {', '.join(sorted(distinctive))}"
 
     score = _similarity(str(query), str(candidate))

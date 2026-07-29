@@ -125,6 +125,48 @@ def test_accepts_a_shared_head_word_stem(query, candidate):
     assert is_plausible_subject_match(query, candidate, GENERIC)
 
 
+@pytest.mark.parametrize("query,candidate", [
+    # A word can be rare among SUBJECTS while being common in ENGLISH, so
+    # `generic` (derived from the subject list) still calls it distinctive.
+    # "paper" appears in exactly one subject name, which let a natural
+    # request match that subject and answer with its liaison.
+    ("start a paper", "Chemical, Paper, and Biomedical Engineering"),
+    ("help me write a paper", "Chemical, Paper, and Biomedical Engineering"),
+    ("what are the film times", "Media, Journalism, and Film"),
+])
+def test_an_incidental_shared_word_is_not_a_match(query, candidate):
+    assert not is_plausible_subject_match(query, candidate, GENERIC)
+
+
+@pytest.mark.parametrize("query,candidate", [
+    # ...but when the shared word carries MOST of the query it is real
+    ("paper engineering", "Chemical, Paper, and Biomedical Engineering"),
+    ("biomedical engineering", "Chemical, Paper, and Biomedical Engineering"),
+    ("film studies", "Media, Journalism, and Film"),
+])
+def test_a_load_bearing_shared_word_still_matches(query, candidate):
+    assert is_plausible_subject_match(query, candidate, GENERIC)
+
+
+def test_a_generic_word_does_not_dilute_coverage():
+    """"film studies" must reach the Film liaison. "studies" appears in
+    several subject names, so it carries no information -- counting it in
+    the denominator would make a real two-word subject ask look incidental.
+    """
+    assert "studies" in GENERIC
+    assert is_plausible_subject_match(
+        "film studies", "Media, Journalism, and Film", GENERIC)
+
+
+def test_a_longer_ask_containing_a_subject_still_matches():
+    """The subset rules run BEFORE the coverage check, so a wordy ask that
+    fully contains a subject name is still answered -- "i need a book about
+    art" is a genuine Art question, not an incidental overlap."""
+    assert is_plausible_subject_match("i need a book about art", "Art", GENERIC)
+    assert is_plausible_subject_match(
+        "help with nursing research", "Nursing", GENERIC)
+
+
 # --- properties ----------------------------------------------------------
 
 def test_punctuation_splits_here_unlike_person_names():
