@@ -1187,6 +1187,74 @@ def test_extract_booking_slots_patterns() -> None:
     assert _extract_booking_slots(["I'm looking for a room"]) == {}
 
 
+def test_subject_liaison_labels_every_campus_option_c() -> None:
+    """Operator decision 2026-07-28, option C: when a subject has liaisons
+    on more than one campus, name them ALL with their campus stated, the
+    student's own campus first.
+
+    Before this, a cross-campus liaison was silently dropped. That looked
+    safe but wasn't: a Middletown student asking about Nursing got NOTHING,
+    because the only regional nursing liaison is based at Hamilton and the
+    Oxford specialist was filtered out for the same reason. The unsafe
+    alternative -- naming an off-campus person as "your librarian" -- is
+    avoided by stating the campus rather than by hiding the person.
+    """
+    from src.graph.new_orchestrator import _subject_liaison_short_circuit
+    from src.scope.resolver import Scope
+
+    def outcome(rows, subject="Nursing"):
+        return AgentOutcome(
+            terminal_message={"role": "assistant", "content": "x"},
+            turns=[AgentTurn(
+                iteration=0, llm_message={"role": "assistant"},
+                tool_calls=[ToolCall(id="t1", name="lookup_librarian",
+                                     arguments={"subject": subject})],
+                tool_results=[ToolResult(call_id="t1", name="lookup_librarian",
+                                         data={"librarians": rows})],
+            )],
+            stopped_reason="clean",
+        )
+
+    ROWS = [
+        {"name": "Krista McDonald", "email": "mcdonak@miamioh.edu",
+         "campus": "Hamilton"},
+        {"name": "Ginny Boehme", "email": "boehmemv@miamioh.edu",
+         "campus": "Oxford"},
+    ]
+
+    # A Hamilton student gets their own campus FIRST, then Oxford.
+    ans, _ = _subject_liaison_short_circuit(
+        outcome(ROWS), Scope(campus="hamilton", library=None, source="test"))
+    assert ans.index("Krista McDonald") < ans.index("Ginny Boehme")
+    assert "Krista McDonald at Hamilton" in ans
+    assert "Ginny Boehme at Oxford" in ans
+    assert "on your campus is usually easiest" in ans
+
+    # An Oxford student gets the same two, Oxford first.
+    ans, _ = _subject_liaison_short_circuit(
+        outcome(ROWS), Scope(campus="oxford", library=None, source="test"))
+    assert ans.index("Ginny Boehme") < ans.index("Krista McDonald")
+
+    # A Middletown student has nobody of their own for this subject: say so
+    # explicitly, then give both labelled. This is the case that used to
+    # return nothing at all.
+    ans, _ = _subject_liaison_short_circuit(
+        outcome(ROWS), Scope(campus="middletown", library=None, source="test"))
+    assert "isn't a librarian based at Middletown" in ans
+    assert "Krista McDonald at Hamilton" in ans
+    assert "every campus" in ans
+    # two people -> plural agreement, not "the librarian is A and B, who
+    # supports"
+    assert "The subject librarians are" in ans and "who support " in ans
+
+    # Single-campus subject: unchanged phrasing, no campus noise added
+    # when the student is already there.
+    ans, _ = _subject_liaison_short_circuit(
+        outcome([ROWS[1]]), Scope(campus="oxford", library=None, source="test"))
+    assert "Your subject librarian is Ginny Boehme at Oxford" in ans
+    assert "isn't a librarian" not in ans
+
+
 def test_subject_liaison_unknown_subject_gets_explicit_no_match() -> None:
     """eval 2026-07-16 lib_unknown_subject_refusal: a subject lookup
     that returns zero rows must say 'no librarian for that subject'
@@ -1220,10 +1288,19 @@ def test_subject_liaison_unknown_subject_gets_explicit_no_match() -> None:
     assert "doesn't have a subject librarian" in res[0]
     assert res[1][0]["url"].endswith("/liaisons/")
 
-    # rows exist but are all cross-campus -> fall through (None), don't
-    # falsely claim no librarian exists
+    # Rows exist but are all on ANOTHER campus. Operator decision
+    # 2026-07-28 (option C): name them, labelled with their campus, and
+    # say plainly that nobody on the student's own campus is listed.
+    # Dropping them (the old behaviour) meant a Middletown student asking
+    # about Nursing got nothing at all, because the only regional nursing
+    # liaison is based at Hamilton.
     cross = [{"name": "X Y", "email": "xy@miamioh.edu", "campus": "hamilton"}]
-    assert _subject_liaison_short_circuit(outcome_with_rows(cross), scope) is None
+    res = _subject_liaison_short_circuit(outcome_with_rows(cross), scope)
+    assert res is not None
+    assert "isn't a librarian based at Oxford" in res[0]
+    assert "X Y at Hamilton" in res[0]          # campus stated, not implied
+    assert "xy@miamioh.edu" in res[0]
+    assert "every campus" in res[0]             # and why they can still help
 
 
 def main() -> int:

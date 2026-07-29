@@ -2322,6 +2322,16 @@ _MY_LIBRARIAN_RE = re.compile(
 # A subject/course named anywhere means we can look it up -- don't ask.
 _SUBJECT_NAMED_RE = re.compile(
     r"\b(for|in|about|studying|majoring\s+in|major\s+in|department\s+of)\s+\w"
+    # First-person "I study X" / "my major is X". Deliberately anchored to
+    # a pronoun: a bare `study\s+\w` would swallow "I need a study room"
+    # and "where can I study", which are not subject asks. Without this,
+    # "I study Engineering Technology at Hamilton, who is my librarian?"
+    # got the generic "tell me your subject" reply even though the student
+    # HAD named it -- and Engineering Technology is one of the few subjects
+    # with a regional liaison (found 2026-07-28).
+    r"|\bi\s+study\s+\w"
+    r"|\bmy\s+major\s+is\s+\w"
+    r"|\bi'?m\s+an?\s+[\w\s]{2,30}?\s+major\b"
     r"|\b[A-Za-z]{2,4}\s?\d{3}\b",
     re.IGNORECASE,
 )
@@ -2930,13 +2940,14 @@ def _subject_liaison_short_circuit(
             for lib in (res.data.get("librarians") or []):
                 if not isinstance(lib, dict) or not lib.get("email"):
                     continue
-                lib_campus = (lib.get("campus") or "").lower()
-                # Campus discipline: only surface a liaison in the asked
-                # campus (or campus-agnostic rows). This is the guard the
-                # synth path gets from the cross-campus citation check;
-                # we replicate it since we're bypassing the synth.
-                if want_campus and lib_campus and lib_campus != want_campus:
-                    continue
+                # Operator decision 2026-07-28 (option C): a liaison on
+                # ANOTHER campus is no longer dropped -- it is kept and
+                # LABELLED. Dropping meant a Middletown student asking
+                # about Nursing got nothing, because the only regional
+                # nursing liaison is based at Hamilton and the Oxford
+                # specialist was filtered out too. Silently naming an
+                # off-campus person was the other failure mode; saying
+                # WHICH campus each one is at avoids both.
                 if lib["email"] in seen:
                     continue
                 seen.add(lib["email"])
@@ -2965,11 +2976,53 @@ def _subject_liaison_short_circuit(
             )
         return None
 
-    liaisons = liaisons[:2]  # at most two co-liaisons for one subject
-    _items = [f"{l['name']} ({l['email']})" for l in liaisons]
-    contacts = " and ".join(_items) if len(_items) == 2 else _items[0]
-    lead = "subject librarian is" if len(liaisons) == 1 else "subject librarians are"
-    answer = f"Your {lead} {contacts} [1]."
+    # Option C: the asked campus first, then everyone else, each labelled.
+    def _campus_of(l: dict) -> str:
+        return str(l.get("campus") or "").strip()
+
+    if want_campus:
+        mine = [l for l in liaisons if _campus_of(l).lower() == want_campus]
+        others = [l for l in liaisons if _campus_of(l).lower() != want_campus]
+    else:
+        # No campus asked -> Oxford default (plan section 8); the backend
+        # has already sorted Oxford-or-untagged first.
+        mine, others = liaisons, []
+    mine, others = mine[:2], others[:2]
+    liaisons = mine + others
+
+    def _one(l: dict) -> str:
+        # Title-case the campus: the roster stores "Oxford" but the
+        # LibGuides enrichment and some callers pass it lower-cased, and
+        # "at hamilton" reads like a typo to a patron.
+        campus = _campus_of(l).title()
+        where = f" at {campus}" if campus else ""
+        return f"{l['name']}{where} ({l['email']})"
+
+    if mine and others:
+        # Both the student's own campus and elsewhere -- name both, so the
+        # student can pick the nearer person or the subject specialist.
+        listed = "; ".join(_one(l) for l in mine + others)
+        answer = (f"Your subject librarians are {listed} [1]. Any of them "
+                  f"can help; the one on your campus is usually easiest to "
+                  f"meet in person.")
+    elif mine:
+        _items = [_one(l) for l in mine]
+        contacts = " and ".join(_items) if len(_items) == 2 else _items[0]
+        lead = ("subject librarian is" if len(mine) == 1
+                else "subject librarians are")
+        answer = f"Your {lead} {contacts} [1]."
+    else:
+        # Nobody on the student's campus covers this subject. Say that
+        # plainly rather than presenting an off-campus person as "yours".
+        _items = [_one(l) for l in others]
+        contacts = " and ".join(_items) if len(_items) == 2 else _items[0]
+        campus_label = want_campus.title() if want_campus else "your campus"
+        lead, verb = (("The subject librarian is", "supports")
+                      if len(others) == 1
+                      else ("The subject librarians are", "support"))
+        answer = (f"There isn't a librarian based at {campus_label} listed "
+                  f"for this subject. {lead} {contacts}, who {verb} "
+                  f"students on every campus [1].")
     citations = [{
         "n": 1,
         "url": str(liaisons[0].get("profile_url") or _LIAISONS_URL),

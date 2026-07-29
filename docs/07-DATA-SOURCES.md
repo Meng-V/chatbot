@@ -207,6 +207,67 @@ librarian instead of the Humanities one. A rejection now produces "no
 liaison listed for that, here is the directory" instead of a confident
 wrong name.
 
+## Regional campuses: label, don't hide (option C, 2026-07-28)
+
+**Operator decision:** when a subject has liaisons on more than one
+campus, name them **all**, each labelled with their campus, the student's
+own campus first.
+
+The old rule dropped any liaison outside the asked campus. That looked
+safe and wasn't: a **Middletown** student asking about Nursing got
+**nothing**, because the only regional nursing liaison is based at
+Hamilton and the Oxford specialist was filtered out for the same reason.
+The genuinely unsafe outcome — naming an off-campus person as "your
+librarian" — is avoided by **stating the campus**, not by hiding the
+person.
+
+```
+Hamilton student, Nursing:
+  Your subject librarians are Krista McDonald at Hamilton
+  (mcdonak@miamioh.edu); Ginny Boehme at Oxford (boehmemv@miamioh.edu).
+  Any of them can help; the one on your campus is usually easiest to
+  meet in person.
+
+Middletown student, Nursing:
+  There isn't a librarian based at Middletown listed for this subject.
+  The subject librarians are Krista McDonald at Hamilton and Ginny
+  Boehme at Oxford, who support students on every campus.
+```
+
+**The regional data already existed** — in LibGuides, not in our DB.
+`LibrarianSubject` has zero regional rows, but the LibGuides accounts API
+shows regional liaisons with real subject assignments under the
+**regional programme names**:
+
+| Librarian | Campus | Subjects in LibGuides |
+|---|---|---|
+| Krista McDonald | Hamilton | Civic and Regional Development, Community Arts, **Engineering Technology**, Liberal Studies, **Nursing**, Psychological Science |
+| Jennifer Hicks | Middletown | Applied Biology, **Criminal Justice**, Health Communication, Liberal Studies, Psychological Science |
+| John Burke | Middletown | Commerce, Community Arts, Information Technology |
+| Mark Shores | Hamilton | Appalachian Studies, Applied Social Research, Commerce, Communication Studies, Criminal Justice, … |
+
+Three things had to be fixed before that data could reach a student:
+
+1. **Aliases were overriding exact matches.** "Engineering Technology" is
+   Krista McDonald's subject verbatim, but the alias map rewrote it to
+   "Electrical and Computer Engineering" and answered with an Oxford
+   librarian. Same for "Psychological Science" and "Criminal Justice" —
+   *precisely the regional programme names*, so the alias layer was
+   defeating regional coverage exactly where it was scarcest. The user's
+   own wording is now queried **first**; aliases remain the fallback for
+   wording the API can't match ("chem", "BIO 203"). Safe only because
+   admission is now word-level.
+2. **Campus enrichment matched on email alone.** Miami issues two
+   addresses per person — a `firstname.lastname@` alias and a
+   `lastname+initials@` primary — and LibGuides and the roster don't
+   always pick the same one. Mark Shores is `mark.shores@` in LibGuides
+   and `shoresml@` in the roster, so he came back with no campus and the
+   answer named him with no location at all. Now falls back to the name.
+3. **"I study X, who is my librarian?" ignored the X.** The guard matched
+   "studying" but not "study", so the student got the generic "tell me
+   your subject" reply after already saying it. Anchored to a pronoun —
+   a bare `study\s+\w` would swallow "I need a study room".
+
 ## Known gaps (need operator decisions, not code)
 
 1. **`LibrarianSubject` covers 67 of 734 subjects (9%)**, and **zero**

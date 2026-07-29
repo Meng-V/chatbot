@@ -405,13 +405,33 @@ def _make_lookup_librarian() -> Callable[[dict], list[dict]]:
             if _missing:
                 async def _q_campus(client):
                     ls = await client.librarian.find_many(
-                        where={"email": {"in": _missing}})
-                    return {l.email: (l.campus or "") for l in ls}
+                        where={"isActive": True})
+                    return [(l.email or "", l.name or "", l.campus or "")
+                            for l in ls]
                 try:
-                    _cmap = _db(_q_campus)
+                    _roster = _db(_q_campus)
+                    _by_email = {e.lower(): c for e, _n, c in _roster if e}
                     for r in rows:
-                        if not r.get("campus"):
-                            r["campus"] = _cmap.get(r.get("email") or "") or None
+                        if r.get("campus"):
+                            continue
+                        _e = str(r.get("email") or "").lower()
+                        _c = _by_email.get(_e)
+                        if not _c:
+                            # Miami issues TWO addresses per person -- a
+                            # `firstname.lastname@` alias and a
+                            # `lastname+initials@` primary -- and LibGuides
+                            # and the roster do not always pick the same
+                            # one. Mark Shores is `mark.shores@` in
+                            # LibGuides and `shoresml@` in the roster, so
+                            # matching on email alone left him with no
+                            # campus and the answer said "Mark Shores" with
+                            # no location at all (found 2026-07-28). Fall
+                            # back to the NAME, which both sources agree on.
+                            _c = next(
+                                (c for _e2, n, c in _roster
+                                 if c and names_match(r.get("name"), n)),
+                                None)
+                        r["campus"] = _c or None
                 except Exception as e:  # noqa: BLE001
                     logger.warning("campus enrichment failed: %s", e)
 
@@ -462,22 +482,34 @@ def _make_lookup_librarian() -> Callable[[dict], list[dict]]:
                 logger.warning("lookup_librarian guide attach failed: %s", e)
             return rows
 
-        # (1) Highest-precision subject path: every resolved canonical
-        # subject is queried against the LIVE LibGuides API. First hit
-        # with results wins (the API returns ALL librarians for that
-        # subject, so we don't have to merge).
+        # (1) The user's OWN wording first, against the live LibGuides
+        # API. This used to run AFTER alias resolution, which meant an
+        # alias could override an exact match and hide the right person:
+        # "Engineering Technology" is Krista McDonald's subject at
+        # Hamilton, but the alias map rewrote it to "Electrical and
+        # Computer Engineering" and answered with an Oxford librarian
+        # (found 2026-07-28 while implementing campus labelling). Same for
+        # "Psychological Science" and "Criminal Justice", which are exactly
+        # the REGIONAL programme names -- so the alias layer was defeating
+        # regional coverage precisely where it was scarcest.
+        #
+        # Raw-first is safe now that admission is word-level
+        # (src/tools/subject_match.py): a raw term that does not genuinely
+        # name a subject returns nothing and falls through to the aliases
+        # below, instead of latching onto a lookalike. Verified: "chem"
+        # still needs the alias and still gets it.
+        if subject:
+            rows = _lookup_by_subject_via_libguides(subject, campus)
+            if rows:
+                return _with_guides(rows)
+
+        # (2) Alias / course-code resolution, for wording the API cannot
+        # match on its own ("chem", "orgo", "BIO 203").
         if resolved:
             for s in resolved:
                 rows = _lookup_by_subject_via_libguides(s, campus)
                 if rows:
                     return _with_guides(rows)
-
-        # (2) Raw subject fallback (no alias resolution). Still goes
-        # through the LibGuides API.
-        if subject:
-            rows = _lookup_by_subject_via_libguides(subject, campus)
-            if rows:
-                return _with_guides(rows)
 
         # (2.5) Postgres fallback: the operator's curated Subject /
         # LibrarianSubject / Librarian tables. Verified complete

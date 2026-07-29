@@ -12,6 +12,20 @@ import re
 # Comprehensive mapping from search terms to subject names
 # Keys are lowercase search terms, values are the official Subject names in DB
 SUBJECT_ALIASES = {
+    # Operator-confirmed 2026-07-28. These six academic areas exist at
+    # Miami but are not liaison subject names, so they resolved to nobody
+    # once the subject-match gate stopped accepting lookalikes -- before
+    # the gate they resolved to the WRONG person ("Botany" -> Accountancy
+    # -> the Business Librarian). An alias is query understanding, not
+    # personnel data, so code is the right home for it
+    # (see docs/07-DATA-SOURCES.md).
+    "zoology": "Biology",
+    "botany": "Biology",
+    "japanese": "Asian/Asian-American Studies",
+    "chinese": "Asian/Asian-American Studies",
+    "data science": "Information Systems & Analytics",
+    "supply chain": "Management",
+
     # Sciences
     "chemistry": "Chemistry and Biochemistry",
     "chem": "Chemistry and Biochemistry",

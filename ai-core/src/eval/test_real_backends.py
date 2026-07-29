@@ -210,6 +210,49 @@ def test_holds_url_is_still_drift_safe() -> None:
 # --- 7. lookup_librarian subject resolution (the reinvention fix) ---
 
 
+def test_raw_subject_is_tried_before_aliases(monkeypatch) -> None:
+    """An alias must never override a subject the API knows verbatim.
+
+    "Engineering Technology" IS Krista McDonald's subject at Hamilton, but
+    the alias map rewrote it to "Electrical and Computer Engineering", so
+    the lookup answered with an Oxford librarian and the Hamilton one was
+    unreachable (found 2026-07-28). Same for "Psychological Science" and
+    "Criminal Justice" -- the REGIONAL programme names -- so the alias
+    layer was defeating regional coverage exactly where it was scarcest.
+    """
+    import src.eval.real_backends as rb
+    import src.tools.libguide_comprehensive_tools as lg
+
+    # sanity: an alias for this term really does exist, so the ordering is
+    # what decides the outcome
+    assert "Engineering Technology" not in rb._resolve_subject_terms(
+        "Engineering Technology", "")
+
+    asked: list[str] = []
+
+    class FakeTool:
+        name = "fake"
+
+        async def execute(self, query=None, subject_name=None, **kw):
+            asked.append(subject_name)
+            if subject_name == "Engineering Technology":
+                return {"success": True, "librarians": [{
+                    "first_name": "Krista", "last_name": "McDonald",
+                    "email": "mcdonak@miamioh.edu", "campus": "Hamilton"}]}
+            return {"success": False}
+
+    monkeypatch.setattr(lg, "LibGuideSubjectLookupTool", FakeTool)
+    monkeypatch.setattr(rb, "_db", lambda fn: (_ for _ in ()).throw(
+        AssertionError("must not need the DB fallback here")))
+
+    rows = rb._make_lookup_librarian()({"subject": "Engineering Technology"})
+
+    assert asked[0] == "Engineering Technology", (
+        f"raw wording must be queried FIRST, but order was {asked}")
+    assert [r["name"] for r in rows] == ["Krista McDonald"]
+    assert rows[0]["campus"] == "Hamilton"
+
+
 def test_resolve_subject_terms_alias_and_course_code() -> None:
     """The resolution the hand-rolled lookup lacked: alias + course
     code -> canonical subject names, via the project's own maps."""

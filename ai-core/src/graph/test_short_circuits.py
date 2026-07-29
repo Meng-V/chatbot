@@ -951,6 +951,39 @@ def test_staff_contact_never_substitutes_a_different_person() -> None:
     assert out is not None and "justusra@miamioh.edu" in out[0]
 
 
+def test_my_librarian_recognises_a_named_subject() -> None:
+    """"Who is my librarian?" only deserves the generic "tell me your
+    subject" reply when the student has NOT already told us.
+
+    "I study Engineering Technology at Hamilton, who is my librarian?" got
+    the generic reply because the guard matched "studying" but not
+    "study" -- and Engineering Technology is one of the few subjects with a
+    regional liaison, so this hit exactly the students the campus-labelling
+    work was meant to help (found 2026-07-28).
+
+    A bare `study\\s+\\w` would have been the easy fix and a wrong one: it
+    swallows "I need a study room". The pattern is anchored to a pronoun.
+    """
+    from src.graph.new_orchestrator import _my_librarian_ask_subject
+
+    # subject IS named -> fall through to the real lookup
+    for q in ["I study Engineering Technology at Hamilton, who is my librarian?",
+              "my major is nursing, who is my librarian?",
+              "I'm a biology major, who is my librarian?",
+              "who is my librarian for biology?",
+              "who is my librarian? I take BIO 203"]:
+        assert _my_librarian_ask_subject(q) is None, q
+
+    # no subject -> ask which one
+    for q in ["who is my librarian?",
+              "who is my personal librarian",
+              "I need a study room, who is my librarian?",
+              "where can I study? and who is my librarian?"]:
+        res = _my_librarian_ask_subject(q)
+        assert res is not None, q
+        assert "Tell me your subject" in res[0], q
+
+
 def test_middle_names_are_ignored_in_the_question() -> None:
     """Operator rule 2026-07-28: a middle name or initial the patron types
     must not stop us finding the person. Before this, the two-word capture
