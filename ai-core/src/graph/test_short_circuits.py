@@ -1020,6 +1020,46 @@ def test_middle_names_are_ignored_in_the_question() -> None:
     assert names_match(got, "Anthony Jones-Scott")
 
 
+def test_find_a_thing_is_not_a_person_lookup() -> None:
+    """Eval 2026-07-29 cost three right answers to one loose verb.
+
+    `find` was in the person-seeking verb list, so "How do I find articles
+    in PsycINFO?" extracted the name "articles in", found nobody, and the
+    deterministic no-listing answer fired: "I don't have a listing for
+    articles in in the Libraries staff directory." Same for "find only
+    peer-reviewed articles" and "Find me a book about Ohio history."
+
+    Two guards, because either alone is escapable: `find` is gone from the
+    verbs, and a capture containing a function word is rejected however it
+    was reached. The golden set contains no "find <Person>" question -- in
+    a library, "find" asks about a thing.
+    """
+    from src.graph.new_orchestrator import _extract_person_name
+
+    for q in (
+        "How do I find articles in PsycINFO?",
+        "How do I find only peer-reviewed articles?",
+        "Find me a book about Ohio history.",
+        "Where can I find books on Appalachian history?",
+        "How do I find course reserves for my class?",
+    ):
+        assert _extract_person_name(q) is None, q
+
+    # The function-word guard stands on its own: even with a person-seeking
+    # verb, neither half of a name is ever a preposition or a pronoun.
+    for q in (
+        "who is in charge of the makerspace",
+        "can I email me a copy",
+        "contact us about a purchase request",
+    ):
+        assert _extract_person_name(q) is None, q
+
+    # ...and the real asks are untouched.
+    assert _extract_person_name("How do I contact Jennifer Hicks?") == \
+        "Jennifer Hicks"
+    assert _extract_person_name("Who is Mark Shores?") == "Mark Shores"
+
+
 def test_personnel_answers_state_their_source() -> None:
     """Operator rule 2026-07-28: whenever the bot gives a person's contact
     details it says which system they came from, so a librarian who spots

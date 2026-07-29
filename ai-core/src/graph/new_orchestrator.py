@@ -2815,6 +2815,11 @@ def _extract_person_name(message: str) -> "Optional[str]":
         parts = [p for p in re.split(r"[-\u2013\u2014]", token.lower()) if p]
         if any(p in _NOT_A_NAME for p in parts):
             return None
+        # 3. A function word is never part of a name. Catches the class that
+        #    `_NOT_A_NAME` cannot, because that list only holds nouns some-
+        #    body remembered to add.
+        if any(p in _FUNCTION_WORDS for p in parts):
+            return None
 
     return f"{first} {last}"
 
@@ -3714,9 +3719,17 @@ def _booking_flow_active(history: Optional[list]) -> bool:
 # out_of_scope at 0.35-0.49 (live matrix 2026-07-28). That meant most of
 # the 96-person roster was unreachable by name. Detect the SHAPE instead
 # of memorising names, so every librarian is findable.
+# "find" is deliberately NOT here. Every other verb is inherently about a
+# person; "find" in a library is overwhelmingly about a THING -- "find
+# articles in PsycINFO", "find only peer-reviewed results", "find me books
+# on X" were all read as names ("articles in", "only peer-reviewed", "me
+# book") and answered "I don't have a listing for that in the staff
+# directory" (eval 2026-07-29, three separate cases). The golden set
+# contains no "find <Person>" question at all, and a patron who wants a
+# person says "contact"/"who is"/"email".
 _CONTACT_BY_NAME_RE = re.compile(
     r"\b(?:contact|email|e-?mail|reach|get\s+in\s+touch\s+with|"
-    r"who\s+is|talk\s+to|speak\s+(?:to|with)|find)\s+"
+    r"who\s+is|talk\s+to|speak\s+(?:to|with))\s+"
     r"(?:dr\.?\s+|prof\.?\s+|professor\s+)?"
     # An optional middle INITIAL is skipped, so "contact Roger A Justus"
     # is read as "Roger Justus" (operator rule 2026-07-28). Only a
@@ -3727,6 +3740,27 @@ _CONTACT_BY_NAME_RE = re.compile(
     r"([a-z][\w'-]+)\s+(?:[a-z]\.?\s+)?([a-z][\w'-]+)",
     re.IGNORECASE,
 )
+# Closed-class function words. Neither half of a person's name is ever one
+# of these, so this rejects the whole family of "verb + <not a name>"
+# captures at once rather than one library noun at a time -- the failure
+# mode `_NOT_A_NAME` kept missing, because it can only list vocabulary
+# somebody thought of. Deliberately excludes anything that is also a real
+# surname (Best, Moore, Small), since a false rejection loses a right answer.
+_FUNCTION_WORDS = frozenset({
+    "in", "on", "at", "for", "from", "with", "without", "about", "into",
+    "onto", "over", "under", "near", "of", "off", "by", "via", "to", "up",
+    "and", "or", "but", "nor", "if", "as", "than", "then", "so",
+    "me", "us", "him", "her", "them", "you", "we", "they", "he", "she",
+    "i", "his", "hers", "its", "their", "there", "here", "where", "when",
+    "how", "what", "which", "who", "whom", "whose", "why",
+    "is", "are", "was", "were", "be", "been", "being", "do", "does", "did",
+    "can", "could", "will", "would", "should", "may", "might", "must",
+    "have", "has", "had", "get", "got",
+    "not", "no", "only", "just", "also", "too", "very", "more", "most",
+    "less", "least", "all", "both", "each", "every", "other", "another",
+    "same", "such", "own", "few", "many", "much", "one", "two",
+})
+
 # Library vocabulary that reads like a two-word name but isn't a person.
 _NOT_A_NAME = frozenset({
     "ask", "the", "a", "an", "my", "your", "our", "this", "that", "some",
