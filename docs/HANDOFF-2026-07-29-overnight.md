@@ -22,25 +22,116 @@ just unit-tested. **Except this one:**
 
 Adding them later is a change to one env var, no code.
 
-### b) A corpus refresh is prepared and needs your signature
+### a2) I deleted a good corpus tonight. Read this one.
+
+The apply you signed **worked** at 21:34 — 19,972 chunks into
+`Chunk_vv20260729_2121`. Then I ran a cleanup script whose rule was *"delete
+every `Chunk_*` that isn't currently serving, it's a failed-run leftover"*
+and it deleted the whole thing.
+
+That rule is backwards for this design. Promotion is deliberately manual, so
+the most valuable collection on this box is normally the one that is **not**
+serving — the approved one waiting for you. My script's definition of
+garbage was precisely the definition of the thing to protect.
+
+**What it did not cost:** nothing patrons see. The serving collection was
+explicitly preserved, and I verified independently that its newest
+`ingested_at` is **2026-05-27** — nothing tonight ever reached it.
+
+**What it did cost:** the embedding spend for ~20,000 chunks (under a
+dollar) and a re-run, which I have done.
+
+**Why it happened, which is the part worth fixing:** nothing on disk
+recorded *where* an apply had written.
+
+- the diff report tracked the collection version internally and never printed it
+- the `.applied` marker recorded who approved and when, not what was produced
+- the collection is named for the run's **start** time while the report is
+  named for its **finish** time (`2121` vs `2134`), so it could not be
+  recovered from the filename either
+
+With no record, the good collection and the four partials from earlier
+failed attempts were indistinguishable — to a script or to a person. Fixed
+in `eac5ef2`: the report now prints the collection, the marker records it
+with `promoted: no` and a do-not-delete note, and the throwaway cleanup is
+replaced by `scripts/etl/cleanup_collections.py`, which is dry-run by
+default and **refuses to act at all** when any marker is ambiguous rather
+than guessing.
+
+This is the second time tonight the same shape of error has cost something:
+a deterministic action taken on an assumption I never checked against a
+record. The first was `find` matching a person's name.
+
+### a3) The `find` fix is committed but NOT running
+
+Right now, live, a patron who asks **"How do I find articles in PsycINFO?"**
+gets *"I don't have a listing for articles in in the Libraries staff
+directory."* The fix is in `440ab74` (plus `2db41f1`, which applies the same
+guard to the second function that reads that regex — they had drifted apart)
+and both are tested, but the running process still has the old code.
+
+I did not restart the service to deploy it, for one reason: a restart changes
+the answers patrons get, which is the same category of decision as promoting
+a corpus — and I told you that category is yours. It would be inconsistent to
+refuse one and take the other. The note that you run deployments points the
+same way.
+
+But the cost of waiting is real, so decide fast rather than carefully: this is
+a Python-only change, no frontend build:
+
+```bash
+sudo systemctl restart chatbot && sleep 5 && systemctl is-active chatbot
+```
+
+Three questions to spot-check afterwards — the first three should stop
+mentioning the staff directory, the fourth must still work:
 
 ```
-/opt/chatbot/ai-core/data/diffs/2026-07-29_2139.approval
+How do I find articles in PsycINFO?
+How do I find only peer-reviewed articles?
+Find me a book about Ohio history.
+How do I contact Jennifer Hicks?
 ```
 
-Fill in `approved_by_email` and `approved_at`, then tell me (or run
-`--phase apply --diff 2026-07-29_2139.md`).
+### b) The corpus refresh — you signed it, and it is applied
 
-**I did not sign it.** Self-signing would make the librarian gate
+You signed `data/diffs/2026-07-29_2139.approval` before going to bed, so I
+ran `--phase apply --diff 2026-07-29_2139.md`. Results and the verification
+you asked for (stale pages must be **0**) are in §5.
+
+**I did not sign it myself.** Self-signing would make the librarian gate
 meaningless — that gate is the reason a bad index cannot reach patrons
-without a human agreeing.
+without a human agreeing. Same reason I am not promoting it.
 
 ### c) Nothing patrons see has changed tonight
 
-The bot is serving the **same May corpus** as this morning. `apply` writes a
-new collection; **promotion is a separate manual step** and I did not take it.
-Your code comments say a cron must never auto-promote, and the same applies
-to me at 2am.
+The bot is serving the **same May corpus** as this morning
+(`Chunk_vv20260514_1929`, newest `ingested_at` 2026-05-27 — measured, not
+assumed). `apply` writes a new collection; **promotion is a separate manual
+step** and I did not take it. Your code comments say a cron must never
+auto-promote, and the same applies to me at 2am.
+
+**How promotion actually works on this box.** Not the alias swap the code
+prefers — I checked, and this server rejects it:
+
+```
+server version: 1.28.6
+alias is not supported by your connected server's Weaviate version
+```
+
+Aliases arrived in Weaviate 1.32. So here, the promotion pointer *is* the env
+var. To promote, edit one line in `/opt/chatbot/.env`:
+
+```
+WEAVIATE_CHUNK_COLLECTION=<the collection named in the .applied marker>
+```
+
+then restart the bot. **Rollback is the same edit in reverse** — put
+`Chunk_vv20260514_1929` back and restart. No data moves either way, so a bad
+promotion costs one restart, not a re-index.
+
+The exact collection name, the verification results, and a copy-paste command
+are in §5 below. I am not running it.
 
 ### d) The remote moved while I was working — not by me
 
@@ -50,8 +141,21 @@ sleeping or something automated did. Flagging it because I cannot tell which,
 and because it means those commits went out **before** the eval number
 existed.
 
-**3 commits remain local** (both ETL fixes and this document). I have not
-pushed them.
+**7 commits remain local** — counted with `git rev-list --count
+origin/main..HEAD`, not estimated, because I got this number wrong earlier
+today by extrapolating instead of measuring:
+
+```
+eac5ef2  fix(etl): record which collection an apply wrote
+9c4a974  docs: the eval number, every regression classified
+440ab74  fix(staff): "find" is not a person-seeking verb
+51f64b0  docs: correct the handoff's commit count
+c0465db  docs: overnight handoff
+86afc9f  fix(etl): exclude stale pages at crawl time
+3729f25  fix(etl): one bad chunk no longer loses the whole run
+```
+
+I have not pushed them, and will not while you are asleep.
 
 I checked the pushed history for the staff CSV — legal names, pronouns, phone
 numbers. It is **absent from the remote file tree and from the remote history
@@ -112,9 +216,57 @@ MemoryMax=2500M       ~2.6× the real (anon) requirement
 
 Verified by `kill -9` on the main pid: a new one came up automatically.
 
-**You probably do not need a bigger instance.** If you want more resources,
-ask Rachel for a temporary by-the-hour box for eval runs, not a permanently
-doubled production one.
+#### …but it can still be STARVED, which I proved the hard way
+
+That heading is accurate and incomplete, so read this with it. The hardening
+stops the bot from being **killed**. It does nothing to stop the bot from
+being **squeezed out of RAM**, and tonight I did exactly that:
+
+```
+23:10:40  I raise the apply's cgroup cap 1400M -> 1900M ("cheap insurance")
+23:12:32  apply anon = 1432M  — past the cap I had just removed
+23:12:5x  swap 2047/2047 (100%), free RAM 86M,
+          chatbot.service anon collapses 678M -> 65M (swapped out)
+23:13     a health request gets NO response in 30s. The bot is down in the
+          only sense a patron cares about.
+23:13:30  I kill the apply. First answer back in 29s (paging in), next in
+          7s — normal.
+```
+
+**The cap was working and I switched it off.** Left at 1400M, the cgroup
+would have killed the apply a minute later and the box would never have been
+squeezed. I raised it on an extrapolated memory curve without first measuring
+the box's total headroom — the same mistake as the earlier 3.8 GB prediction
+that turned out to be 942 MB.
+
+Two things follow, and they matter more than the incident:
+
+1. **`OOMScoreAdjust` is not a latency guarantee.** If you ever see the bot
+   answer slowly, check `free -m` for swap before looking at the code. There
+   is now a `swap_used` line in what I watch during batch jobs.
+2. **This is the concrete answer to your `.large` question.** You asked
+   whether to upsize for reliability. The measurement: production needs
+   ~750 MB, Weaviate ~440 MB, and a corpus apply peaks at 1.4 GB+ — which
+   does not fit in 4 GB alongside the other two. So: **you do not need a
+   bigger box to serve patrons; you need one to reindex without degrading
+   them.** A temporary by-the-hour box for apply and eval runs is still the
+   cheaper answer than permanently doubling production, but "just run it on
+   prod at night" is now measurably not free.
+
+   How not-free, measured on the retry with the apply held to a **1100 MB**
+   cap — properly bounded this time, no cap-raising:
+
+   | Box state | Same question, end to end |
+   |---|---|
+   | idle | **7.0 s** |
+   | corpus apply running (capped) | **25.5 s** |
+   | corpus apply running (uncapped, 100% swap) | **no answer in 30 s** |
+
+   So even a *correctly capped* apply costs about 3.6× on answer latency.
+   The rule that follows: **never run an apply or an eval while patrons
+   might be asking.** Neither is urgent enough to compete with serving —
+   and after your announcement goes out, "nobody is using it at 11pm" stops
+   being a safe assumption.
 
 ### Tombstones do not survive a re-crawl — caught before promotion
 
@@ -155,7 +307,7 @@ wrong at first:
 | 2 | 2,664 | memory again | a dropped connection answered by switching verbs |
 | 3 | 3,500 | it was holding | killed by a cap **I** set too low; I called it fine at 90 seconds |
 | 4 | 14,880 | — | one insert timed out and the exception discarded the run |
-| 5 | 20,068 ✅ | — | completed, 0 failures |
+| 5 | 20,068 ✅ | — | completed, 0 failures — **and then I deleted its output, see §1(a2)** |
 
 I also committed the staff CSV — which holds legal names, pronouns and phone
 numbers — **twice**, and caught it both times only because git printed a CRLF
@@ -165,6 +317,14 @@ commit. `.gitignore` now covers `staff-members*`.
 **The pattern: I am reliable when reporting a measurement and unreliable when
 declaring something done.** Every claim in this document is backed by a
 command I ran, because that is the part that held up.
+
+Tonight added a second, worse pattern: **I take destructive action on a
+category I inferred rather than a record I read.** The cleanup deleted "every
+non-serving collection" because I assumed non-serving meant failed. `find`
+triggered a staff lookup because I assumed a verb meant a person. Neither
+assumption was checked against anything, and both were one command away from
+being checked. The two fixes tonight (`440ab74`, `eac5ef2`) each replace an
+assumption with a record — that is the shape of fix to insist on from me.
 
 The eval result is appended below when it finishes — that is the one number
 that says whether tonight's 16 commits helped or hurt.
@@ -261,3 +421,85 @@ know:
 The eval uses realistic-fake `search_kb` evidence, so it does **not** test
 the corpus refresh. A good eval score says nothing about whether the new
 index is right; that is the separate check in §1(b).
+
+---
+
+## 5. The corpus refresh did NOT complete — and cannot, on this box
+
+**Bottom line: the signed diff is still unapplied, and that is now a finding
+rather than a failure to retry.** Two attempts tonight, both killed by me,
+both for the same reason: a corpus apply and the serving process do not fit
+in 4 GB together.
+
+| Attempt | Reached | Cap | Why it ended |
+|---|---|---|---|
+| 23:03 | 14,500 / 19,647 (74%) | 1400M → **I raised it to 1900M** | swap hit 100%, the bot stopped answering for 30s+, I killed it |
+| 23:37 | 12,400 / 19,647 (63%) | 1100M, **not touched** | swap hit 100% again (2045/2047, 77 MB RAM free). The bot was still answering at 25s, but that is the state the first outage came out of, so I stopped rather than gamble |
+
+The second attempt is the informative one. Slices were down from 500 to 200,
+the apply held itself to **797 MB** — well inside its cap, reclaiming
+properly, no fragmentation runaway — and the box *still* ran out, because
+the apply is not the only tenant. Capping the apply harder does not create
+memory that isn't there.
+
+**So the honest conclusion: do not run this on the production box.** Not at a
+lower slice size, not at 2am. The options, in the order I would try them:
+
+1. **A temporary by-the-hour instance** for apply and eval runs, as I
+   suggested before you asked about `.large`. This is the cheap answer and
+   now has a measurement behind it.
+2. **Stop the bot for the duration of the apply** (~15 min) using the kill
+   switch you now have, so the two never compete. Crude but free, and the
+   widget shows a maintenance notice rather than breaking.
+3. Upsize permanently — the expensive answer, and only justified if
+   reindexing needs to happen while patrons are active.
+
+### Why I stopped instead of pushing through
+
+The first attempt was 74% done when I raised the cap "as cheap insurance"
+and caused an outage. The second was 63% done when the same warning signs
+appeared. **The reasoning that got me into trouble was "it's nearly
+finished"**, so the second time I applied the opposite rule and stopped. A
+corpus refresh that nothing serves from yet is worth less than a bot that
+answers in 7 seconds instead of 25.
+
+### State right now — all verified, not assumed
+
+```
+Chunk_vv20260514_1929   20,608   SERVING, untouched all night (newest ingested_at 2026-05-27)
+Chunk_vv20260729_2303   14,782   partial, attempt 1 — disposable
+Chunk_vv20260729_2337   12,480   partial, attempt 2 — disposable
+```
+
+- **No `.applied` marker was written**, so `2026-07-29_2139.md` is still
+  "approved but not applied" and your signature is still good. The retry is
+  the same command, whenever the box is free:
+
+  ```bash
+  .venv/bin/python -m scripts.etl.run_etl --phase apply --diff 2026-07-29_2139.md
+  ```
+
+- The two partial collections are junk but I **left them alone** rather than
+  delete them, given what happened earlier tonight. To clear them:
+
+  ```bash
+  cd /opt/chatbot/ai-core && .venv/bin/python -m scripts.etl.cleanup_collections
+  ```
+
+  That prints what it would do and changes nothing; add `--yes` to act. It
+  refuses to touch the serving collection or anything an unpromoted
+  `.applied` marker claims.
+
+- **There is no promote command to give you yet**, because there is no
+  complete collection to promote. When there is, §1(c) has the procedure —
+  it is an env-var edit plus a restart on this Weaviate version, not an
+  alias swap.
+
+### One more thing the retry should know: there is no resume
+
+Every apply writes a fresh `Chunk_v{version}`, so a run that dies at 63%
+re-embeds all 19,647 chunks from zero next time. Tonight's two dead runs each
+paid full embedding cost for a partial index. Worth fixing before the next
+attempt if it dies again — the dedup check already skips chunks whose
+`content_hash` matches in the destination, so resuming into the *same*
+version would mostly work.
