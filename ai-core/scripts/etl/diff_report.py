@@ -81,6 +81,16 @@ def render_markdown(report: DiffReport) -> str:
         lines.append(f"- Live chunks in the serving index: "
                      f"**{report.upsert.total_chunks_in_index}**")
     else:
+        # Name the collection this run WROTE. Without it the report records
+        # what happened but not where, and on 2026-07-29 that gap cost a
+        # good corpus: nothing on disk distinguished the successful apply's
+        # collection from the four partial ones left by earlier attempts,
+        # so a cleanup swept all five. The header timestamp is the FINISH
+        # time while the collection is named for the START time, which is
+        # why it cannot be reconstructed by reading the filename either.
+        lines.append(f"- Written to collection: "
+                     f"**Chunk_v{report.upsert.weaviate_collection_version}** "
+                     f"(not serving until promoted)")
         lines.append(f"- Changed chunks re-indexed: "
                      f"**{len(report.upsert.changed_chunk_ids)}**")
         lines.append(f"- Tombstoned URLs: **{len(report.upsert.tombstoned_urls)}**")

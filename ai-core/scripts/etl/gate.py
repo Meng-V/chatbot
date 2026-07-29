@@ -246,15 +246,32 @@ def find_latest_pending_diff() -> Optional[Path]:
     return max(candidates, key=lambda p: p.stat().st_mtime)
 
 
-def mark_applied(diff_path: Path, token: ApprovalToken, applied_at: dt.datetime) -> Path:
+def mark_applied(diff_path: Path, token: ApprovalToken, applied_at: dt.datetime,
+                 collection: str = "") -> Path:
     """Write a `.applied` marker so a future `apply` invocation can't
     double-promote the same diff.
+
+    `collection` names the Weaviate collection the apply actually wrote.
+    It is not bookkeeping trivia -- it is the ONLY on-disk record of which
+    collection is awaiting promotion, and its absence destroyed a good
+    corpus on 2026-07-29: an apply wrote 19,972 chunks to
+    `Chunk_vv20260729_2121`, and a cleanup script deleting "every Chunk_*
+    that isn't currently serving" then removed it as a failed-run leftover.
+    In a design where promotion is deliberately manual, the
+    approved-but-not-yet-promoted collection is the single thing that must
+    never be swept up -- so it has to be nameable from disk.
     """
     marker = diff_path.with_suffix(".applied")
-    marker.write_text(
+    body = (
         f"applied_at: {applied_at.isoformat(timespec='seconds')}\n"
         f"approved_by: {token.approved_by_email}\n"
-        f"diff_hash: {token.diff_hash}\n",
-        encoding="utf-8",
+        f"diff_hash: {token.diff_hash}\n"
     )
+    if collection:
+        body += (f"collection: {collection}\n"
+                 f"promoted: no\n"
+                 f"# DO NOT DELETE the collection above: it is approved and\n"
+                 f"# awaiting promotion. `promoted: no` means nothing serves\n"
+                 f"# from it yet -- that is expected, not a sign it is junk.\n")
+    marker.write_text(body, encoding="utf-8")
     return marker

@@ -563,8 +563,14 @@ def main() -> int:
         # Mark the diff as applied so re-running --phase apply on the same
         # diff is a no-op (forced re-prepare for any new run).
         assert decision.token is not None
-        marker = gate.mark_applied(diff_path, decision.token, dt.datetime.now(dt.timezone.utc))
+        _version = report.upsert.weaviate_collection_version or ""
+        _written = f"Chunk_v{_version}" if _version else ""
+        marker = gate.mark_applied(
+            diff_path, decision.token, dt.datetime.now(dt.timezone.utc),
+            collection=_written)
         logger.info("apply complete; marker written: %s", marker)
+        logger.info("the new corpus lives in %s and is NOT serving yet; "
+                    "promotion is a separate manual step", _written or "(unknown)")
         elapsed = time.time() - t0
         logger.info(
             "ETL apply finished in %.1fs: %d new chunks, %d tombstoned URLs",
