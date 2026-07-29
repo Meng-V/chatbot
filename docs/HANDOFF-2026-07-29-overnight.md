@@ -42,10 +42,20 @@ new collection; **promotion is a separate manual step** and I did not take it.
 Your code comments say a cron must never auto-promote, and the same applies
 to me at 2am.
 
-### d) 16 commits are unpushed
+### d) The remote moved while I was working — not by me
 
-I did not push. You never authorised it, and my own advice was to see the
-eval number first.
+At 21:07 `origin/main` advanced to `8c358fc`, so **13 of tonight's commits are
+already on the remote**. I never ran `git push`; either you pushed before
+sleeping or something automated did. Flagging it because I cannot tell which,
+and because it means those commits went out **before** the eval number
+existed.
+
+**3 commits remain local** (both ETL fixes and this document). I have not
+pushed them.
+
+I checked the pushed history for the staff CSV — legal names, pronouns, phone
+numbers. It is **absent from the remote file tree and from the remote history
+entirely.** That was worth checking, given I had staged it twice today.
 
 ---
 
