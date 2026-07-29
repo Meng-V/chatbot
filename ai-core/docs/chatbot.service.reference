@@ -1,0 +1,35 @@
+[Unit]
+Description=Smartchatbot Backend
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=/opt/chatbot/ai-core/.venv/bin/uvicorn src.main:app_sio --host 0.0.0.0 --port 8081
+WorkingDirectory=/opt/chatbot
+#User=smartchatbot
+#Group=smartchatbot
+Environment="PATH=/usr/local/bin:/usr/bin:/bin"
+Environment="PYTHONPATH=/opt/chatbot/ai-core"
+StandardOutput=append:/var/log/chatbot/smartchatbot.log
+StandardError=append:/var/log/chatbot/smartchatbot.error.log
+# OOM hardening, added 2026-07-29. This box is a t4g.medium (4 GB) and the
+# OOM killer fired twice on 2026-07-29 while an eval ran alongside the
+# service. At that moment uvicorn had the HIGHEST oom_score on the machine
+# (779) -- it was first in line to be killed -- and OOMPolicy=stop meant
+# systemd would have left it down rather than restarting it. A silent
+# outage, discoverable only by someone noticing the bot was gone.
+#
+#   OOMScoreAdjust=-500  the kernel picks a different victim first
+#   OOMPolicy=continue   an OOM-killed child does not stop the unit
+#   Restart=always       and if the main process does die, it comes back
+OOMScoreAdjust=-500
+OOMPolicy=continue
+Restart=always
+RestartSec=5
+StartLimitIntervalSec=60
+StartLimitBurst=5
+
+[Install]
+WantedBy=multi-user.target
+
+

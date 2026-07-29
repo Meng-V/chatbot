@@ -2760,14 +2760,36 @@ def _no_listing_answer(who: str) -> "tuple[str, list[dict]]":
 
 
 def _extract_person_name(message: str) -> "Optional[str]":
-    """The "First Last" a contact ask names, or None."""
+    """The "First Last" a contact ask names, or None.
+
+    Two rejections here are load-bearing, both found by the eval on
+    2026-07-29 via `loc_gardner_harvey_address` -- "What's Gardner-Harvey's
+    address?" was read as a person called "What's Gardner-Harvey", and the
+    deterministic no-listing answer then BLOCKED the correct address. False
+    positives used to be free (the turn fell through to the synthesizer);
+    since that answer became deterministic they cost a right answer, so the
+    extractor has to be strict.
+    """
     msg = message or ""
     m = _CONTACT_BY_NAME_RE.search(msg) or _NAME_POSSESSIVE_RE.search(msg)
     if not m:
         return None
     first, last = m.group(1), m.group(2)
-    if first.lower() in _NOT_A_NAME or last.lower() in _NOT_A_NAME:
+
+    # 1. A contraction is not a first name. `[\w'-]+` happily matches
+    #    "What's" / "Where's" / "Who's", and the possessive pattern then
+    #    reads the NEXT word as the surname.
+    if first.lower().endswith("'s") or first.lower().endswith("\u2019s"):
         return None
+
+    # 2. Match the library-vocabulary stop-list on each HYPHEN part, not on
+    #    the whole token: the list already had "gardner", but the captured
+    #    word was "Gardner-Harvey", so an exact comparison missed it.
+    for token in (first, last):
+        parts = [p for p in re.split(r"[-\u2013\u2014]", token.lower()) if p]
+        if any(p in _NOT_A_NAME for p in parts):
+            return None
+
     return f"{first} {last}"
 
 

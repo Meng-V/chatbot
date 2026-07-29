@@ -427,6 +427,49 @@ Also: **Hamilton publishes no sitemap** (`www.ham.miamioh.edu/sitemap.xml`
 sitemap with zero library URLs, which the host filter correctly discards.
 Only Oxford is genuinely sitemap-driven (395 URLs).
 
+## The box is the constraint (2026-07-29)
+
+Worth recording because it looked like "AWS jitter" and wasn't. During an
+eval run everything slowed to a crawl; one judge call took **200 seconds**.
+Measured rather than assumed:
+
+| Checked | Result |
+|---|---|
+| CPU steal time | **0** — no hypervisor contention, so not AWS |
+| Network to OpenAI | TLS 16–23 ms, first byte 0.4–1.0 s — healthy |
+| OpenAI responses | **7× 429**, 3× 504, 2× 503, 2× 502, 2× timeout — upstream |
+| Memory | **OOM killer fired twice** |
+
+This is a **t4g.medium: 2 vCPU, 4 GB**. With the service (~1 GB), an eval
+(~750 MB), Weaviate (~400 MB) and tooling resident, it ran out.
+
+**The dangerous part was not the slowness.** At that moment `uvicorn` had
+the **highest `oom_score` on the machine (779)** — first in line to be
+killed — and the unit had `OOMPolicy=stop`, so systemd would have left it
+**down**. A silent outage, discoverable only by someone noticing the bot
+was gone.
+
+Fixed in `/etc/systemd/system/chatbot.service` (copy kept at
+`ai-core/docs/chatbot.service.reference`):
+
+```
+OOMScoreAdjust=-500   # the kernel picks a different victim first
+OOMPolicy=continue    # an OOM-killed child does not stop the unit
+Restart=always        # and if the main process dies, it comes back
+```
+
+Verified: `oom_score` 779 → **442** (now the lowest of the large
+processes), and `kill -9` on the main pid brought a new one up
+automatically.
+
+Use `scripts/run_eval_safely.sh` for eval runs — it caps the eval at
+1.5 GB via `systemd-run`, so **the eval dies before the machine does**.
+
+**For the launch-readiness monitoring work:** liveness checks are not
+enough. Watch **memory and OOM events** — the failure mode here was the
+service being killed and staying dead, which a "is the port open" probe
+only catches after the fact.
+
 ## Known gaps (need operator decisions, not code)
 
 1. **`LibrarianSubject` covers 67 of 734 subjects (9%)**, and **zero**
