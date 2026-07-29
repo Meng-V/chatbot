@@ -401,14 +401,25 @@ applies anything; the signature gate is untouched.
 
 A full prepare is ~410 fetches of our own public pages, ~25 seconds, **$0.00**.
 
-### Still worth cleaning
+### Cleaned up 2026-07-29
 
-Weaviate holds **three orphaned collections** from abandoned May runs —
-`Chunk_vv20260517_1629` (4,596), `Chunk_vv20260517_1702` (20,335) and
-`Chunk_vv20260518_0124` (2,799) — about **27,700 dead chunks**. The
-20,335-chunk one is *larger* than what is serving, so a run finished and was
-never promoted. Harmless to answers (only the aliased collection is queried)
-but it is memory and disk.
+- **Three orphaned Weaviate collections** from abandoned May runs —
+  `Chunk_vv20260517_1629` (4,596), `Chunk_vv20260517_1702` (20,335) and
+  `Chunk_vv20260518_0124` (2,799), **27,730 chunks** — deleted. The
+  20,335-chunk one was *larger* than what serves, so a run had finished and
+  was never promoted. Weaviate's volume went 2.13 GB → 919 MB.
+- **`LibGuideSubject`** — dropped. It modelled the same subject↔guide
+  relationship as `SubjectLibGuide`, with a proper foreign key instead of a
+  guide-name string — arguably the better design, but never adopted: **0
+  rows, read by nothing**, and written only by `sync_libguides.py`, which
+  read the *live* table and wrote the dead one. `SubjectLibGuide` (587 rows)
+  is what `real_backends` serves from and `ingest_myguide.py` owns.
+- **`data/raw`** (163 MB fetch cache) — cleared. It regenerates, and now
+  expires, so it is safe to delete any time.
+
+The classifier embedding cache (`data/eval/classifier_embeddings.json`,
+339 MB) was **kept** on the operator's instruction: it is a cache, but
+rebuilding it costs embedding spend.
 
 Also: **Hamilton publishes no sitemap** (`www.ham.miamioh.edu/sitemap.xml`
 → 404), so that campus is crawled from a short hand-curated seed list in

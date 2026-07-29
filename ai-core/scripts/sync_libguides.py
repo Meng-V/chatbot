@@ -1,9 +1,10 @@
 """
 Sync LibGuides to Database
 
-Fetches LibGuides from LibGuides API and populates:
-- LibGuide table
-- LibGuideSubject table (maps guides to subjects)
+Fetches LibGuides from the LibGuides API and populates the LibGuide table.
+
+Does NOT write the subject<->guide mapping: that lives in SubjectLibGuide,
+which ingest_myguide.py owns and real_backends reads.
 
 Run: python scripts/sync_libguides.py
 """
@@ -111,7 +112,7 @@ async def sync_guides_to_db(guides):
     await db.connect()
     
     try:
-        stats = {"created": 0, "updated": 0, "mapped": 0}
+        stats = {"created": 0, "updated": 0}
         
         for guide_data in guides:
             guide_id = str(guide_data.get("id", ""))
@@ -143,33 +144,18 @@ async def sync_guides_to_db(guides):
             )
             
             stats["updated"] += 1
-            
-            # Map to subjects based on SubjectLibGuide table
-            subject_libguides = await db.subjectlibguide.find_many(
-                where={"libGuide": name}
-            )
-            
-            for subject_libguide in subject_libguides:
-                await db.libguidesubject.upsert(
-                    where={
-                        "libGuideId_subjectId": {
-                            "libGuideId": guide.id,
-                            "subjectId": subject_libguide.subjectId
-                        }
-                    },
-                    data={
-                        "create": {
-                            "libGuideId": guide.id,
-                            "subjectId": subject_libguide.subjectId
-                        },
-                        "update": {}
-                    }
-                )
-                stats["mapped"] += 1
+
+            # The subject<->guide mapping is NOT written here. This block
+            # used to read the LIVE SubjectLibGuide table and copy each row
+            # into LibGuideSubject -- a second model of the same
+            # relationship that nothing ever read (0 rows after this script
+            # had already populated 480 LibGuide rows, so the copy was
+            # failing silently or predated the model). LibGuideSubject was
+            # dropped 2026-07-29; SubjectLibGuide is the one real_backends
+            # serves from, and ingest_myguide.py owns writing it.
         
         print("\n📊 Sync Statistics:")
         print(f"  LibGuides: {stats['updated']} synced")
-        print(f"  Subject Mappings: {stats['mapped']} created")
         
     finally:
         await db.disconnect()

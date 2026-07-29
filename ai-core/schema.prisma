@@ -119,7 +119,6 @@ model Subject {
   majorCodes SubjectMajorCode[]
   deptCodes  SubjectDeptCode[]
   librarians LibrarianSubject[]
-  guides     LibGuideSubject[]
 
   @@index([name])
 }
@@ -327,8 +326,6 @@ model LibGuide {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  subjects LibGuideSubject[]
-
   @@index([name])
   @@index([guideId])
 }
@@ -347,18 +344,12 @@ model LibrarianSubject {
   @@index([librarianId])
 }
 
-// Many-to-many: LibGuide <-> Subject
-model LibGuideSubject {
-  id         String   @id @default(uuid())
-  libGuideId String
-  subjectId  String
-  libGuide   LibGuide @relation(fields: [libGuideId], references: [id], onDelete: Cascade)
-  subject    Subject  @relation(fields: [subjectId], references: [id], onDelete: Cascade)
-
-  @@unique([libGuideId, subjectId])
-  @@index([subjectId])
-  @@index([libGuideId])
-}
+// NOTE: `LibGuideSubject` was removed 2026-07-29. It modelled the same
+// subject<->guide relationship as `SubjectLibGuide` above, with a proper FK
+// instead of a guide-name string -- arguably the better design, but it was
+// never adopted: 0 rows, read by nothing, and written only by
+// scripts/sync_libguides.py, which read the LIVE table and wrote the dead
+// one. `SubjectLibGuide` (587 rows) is what real_backends serves from.
 
 // ============================================================================
 // SMART-CHATBOT REBUILD MODELS
