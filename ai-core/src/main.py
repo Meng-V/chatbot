@@ -1,5 +1,6 @@
 import os
 import re
+import asyncio
 import logging
 from decimal import Decimal
 from datetime import datetime, date
@@ -454,6 +455,8 @@ if _admin_token:
     app.include_router(build_review_view_router(_admin_deps))
     app.include_router(build_corrections_router(_admin_deps))
     app.include_router(build_cost_view_router(_admin_deps))
+    from src.api.admin.killswitch_router import build_killswitch_router
+    app.include_router(build_killswitch_router(_admin_deps))
     logging.info(
         "Op1/Op2/Op3 admin surfaces mounted (ADMIN_API_TOKEN set): "
         "/admin/review (HTML), /admin/reviews (JSON), "
@@ -503,6 +506,12 @@ socketio_cors = "*" if node_env == "development" else cors_origins
 
 # Store conversation mappings for Socket.IO clients
 client_conversations = {}
+
+# Per-socket rate-limiter trip counts, feeding the abuse alert. In-process and
+# reset on restart, which is fine -- it only decides whether to send an email,
+# never whether to serve a request.
+_rate_trips: dict[str, int] = {}
+_RATE_TRIPS_BEFORE_ALERT = 5
 
 # v2 handlers under distinct names (sio_v2.on(...)) so they cannot
 # shadow the legacy module-level connect/message/disconnect. Legacy
@@ -560,6 +569,10 @@ async def _v2_connect(sid, environ):
 async def _v2_disconnect(sid):
     logging.info(f"🔌 [v2] Client disconnected: {sid}")
     client_conversations.pop(sid, None)
+    # Without this the trip counter grows for the lifetime of the process --
+    # one entry per socket that ever connected. Small, but it is a leak, and
+    # this box has 4 GB.
+    _rate_trips.pop(sid, None)
 
 
 async def _v2_message(sid, data):
@@ -568,6 +581,8 @@ async def _v2_message(sid, data):
         if isinstance(data, str)
         else (data.get("message", "") if isinstance(data, dict) else "")
     )
+    # How many limiter trips from ONE socket before this counts as abuse
+    # rather than an impatient human.
     # Abuse / cost guard (unauthenticated public socket): bound input
     # size + per-sid rate BEFORE any DB write or LLM call. Ported from
     # the legacy handler during the 2026-07-17 removal -- v2 had NO
@@ -575,16 +590,60 @@ async def _v2_message(sid, data):
     # the socket unlimited. check_rate fails OPEN so a limiter bug
     # can't lock out a legitimate user; on reject the reason surfaces
     # in-chat on the same "message" channel, then the turn stops.
+    # One-click shutdown (see api/admin/killswitch_router). Checked FIRST, so
+    # a paused bot costs nothing: no DB write, no LLM call. The widget still
+    # loads and the patron gets a real sentence pointing at Ask Us, rather
+    # than a network error from a stopped process.
+    try:
+        from src.api.admin.killswitch_router import PAUSED_MESSAGE, is_paused
+        if is_paused():
+            await sio_v2.emit("message", json_serializable({
+                "message": PAUSED_MESSAGE,
+                "conversationId": client_conversations.get(sid),
+            }), to=sid)
+            return
+    except Exception as _e:  # noqa: BLE001 -- a flag-check bug must not
+        # take the bot down; fail OPEN and keep serving.
+        logging.warning(f"pause-flag check failed, serving anyway: {_e}")
+
     try:
         text_input = validate_message(text_input)
         check_rate(f"ws:{sid}")
     except MessageRejected as _mr:
+        # Operator told colleagues that hacking attempts / suspicious activity
+        # alert them. A limiter trip on its own is normal (someone clicking
+        # fast), so only REPEATED trips from one socket count as abuse.
+        _n = _rate_trips.get(sid, 0) + 1
+        _rate_trips[sid] = _n
+        if _n >= _RATE_TRIPS_BEFORE_ALERT:
+            try:
+                from src.observability.incident_alerts import alert_rate_limit_abuse
+                await asyncio.to_thread(
+                    alert_rate_limit_abuse, client_key=f"ws:{sid}",
+                    hits=_n, window_seconds=60)
+            except Exception as _e:  # noqa: BLE001
+                logging.warning(f"rate-abuse alert failed: {_e}")
         await sio_v2.emit("message", json_serializable({
             "message": _mr.reason,
             "conversationId": client_conversations.get(sid),
             "error": True,
         }), to=sid)
         return
+
+    # Injection-shaped message -> notify, but do NOT block. The grounding
+    # rules are what keep the answer honest; this is so the operator learns
+    # someone is probing.
+    try:
+        from src.observability.incident_alerts import (
+            alert_suspicious_message, looks_like_injection,
+        )
+        _hit = looks_like_injection(text_input)
+        if _hit:
+            await asyncio.to_thread(
+                alert_suspicious_message, message=text_input,
+                matched=_hit, client_key=f"ws:{sid}")
+    except Exception as _e:  # noqa: BLE001
+        logging.warning(f"injection alert failed: {_e}")
     conversation_id = client_conversations.get(sid)
     if not conversation_id:
         conversation_id = await create_conversation()
@@ -710,6 +769,36 @@ async def _v2_message(sid, data):
         )
 
 
+async def _alert_negative_rating(message_id: str) -> None:
+    """Email the operator about a thumbs-down, WITH the question.
+
+    The rated row is the bot's answer; on its own it says nothing about what
+    went wrong, so this walks back to the preceding user turn -- the same
+    lesson learned in scripts/data_health.py.
+    """
+    try:
+        from src.database.prisma_client import get_prisma_client
+        from src.observability.incident_alerts import alert_thumbs_down
+
+        db = get_prisma_client()
+        answer = await db.message.find_unique(where={"id": message_id})
+        if answer is None:
+            return
+        prior = await db.message.find_many(
+            where={"conversationId": answer.conversationId, "type": "user",
+                   "timestamp": {"lte": answer.timestamp}},
+            order={"timestamp": "desc"}, take=1)
+        await asyncio.to_thread(
+            alert_thumbs_down,
+            message_id=message_id,
+            conversation_id=answer.conversationId,
+            question=(prior[0].content if prior else ""),
+            answer=answer.content or "",
+        )
+    except Exception as e:  # noqa: BLE001 -- never break the rating ack
+        logging.warning(f"thumbs-down alert failed: {e}")
+
+
 async def _v2_message_rating(sid, data):
     """Thumbs up/down on one message. Ported from the legacy handler
     2026-07-17 -- the client kept emitting `messageRating` after the
@@ -722,6 +811,11 @@ async def _v2_message_rating(sid, data):
             await update_message_rating(message_id, is_positive)
             logging.info(f"👍 [v2] message {message_id} rated "
                          f"{'positive' if is_positive else 'negative'}")
+            if not is_positive:
+                # Operator told colleagues that a thumbs-down alerts them.
+                # Best-effort and off the critical path: the ack below must
+                # not wait on SMTP.
+                asyncio.create_task(_alert_negative_rating(message_id))
             await sio_v2.emit("ratingAck",
                               {"messageId": message_id, "success": True}, to=sid)
     except Exception as e:  # noqa: BLE001
@@ -734,12 +828,21 @@ async def _v2_user_feedback(sid, data):
     try:
         conversation_id = (data or {}).get("conversationId") or             client_conversations.get(sid)
         if conversation_id:
+            _rating = (data or {}).get("userRating", 0)
+            _comment = (data or {}).get("userComment", "")
             await save_conversation_feedback(
-                conversation_id,
-                (data or {}).get("userRating", 0),
-                (data or {}).get("userComment", ""),
-            )
+                conversation_id, _rating, _comment)
             logging.info(f"💬 [v2] feedback saved for {conversation_id}")
+            try:
+                from src.observability.incident_alerts import (
+                    LOW_RATING_MAX, alert_low_rating,
+                )
+                if 0 < int(_rating) <= LOW_RATING_MAX:
+                    await asyncio.to_thread(
+                        alert_low_rating, conversation_id=conversation_id,
+                        rating=int(_rating), comment=_comment)
+            except Exception as e:  # noqa: BLE001
+                logging.warning(f"low-rating alert failed: {e}")
             await sio_v2.emit("feedbackAck",
                               {"conversationId": conversation_id, "success": True},
                               to=sid)

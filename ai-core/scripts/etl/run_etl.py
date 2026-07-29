@@ -24,6 +24,7 @@ import argparse
 import datetime as dt
 import hashlib
 import logging
+import os
 import sys
 import time
 from dataclasses import dataclass, field
@@ -138,6 +139,17 @@ def _default_tombstone(seen: set[str], version: str) -> upsert.UpsertResult:
 
 def _default_allowlist(seen: list[tuple[str, int, str, Optional[str]]]) -> int:
     raise NotImplementedError("Pipeline.update_allowlist not configured")
+
+
+def _rss_mb() -> int:
+    """Resident memory of this process, MB. Logged per slice so an OOM has a
+    trail instead of just stopping -- both earlier apply failures ended with
+    no error in the log at all, because the kernel killed the process."""
+    try:
+        with open("/proc/self/statm") as f:
+            return int(f.read().split()[1]) * os.sysconf("SC_PAGE_SIZE") // (1 << 20)
+    except Exception:  # noqa: BLE001
+        return -1
 
 
 def _default_preview(
@@ -348,6 +360,13 @@ def run(
         chunks = chunker.chunk_document(doc, meta)
         all_chunks.extend(chunks)
     report.chunks_created = len(all_chunks)
+    # Release the extracted documents. Their `body_text` is what the chunks
+    # were cut FROM, so keeping both doubles the text in memory -- and the
+    # site serves PDFs, two of which are 34 MB each. Nothing below this line
+    # reads `classified_docs`. (The apply was OOM-killed twice before this;
+    # slicing the embeddings cut 1.5 GB to ~807 MB, and this is the rest.)
+    classified_docs.clear()
+    del classified_docs
 
     # 7-9. Embed + upsert + tombstone (DESTRUCTIVE -- skip on dry-run)
     if dry_run:
@@ -384,9 +403,10 @@ def run(
                 pipeline.upsert_chunks(_slice, _vecs, version))
             del _vecs
             logger.info(
-                "indexed %d/%d chunks",
+                "indexed %d/%d chunks (rss %d MB)",
                 min(_start + config.APPLY_SLICE_SIZE, len(all_chunks)),
                 len(all_chunks),
+                _rss_mb(),
             )
         tomb = pipeline.tombstone(seen_urls, version)
         report.upsert.tombstoned_urls = tomb.tombstoned_urls
