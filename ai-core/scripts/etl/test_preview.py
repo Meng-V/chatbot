@@ -91,3 +91,68 @@ def test_a_snapshot_failure_degrades_instead_of_raising():
     res = preview_against_live(Broken({}), [_chunk("c-1", "h1")], set(),
                                live_collection="Chunk_live")
     assert res.new_chunk_ids == ["c-1"]
+
+
+# --- the fetch cache must not outlive one run --------------------------------
+
+def test_fetch_cache_expires(tmp_path, monkeypatch):
+    """A keep-forever cache silently defeats a re-crawl.
+
+    The second run read the first run's HTML and reported "nothing changed"
+    however much the website had moved -- which would have left the weekly
+    watch cron permanently blind after its first run (found 2026-07-29 by
+    overwriting a cached file with a sentinel; the sentinel survived).
+    """
+    import hashlib
+    import os
+
+    from scripts.etl import config, run_etl
+
+    url = "https://www.lib.miamioh.edu/probe/"
+    cache_file = tmp_path / f"{hashlib.sha256(url.encode()).hexdigest()}.html"
+    cache_file.write_text("STALE", encoding="utf-8")
+
+    fetched: list[str] = []
+
+    class FakeResp:
+        status_code = 200
+        text = "FRESH"
+        headers: dict = {}
+
+        def __init__(self, final_url):
+            self.url = final_url
+
+        def raise_for_status(self):
+            pass
+
+    class FakeSession:
+        headers: dict = {}
+        max_redirects = 5
+
+        def get(self, u, **kw):
+            fetched.append(u)
+            return FakeResp(u)
+
+    monkeypatch.setattr("requests.Session", lambda: FakeSession())
+
+    fetch = run_etl.build_requests_fetcher(cache_dir=tmp_path)
+
+    # fresh cache -> served from disk, no network
+    body, err, _final, _lm = fetch(url)
+    assert body == "STALE" and not fetched
+
+    # aged past the TTL -> refetched
+    old = os.stat(cache_file).st_mtime - config.RAW_CACHE_MAX_AGE_SECONDS - 60
+    os.utime(cache_file, (old, old))
+    body, err, _final, _lm = fetch(url)
+    assert fetched == [url], "an expired entry must trigger a real fetch"
+    assert "FRESH" in body
+
+
+def test_ttl_is_shorter_than_the_weekly_cadence():
+    """The cache exists to resume ONE run, not to be reused by the next.
+    If this ever exceeds the cron interval the watch goes blind again."""
+    from scripts.etl import config
+
+    one_week = 7 * 24 * 60 * 60
+    assert 0 < config.RAW_CACHE_MAX_AGE_SECONDS < one_week / 2

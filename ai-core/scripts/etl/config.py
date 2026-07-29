@@ -336,6 +336,15 @@ EMBED_BATCH_SIZE: Final[int] = 100  # OpenAI text-embedding-3-large allows up to
 
 # Cache crawled HTML so failures don't re-fetch.
 RAW_CACHE_DIR: Final[str] = str(_AI_CORE_ROOT / "data" / "raw")
+
+# How long a cached raw fetch stays usable. This exists so a run that dies
+# half way can resume without re-hammering the source -- NOT so a later run
+# can reuse it. With no expiry the second crawl read the first crawl's HTML
+# and reported "nothing changed" regardless of what the website did, which
+# would have left the weekly watch cron permanently blind (found 2026-07-29).
+# Six hours comfortably covers a resumed run and is far shorter than the
+# weekly cadence.
+RAW_CACHE_MAX_AGE_SECONDS: Final[float] = 6 * 60 * 60
 # Diff reports for librarian review.
 DIFF_REPORT_DIR: Final[str] = str(_AI_CORE_ROOT / "data" / "diffs")
 # Pipeline checkpoint files (per-step state).

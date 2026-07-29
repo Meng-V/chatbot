@@ -169,6 +169,18 @@ def build_requests_fetcher(cache_dir: Optional[Path] = None) -> FetchFn:
     doesn't re-hammer the source. Honors `config.TLS_SKIP_ALLOWLIST` --
     every TLS-skipped fetch logs a WARN so we notice when the cert is
     finally renewed.
+
+    The cache EXPIRES (`config.RAW_CACHE_MAX_AGE_SECONDS`). It used to be
+    keep-forever, which quietly defeated the whole point of a re-crawl: the
+    second run read the first run's HTML and reported "nothing changed"
+    however much the website had moved. Proved 2026-07-29 by overwriting a
+    cached file with a sentinel and re-running -- the sentinel survived, so
+    no fetch happened. That would have left the weekly watch cron
+    permanently blind after its first run.
+
+    This docstring's own promise -- "so a PARTIAL RUN doesn't re-hammer the
+    source" -- is about resuming within one run, which a few hours of TTL
+    serves. Nothing ever wanted a week-old page.
     """
     import requests
     from urllib.parse import urlparse
@@ -187,7 +199,17 @@ def build_requests_fetcher(cache_dir: Optional[Path] = None) -> FetchFn:
         # Cache hit?
         cache_path = cache / f"{hashlib.sha256(url.encode()).hexdigest()}.html"
         if cache_path.exists():
-            return cache_path.read_text(encoding="utf-8"), None, url, None
+            age = time.time() - cache_path.stat().st_mtime
+            if age <= config.RAW_CACHE_MAX_AGE_SECONDS:
+                try:
+                    return (cache_path.read_text(encoding="utf-8"),
+                            None, url, None)
+                except (UnicodeDecodeError, OSError) as e:
+                    # A cached binary -- the site serves PDFs, whose bytes
+                    # land under a .html name -- is unreadable as text.
+                    # Re-fetch rather than abort the run.
+                    logger.warning("unreadable cache entry, refetching",
+                                   extra={"url": url, "error": str(e)})
 
         host = urlparse(url).hostname or ""
         verify_tls = host not in config.TLS_SKIP_ALLOWLIST
