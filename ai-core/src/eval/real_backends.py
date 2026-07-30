@@ -79,23 +79,20 @@ from src.utils.person_names import display_name, names_match
 SOURCE_API = "libguides_api"
 SOURCE_DB = "database"
 
-# What the PATRON reads. Operator's wording, 2026-07-30: the first live student
-# doubted a librarian's email was real, and "LibGuides API (live)" is
-# engineering jargon -- to a student, "an API told me" can read as weaker than
-# a named source, not stronger. (Noted for the record: "Information verified"
-# is an assertion rather than a pointer, so it cannot itself be checked;
-# naming the source in plain words would remove the jargon AND tell the reader
-# where to look. Operator's call on product voice, and the clickable citation
-# still carries the real provenance.)
-SOURCE_LABEL_PUBLIC = "Information verified"
-
-# What the OPERATOR needs, which is a different question. The rule above exists
-# so a librarian seeing a wrong email knows whether to go fix LibGuides or our
-# database. Collapsing both labels into one patron-facing phrase would have
-# deleted that signal, so it moves to the log instead of disappearing.
+# Named in plain words, operator-approved 2026-07-30. The first live student
+# doubted a librarian's email was real; the data was correct and a clickable
+# citation was already attached, so the problem was the label. "LibGuides API
+# (live)" is engineering jargon -- to a student, "an API told me" reads as
+# weaker than a named directory, not stronger -- and "Information verified",
+# which we tried in between, is an assertion rather than a pointer, so it
+# cannot itself be checked.
+#
+# Naming the source does both jobs at once: no jargon for the patron, and the
+# operator rule above survives intact, because a librarian reading a wrong
+# email can still see WHICH system to go correct.
 SOURCE_LABELS = {
-    SOURCE_API: "LibGuides API (live)",
-    SOURCE_DB: "Libraries staff directory database",
+    SOURCE_API: "Libraries' subject liaisons directory (live)",
+    SOURCE_DB: "Libraries staff directory",
 }
 
 
@@ -112,10 +109,10 @@ def source_label(rows: object) -> str:
             seen.append(lbl)
     if not seen:
         return ""
-    # The precise system goes to the log so "which one do I go fix?" is still
-    # answerable; the patron gets one plain phrase.
-    logger.info("personnel provenance: %s", " and ".join(seen))
-    return SOURCE_LABEL_PUBLIC
+    label = " and ".join(seen)
+    # Also logged, so provenance is greppable without reading answer text.
+    logger.info("personnel provenance: %s", label)
+    return label
 
 
 logger = logging.getLogger(__name__)

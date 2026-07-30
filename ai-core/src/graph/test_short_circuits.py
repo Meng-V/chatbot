@@ -1505,28 +1505,35 @@ def test_personnel_answers_state_their_source() -> None:
         "name": "Jennifer Hicks", "email": "hicksjl2@miamioh.edu",
         "campus": "Middletown", "source": "database",
     }])
-    assert "Source: Information verified." in answer
+    assert "Source: Libraries staff directory." in answer
 
     answer, _ = _format_staff_contact([{
         "name": "Ginny Boehme", "email": "boehmemv@miamioh.edu",
         "source": "libguides_api",
     }])
-    assert "Source: Information verified." in answer
+    assert "Source: Libraries' subject liaisons directory (live)." in answer
 
-    # Operator's wording 2026-07-30: patrons read one plain phrase, because
-    # "LibGuides API (live)" is jargon that made a student doubt a real email.
-    # The rule this test was written for -- a librarian seeing a wrong email
-    # must know WHICH system to go fix -- is preserved by logging the precise
-    # source instead of printing it, so both labels still exist and still map.
+    # Named in plain words, operator-approved 2026-07-30, after a student
+    # doubted a real email. Two rejected alternatives, both worse:
+    # "LibGuides API (live)" is jargon a student reads as weaker than a named
+    # directory; "Information verified" is an assertion, so it cannot itself be
+    # checked. Naming the source removes the jargon AND keeps the operator rule
+    # this test exists for -- a librarian seeing a wrong email can still tell
+    # which system to go fix.
     from src.eval.real_backends import SOURCE_LABELS
-    assert SOURCE_LABELS["libguides_api"] == "LibGuides API (live)"
-    assert SOURCE_LABELS["database"] == "Libraries staff directory database"
+    assert SOURCE_LABELS["libguides_api"] != SOURCE_LABELS["database"], (
+        "the two sources must stay distinguishable in the answer")
+    for label in SOURCE_LABELS.values():
+        assert "API" not in label, f"jargon crept back in: {label}"
+        assert "verified" not in label.lower(), (
+            f"an unverifiable claim crept back in: {label}")
 
+    # both sources in one result -> name both, don't credit just the first
     answer, _ = _format_staff_contact([
         {"name": "A Smith", "email": "a@x.edu", "source": "database"},
         {"name": "B Smith", "email": "b@x.edu", "source": "libguides_api"},
     ])
-    assert "Source: Information verified." in answer
+    assert "Libraries staff directory and Libraries' subject liaisons" in answer
 
     # an unlabelled row gains no dangling "Source:"
     answer, _ = _format_staff_contact([
