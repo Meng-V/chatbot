@@ -1882,3 +1882,63 @@ def test_two_part_circulation_questions_route_to_loan_policy() -> None:
               "How long does ILL take?",
               "Are there fees for interlibrary loan?"):
         assert clf.classify(q).intent == "interlibrary_loan", q
+
+
+def test_complaints_have_somewhere_to_go() -> None:
+    """"WHY IS THE PRINTER ALWAYS BROKEN" was told it was off-topic.
+
+    Printing is a library service and a complaint is a reasonable thing to
+    bring us. Operator's routing 2026-07-30: the website-feedback form is the
+    formal channel, and for anything physical the service desk first, because
+    staff there know who actually fixes it.
+    """
+    from src.graph.new_orchestrator import _complaint_answer
+
+    for q in ("WHY IS THE PRINTER ALWAYS BROKEN",
+              "the printer is jammed",
+              "the scanner is not working",
+              "why does the elevator never work"):
+        res = _complaint_answer(q)
+        assert res is not None, q
+        assert "529-4141" in res[0], q          # the desk, named
+        assert "can't file a report" in res[0], q  # never pretends to have
+
+    for q in ("this link is broken",
+              "the website search box doesn't work",
+              "I want to report a problem with the catalog page"):
+        res = _complaint_answer(q)
+        assert res is not None, q
+        assert any("website-feedback" in c["url"] for c in res[1]), q
+
+    # These belong to other paths, or to another office entirely.
+    for q in ("my account is locked", "what is the wifi password",
+              "do you have parking", "is the library open"):
+        assert _complaint_answer(q) is None, q
+
+
+def test_dean_is_answerable_and_salary_is_not() -> None:
+    """Both halves were dropped together as out of scope.
+
+    Operator's instruction 2026-07-30: name the dean, never the salary. Only
+    the ROLE is hardcoded -- the names come from the Librarian table, so a
+    leadership change needs no code edit.
+    """
+    from src.graph.new_orchestrator import _dean_answer
+
+    both = _dean_answer(
+        "Who is the dean of the libraries and what is their salary?")
+    assert both is not None
+    assert "Jerome Conley" in both[0]
+    assert "salary" in both[0].lower()      # the refusal is stated, not dodged
+    assert "don't have salary" in both[0]
+    # No number anywhere near it.
+    assert "$" not in both[0]
+
+    plain = _dean_answer("who is the dean of the libraries")
+    assert plain is not None
+    assert "Jerome Conley" in plain[0]
+    assert "salary" not in plain[0].lower()  # don't raise it unprompted
+
+    # The liaison flow keeps its own questions.
+    for q in ("who is my subject librarian", "who is the music librarian"):
+        assert _dean_answer(q) is None, q

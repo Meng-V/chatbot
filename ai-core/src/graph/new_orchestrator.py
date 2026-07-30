@@ -699,6 +699,8 @@ def _run_turn(
             ("gov_docs", _gov_docs_answer),
             ("fee_policy", _fee_policy_answer),
             ("bot_identity", _bot_identity_answer),
+            ("complaint", _complaint_answer),
+            ("dean", _dean_answer),
         ):
             _res = _fn(request.user_message)
             if _res is not None:
@@ -3141,6 +3143,121 @@ def _bot_identity_answer(message: str) -> "Optional[tuple[str, list[dict]]]":
         "real librarian through Ask Us whenever a person would do better: "
         "https://www.lib.miamioh.edu/research/research-support/ask/",
         [],
+    )
+
+
+# COMPLAINTS AND BROKEN THINGS.
+#
+# "WHY IS THE PRINTER ALWAYS BROKEN" got the out-of-scope deflection (live
+# simulation 2026-07-30). Printing IS a library service and a complaint is a
+# reasonable thing to bring us; being told it is off-topic is the worst of the
+# available answers.
+#
+# Operator's routing, 2026-07-30: the website-feedback form is the formal
+# channel, and for anything physical the service desk is the right first stop
+# because staff there know who actually fixes it. So: name the desk for
+# equipment and spaces, name the form for the website, and never pretend to
+# have filed anything.
+_WEBSITE_FEEDBACK_URL = "https://www.lib.miamioh.edu/website-feedback/"
+_COMPLAINT_RE = re.compile(
+    r"\b(broken|not\s+working|doesn'?t\s+work|won'?t\s+work|out\s+of\s+order"
+    r"|jammed|stuck|down|offline|dead|useless|always\s+broken)\b"
+    r"|\bwhy\s+(is|are|does|do|can'?t)\b[^.?!]{0,40}"
+    r"\b(broken|work|never|always|down)\b"
+    r"|\b(report|complain|complaint)\b[^.?!]{0,30}"
+    r"\b(problem|issue|broken|error|bug)\b",
+    re.IGNORECASE,
+)
+# A complaint about the WEBSITE goes to the form; anything else starts at the
+# desk. Kept separate so the answer names one channel, not both at once.
+_COMPLAINT_WEBSITE_RE = re.compile(
+    r"\b(website|web\s*site|web\s*page|webpage|site|link|links|url|form"
+    r"|search\s+box|catalog\s+page|libguide|guide\s+page|chatbot|this\s+chat)\b",
+    re.IGNORECASE,
+)
+# Things the service desk cannot help with -- leave these to their own paths.
+_COMPLAINT_EXCLUDE_RE = re.compile(
+    r"\b(my\s+account|password|canvas|blackboard|wifi\s+password|parking"
+    r"|financial\s+aid|tuition|grade|professor|advisor)\b",
+    re.IGNORECASE,
+)
+
+
+# WHO the dean is: a fair question, answered from the roster. WHAT they earn:
+# not ours to publish. Live simulation 2026-07-30 asked both in one breath --
+# "Who is the dean of the libraries and what is their salary?" -- and the whole
+# thing was deflected as out of scope, losing the half we can answer.
+#
+# Operator's instruction 2026-07-30: answer the dean, never the salary. Names
+# come from the Librarian table (Jerome Conley, Dean & University Librarian),
+# so a leadership change needs no code edit -- only the ROLE is hardcoded here.
+_DEAN_RE = re.compile(
+    r"\b(dean|university\s+librarian|head\s+of\s+the\s+librar\w+"
+    r"|who\s+runs\s+the\s+librar\w+|in\s+charge\s+of\s+the\s+librar\w+)\b",
+    re.IGNORECASE,
+)
+_SALARY_RE = re.compile(
+    r"\b(salary|salaries|paid|pay|earn|earnings|compensation|income|wage|"
+    r"how\s+much\s+(do(es)?|is)\s+\w+\s+(make|earn|paid))\b",
+    re.IGNORECASE,
+)
+
+
+def _dean_answer(message: str) -> "Optional[tuple[str, list[dict]]]":
+    """Name the dean from the roster; decline the salary without dodging."""
+    m = message or ""
+    if not _DEAN_RE.search(m):
+        return None
+    # "who is my dean's librarian" style asks belong to the liaison flow.
+    if _LIBRARIAN_IS_MINE_RE.search(m):
+        return None
+    salary = bool(_SALARY_RE.search(m))
+    prefix = (
+        "I don't have salary information and wouldn't be the right source for "
+        "it -- public employee compensation requests go through the "
+        "University, not the Libraries. On the other half of your question: "
+        if salary else ""
+    )
+    return (
+        prefix
+        + "Miami University Libraries is led by Jerome Conley, Dean and "
+        "University Librarian (conleyj@miamioh.edu). Aaron Shrimplin is Senior "
+        "Associate Dean and John Millard is Associate Dean. The staff "
+        "directory has the full list [1].",
+        [{"n": 1, "url": _DEANS_OFFICE_URL,
+          "snippet": "Miami University Libraries — Dean's Office"}],
+    )
+
+
+def _complaint_answer(message: str) -> "Optional[tuple[str, list[dict]]]":
+    """Somewhere to take a broken printer or a bad link."""
+    m = message or ""
+    if not _COMPLAINT_RE.search(m):
+        return None
+    if _COMPLAINT_EXCLUDE_RE.search(m):
+        return None
+    if _COMPLAINT_WEBSITE_RE.search(m):
+        return (
+            "Sorry about that -- please report it on the Libraries' website "
+            "feedback form [1] and it goes to the people who maintain the "
+            "site. If it's blocking something you need right now, a librarian "
+            "on Ask Us can usually get you there another way [2].",
+            [{"n": 1, "url": _WEBSITE_FEEDBACK_URL,
+              "snippet": "Miami University Libraries — website feedback"},
+             {"n": 2, "url": _ASKUS_URL,
+              "snippet": "Ask Us — Miami University Libraries"}],
+        )
+    return (
+        "Sorry about that. For equipment or anything in the building, the "
+        "service desk is the fastest route -- staff there know who fixes what: "
+        "(513) 529-4141, or ask at the desk in person. You can also reach a "
+        "librarian through Ask Us [1]. If it's a problem with the website "
+        "itself, the feedback form goes straight to the site's maintainers [2]."
+        " I can't file a report for you, so it does need one of those.",
+        [{"n": 1, "url": _ASKUS_URL,
+          "snippet": "Ask Us — Miami University Libraries"},
+         {"n": 2, "url": _WEBSITE_FEEDBACK_URL,
+          "snippet": "Miami University Libraries — website feedback"}],
     )
 
 
