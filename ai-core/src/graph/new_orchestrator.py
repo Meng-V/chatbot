@@ -3839,9 +3839,17 @@ def _cross_campus_service_short_circuit(
                 f"Hamilton ({_CAMPUS_MAIN['hamilton']}), and "
                 f"Middletown ({_CAMPUS_MAIN['middletown']}).")
     else:
-        parts = [f"{_CAMPUS_DISPLAY[c]} ({_CAMPUS_MAIN[c]}): {_phrase(per_campus.get(c, ''))}"
-                 for c in _CAMPUS_BUILDINGS]
-        body = f"For {phrase}: " + "; ".join(parts) + "."
+        # One line per campus, not a semicolon-separated run-on. The first live
+        # student, 2026-07-30, asked for exactly this on the 3D-printing answer:
+        # three campuses each with a different answer is a list, and a reader
+        # scanning for their own campus should not have to parse a sentence.
+        # The client renders markdown, so a leading "- " becomes a bullet.
+        parts = [
+            f"- {_CAMPUS_DISPLAY[c]} ({_CAMPUS_MAIN[c]}): "
+            f"{_phrase(per_campus.get(c, ''))}"
+            for c in _CAMPUS_BUILDINGS
+        ]
+        body = f"For {phrase}:\n" + "\n".join(parts)
     if cites:
         body += " [" + "][".join(str(c["n"]) for c in cites[:3]) + "]"
     return body, cites[:3]
