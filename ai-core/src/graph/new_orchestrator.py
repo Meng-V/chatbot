@@ -2496,7 +2496,11 @@ _MY_LIBRARIAN_RE = re.compile(
     # Bare noun phrase with no interrogative: "my subject librarian",
     # "subject librarian for me?", "Subject librarian -- who's mine?".
     r"|\bmy\s+(subject|liaison)\s+" + _LIBRARIAN_WORD + r"\b"
-    r"|\b(subject|liaison)\s+" + _LIBRARIAN_WORD + r"\s+(for\s+me|who'?s\s+mine)\b",
+    # Punctuation, not just whitespace, between the noun and the question:
+    # "Subject librarian -- who's mine?" is how the blunt typist asked, and an
+    # em dash is not \s.
+    r"|\b(subject|liaison)\s+" + _LIBRARIAN_WORD
+    + r"[\s—–,:;-]+(for\s+me|who'?s\s+mine|mine)\b",
     re.IGNORECASE,
 )
 # A subject/course named anywhere means we can look it up -- don't ask.
@@ -2505,7 +2509,12 @@ _SUBJECT_NAMED_RE = re.compile(
     # `for\s+\w` matched "for m" and suppressed the ask-which-subject reply
     # (found simulating students 2026-07-30). Same for "about it", "in my".
     r"\b(for|in|about|studying|majoring\s+in|major\s+in|department\s+of)\s+"
-    r"(?!me\b|us\b|myself\b|it\b|this\b|that\b|them\b|my\b|our\b)\w"
+    # Pronouns name no subject ("a librarian for me?"), and neither do the
+    # words of the question itself -- "I keep hearing about subject librarians
+    # but I don't know who mine is" was read as having named one, so the
+    # student got no ask and no answer (found simulating students 2026-07-30).
+    r"(?!me\b|us\b|myself\b|it\b|this\b|that\b|them\b|my\b|our\b"
+    r"|subject\s+librar|liaison|librarian|the\s+librar)\w"
     # First-person "I study X" / "my major is X". Deliberately anchored to
     # a pronoun: a bare `study\s+\w` would swallow "I need a study room"
     # and "where can I study", which are not subject asks. Without this,
@@ -4176,8 +4185,13 @@ their subject."""
 # containing "which subject" is asking which subject, whoever composed it.
 _ASK_SUBJECT_RE = re.compile(
     r"\b(which|what)\s+(subject|major|department|field|discipline|area)\b"
-    r"|\bsubject\s+or\s+department\b"
-    r"|\btell me your subject\b"
+    # The synthesizer words this freely and produced a THIRD variant after the
+    # first fix -- "Share your major, department, or course subject, and I can
+    # help identify the appropriate librarian." So match the request-verb form
+    # generally, not one phrasing at a time.
+    r"|\b(tell|share|give|let)\b[^.?!]{0,20}\b(me|us|your)\b[^.?!]{0,30}"
+    r"\b(subject|major|department|field|discipline|course)\b"
+    r"|\bsubject\s+or\s+department\b|\bmajor\s+or\s+(subject|department)\b"
     r"|\b(subject|major|course)\s+(are|is)\s+(you|this)\b",
     re.IGNORECASE,
 )

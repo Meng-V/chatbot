@@ -278,12 +278,17 @@ def test_ask_which_subject_survives_the_students_phrasings() -> None:
 
     # Contraction, inverted word order and the bare noun phrase all reach the
     # deterministic reply now.
+    # All ten simulated students' phrasings reach the deterministic reply.
     for q in ("Who is my subject librarian?",
               "who's my subject librarian",
+              "who is my subject libarian",
+              "I keep hearing about subject librarians but I don't know who "
+              "mine is. Who is my subject librarian?",
               "New transfer student — who's my subject librarian?",
               "Hello, I'd like to find out who my subject librarian is.",
               "my subject librarian",
               "Subject librarian for me?",
+              "Subject librarian — who's mine?",
               "Please tell me who is my subject librarian."):
         assert _my_librarian_ask_subject(q) is not None, q
 
@@ -294,9 +299,14 @@ def test_ask_which_subject_survives_the_students_phrasings() -> None:
         assert _my_librarian_ask_subject(q) is None, q
 
     # The continuation recognises the question however it was worded.
+    # The synthesizer words the question freely; a third variant appeared
+    # after the first fix, which is why this matches the request-verb form
+    # rather than one sentence at a time.
     for asked in ("... Tell me your subject, major, or course (for example "
                   "\"Biology\") and I'll look it up.",
                   "Which subject or department are you asking about?",
+                  "Share your major, department, or course subject, and I can "
+                  "help identify the appropriate librarian.",
                   "What subject are you studying?",
                   "Which major is this for?"):
         assert _awaiting_subject([{"role": "assistant", "content": asked}]), asked
