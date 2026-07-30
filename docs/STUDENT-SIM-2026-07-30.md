@@ -38,7 +38,16 @@ rather than quietly passed.
 |---|---|---|
 | 1 | as of 2026-07-30 evening | **75 / 100** |
 | 2 | + the four fixes below | **92 / 100** |
-| 3 | + typo tolerance, + two self-caught regressions | *final table below* |
+| 3 | + typo tolerance and two self-caught regressions | **95 / 100** |
+| — | + the last three fixes, Q9/Q10 re-run for all ten students | **99 / 100** |
+
+Run 3 measured Q1–Q8 at **10/10 each** — eighty consecutive passes across ten
+voices, typos and all. Its five failures were one Q9 and four Q10, and the
+last three commits landed after it started, so Q9 and Q10 were re-asked by all
+ten students against the finished code: **Q9 10/10, Q10 9/10**.
+
+The single remaining failure is S07's bare `braiding sweetgrass` — a title
+typed with no question around it. See "Known limit" below.
 
 75% would have lost the bet. Not because anything was broken in a new way —
 every failure was a phrasing the code had never been shown.
@@ -153,6 +162,44 @@ knowing the title.
   subject-resources question. Incidentally rescued by the Q10 routing fix
   (it now reaches the catalogue handoff), though a research-guide answer
   would be better still.
+
+## Known limit, left in on purpose
+
+`braiding sweetgrass` — a title typed with no question around it — still gets
+the out-of-scope deflection. Two lowercase words with no verb are genuinely
+ambiguous: a title, a research topic, or a fragment. The rescue that catches
+"do u have braiding sweetgrass" needs a have-question shape to fire, and
+inventing a "bare noun phrase → catalogue" rule would be a guess that also
+catches every off-topic fragment a student types.
+
+It failed for 1 of 10 students, which is the sheet's own definition of a
+phrasing fluke rather than a defect. Worth revisiting with real session data.
+
+## What changed overnight
+
+Nine commits, all from this simulation. Each carries the phrasing that
+exposed it, so a future reader can tell a real defect from a guess:
+
+| Commit | What |
+|---|---|
+| `216906b` | fines question hard-refused because the gold rubric said "refuse" |
+| `6a626ec` | the four Q6/Q8/Q10/Q1 routing defects |
+| `9691a30` | typo tolerance for `librarian` and `makerspace` |
+| `e55c38a` | stop the 6-week book figure answering for reserves and Chromebooks |
+| `120ff12` | require an item signal before rescuing a turn into the catalogue |
+| `f594e7d` | all ten "who's my librarian" phrasings land |
+| `8c2fb09` | being polite should not cost you the answer |
+| `77c93e9` | name the facilities instead of demanding an item noun |
+| `33aa46e` | don't ask a student to pick between two intent names |
+
+`216906b` is already on origin; the rest are local and need a push:
+
+```bash
+cd /opt/chatbot && git push origin main
+```
+
+The running service already has all of them — it was restarted to measure
+each round — so a push is for the remote's benefit, not the box's.
 
 ## Two things to do before the session
 
