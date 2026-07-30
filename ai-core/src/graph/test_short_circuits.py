@@ -379,8 +379,6 @@ def test_item_request_is_never_out_of_scope() -> None:
     from src.graph.new_orchestrator import _looks_like_item_request
 
     for q in ("Do you have a copy of Braiding Sweetgrass?",
-              "do u have braiding sweetgrass",
-              "do you hav braiding sweetgras",
               "Braiding Sweetgrass — in your collection?",
               "I was hoping to borrow Braiding Sweetgrass. Do you happen to "
               "have a copy?",
@@ -389,7 +387,20 @@ def test_item_request_is_never_out_of_scope() -> None:
               "Braiding Sweetgrass — do you have it?"):
         assert _looks_like_item_request(q), q
 
-    # Not item requests: these have their own, better answers. Note the
+    # THE QUESTION SHAPE ALONE IS NOT ENOUGH, so an item signal is required
+    # too. Without one, every line below was rescued into the catalogue
+    # handoff -- "search Primo for parking" is a worse answer than the scope
+    # deflection these get today, which is correct and polite.
+    for q in ("do you have parking?",
+              "do you have a gym?",
+              "do you have tutoring?",
+              "do you have a dentist?",
+              "do you have football tickets?",
+              "do you have a swimming pool?",
+              "does miami have a medical school?"):
+        assert not _looks_like_item_request(q), q
+
+    # Not item requests either: these have their own, better answers. Note the
     # plurals -- `printer\b` did not match "printers", which is how "do you
     # have printers?" first got swallowed.
     for q in ("do you have printers?",
@@ -400,6 +411,13 @@ def test_item_request_is_never_out_of_scope() -> None:
               "Do you have books in Chinese language?",
               "makerspace open saturday?",
               "braiding sweetgrass"):
+        assert not _looks_like_item_request(q), q
+
+    # KNOWN LIMIT, accepted deliberately: an all-lowercase title with no item
+    # noun is indistinguishable from "do you have parking" without knowing the
+    # title. These two stay unrescued rather than risk the facilities error.
+    for q in ("do u have braiding sweetgrass",
+              "do you hav braiding sweetgras"):
         assert not _looks_like_item_request(q), q
 
 

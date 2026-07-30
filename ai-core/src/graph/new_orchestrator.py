@@ -2685,6 +2685,38 @@ _CATALOG_HAVE_EXCLUDE_RE = re.compile(
 )
 
 
+# The have-question SHAPE alone is not enough to mean "an item in the
+# catalogue". Checked against genuinely out-of-scope asks on 2026-07-30 and
+# the shape alone would have sent all of these to Primo:
+#
+#   "do you have parking?"  "do you have a gym?"  "do you have tutoring?"
+#   "do you have a dentist?"  "do you have football tickets?"
+#   "do you have a swimming pool?"  "does miami have a medical school?"
+#
+# Telling a student to search the library catalogue for parking is worse than
+# the scope deflection they get today, which is a correct and polite answer.
+#
+# So an ITEM signal is required as well: an item noun, a borrow/read verb, or
+# a Capitalised Multi-Word phrase that looks like a title. Of the ten student
+# phrasings of "Do you have a copy of Braiding Sweetgrass?", seven carry one.
+# The two that do not are entirely lowercase with no noun ("do u have braiding
+# sweetgrass"), and they stay unrescued on purpose: there is no honest way to
+# tell those from "do you have parking" without knowing the title, and a wrong
+# catalogue handoff on a facilities question is the more damaging error.
+_ITEM_SIGNAL_RE = re.compile(
+    r"\b(book|books|copy|copies|ebook|e-book|audiobook|title|novel|textbook"
+    r"|dvd|blu-?ray|cd|album|score|thesis|dissertation|volume|edition"
+    r"|author|isbn)\b"
+    r"|\b(borrow|read|reading|check\s*out|request|loan)\b"
+    # A Capitalised Multi-Word phrase: "Braiding Sweetgrass", "The Great
+    # Gatsby". Sentence position is NOT excluded -- students lead with the
+    # title ("Braiding Sweetgrass -- in your collection?") and ordinary
+    # sentences rarely open with two capitalised words, whereas the
+    # facilities questions this guards against are lowercase in practice.
+    r"|\b[A-Z][a-z]+\s+[A-Z][a-z]+\b",
+)
+
+
 def _looks_like_item_request(message: str) -> bool:
     """True when the message asks whether the library HAS a specific item.
 
@@ -2696,7 +2728,9 @@ def _looks_like_item_request(message: str) -> bool:
     m = message or ""
     if not _CATALOG_HAVE_RE.search(m):
         return False
-    return not _CATALOG_HAVE_EXCLUDE_RE.search(m)
+    if _CATALOG_HAVE_EXCLUDE_RE.search(m):
+        return False
+    return bool(_ITEM_SIGNAL_RE.search(m))
 
 
 def _fee_policy_answer(message: str) -> "Optional[tuple[str, list[dict]]]":
