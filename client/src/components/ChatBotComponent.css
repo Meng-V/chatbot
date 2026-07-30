@@ -181,3 +181,75 @@
 .bot-message-with-time {
   padding-top: 28px !important;
 }
+
+/* ---------------------------------------------------------------------------
+ * Markdown lists inside a chat bubble
+ *
+ * Reported 2026-07-30: the per-campus 3D-printing answer rendered with huge
+ * gaps between items, no visible bullets, and the [1][2] citations pushed onto
+ * a line of their own. Three causes stacked:
+ *
+ *   1. The message body is wrapped in a <span> (ParseLinks.jsx), which is an
+ *      INLINE box. A <ul>/<li> is block-level, and a browser laying block
+ *      children inside an inline box produces exactly that broken spacing.
+ *      The existing `.chat-message-container li` rules were being applied and
+ *      then overwhelmed by it.
+ *   2. The bubble's parent carries Tailwind's `whitespace-pre-line`, so the
+ *      newlines BETWEEN list items render as literal breaks on top of the
+ *      list structure markdown already produced -- every gap counted twice.
+ *      pre-line is wanted for plain-text answers, so it is cancelled only
+ *      inside markdown structure rather than removed from the parent.
+ *   3. <sup> citation chips with align-super stretch the line box, which is
+ *      what pushed [1][2] down.
+ *
+ * Fixed here rather than in the JSX so the citation-chip logic is untouched.
+ * ------------------------------------------------------------------------- */
+
+.chat-message-container {
+  display: block;
+}
+
+.chat-message-container ul,
+.chat-message-container ol,
+.chat-message-container li,
+.chat-message-container p {
+  white-space: normal;
+}
+
+/* Longhands, not the `list-style` shorthand: the minifier rewrites
+ * `list-style: disc outside` to `list-style: outside`, dropping `disc`. That
+ * is technically equivalent -- the shorthand resets list-style-type to its
+ * initial `disc` -- but it only works by accident, and Tailwind's preflight
+ * sets `list-style: none` on ul/ol, so the type is the whole reason a bullet
+ * appears at all. Too load-bearing to leave to shorthand-reset semantics. */
+.chat-message-container ul {
+  list-style-type: disc;
+  list-style-position: outside;
+  margin: 0.4em 0;
+  padding-left: 1.35em;
+}
+
+.chat-message-container ol {
+  list-style-type: decimal;
+  list-style-position: outside;
+  margin: 0.4em 0;
+  padding-left: 1.5em;
+}
+
+.chat-message-container li {
+  margin: 0.15em 0;
+  line-height: 1.45;
+}
+
+/* react-markdown wraps list-item content in <p> for "loose" lists (any blank
+ * line in the source). Without this each item gains paragraph margins and the
+ * gaps come back. */
+.chat-message-container li > p {
+  display: inline;
+  margin: 0;
+}
+
+/* Keep a superscript from growing the line box it sits in. */
+.chat-message-container sup {
+  line-height: 0;
+}
