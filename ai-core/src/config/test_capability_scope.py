@@ -527,3 +527,37 @@ def main() -> int:
 
 if __name__ == "__main__":
     sys.exit(main())
+
+
+def test_guidance_requests_are_not_action_requests() -> None:
+    """"Could you point me to..." asks to be shown, not to be served.
+
+    The bot-directive signal matched any "can/could/would/will you", so a
+    courteous question was read as asking the bot to perform the action and
+    got a capability refusal. Simulating ten students on 2026-07-30, the
+    polite one lost Q9's required research-question notice this way while the
+    same question phrased plainly passed. This gate's docstring already says
+    info-style phrasings should fall through.
+    """
+    from src.config.capability_scope import (
+        _has_action_signal,
+        detect_limitation_request,
+    )
+
+    for q in ("I'm looking for peer-reviewed articles on social media and "
+              "teen mental health. Could you point me to where I should "
+              "begin?",
+              "Could you tell me how to renew a book?",
+              "Can you show me where the databases are?",
+              "Would you explain how interlibrary loan works?",
+              "Can you recommend a database for psychology?"):
+        assert not _has_action_signal(q.lower()), q
+
+    # Real action requests must still be refused -- these are gold cases.
+    for q in ("Can you renew my checked-out book?",
+              "Renew my book.",
+              "Could you find me a book about Ohio history?",
+              "Can you submit an ILL request for me?",
+              "please renew my book"):
+        assert _has_action_signal(q.lower()), q
+        assert detect_limitation_request(q).get("is_limitation"), q

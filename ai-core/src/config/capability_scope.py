@@ -223,7 +223,21 @@ LIMITATION_PATTERNS = {
 # READY (agent + synth) or POINT_TO_URL (Primo / A-Z).
 _ACTION_SIGNALS: List[str] = [
     # Bot-directive: "can/could/would/will you [do X]"
-    r"\b(can|could|would|will)\s+you\b",
+    #
+    # ...but NOT when what follows is a request for GUIDANCE. "Could you point
+    # me to where I should begin?" is asking to be shown where to look, not
+    # asking the bot to run a search, and treating it as an action cost a
+    # polite student the research-question notice their answer is graded on
+    # (simulating students 2026-07-30: the same question phrased plainly
+    # passed, the courteous version failed). This gate's own docstring says
+    # info-style phrasings should fall through, so this serves its intent.
+    #
+    # "could you find me a book" is still caught -- `find\s+me` is its own
+    # signal below -- and so are the gold refusals ("Can you renew my
+    # checked-out book?" -> renew is not a guidance verb).
+    r"\b(can|could|would|will)\s+you\b(?!\s+(please\s+)?"
+    r"(point|tell|show|explain|clarify|describe|suggest|recommend|direct|"
+    r"let\s+me\s+know|help\s+me\s+(find|understand|figure)|walk\s+me)\b)",
     # "for me" / "for us" -- explicit personal request to the bot
     r"\bfor\s+(me|us)\b",
     # Sentence-initial imperative: "Renew my book", "Submit ILL...",

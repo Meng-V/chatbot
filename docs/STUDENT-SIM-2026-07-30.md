@@ -34,13 +34,29 @@ rather than quietly passed.
 
 ## Result
 
-| | Scripted score |
-|---|---|
-| **Before** (code as of 2026-07-30 evening) | **75 / 100** |
-| **After** the four fixes below | *see the table further down* |
+| Run | Code | Scripted score |
+|---|---|---|
+| 1 | as of 2026-07-30 evening | **75 / 100** |
+| 2 | + the four fixes below | **92 / 100** |
+| 3 | + typo tolerance, + two self-caught regressions | *final table below* |
 
 75% would have lost the bet. Not because anything was broken in a new way —
 every failure was a phrasing the code had never been shown.
+
+### Run 2, per question
+
+| Q | Passed | What was left |
+|---|---|---|
+| 1 | 9/10 | one typo refusal ("makerspce") |
+| 2 | 10/10 | — |
+| 3 | 10/10 | — |
+| 4 | 10/10 | — |
+| 5 | 9/10 + 1 flagged | — |
+| 6 | 7/10 | a *third* synthesizer wording, an em dash, and a self-inflicted guard |
+| 7 | 10/10 | — |
+| 8 | 10/10 | fixed from 2/9 |
+| 9 | 9/10 | the polite phrasing still loses the research notice |
+| 10 | 8/10 | a bare lowercase title, and one clarification prompt |
 
 ### Per question, before
 
@@ -99,6 +115,31 @@ question now wins over both the equipment and the 3D short-circuit.
 Worth noting what this says about the sheet: wording a question around a known
 defect measures the defect away. Q1 was the only question with such a note,
 and it was the only trap-adjacent question that lost points.
+
+## Two regressions I put in and took back out
+
+Both were found by checking my own work against things the unit suite does not
+cover. Recording them because they are the failure mode of this kind of fixing:
+a widened trigger reaches further than you meant.
+
+**The 6-week figure nearly answered for reserves.** The loan-period trigger was
+broad enough to capture four gold cases whose right answers are nothing like a
+book loan period — reserve textbooks (2 hours / 1 day / 3 days), Chromebooks
+(30 days), DSLR cameras, and the hold-shelf window. All four would have been
+told "6 weeks to undergraduates". **The unit suite stayed green**, because
+those are eval cases, not unit tests. Reading the golden set by hand is what
+caught it; the seven exclusions are now pinned in a test.
+
+**"Search Primo for parking."** The rescue that stops a book request being
+called out-of-scope keyed on the question shape alone, so "do you have
+parking?", "do you have a gym?", "do you have tutoring?" and four more would
+have been sent to the library catalogue. That is a worse answer than the scope
+deflection they get today. The rescue now needs an item signal too — a noun
+like *book* or *copy*, a borrow/read verb, or a Capitalised Title. Seven of
+the ten Q10 phrasings carry one; the two that don't are all-lowercase with no
+noun, and they stay unrescued deliberately, because there is no honest way to
+separate "do u have braiding sweetgrass" from "do u have parking" without
+knowing the title.
 
 ## Free-form questions (30)
 
