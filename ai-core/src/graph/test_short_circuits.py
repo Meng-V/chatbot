@@ -1836,3 +1836,49 @@ def test_research_banner_wording_stays_one_sentence() -> None:
     assert "might be" not in _RESEARCH_DISCLAIMER.lower()
     # The librarian referral is the part the librarians asked for.
     assert "consult a librarian" in _RESEARCH_DISCLAIMER
+
+
+def test_two_part_circulation_questions_route_to_loan_policy() -> None:
+    """"How long can I keep a book, AND can I renew it?" was labelled ILL.
+
+    Each half classifies cleanly on its own -- "How long can I keep a book?"
+    scores loan_policy 0.779, "Can I renew my book?" scores renewal 0.799 --
+    but joined, every candidate collapsed into a 0.62-0.69 band and
+    interlibrary_loan edged ahead on weight of numbers (207 exemplars against
+    loan_policy's 54 and renewal's 47, and its pool legitimately discusses loan
+    periods and renewing OhioLINK items). On the live student's phrasing the
+    margin was 0.038; on "how long can i keep books, can grad students renew"
+    it was 0.005 -- a coin flip.
+
+    The wrong label had a visible cost: interlibrary_loan is in the
+    research-banner set on the operator's 2026-07-29 rule, so a plain
+    circulation answer got told to go ask a librarian.
+
+    Exemplars added in exemplars_live_student_2026_07_30.jsonl. This test
+    asserts the OUTCOME rather than the file, so a future re-balance that keeps
+    the routing correct is free to replace them.
+
+    Checked before committing: the same 46 circulation/ILL/find_resource gold
+    cases disagree with the classifier on 13 intents both with and WITHOUT the
+    new exemplars, and the two lists are identical -- the additions introduced
+    no new disagreement. Those 13 are a pre-existing gold-vs-classifier gap.
+    """
+    from src.eval.run_eval import _build_classifier
+
+    clf = _build_classifier()
+    for q in ("How long can I keep a book, and can I renew it if I'm a grad "
+              "student?",
+              "how long can i keep books, can grad students renew",
+              "Book loan length, and grad student renewals?",
+              "Loan period + grad renewal policy?",
+              "How many days I can keep the book? And for graduate student, "
+              "renew is possible?"):
+        c = clf.classify(q)
+        assert c.intent in ("loan_policy", "renewal"), (q, c.intent)
+        assert c.margin > 0.15, (q, c.margin)
+
+    # Genuine ILL questions must stay ILL -- the point was never to shrink it.
+    for q in ("How do I request an interlibrary loan?",
+              "How long does ILL take?",
+              "Are there fees for interlibrary loan?"):
+        assert clf.classify(q).intent == "interlibrary_loan", q

@@ -1,0 +1,48 @@
+// Live-student exemplar supplement, 2026-07-30.
+// Loader globs exemplars*.jsonl lexicographically; delete this file to roll back.
+//
+// TWO-PART CIRCULATION QUESTIONS had no exemplars at all, so they landed in a
+// low-similarity no-man's-land where interlibrary_loan won by weight of
+// numbers. Measured before this file:
+//
+//   "How long can I keep a book?"                       loan_policy  0.779  (margin 0.163)
+//   "Can I renew my book?"                              renewal      0.799
+//   "How long can I keep a book, and can I renew it
+//    if I'm a grad student?"                            interlibrary_loan 0.689
+//                                                       renewal 0.652, loan_policy 0.626
+//                                                       (margin 0.038)
+//   "how long can i keep books, can grad students
+//    renew"                                             renewal 0.662 vs ILL 0.656
+//                                                       (margin 0.005 -- a coin flip)
+//
+// Each half classifies cleanly on its own; joined, every score collapses into
+// the 0.62-0.69 band. interlibrary_loan has 207 exemplars against loan_policy's
+// 54 and renewal's 47, and its pool legitimately talks about loan periods and
+// renewing OhioLINK items, so in a flat region it edges ahead by accident.
+//
+// This mattered for a real reader: the wrong label pulled in the
+// research-question banner (interlibrary_loan is in that set on the operator's
+// 2026-07-29 rule) on a straightforward circulation answer. The banner symptom
+// is separately exempted, but a wrong intent will keep costing us elsewhere.
+//
+// Labelled per INTENT_GUIDE: loan_policy is "loan periods, due dates in
+// general, borrowing policy"; renewal is "renew checkout, extend due date". A
+// question whose primary ask is how long you may keep something is loan_policy
+// even when it also asks about renewing; renewal-first phrasings stay renewal.
+//
+// Kept to 14 entries, in line with the other dated fix files, so this does not
+// simply invert the imbalance it corrects.
+{"intent": "loan_policy", "utterance": "How long can I keep a book, and can I renew it if I'm a grad student?", "source": "live_student_2026_07_30"}
+{"intent": "loan_policy", "utterance": "how long can i keep books, can grad students renew", "source": "live_student_2026_07_30"}
+{"intent": "loan_policy", "utterance": "Book loan length, and grad student renewals?", "source": "live_student_2026_07_30"}
+{"intent": "loan_policy", "utterance": "Loan period + grad renewal policy?", "source": "live_student_2026_07_30"}
+{"intent": "loan_policy", "utterance": "how long do I get a book for and can I extend it", "source": "live_student_2026_07_30"}
+{"intent": "loan_policy", "utterance": "How many weeks can I keep a book, and how many times can I renew?", "source": "live_student_2026_07_30"}
+{"intent": "loan_policy", "utterance": "I'm a graduate student, how long is my loan period and can I renew?", "source": "live_student_2026_07_30"}
+{"intent": "loan_policy", "utterance": "as an undergrad how long can I borrow a book and renew it", "source": "live_student_2026_07_30"}
+{"intent": "loan_policy", "utterance": "faculty loan period and renewal limits?", "source": "live_student_2026_07_30"}
+{"intent": "loan_policy", "utterance": "What's the checkout length for Miami books and are renewals allowed?", "source": "live_student_2026_07_30"}
+{"intent": "loan_policy", "utterance": "How many days I can keep the book? And for graduate student, renew is possible?", "source": "live_student_2026_07_30"}
+{"intent": "renewal", "utterance": "can I renew a book I checked out, and how long does that give me?", "source": "live_student_2026_07_30"}
+{"intent": "renewal", "utterance": "how do I extend a book I already have out for another few weeks", "source": "live_student_2026_07_30"}
+{"intent": "renewal", "utterance": "renew my checkout and tell me the new due date", "source": "live_student_2026_07_30"}
