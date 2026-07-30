@@ -186,7 +186,9 @@ def run_turn(
         request, deps,
         model_basic=model_basic, model_reasoning=model_reasoning,
     )
-    return _add_research_disclaimer(response, response.intent)
+    return _add_research_disclaimer(
+        response, response.intent, request.user_message
+    )
 
 
 def _run_turn(
@@ -1241,8 +1243,38 @@ _DISCLAIMER_EXEMPT_REASONS = frozenset({
 })
 
 
+# LOGISTICS IS NOT REFERENCE.
+#
+# The operator's 2026-07-29 rule put interlibrary_loan, newspapers and
+# remote_access in the set because "getting something we do not own" is a
+# classic reference question -- a patron is being pointed at a route through
+# the collections, which is where a librarian adds judgment. That reasoning
+# holds. It just does not cover every question those intents catch.
+#
+# `interlibrary_loan` also catches "Where do I pick up the book I requested?"
+# and "Where do I return it?" -- pure logistics, with one correct answer and no
+# judgment to add. The first live student, 2026-07-30, got the banner on
+# exactly that, and on "how long can I keep a book", which the classifier had
+# ALSO labelled interlibrary_loan (a separate misclassification, since the
+# question is loan policy).
+#
+# So the banner is suppressed for where/when/how-long questions about
+# collecting, returning, or keeping an item. "Do you have the Wall Street
+# Journal?" -- the operator's own example of what the banner is for -- has none
+# of these shapes and still gets it.
+_LOGISTICS_SHAPE_RE = re.compile(
+    r"\b(where|when)\b[^.?!]{0,50}"
+    r"\b(pick\s*up|collect|get|return|drop\s*off|deliver|available\s+for)\b"
+    r"|\bhow\s+long\b[^.?!]{0,40}\b(keep|borrow|check\s*out|have)\b"
+    r"|\bwhen\s+(is|are|will)\b[^.?!]{0,40}\b(due|ready|arrive|here)\b"
+    r"|\b(pick\s*up|pickup)\s+(location|point|desk|spot)\b",
+    re.IGNORECASE,
+)
+
+
 def _add_research_disclaimer(
-    response: "TurnResponse", intent: "Optional[str]"
+    response: "TurnResponse", intent: "Optional[str]",
+    user_message: str = "",
 ) -> "TurnResponse":
     """Prefix the librarian-consultation banner to research answers.
 
@@ -1250,6 +1282,7 @@ def _add_research_disclaimer(
     stacking "consult a librarian" on "ask a librarian" reads as broken.
     Also skipped for the notice-style short-circuits above, which are
     pattern-driven and shouldn't inherit a bad intent guess.
+    Skipped for logistics questions -- see _LOGISTICS_SHAPE_RE.
     Idempotent -- re-prefixing an already-tagged answer is a no-op.
     """
     if intent not in _RESEARCH_DISCLAIMER_INTENTS:
@@ -1257,6 +1290,8 @@ def _add_research_disclaimer(
     if response.is_refusal:
         return response
     if response.agent_stopped_reason in _DISCLAIMER_EXEMPT_REASONS:
+        return response
+    if _LOGISTICS_SHAPE_RE.search(user_message or ""):
         return response
     answer = response.answer or ""
     if not answer.strip() or answer.startswith(_RESEARCH_DISCLAIMER):

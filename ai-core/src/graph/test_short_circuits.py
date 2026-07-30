@@ -1767,3 +1767,57 @@ def test_cancel_recovers_the_booking_it_made() -> None:
     assert _cancel_reservation_answer(
         "what is the cancellation policy", history + [
             {"role": "assistant", "content": asked[0]}]) is None
+
+
+def test_logistics_questions_do_not_get_the_research_banner() -> None:
+    """Where to collect a book is not a reference question.
+
+    The operator's 2026-07-29 rule put interlibrary_loan in the banner set
+    because "getting something we do not own" is classic reference work -- the
+    patron is being pointed at a route through the collections. That reasoning
+    holds; it just does not cover everything the intent catches. The same
+    intent also catches "Where do I pick up the book I requested?", which has
+    one correct answer and no judgement to add, and the first live student got
+    the banner on exactly that.
+
+    "Do you have the Wall Street Journal?" -- the operator's own example of
+    what the banner IS for -- must keep it. So must Q9 of the acceptance
+    sheet, whose rubric requires it.
+    """
+    from src.graph.new_orchestrator import _LOGISTICS_SHAPE_RE
+
+    for q in ("I take classes at the Hamilton campus. Where do I pick up a "
+              "book I requested through interlibrary loan?",
+              "Where do I return an interlibrary loan book?",
+              "How long can I keep a book, and can I renew it if I'm a grad "
+              "student?",
+              "when is my ILL book ready",
+              "where is the pickup location for ILL"):
+        assert _LOGISTICS_SHAPE_RE.search(q), q
+
+    for q in ("Do you have the Wall Street Journal?",
+              "I need to find peer-reviewed articles about social media and "
+              "teen mental health. Where do I start?",
+              "Which database should I use for psychology?",
+              "How do I request an interlibrary loan?",
+              "How do I read the NYT from home?"):
+        assert not _LOGISTICS_SHAPE_RE.search(q), q
+
+
+def test_research_banner_wording_stays_one_sentence() -> None:
+    """Operator's wording 2026-07-30, after a student found it too wordy.
+
+    The previous version hedged ("This MIGHT be a research question") and then
+    disclaimed the answer it was about to give ("provided for reference only"),
+    which read as a lack of confidence in answers that were correct.
+    """
+    from src.graph.new_orchestrator import _RESEARCH_DISCLAIMER
+
+    assert _RESEARCH_DISCLAIMER == (
+        "If this is a research question you should consult a librarian for "
+        "further assistance."
+    )
+    assert "reference only" not in _RESEARCH_DISCLAIMER
+    assert "might be" not in _RESEARCH_DISCLAIMER.lower()
+    # The librarian referral is the part the librarians asked for.
+    assert "consult a librarian" in _RESEARCH_DISCLAIMER
