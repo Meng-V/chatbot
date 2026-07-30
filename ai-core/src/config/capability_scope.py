@@ -235,8 +235,16 @@ _ACTION_SIGNALS: List[str] = [
     # "could you find me a book" is still caught -- `find\s+me` is its own
     # signal below -- and so are the gold refusals ("Can you renew my
     # checked-out book?" -> renew is not a guidance verb).
-    r"\b(can|could|would|will)\s+you\b(?!\s+(please\s+)?"
+    # `advise` was missing from this list until 2026-07-30, and it is the most
+    # FORMAL way to ask for guidance -- so the politest student in the
+    # simulation was the one penalised twice by it. "Could you kindly advise
+    # where one collects a volume requested via interlibrary loan?" got "I
+    # can't submit ILL requests for you" (they asked where to COLLECT), and
+    # "Could you advise on the loan period for books...?" got "I can't renew
+    # books". Register should not change whether a question gets answered.
+    r"\b(can|could|would|will)\s+you\b(?!\s+(please\s+)?(kindly\s+)?"
     r"(point|tell|show|explain|clarify|describe|suggest|recommend|direct|"
+    r"advise|advice|inform|confirm|indicate|elaborate|"
     r"let\s+me\s+know|help\s+me\s+(find|understand|figure)|walk\s+me)\b)",
     # "for me" / "for us" -- explicit personal request to the bot
     r"\bfor\s+(me|us)\b",

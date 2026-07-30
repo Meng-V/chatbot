@@ -1297,8 +1297,13 @@ _DISCLAIMER_EXEMPT_REASONS = frozenset({
 # Journal?" -- the operator's own example of what the banner is for -- has none
 # of these shapes and still gets it.
 _LOGISTICS_SHAPE_RE = re.compile(
+    # Every verb carries its own optional s: `collect\b` cannot match
+    # "collects", and "where one collects a volume" is exactly how the formal
+    # register says it -- the banner came back for want of one letter. The same
+    # trailing-\b mistake as "printers" and "graduate students" before it.
     r"\b(where|when)\b[^.?!]{0,50}"
-    r"\b(pick\s*up|collect|get|return|drop\s*off|deliver|available\s+for)\b"
+    r"\b(pick\s*up|picks\s*up|collects?|gets?|returns?|drops?\s*off"
+    r"|delivers?|available\s+for)\b"
     r"|\bhow\s+long\b[^.?!]{0,40}\b(keep|borrow|check\s*out|have)\b"
     r"|\bwhen\s+(is|are|will)\b[^.?!]{0,40}\b(due|ready|arrive|here)\b"
     r"|\b(pick\s*up|pickup)\s+(location|point|desk|spot)\b",
@@ -2968,8 +2973,12 @@ _PRIMO_SEARCH_URL = (
 _CATALOG_HAVE_RE = re.compile(
     # The auxiliary is often dropped entirely -- "u have braiding sweetgrass?"
     # (live student 2026-07-30) rather than "do u have". Made optional.
+    # `hold`/`holds` is how the formal register says it -- "I wonder whether
+    # the library holds a copy of Braiding Sweetgrass" was called out-of-scope
+    # for want of this one verb (live simulation 2026-07-30).
     r"\b(?:do(es)?\s+)?(you|u|ya|the\s+librar\w+|miami)\s+"
-    r"(have|has|hav|ave|own|carry|stock)\b"
+    r"(have|has|hav|ave|own|carry|stock|holds?)\b"
+    r"|\bwhether\s+(?:the\s+)?(?:librar\w+|you|miami)\s+(?:holds?|has|have|own)\b"
     r"|\bdo\s+(you|u)\s+happen\s+to\s+have\b"
     r"|\bin\s+(your|the)\s+(collection|catalog|holdings)\b"
     r"|\byou\s+(are\s+)?hav(e|ing)\s+it\b"
@@ -2991,6 +3000,10 @@ _CATALOG_HAVE_EXCLUDE_RE = re.compile(
     # Food/drink is a building-amenity question, and the scope deflection it
     # currently gets is the right answer.
     r"|coffee|cafe|café|food|drinks?|vending|microwave"
+    # `hold` means "own" for a book and "host" for an event -- "does the
+    # library hold events" is not a catalogue request.
+    r"|\bevents?\b|\bworkshops?\b|\bclasses\b|\bsessions?\b|\bexhibits?\b"
+    r"|\btours?\b|\borientations?\b"
     # "books in Chinese", "anything in Spanish" -- a collection-language
     # question deserves the agent's fuller answer, not a title handoff.
     r"|in\s+(chinese|spanish|french|german|japanese|korean|arabic|russian"
@@ -3417,8 +3430,18 @@ _RENEW_HOWTO_RE = re.compile(
 )
 # Bot-as-actor phrasings must keep reaching the capability-limitation
 # check ('I can't renew it for you') -- exclude them here.
+# "Can you renew it" means DO IT FOR ME and must not get a policy answer. But
+# a bare "can/could you" also catches "Could you advise on the loan period" --
+# the formal register asking to be TOLD, not served. Live simulation
+# 2026-07-30: the politest student got "I can't renew books" for a pure policy
+# question. Same guidance-verb carve-out as capability_scope._ACTION_SIGNALS,
+# and for the same reason: register must not decide whether a question is
+# answered.
 _RENEW_ACTOR_RE = re.compile(
-    r"\b(can|could|will|would)\s+you\b|\bplease\s+renew\b|\bfor\s+me\b",
+    r"\b(can|could|will|would)\s+you\b(?!\s+(please\s+)?(kindly\s+)?"
+    r"(advise|advice|tell|explain|clarify|confirm|indicate|point|show|"
+    r"describe|let\s+me\s+know)\b)"
+    r"|\bplease\s+renew\b|\bfor\s+me\b",
     re.IGNORECASE,
 )
 
