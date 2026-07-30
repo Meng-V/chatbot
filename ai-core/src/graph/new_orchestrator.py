@@ -186,9 +186,10 @@ def run_turn(
         request, deps,
         model_basic=model_basic, model_reasoning=model_reasoning,
     )
-    return _add_research_disclaimer(
+    response = _add_research_disclaimer(
         response, response.intent, request.user_message
     )
+    return _append_unanswered_note(response, request.user_message)
 
 
 def _run_turn(
@@ -1325,6 +1326,172 @@ _LOGISTICS_SHAPE_RE = re.compile(
     r"|\b(pick\s*up|pickup)\s+(location|point|desk|spot)\b",
     re.IGNORECASE,
 )
+
+
+
+# --- Compound questions: say what was NOT answered -------------------------
+#
+# Measured 2026-07-30 (docs/FINDING-compound-questions-2026-07-30.md): when a
+# patron puts two questions in one turn, both halves are answered 12 times in
+# 29, and the second half is dropped IN SILENCE in 52% of turns. Three
+# questions in one turn loses everything, first half included. When a half is
+# genuinely unanswerable the bot never says so -- 0 of 3.
+#
+# The harm measured is silence, not error: the patron cannot tell half their
+# question went missing, which is worse than a wrong answer they could spot.
+# So this does not decompose or re-route anything. It answers as before, then
+# checks whether the later question's subject actually appears in the answer,
+# and only if it does not does it say so.
+#
+# The risk being managed is the OPPOSITE mistake -- announcing "you also asked
+# X" when X was answered, which would make a good answer look incomplete. So
+# the coverage test is deliberately generous: a topic counts as covered if any
+# of its words or any of its known synonyms appear. Staying quiet when unsure
+# is the safe direction, and it was validated against the 29 measured cases.
+_QUESTION_SPLIT_RE = re.compile(
+    r"(?<=[?])\s+"                        # end of a question mark
+    r"|\s*(?:,|;|--|\u2014)?\s*\b(?:and|also|plus)\s+(?=(?:"
+    r"what|when|where|who|why|how|which|whose|"
+    r"can|could|do|does|did|is|are|was|were|will|would|should|may|might|am"
+    r")\b)"
+    r"|\s*(?:,|;|--|\u2014)?\s*\bwhat\s+about\b"
+    r"|\s*(?:,|;|--|\u2014)?\s*\bhow\s+about\b",
+    re.IGNORECASE,
+)
+
+# Words that carry no topic. Kept small on purpose: this is a stoplist, not a
+# grammar.
+_TOPIC_STOPWORDS = frozenset("""
+a an the and or but if then also plus too as at by for from in into of on onto
+to with about over under is are was were be been being am do does did doing
+can could will would shall should may might must have has had i me my mine we
+us our you your yours it its this that these those there here what when where
+who whom whose why how which any some no not don't dont cant can't get got
+need want like know tell say please thanks thank ok okay yes hi hello library
+libraries miami one two three still just really actually able possible
+""".split())
+
+# A later question is "covered" if any word in the row appears in the answer.
+# Built from the second halves that a live measurement showed being dropped, so
+# each row is a real question shape rather than a guess.
+_TOPIC_SYNONYMS = (
+    ("cost", "cost", "costs", "fee", "fees", "price", "prices", "charge",
+     "charges", "free", "per gram", "cents", "dollar"),
+    ("hours", "open", "opens", "opening", "close", "closes", "closing",
+     "hour", "hours", "am", "pm", "24"),
+    ("zoom", "zoom", "virtual", "virtually", "online", "remote", "appointment",
+     "consultation", "meet", "meeting"),
+    ("phone", "phone", "call", "telephone", "number", "529-", "727-"),
+    ("wifi", "wifi", "wi-fi", "wireless", "network", "eduroam"),
+    ("print", "print", "printing", "printer", "printers", "copy", "copies"),
+    ("quiet", "quiet", "silent", "silence", "floor", "floors"),
+    ("renew", "renew", "renewal", "renewals", "extend", "extension"),
+    ("fine", "fine", "fines", "overdue", "late fee", "replacement"),
+    ("ill", "interlibrary", "ill", "ohiolink", "request", "requests"),
+    ("catalog", "primo", "catalog", "catalogue", "search"),
+    ("guide", "guide", "guides", "libguide", "research guide"),
+    ("location", "floor", "room", "hall", "address", "located", "location",
+     "building"),
+    ("book", "book", "books", "reserve", "reserves", "reservation", "libcal"),
+    ("occupancy", "how many people", "busy", "crowded", "occupancy"),
+)
+
+
+def _split_question_segments(message: str) -> list[str]:
+    """The message cut into question-like segments, longest-first order kept."""
+    parts = [p.strip(" ,;-\u2014") for p in _QUESTION_SPLIT_RE.split(message or "")]
+    return [p for p in parts if p and len(p.split()) >= 2]
+
+
+def _topic_words(segment: str) -> list[str]:
+    """Content words of a segment, stopwords removed."""
+    words = re.findall(r"[A-Za-z][A-Za-z'-]+", (segment or "").lower())
+    return [w for w in words if w not in _TOPIC_STOPWORDS and len(w) > 2]
+
+
+# ENTITIES ARE NOT INTERCHANGEABLE. A topic match alone said "covered" far too
+# often: "is the makerspace open saturday and what time does king close" has a
+# second half about KING, the answer talked about the MAKERSPACE, and the word
+# "closed" appearing anywhere made it look answered. Same for "the biology
+# librarian and the history one" -- one librarian named, topic satisfied,
+# subject silently dropped. So when a later question names a thing, that thing
+# has to be in the answer.
+_SEGMENT_ENTITY_RE = re.compile(
+    r"\b(king|wertz|rentschler|gardner[- ]?harvey|amos|makerspace|maker\s+space"
+    r"|special\s+collections|scua|tec\s+lab"
+    r"|oxford|hamilton|middletown"
+    r"|(?:king|rentschler|wertz)\s+\d{2,3})\b",
+    re.IGNORECASE,
+)
+
+
+def _segment_is_covered(segment: str, answer_low: str) -> bool:
+    """Generous on TOPIC, strict on ENTITY -- see the two block comments above."""
+    seg_low = (segment or "").lower()
+
+    # If the later question names a place or space, the answer has to mention
+    # it. This is checked first and can fail on its own.
+    named = {m.group(0).lower() for m in _SEGMENT_ENTITY_RE.finditer(seg_low)}
+    if named and not any(n in answer_low for n in named):
+        return False
+
+    # Topic synonyms: these catch "does it cost anything" -> "free".
+    for row in _TOPIC_SYNONYMS:
+        key = row[0]
+        if key in seg_low or any(t in seg_low for t in row[1:]):
+            if any(t in answer_low for t in row[1:]):
+                return True
+    words = _topic_words(segment)
+    if not words:
+        return True  # nothing identifiable to be missing
+    return any(w in answer_low for w in words)
+
+
+def _unanswered_segments(message: str, answer: str) -> list[str]:
+    """Later questions whose subject does not appear in the answer."""
+    segments = _split_question_segments(message)
+    if len(segments) < 2:
+        return []
+    answer_low = (answer or "").lower()
+    return [
+        seg for seg in segments[1:]
+        if not _segment_is_covered(seg, answer_low)
+    ]
+
+
+def _append_unanswered_note(
+    response: "TurnResponse", user_message: str
+) -> "TurnResponse":
+    """Name the question that went unanswered instead of dropping it silently.
+
+    Deliberately does NOT try to answer it: routing two intents in one turn is
+    the expensive fix, and the triple-question collapse in the measurement says
+    the intent guess is not stable enough to build on yet. Making the loss
+    visible is the whole intent.
+    """
+    if response.is_refusal:
+        return response  # already sending them to a human
+    answer = response.answer or ""
+    if not answer.strip():
+        return response
+    missing = _unanswered_segments(user_message, answer)
+    if not missing:
+        return response
+    if _UNANSWERED_MARKER in answer:
+        return response  # idempotent
+    shown = missing[0] if len(missing) == 1 else missing[0]
+    extra = (
+        f" You also asked about \u201c{shown.rstrip('?.! ')}\u201d and I "
+        f"haven't covered that here"
+        + (" (along with the rest of your message)" if len(missing) > 1 else "")
+        + ". Ask me that one on its own and I'll take a proper run at it, or "
+        "a librarian on Ask Us can pick it up: "
+        f"{_ASKUS_URL}"
+    )
+    return _dc_replace(response, answer=answer.rstrip() + "\n\n" + _UNANSWERED_MARKER + extra)
+
+
+_UNANSWERED_MARKER = "You also asked about"
 
 
 def _add_research_disclaimer(
