@@ -1139,11 +1139,16 @@ def test_research_disclaimer_prefixes_research_answers() -> None:
         )
 
     for intent in ("databases", "citation_help", "research_consultation",
-                   "data_services", "special_collections", "find_resource",
+                   "data_services", "special_collections",
                    "copyright_permissions", "scholarly_publishing"):
         out = _add_research_disclaimer(_resp(), intent)
         assert out.answer.startswith(_RESEARCH_DISCLAIMER), intent
         assert "Use the A-Z databases list [1]." in out.answer, intent
+
+    # find_resource no longer carries it -- see
+    # test_disclaimer_covers_reference_questions_not_just_research.
+    out = _add_research_disclaimer(_resp(), "find_resource")
+    assert not out.answer.startswith(_RESEARCH_DISCLAIMER)
 
 
 def test_research_disclaimer_skips_operational_intents() -> None:
@@ -1631,9 +1636,19 @@ def test_disclaimer_covers_reference_questions_not_just_research() -> None:
 
     # reference = helping someone find or reach information
     for intent in ("newspapers", "remote_access", "interlibrary_loan",
-                   "databases", "find_resource", "special_collections",
+                   "databases", "special_collections",
                    "digital_collections"):
         assert intent in INC, f"{intent} is a reference question"
+
+    # `find_resource` was here and was REMOVED, operator's decision 2026-07-30,
+    # after the first live student found the banner redundant on "Do you have a
+    # copy of Braiding Sweetgrass?". It is the same question shape as the Wall
+    # Street Journal example above, so the split is by what the answer is, not
+    # by wording: find_resource answers "search Primo", a mechanical handoff a
+    # librarian adds nothing to, where newspapers and remote_access answer
+    # which licensed resource carries it and how to reach it from off campus.
+    assert "find_resource" not in INC, (
+        "find_resource answers are a self-service catalogue handoff")
 
     # research help
     for intent in ("research_consultation", "citation_help",

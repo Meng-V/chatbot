@@ -1193,9 +1193,23 @@ _RESEARCH_DISCLAIMER_INTENTS = frozenset({
     "data_services",
     # --- reference: helping someone FIND information ---------------------
     "databases",
-    "find_resource",
     "digital_collections",
     "special_collections",
+    # `find_resource` is NOT here. Operator's decision 2026-07-30, after the
+    # first live student found the banner redundant on "Do you have a copy of
+    # Braiding Sweetgrass?".
+    #
+    # It is the same question SHAPE as "Do you have the Wall Street Journal?",
+    # which the operator does want covered, so the split is not by phrasing but
+    # by what the answer actually is:
+    #
+    #   find_resource -> "search Primo" -- a mechanical self-service handoff.
+    #                    A librarian adds nothing to "type the title in the box".
+    #   newspapers    -> which database carries it, how to reach it from off
+    #   remote_access    campus, what the subscription covers. Real routes
+    #                    through licensed content, where a librarian does help.
+    #
+    # So the line is drawn at "is there judgement to add", not at wording.
     # Added 2026-07-29 on the operator's instruction that the banner cover
     # "all possible research OR REFERENCE questions". Locating a newspaper,
     # reaching a licensed resource from off campus, or getting something we
