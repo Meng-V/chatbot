@@ -1555,7 +1555,34 @@ def _closed_library_answer(message: str) -> "Optional[tuple[str, list[dict]]]":
 # the bot was fabricating her as the contact because no makerspace-staff chunk
 # existed in the index.
 _MAKERSPACE_STAFF_URL = "https://libguides.lib.miamioh.edu/create/about-makerspace/staff"
-_MAKERSPACE_RE = re.compile(r"\bmaker\s?space\b", re.IGNORECASE)
+# TYPO TOLERANCE for the two words these flows turn on.
+#
+# Simulating ten students on 2026-07-30, the one who types fast lost two
+# questions outright to single-letter slips -- "is the makerspce open this
+# saturday" and "who is my subject libarian" both produced "I don't have a
+# reliable answer to that". Neither is a hard question; the trigger simply did
+# not recognise the word, the turn fell through to retrieval, and retrieval had
+# nothing to match.
+#
+# That simulation puts every typo in one student, which UNDERSTATES what a real
+# session will do: ten people typing on phones will misspell "librarian" and
+# "makerspace" between them far more than one in ten turns.
+#
+# Enumerated spellings, not fuzzy matching: a bounded alternation cannot
+# accidentally match something else, and general fuzzy matching over the
+# corpus is a much larger change than a pre-session fix should be. Only the
+# realistic slips are listed -- dropped letter, transposition, doubled letter.
+# "liberian" is deliberately absent: it is a real word.
+_LIBRARIAN_WORD = (
+    r"(?:librarian|libarian|libraian|librarain|libraran|libriarian|"
+    r"librarien|libratian)"
+)
+_MAKERSPACE_WORD = (
+    r"(?:maker\s*space|makerspce|makerspase|makrspace|makerspac|makespace|"
+    r"maekrspace)"
+)
+
+_MAKERSPACE_RE = re.compile(r"\b" + _MAKERSPACE_WORD + r"\b", re.IGNORECASE)
 # A staff / contact / who-do-I-talk-to signal.
 _MS_STAFF_RE = re.compile(
     r"\b(librarian|staff|contact|email|e-mail|reach|manager|specialist|"
@@ -2461,15 +2488,15 @@ _APPT_EXCLUDE_RE = re.compile(
 # noun phrase ("my subject librarian", "subject librarian for me").
 _MY_LIBRARIAN_RE = re.compile(
     r"\b(who(\s+is|\s*'s)\s+my"
-    r"|who\s+my\b[^.?!]{0,24}\blibrarian\s+is"
+    r"|who\s+my\b[^.?!]{0,24}\b" + _LIBRARIAN_WORD + r"\s+is"
     r"|do\s+i\s+have\s+an?"
     r"|can\s+i\s+(talk|speak|meet)\s+(to|with)\s+my"
     r"|how\s+(do|can)\s+i\s+(find|reach|contact|get)\s+(a\s+hold\s+of\s+)?my)"
-    r"\s*(personal|own|assigned|subject|liaison)?\s*librarian\b"
+    r"\s*(personal|own|assigned|subject|liaison)?\s*" + _LIBRARIAN_WORD + r"\b"
     # Bare noun phrase with no interrogative: "my subject librarian",
     # "subject librarian for me?", "Subject librarian -- who's mine?".
-    r"|\bmy\s+(subject|liaison)\s+librarian\b"
-    r"|\b(subject|liaison)\s+librarian\s+(for\s+me|who'?s\s+mine)\b",
+    r"|\bmy\s+(subject|liaison)\s+" + _LIBRARIAN_WORD + r"\b"
+    r"|\b(subject|liaison)\s+" + _LIBRARIAN_WORD + r"\s+(for\s+me|who'?s\s+mine)\b",
     re.IGNORECASE,
 )
 # A subject/course named anywhere means we can look it up -- don't ask.
@@ -3494,7 +3521,7 @@ def _ensure_makerspace_evidence(
         return evidence
 
 
-_MAKERSPACE_WORD_RE = re.compile(r"\bmaker\s*space\b", re.IGNORECASE)
+_MAKERSPACE_WORD_RE = re.compile(r"\b" + _MAKERSPACE_WORD + r"\b", re.IGNORECASE)
 
 # Special Collections appointment system -- operator-verified URL, also
 # the gold set's allowed URL (hr_special_collections_appt_only).

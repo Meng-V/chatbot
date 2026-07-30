@@ -1,0 +1,138 @@
+# Ten simulated students against the acceptance sheet
+
+**Run:** overnight 2026-07-30, before the live session
+**Sheet:** [STUDENT-TEST-2026-07.md](STUDENT-TEST-2026-07.md) · **Target:** ≥80%
+
+## Why simulate at all
+
+The sheet tells testers to ask its ten questions **verbatim**. They won't.
+They'll read the question, look up, and type it their own way. So this run
+used ten students who each rephrased all ten questions in a consistent
+personal voice, then asked three questions of their own — the sheet's own
+recommended second pass.
+
+| Student | Voice |
+|---|---|
+| S01 | reads carefully, near-verbatim, full sentences |
+| S02 | short, lowercase, drops words ("makerspace open saturday?") |
+| S03 | types fast, typos, no punctuation ("makerspce", "libary") |
+| S04 | explains the whole situation before asking |
+| S05 | abbreviations and jargon ("ILL pickup location?", "3DP") |
+| S06 | very polite, asks permission first |
+| S07 | keywords only, like a search box |
+| S08 | non-native phrasing, grammatical but unidiomatic |
+| S09 | leads with their identity, question second |
+| S10 | merges clauses, blunt |
+
+130 turns per run: 10 students × (10 scripted + 3 of their own). Q6 is two
+turns, as the sheet specifies. Every turn opened a fresh conversation.
+
+Graded by the sheet's rubric with **no partial credit** — a hesitation is
+Wrong, as the sheet requires. The grader is mechanical per rubric row, and
+anything a regex could not honestly settle was flagged for a human read
+rather than quietly passed.
+
+## Result
+
+| | Scripted score |
+|---|---|
+| **Before** (code as of 2026-07-30 evening) | **75 / 100** |
+| **After** the four fixes below | *see the table further down* |
+
+75% would have lost the bet. Not because anything was broken in a new way —
+every failure was a phrasing the code had never been shown.
+
+### Per question, before
+
+| Q | Passed | What went wrong |
+|---|---|---|
+| 1 | 7/10 | hours lost when the student named the machine they came for; one typo refusal |
+| 2 | 10/10 | — |
+| 3 | 10/10 | — |
+| 4 | 10/10 | the closed-library trap held for every phrasing |
+| 5 | 10/10 | — |
+| 6 | 2/9 | **asked "which subject?" then called the answer out of scope** |
+| 7 | 9/9 | — |
+| 8 | 2/9 | answered renewal but never the loan period, and never by user type |
+| 9 | 8/9 | one polite phrasing lost the required research notice |
+| 10 | 2/9 | "do u have <title>" classified as outside a library's scope |
+
+Q2, Q3, Q4, Q5 and Q7 held across all ten voices, typos included. The traps
+— the closed Amos Music Library, the per-campus 3D printing difference —
+never once produced an invention. That is the part of the sheet that was
+designed to catch hallucination, and it caught none.
+
+## The four defects, and why they only showed up here
+
+**Q6 — the bot asked a question and then rejected the answer.** Two bugs in
+series. `who\s+(is|'s)` required a space before the apostrophe, so "who's my
+subject librarian" missed the deterministic reply that "who is my subject
+librarian" hit — 3 of 10 phrasings reached it. Then the continuation keyed off
+a byte-stable substring of that one reply, so when the synthesizer asked the
+question in its own words instead ("Which subject or department are you asking
+about?"), a bare "marketing" the next turn came back OUT OF SCOPE. Now the
+continuation matches the *question*, whoever composed it.
+
+**Q8 — half the question went unanswered.** "How long can I keep a book, and
+can I renew it if I'm a grad student?" got a renewal answer split by item
+source (Miami vs OhioLINK/ILL) that never mentioned the borrower. The rubric
+requires "depends on user type", and the student had said which type they
+were. It now states the policy page's own figures — undergraduate 6 weeks,
+graduate 1 semester, faculty 1 year, other patrons 6 weeks — with the page
+cited. Several phrasings also carried no renewal verb the old trigger could
+see ("Loan period + grad renewal policy?"), so it has its own trigger now.
+
+**Q10 — a book request was called off-topic.** The full sentence routed to
+`find_resource` and got the right Primo + Interlibrary Loan handoff. "do u
+have braiding sweetgrass" classified as `out_of_scope`: a bare title carries
+no library vocabulary for a stateless classifier. Only the routing is
+rescued — the existing answer is better than a second one written for the
+occasion.
+
+**Q1 — the sheet already knew about this one.** Its "known rough edge" note
+says that mentioning 3D printing and hours together loses the hours, and that
+Q1 was *worded to avoid it*. The students walked straight back in, because
+naming the machine you came for is how people ask: "I'm free Saturday and
+wanted to use the 3D printer — is the MakerSpace open?" An explicit hours
+question now wins over both the equipment and the 3D short-circuit.
+
+Worth noting what this says about the sheet: wording a question around a known
+defect measures the defect away. Q1 was the only question with such a note,
+and it was the only trap-adjacent question that lost points.
+
+## Free-form questions (30)
+
+28 of 30 were answered well. Two were not, both "in scope but classified out":
+
+- *"were is the bathroom in king libary"* — hard refusal. Typos plus a basic
+  building question. **Not fixed:** I have no verified restroom-location data
+  and will not invent it. A floor-plan or service-desk pointer is the right
+  answer and needs a librarian to confirm the source.
+- *"Athletic training resources — what do you have?"* — out of scope. A
+  subject-resources question. Incidentally rescued by the Q10 routing fix
+  (it now reaches the catalogue handoff), though a research-guide answer
+  would be better still.
+
+## Two things to do before the session
+
+1. **Warm it up.** The first request after a restart took 35 seconds; every
+   later one was fast. Ask it one question yourself before the first student
+   sits down. Median 7s, p90 13s, p95 14s across 130 turns.
+2. **Nothing the students say will be recorded.** Conversation persistence
+   stopped writing in February 2026 and the logs hold no question or answer
+   text. Whatever the session finds has to be written down by hand in the
+   room, or it is lost.
+
+## What this run does not tell you
+
+- **It is not ten humans.** Ten *simulated* voices cover more phrasing
+  variety than one person testing carefully, but they cannot be surprised,
+  they don't follow up when an answer is unsatisfying, and they don't ask the
+  question behind the question.
+- **The grader is mine.** It applies the sheet's rubric row by row, but a
+  human tester may be stricter about a technically-correct answer that reads
+  badly — the research-question notice now prefixes several answers where it
+  makes no sense, and a student may well count that against the bot even
+  though the rubric doesn't.
+- **Same corpus, same day.** Live LibCal hours and the librarian API were
+  real; the crawled corpus is from 2026-05-14 and unchanged by any of this.
