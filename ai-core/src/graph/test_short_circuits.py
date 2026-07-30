@@ -255,14 +255,33 @@ def test_archivist_names_the_archivist_formally():
     """Operator rule 2026-07-28: the bot SPEAKS the formal name. The cited
     archives page calls her "Jacky"; we say "Jacqueline Johnson". Asking
     for "Jacky Johnson" still finds her -- Librarian.alternateName carries
-    the nickname for matching only, never for output."""
+    the nickname for matching only, never for output.
+
+    The WHO is pinned as well as the wording, because this test used to
+    pass while saying nothing about who actually holds the title. Staffing
+    changed on 2026-07-30 (Ani Karagianis is University Archivist;
+    Jacqueline Johnson heads the department) and the assertions below were
+    all still green -- so a regression that dropped Ani entirely would not
+    have been caught. Confirmed by the operator and against the Librarian
+    table, so it is safe to assert.
+    """
     for q in ["What is the email of the university archivist?",
               "who is the archivist?"]:
         res = _archives_contact_answer(q)
         assert res is not None, q
-        assert "jacqueline johnson" in res[0].lower(), q
-        assert "jacky" not in res[0].lower(), q
-        assert "johnsoj@miamioh.edu" in res[0].lower(), q
+        answer = res[0].lower()
+        assert "jacqueline johnson" in answer, q
+        assert "jacky" not in answer, q
+        assert "johnsoj@miamioh.edu" in answer, q
+        # The title belongs to Ani Karagianis, and must not be attached to
+        # Jacqueline Johnson.
+        assert "ani karagianis" in answer, q
+        assert "karagia@miamioh.edu" in answer, q
+        _archivist_idx = answer.index("university archivist")
+        _ani_idx = answer.index("ani karagianis")
+        assert _ani_idx - _archivist_idx < 40, (
+            f"'University Archivist' must be attributed to Ani Karagianis, "
+            f"got: {res[0]}")
     # must NOT name the wrong rubric example
     assert "roger justus" not in _archives_contact_answer("archivist email")[0].lower()
     # not an archivist question -> None
