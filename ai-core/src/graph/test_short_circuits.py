@@ -1505,20 +1505,28 @@ def test_personnel_answers_state_their_source() -> None:
         "name": "Jennifer Hicks", "email": "hicksjl2@miamioh.edu",
         "campus": "Middletown", "source": "database",
     }])
-    assert "Source: Libraries staff directory database." in answer
+    assert "Source: Information verified." in answer
 
     answer, _ = _format_staff_contact([{
         "name": "Ginny Boehme", "email": "boehmemv@miamioh.edu",
         "source": "libguides_api",
     }])
-    assert "Source: LibGuides API (live)." in answer
+    assert "Source: Information verified." in answer
 
-    # both sources in one result -> name both, don't credit just the first
+    # Operator's wording 2026-07-30: patrons read one plain phrase, because
+    # "LibGuides API (live)" is jargon that made a student doubt a real email.
+    # The rule this test was written for -- a librarian seeing a wrong email
+    # must know WHICH system to go fix -- is preserved by logging the precise
+    # source instead of printing it, so both labels still exist and still map.
+    from src.eval.real_backends import SOURCE_LABELS
+    assert SOURCE_LABELS["libguides_api"] == "LibGuides API (live)"
+    assert SOURCE_LABELS["database"] == "Libraries staff directory database"
+
     answer, _ = _format_staff_contact([
         {"name": "A Smith", "email": "a@x.edu", "source": "database"},
         {"name": "B Smith", "email": "b@x.edu", "source": "libguides_api"},
     ])
-    assert "database and LibGuides API (live)" in answer
+    assert "Source: Information verified." in answer
 
     # an unlabelled row gains no dangling "Source:"
     answer, _ = _format_staff_contact([
@@ -1726,9 +1734,28 @@ def test_cancel_recovers_the_booking_it_made() -> None:
     plain = _cancel_reservation_answer("cancel my reservation", [])
     assert plain is not None and "I need two things" in plain[0]
 
+    # SUPPLYING THE DETAILS IS CONSENT TOO. The live transcript ended here:
+    # asked for a confirmation number and an email, the student sent exactly
+    # those two things -- "c6f739d681d1 & hollansj@miamioh.edu" -- and was told
+    # the question was outside a library's scope, because the reply contains no
+    # cancel verb for _CANCEL_INTENT_RE to see. A patron who was asked for
+    # details will often send them rather than the word we suggested.
+    #
+    # Uses a deliberately invalid code: this path makes a real LibCal call, and
+    # running it with a live confirmation number once cancelled a real booking.
+    pending = history + [{"role": "assistant", "content": asked[0]}]
+    supplied = _cancel_reservation_answer(
+        "aaaa1111bbbb & nobody@miamioh.edu", pending)
+    assert supplied is not None
+    assert "I need two things" not in supplied[0]
+    assert "outside that scope" not in supplied[0]
+
     # A bare affirmative with nothing pending must not start cancelling.
     assert _cancel_reservation_answer("confirm", []) is None
     assert _cancel_reservation_answer("yes", history) is None
+    # Half the details is not consent.
+    assert _cancel_reservation_answer("qum@miamioh.edu", pending) is None
+    assert _cancel_reservation_answer("thanks!", pending) is None
     # Policy questions are not cancel actions.
     assert _cancel_reservation_answer(
         "what is the cancellation policy", history + [

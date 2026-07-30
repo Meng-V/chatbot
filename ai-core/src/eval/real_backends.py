@@ -79,6 +79,20 @@ from src.utils.person_names import display_name, names_match
 SOURCE_API = "libguides_api"
 SOURCE_DB = "database"
 
+# What the PATRON reads. Operator's wording, 2026-07-30: the first live student
+# doubted a librarian's email was real, and "LibGuides API (live)" is
+# engineering jargon -- to a student, "an API told me" can read as weaker than
+# a named source, not stronger. (Noted for the record: "Information verified"
+# is an assertion rather than a pointer, so it cannot itself be checked;
+# naming the source in plain words would remove the jargon AND tell the reader
+# where to look. Operator's call on product voice, and the clickable citation
+# still carries the real provenance.)
+SOURCE_LABEL_PUBLIC = "Information verified"
+
+# What the OPERATOR needs, which is a different question. The rule above exists
+# so a librarian seeing a wrong email knows whether to go fix LibGuides or our
+# database. Collapsing both labels into one patron-facing phrase would have
+# deleted that signal, so it moves to the log instead of disappearing.
 SOURCE_LABELS = {
     SOURCE_API: "LibGuides API (live)",
     SOURCE_DB: "Libraries staff directory database",
@@ -96,7 +110,12 @@ def source_label(rows: object) -> str:
         lbl = SOURCE_LABELS.get(s or "")
         if lbl and lbl not in seen:
             seen.append(lbl)
-    return " and ".join(seen)
+    if not seen:
+        return ""
+    # The precise system goes to the log so "which one do I go fix?" is still
+    # answerable; the patron gets one plain phrase.
+    logger.info("personnel provenance: %s", " and ".join(seen))
+    return SOURCE_LABEL_PUBLIC
 
 
 logger = logging.getLogger(__name__)

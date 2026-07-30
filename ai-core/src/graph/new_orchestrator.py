@@ -1170,10 +1170,15 @@ def _run_turn(
 # structurally excluded -- no phrase matching needed. What's left is
 # exactly "the LLM had to read evidence and compose an answer", and of
 # those we tag only the research-shaped intents.
+# Wording set by the operator 2026-07-30, after the first live student found
+# the previous version too wordy: it opened by hedging ("This MIGHT be a
+# research question") and then closed by disclaiming the answer it was about to
+# give ("for reference only"), which read as a lack of confidence in answers
+# that were in fact correct. Conditional and single-sentence now; the referral
+# to a librarian, which is the part the librarians asked for, is intact.
 _RESEARCH_DISCLAIMER = (
-    "This might be a research question. You are encouraged to consult a "
-    "librarian for further assistance. The following information is "
-    "provided for reference only."
+    "If this is a research question you should consult a librarian for "
+    "further assistance."
 )
 
 _RESEARCH_DISCLAIMER_INTENTS = frozenset({
@@ -1838,6 +1843,13 @@ _CANCEL_FALLBACK = (
 # it ("confirm") contains no cancel verb, so this sentence is what tells the
 # next turn what is being confirmed.
 _CANCEL_CONFIRM_MARKER = "and I'll cancel it"
+# Byte-stable substring of _CANCEL_HELP. The reply to it is bare data --
+# "c6f739d681d1 & hollansj@miamioh.edu" -- with no cancel verb in it, so
+# _CANCEL_INTENT_RE cannot see it and the turn fell through to the classifier,
+# which called it OUT OF SCOPE. Live transcript, 2026-07-30: the student
+# supplied exactly the two things they were just asked for and was told their
+# question was outside a library's scope. Our own prompt is the state.
+_CANCEL_HELP_MARKER = "I need two things"
 _AFFIRMATIVE_RE = re.compile(
     r"^\s*(yes|yeah|yep|yup|ok|okay|sure|confirm(ed)?|do\s+it|go\s+ahead"
     r"|please\s+do|correct|that'?s\s+right)\b",
@@ -1924,16 +1936,32 @@ def _cancel_reservation_answer(
     # step from the thing they asked for -- the same dead end, one turn later.
     # Our own sentence is the state, as in _booking_flow_active.
     awaiting_cancel = False
+    awaiting_details = False
     for entry in reversed(history or []):
         if isinstance(entry, dict) and entry.get("role") == "assistant":
-            awaiting_cancel = _CANCEL_CONFIRM_MARKER in str(
-                entry.get("content") or ""
-            )
+            _last = str(entry.get("content") or "")
+            awaiting_cancel = _CANCEL_CONFIRM_MARKER in _last
+            awaiting_details = _CANCEL_HELP_MARKER in _last
             break
-    if awaiting_cancel and _AFFIRMATIVE_RE.search(m):
-        h_code, h_email = _booking_details_from_history(history)
-        if h_code and h_email:
-            return _do_cancel(m, h_code, h_email)
+    if awaiting_cancel or awaiting_details:
+        # Either prompt was the last thing we said, so this turn is the answer
+        # to it. Two shapes count as consent, and neither contains a verb that
+        # _CANCEL_INTENT_RE could see:
+        #   "confirm"                              -> use what we recovered
+        #   "<code> & <email>"                     -> use what they supplied
+        # Supplying the details is at least as explicit as saying yes, and a
+        # patron who was asked for them will often send them rather than the
+        # word we suggested. Requiring the word is how the live transcript
+        # ended in an out-of-scope refusal.
+        _no_email = _ANY_EMAIL_RE.sub(" ", m)
+        _c = _CONF_CODE_RE.search(_no_email)
+        _e = _ANY_EMAIL_RE.search(m)
+        if _c and _e:
+            return _do_cancel(m, _c.group(0), _e.group(0))
+        if awaiting_cancel and _AFFIRMATIVE_RE.search(m):
+            h_code, h_email = _booking_details_from_history(history)
+            if h_code and h_email:
+                return _do_cancel(m, h_code, h_email)
 
     if not _CANCEL_INTENT_RE.search(m):
         return None
@@ -2291,8 +2319,21 @@ def _room_reservation_answer(message: str) -> "Optional[tuple[str, list[dict]]]"
 
 # availability word + room noun within one clause, either order.
 _ROOM_AVAIL_RE = re.compile(
-    r"\b(?:availab\w*|free|vacant|unbooked)\b[^.?!]*\b(?:study\s+)?rooms?\b"
-    r"|\b(?:study\s+)?rooms?\b[^.?!]*\b(?:availab\w*|free|vacant|unbooked)\b",
+    r"\b(?:availab\w*|free|vacant|unbooked|open)\b[^.?!]*\b(?:study\s+)?rooms?\b"
+    r"|\b(?:study\s+)?rooms?\b[^.?!]*\b(?:availab\w*|free|vacant|unbooked|open)\b"
+    # A room DESIGNATION -- "King 240", "room 103" -- plus an open/free word.
+    # Live transcript 2026-07-30: "When is the room King 240 open next
+    # Thursday?" opened the booking slot-collection flow and asked for the
+    # student's name and email. Asking when a room is open is not a request to
+    # book it, and naming the room makes that clearer, not less clear.
+    #
+    # "open" is safe to add HERE because every branch requires a room noun or a
+    # room number: "when is King Library open" has neither and keeps going to
+    # the hours path.
+    r"|\b(?:king|rentschler|gardner[- ]?harvey|wertz)\s+\d{2,3}\b"
+    r"[^.?!]*\b(?:open|availab\w*|free)\b"
+    r"|\b(?:open|availab\w*|free)\b[^.?!]*"
+    r"\b(?:king|rentschler|gardner[- ]?harvey|wertz)\s+\d{2,3}\b",
     re.IGNORECASE,
 )
 
