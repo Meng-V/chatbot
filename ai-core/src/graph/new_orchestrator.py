@@ -290,10 +290,21 @@ def _run_turn(
     # Only out_of_scope is overridden, and only to hand the turn to the
     # find_resource path that already answers this well (step 2.05). Turns
     # the classifier routed somewhere sensible are left alone.
-    if (
-        not booking_flow
-        and classification.intent == "out_of_scope"
-        and _looks_like_item_request(request.user_message)
+    # The same question can also land in the CLARIFY path instead: "A friend
+    # recommended Braiding Sweetgrass to me and I'd rather borrow it than buy
+    # it. Do you have a copy?" scored find_resource and circulation_basic too
+    # close together, so the student was asked to pick between "circulation
+    # basic" and "find resource" -- jargon they have no way to choose between,
+    # for a question with an obvious answer. When find_resource is already one
+    # of the candidates and the message is an item request, take it rather
+    # than asking.
+    _item_request = _looks_like_item_request(request.user_message)
+    _fr_is_candidate = any(
+        c[0] == "find_resource" for c in (classification.candidates or ())
+    )
+    if not booking_flow and _item_request and (
+        classification.intent == "out_of_scope"
+        or (classification.needs_clarification and _fr_is_candidate)
     ):
         classification = _dc_replace(
             classification, intent="find_resource", needs_clarification=False,
