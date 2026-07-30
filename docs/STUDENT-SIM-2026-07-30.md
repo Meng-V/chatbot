@@ -52,22 +52,7 @@ typed with no question around it. See "Known limit" below.
 75% would have lost the bet. Not because anything was broken in a new way —
 every failure was a phrasing the code had never been shown.
 
-### Run 2, per question
-
-| Q | Passed | What was left |
-|---|---|---|
-| 1 | 9/10 | one typo refusal ("makerspce") |
-| 2 | 10/10 | — |
-| 3 | 10/10 | — |
-| 4 | 10/10 | — |
-| 5 | 9/10 + 1 flagged | — |
-| 6 | 7/10 | a *third* synthesizer wording, an em dash, and a self-inflicted guard |
-| 7 | 10/10 | — |
-| 8 | 10/10 | fixed from 2/9 |
-| 9 | 9/10 | the polite phrasing still loses the research notice |
-| 10 | 8/10 | a bare lowercase title, and one clarification prompt |
-
-### Per question, before
+### Run 1 (before anything), per question
 
 | Q | Passed | What went wrong |
 |---|---|---|
@@ -81,6 +66,21 @@ every failure was a phrasing the code had never been shown.
 | 8 | 2/9 | answered renewal but never the loan period, and never by user type |
 | 9 | 8/9 | one polite phrasing lost the required research notice |
 | 10 | 2/9 | "do u have <title>" classified as outside a library's scope |
+
+### Run 2 (after the four fixes), per question
+
+| Q | Passed | What was left |
+|---|---|---|
+| 1 | 9/10 | one typo refusal ("makerspce") |
+| 2 | 10/10 | — |
+| 3 | 10/10 | — |
+| 4 | 10/10 | — |
+| 5 | 9/10 + 1 flagged | — |
+| 6 | 7/10 | a *third* synthesizer wording, an em dash, and a self-inflicted guard |
+| 7 | 10/10 | — |
+| 8 | 10/10 | fixed from 2/9 |
+| 9 | 9/10 | the polite phrasing still loses the research notice |
+| 10 | 8/10 | a bare lowercase title, and one clarification prompt |
 
 Q2, Q3, Q4, Q5 and Q7 held across all ten voices, typos included. The traps
 — the closed Amos Music Library, the per-campus 3D printing difference —
@@ -142,13 +142,24 @@ caught it; the seven exclusions are now pinned in a test.
 **"Search Primo for parking."** The rescue that stops a book request being
 called out-of-scope keyed on the question shape alone, so "do you have
 parking?", "do you have a gym?", "do you have tutoring?" and four more would
-have been sent to the library catalogue. That is a worse answer than the scope
-deflection they get today. The rescue now needs an item signal too — a noun
-like *book* or *copy*, a borrow/read verb, or a Capitalised Title. Seven of
-the ten Q10 phrasings carry one; the two that don't are all-lowercase with no
-noun, and they stay unrescued deliberately, because there is no honest way to
-separate "do u have braiding sweetgrass" from "do u have parking" without
-knowing the title.
+have been sent to the library catalogue — a worse answer than the scope
+deflection they get today.
+
+The first correction required an *item signal* (a noun like *book* or *copy*,
+a borrow/read verb, or a Capitalised Title). That removed the false positives
+but also dropped the two phrasings that need rescuing most — "do u have
+braiding sweetgrass" — because those are exactly what a stateless classifier
+misroutes and they carry no noun. Measured cost: Q10 fell to 1 of 4.
+
+The second correction gets both: campus amenities are a bounded set, so
+*naming the facilities* — parking, gym, pool, dining, tickets, tutoring,
+advising, health services, bookstore, ATM — leaves a title as what remains.
+An item signal is now sufficient but not required. Nine of nine Braiding
+Sweetgrass phrasings are rescued; nine of nine amenity questions keep their
+existing answers. Both lists are in the regression test.
+
+The lesson is the same both times: the first fix for a routing miss tends to
+be either too narrow or too broad, and only measuring tells you which.
 
 ## Free-form questions (30)
 
