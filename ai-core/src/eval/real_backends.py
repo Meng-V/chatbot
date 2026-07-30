@@ -1320,8 +1320,31 @@ def _make_book_room() -> Callable[[dict], dict]:
     _REQUIRED = ("date", "start_time", "end_time",
                  "first_name", "last_name", "email")
 
+    # "King 103" is a ROOM, not a library. The agent passes whatever the
+    # patron named as `building`, so "Book King 103 tomorrow 6pm to 7pm"
+    # arrived as building="King 103" and was rejected with "'King 103' is not
+    # a valid library for room reservations" -- told to the student who was
+    # most specific about what they wanted. Split it here rather than in the
+    # prompt: the tool already takes a separate room_code_name, and a
+    # deterministic split cannot be forgotten by the model on the next turn.
+    _ROOM_DESIGNATION_RE = re.compile(
+        r"^(king|rentschler|gardner[- ]?harvey|wertz|art)\s+(\d{2,3}[A-Za-z]?)$",
+        re.IGNORECASE,
+    )
+
     def book_room(args: dict) -> dict:
         building = str(args.get("building") or "").strip()
+        _desig = _ROOM_DESIGNATION_RE.match(building)
+        if _desig:
+            args = dict(args)
+            args["building"] = _desig.group(1)
+            # Don't overwrite a room the agent named separately.
+            args.setdefault("room_code_name", building)
+            if not args.get("room_code_name"):
+                args["room_code_name"] = building
+            building = _desig.group(1)
+            logger.info("book_room: split designation -> building=%s room=%s",
+                        building, args["room_code_name"])
         ok, err_text, display = _bridge(
             _validate_library_for_rooms(building), timeout=20.0
         )
@@ -1384,6 +1407,22 @@ def _make_book_room() -> Callable[[dict], dict]:
                             f"please pick a start and end time within 2 hours."
                         ),
                     }
+            # BUILDING HOURS ARE NOT CHECKED HERE, and it is not an
+            # oversight. Moving them ahead of the confirm gate is the right
+            # UX -- live simulation 2026-07-30 had a student told "Ready to
+            # book ... 5pm to 6pm", type confirm, and only then learn King
+            # closes at 5. But doing it from THIS call site is unsafe: the
+            # helpers reach LibCal through the get_prisma_client() /
+            # LocationService singletons described in the module docstring,
+            # and driving them from the _bridge loop here bound an
+            # asyncio.Event to that loop and then broke the next request with
+            # "is bound to a different event loop" -- turning an out-of-hours
+            # message into a server error for the whole turn.
+            #
+            # Tried and reverted the same day. The check has to move INSIDE the
+            # v1 tool, ahead of its own summary, where it already runs on the
+            # correct loop. Left as a known rough edge rather than a live
+            # landmine; the post-confirm message is poor but harmless.
             if not args.get("confirm"):
                 cap = args.get("room_capacity") or 2
                 return {

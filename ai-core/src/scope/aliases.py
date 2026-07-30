@@ -178,6 +178,31 @@ CAMPUS_ALIASES: dict[str, Campus] = {
     "miami middletown": "middletown",
     "mum": "middletown",
     "mumid": "middletown",
+
+    # MISSPELLINGS. A typo in a campus NAME is worse than a typo anywhere
+    # else, because the resolver falls back to the Oxford default and the
+    # answer then comes out confidently about the wrong campus. Live student
+    # 2026-07-30: "can i 3d prnt somthing at middltown campas libary" was
+    # answered "I don't have information about that for the Oxford campus" --
+    # a regional student told, in effect, that their own question was about
+    # somewhere else.
+    #
+    # Enumerated, not fuzzy: these three words carry campus routing, and a
+    # bounded list cannot drift into matching something unrelated. Only
+    # realistic slips are listed -- dropped letter, transposition, missing
+    # doubled letter.
+    "middltown": "middletown",
+    "middleton": "middletown",
+    "midletown": "middletown",
+    "middltwon": "middletown",
+    "middletwon": "middletown",
+    "hamiltn": "hamilton",
+    "hamliton": "hamilton",
+    "hamitlon": "hamilton",
+    "hamilon": "hamilton",
+    "oxfrod": "oxford",
+    "oxfor": "oxford",
+    "oxofrd": "oxford",
 }
 
 # --- Phrases that suppress campus matching ----------------------------------

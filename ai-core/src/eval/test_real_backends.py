@@ -277,20 +277,40 @@ def test_resolve_subject_terms_dedupes_preserving_order() -> None:
 
 
 class _FakeBridge:
-    """Stands in for real_backends._bridge. Call #1 per book_room
-    invocation is the building validation; call #2 (if any) is the v1
-    tool's execute. Closes the coroutines so no 'never awaited' warnings."""
+    """Stands in for real_backends._bridge, dispatching on WHICH coroutine.
 
-    def __init__(self, validate_result, tool_result=None):
+    It used to dispatch on call ORDER -- #1 building validation, #2 the v1
+    tool -- and `calls == 1` was the proxy for "no write happened". That broke
+    the moment a legitimate third call appeared: moving the building-hours
+    check ahead of the confirm gate (2026-07-30) made the pre-confirm path
+    issue two more bridge calls, and the positional fake handed the second one
+    the v1 tool's result. Dispatching by name says what each call IS, and
+    `tool_invoked` states the thing the test actually cares about.
+    """
+
+    def __init__(self, validate_result, tool_result=None,
+                 building_id="9999", hours_result=(True, None)):
         self.validate_result = validate_result
         self.tool_result = tool_result
+        # Default is a building the hours gate does not cover (it applies only
+        # to King "2047" and Art "4089"), so existing tests are unaffected
+        # unless they opt in.
+        self.building_id = building_id
+        self.hours_result = hours_result
         self.calls = 0
+        self.tool_invoked = False
 
     def __call__(self, coro, timeout=30.0):
+        name = getattr(getattr(coro, "cr_code", None), "co_name", "") or ""
         coro.close()
         self.calls += 1
-        if self.calls == 1:
+        if "validate_library_for_rooms" in name:
             return self.validate_result
+        if "get_building_id" in name:
+            return self.building_id
+        if "check_building_hours" in name:
+            return self.hours_result
+        self.tool_invoked = True
         assert self.tool_result is not None, (
             "v1 tool was invoked when the protocol forbids it"
         )
@@ -330,7 +350,7 @@ def test_book_room_rejects_fake_building() -> None:
     assert out["success"] is False
     assert out["stage"] == "invalid_building"
     assert "King" in out["text"]
-    assert fake.calls == 1  # validation only -- v1 tool NEVER invoked
+    assert not fake.tool_invoked  # v1 tool NEVER invoked
 
 
 def test_book_room_missing_slots_delegates_for_friendly_list() -> None:
@@ -348,7 +368,7 @@ def test_book_room_missing_slots_delegates_for_friendly_list() -> None:
     assert out["success"] is False
     assert out["stage"] == "tool_response"
     assert "still need" in out["text"]
-    assert fake.calls == 2
+    assert fake.tool_invoked  # delegation is safe: it cannot book
 
 
 def test_book_room_complete_slots_without_confirm_summarizes_only() -> None:
@@ -361,7 +381,7 @@ def test_book_room_complete_slots_without_confirm_summarizes_only() -> None:
     assert out["stage"] == "needs_confirmation"
     assert "confirm" in out["text"].lower()
     assert "Nothing is booked yet" in out["text"]
-    assert fake.calls == 1  # validation only -- tool NOT invoked
+    assert not fake.tool_invoked  # structurally no write can happen
 
 
 def test_book_room_confirm_true_books() -> None:
@@ -374,7 +394,7 @@ def test_book_room_confirm_true_books() -> None:
     assert out["success"] is True
     assert out["stage"] == "booked"
     assert "Confirmation number" in out["text"]
-    assert fake.calls == 2
+    assert fake.tool_invoked
 
 
 def main() -> int:
@@ -412,3 +432,30 @@ def main() -> int:
 
 if __name__ == "__main__":
     sys.exit(main())
+
+
+def test_book_room_hours_gate_is_not_wired_pre_confirm() -> None:
+    """Records a KNOWN rough edge, so nobody re-adds it the unsafe way.
+
+    Checking building hours before the confirm gate is the right behaviour --
+    a student should not be asked to commit to a time the building is closed.
+    Wiring it at the pre-confirm call site was tried on 2026-07-30 and reverted
+    the same day: those helpers reach LibCal through the singletons described in
+    real_backends' module docstring, and driving them from the _bridge loop
+    there bound an asyncio.Event to that loop, so the next request died with
+    "is bound to a different event loop". An out-of-hours message became a
+    server error for the whole turn.
+
+    The fix belongs INSIDE the v1 tool, ahead of its own summary, where it
+    already runs on the right loop.
+    """
+    fake = _FakeBridge(
+        validate_result=(True, "king", "King Library"),
+        building_id="2047",
+        hours_result=(False, "King Library is open 7:30am to 5:00pm."),
+    )
+    out = _run_with_bridge(fake, _booking_args(start_time="5pm", end_time="6pm"))
+    # Today it still reaches the summary; when the check moves into the v1
+    # tool this assertion is what should change.
+    assert out["stage"] == "needs_confirmation"
+    assert not fake.tool_invoked

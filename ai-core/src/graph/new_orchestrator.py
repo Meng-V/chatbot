@@ -314,6 +314,26 @@ def _run_turn(
         bind_request_context(intent="find_resource",
                              margin=classification.margin)
 
+    # --- 2.027. "Book King 103 tomorrow 6pm" override ---
+    # Naming the ROOM instead of saying the word "room" broke booking entirely.
+    # Live simulation 2026-07-30:
+    #   "Book a room at King tomorrow 6pm to 7pm"  -> room_booking (0.163)
+    #   "Book King 103 tomorrow 6pm to 7pm."       -> OUT OF SCOPE (0.048)
+    #   "Book King 240 for Thursday"               -> OUT OF SCOPE (0.006)
+    # A student who knows which room they want -- the most prepared student
+    # there is -- was told their booking request was off-topic. No exemplar
+    # carries a room designation, so the kNN has nothing to match.
+    if (
+        not booking_flow
+        and classification.intent in ("out_of_scope", "space_info")
+        and _BOOK_NAMED_ROOM_RE.search(request.user_message)
+    ):
+        classification = _dc_replace(
+            classification, intent="room_booking", needs_clarification=False,
+        )
+        bind_request_context(intent="room_booking",
+                             margin=classification.margin)
+
     # --- 2.028. "<subject> librarian" override ---
     # First live student, 2026-07-30: "Does King Library have a music section?"
     # then "How about music librarian at King?" -- and the bot answered about
@@ -1661,10 +1681,30 @@ _MAKERSPACE_STAFF_URL = "https://libguides.lib.miamioh.edu/create/about-makerspa
 # corpus is a much larger change than a pre-session fix should be. Only the
 # realistic slips are listed -- dropped letter, transposition, doubled letter.
 # "liberian" is deliberately absent: it is a real word.
+# A booking verb plus a room DESIGNATION ("King 103", "Rentschler 210"). The
+# room-noun branches elsewhere require the word "room"; this covers the student
+# who names the room instead. Reserve/cancel of a named room counts too --
+# cancel has its own handler and simply runs earlier.
+_BOOK_NAMED_ROOM_RE = re.compile(
+    r"\b(book|reserve|reserving|booking)\b[^.?!]{0,30}"
+    r"\b(king|rentschler|gardner[- ]?harvey|wertz)\s+\d{2,3}\b"
+    r"|\b(king|rentschler|gardner[- ]?harvey|wertz)\s+\d{2,3}\b[^.?!]{0,30}"
+    r"\b(book|reserve|reserving|booking)\b",
+    re.IGNORECASE,
+)
+
 _LIBRARIAN_WORD = (
     r"(?:librarian|libarian|libraian|librarain|libraran|libriarian|"
     r"librarien|libratian)"
 )
+_SUBJECT_WORD = (
+    r"(?:subject|subjekt|subjct|subect|sujbect|subjet)"
+)
+"""`subject` and its realistic slips. "hoo is my subjekt libarian" missed even
+after `who` and `librarian` were made tolerant, because the misspelled word in
+the MIDDLE blocked the optional qualifier group -- every word in the phrase has
+to be forgiving, not just the ones at the ends."""
+
 _MAKERSPACE_WORD = (
     r"(?:maker\s*space|makerspce|makerspase|makrspace|makerspac|makespace|"
     r"maekrspace)"
@@ -1855,6 +1895,26 @@ _CANCEL_CTX_RE = re.compile(
     r"\b(reservation|booking|booked|study\s*room|\broom\b|appointment|reserve)\b",
     re.IGNORECASE,
 )
+# A PRONOUN IS ENOUGH WHEN WE JUST BOOKED SOMETHING.
+#
+# Live simulation 2026-07-30: the bot booked King 029, printed the confirmation
+# number, and the very next turn -- "actually can I cancel that" -- fell through
+# to a generic "use the room-reservation system" pointer, because the context
+# check wanted a noun and got "that". The other flow said "nvm cancel it" and
+# got a hard refusal. The booking was left standing; it had to be cancelled
+# out of band.
+#
+# Nobody says "cancel my study room reservation" one line after being told
+# "King 029 ... is booked". They say "cancel that". Accepted only when this
+# conversation actually produced a confirmation number, so a bare "cancel it"
+# with no booking behind it still falls through as before.
+_CANCEL_PRONOUN_RE = re.compile(
+    r"\bcancel\b[^.?!]{0,20}\b(that|it|this|them|mine)\b"
+    r"|\bcancel\b\s*[.?!]?\s*$"
+    r"|\b(nvm|never\s*mind|nevermind|forget\s+it)\b[^.?!]{0,20}\bcancel\b"
+    r"|\bcancel\b[^.?!]{0,20}\b(nvm|never\s*mind|nevermind)\b",
+    re.IGNORECASE,
+)
 # "what's the cancellation policy / fee / refund / deadline" is informational,
 # NOT a request to cancel a specific reservation.
 _CANCEL_INFO_RE = re.compile(
@@ -2019,7 +2079,10 @@ def _cancel_reservation_answer(
     m_no_email = _ANY_EMAIL_RE.sub(" ", m)
     has_code = bool(_CONF_CODE_RE.search(m_no_email))
     if not (has_code or _CANCEL_CTX_RE.search(m)):
-        return None
+        # "cancel that" right after we issued a confirmation number.
+        booked_here, _ = _booking_details_from_history(history)
+        if not (booked_here and _CANCEL_PRONOUN_RE.search(m)):
+            return None
     # informational ("cancellation policy/fee") with no concrete code -> let the
     # normal path answer; don't treat it as a cancel action.
     if _CANCEL_INFO_RE.search(m) and not has_code:
@@ -2718,15 +2781,25 @@ _APPT_EXCLUDE_RE = re.compile(
 # type: the contraction, the inverted "who my librarian is", and the bare
 # noun phrase ("my subject librarian", "subject librarian for me").
 _MY_LIBRARIAN_RE = re.compile(
-    r"\b(who(\s+is|\s*'s)\s+my"
+    # "hoo is my subjekt libarian" -- live student 2026-07-30. The typo
+    # tolerance below covered `libarian` but not `who`, so the whole
+    # trigger missed and the turn ended in a hard refusal.
+    r"\b((?:who|hoo|whoo|wh0)(\s+is|\s*'s)\s+my"
     r"|who\s+my\b[^.?!]{0,24}\b" + _LIBRARIAN_WORD + r"\s+is"
     r"|do\s+i\s+have\s+an?"
     r"|can\s+i\s+(talk|speak|meet)\s+(to|with)\s+my"
     r"|how\s+(do|can)\s+i\s+(find|reach|contact|get)\s+(a\s+hold\s+of\s+)?my)"
-    r"\s*(personal|own|assigned|subject|liaison)?\s*" + _LIBRARIAN_WORD + r"\b"
+    r"\s*(?:personal|own|assigned|liaison|" + _SUBJECT_WORD + r")?\s*" + _LIBRARIAN_WORD + r"\b"
     # Bare noun phrase with no interrogative: "my subject librarian",
     # "subject librarian for me?", "Subject librarian -- who's mine?".
-    r"|\bmy\s+(subject|liaison)\s+" + _LIBRARIAN_WORD + r"\b"
+    # A BARE noun phrase, with no "my" and no interrogative: the
+    # keywords-only student typed exactly "subject librarian" and got the
+    # directory link instead of being asked which subject, which the rubric
+    # counts as wrong. Anchored to start/end so it only fires when the phrase
+    # IS the message, not when it appears inside a longer sentence that the
+    # branches above already handle.
+    r"|^\s*(?:" + _SUBJECT_WORD + r"|liaison)\s+" + _LIBRARIAN_WORD + r"\s*[?.!]?\s*$"
+    r"|\bmy\s+(?:" + _SUBJECT_WORD + r"|liaison)\s+" + _LIBRARIAN_WORD + r"\b"
     # Punctuation, not just whitespace, between the noun and the question:
     # "Subject librarian -- who's mine?" is how the blunt typist asked, and an
     # em dash is not \s.
@@ -2893,7 +2966,9 @@ _PRIMO_SEARCH_URL = (
 # having it?". No title noun is required -- we cannot know that a phrase is a
 # title, and the shape is the signal.
 _CATALOG_HAVE_RE = re.compile(
-    r"\bdo(es)?\s+(you|u|ya|the\s+librar\w+|miami)\s+"
+    # The auxiliary is often dropped entirely -- "u have braiding sweetgrass?"
+    # (live student 2026-07-30) rather than "do u have". Made optional.
+    r"\b(?:do(es)?\s+)?(you|u|ya|the\s+librar\w+|miami)\s+"
     r"(have|has|hav|ave|own|carry|stock)\b"
     r"|\bdo\s+(you|u)\s+happen\s+to\s+have\b"
     r"|\bin\s+(your|the)\s+(collection|catalog|holdings)\b"
@@ -3256,7 +3331,11 @@ _MYACCOUNT_URL = (
 # a reader can check a number that has since changed.
 _LOAN_PERIOD_RE = re.compile(
     r"\bhow\s+long\b[^.?!]*\b(keep|borrow|check\s*out|have)\b"
-    r"|\bhow\s+many\s+(days?|weeks?)\b[^.?!]*\b(keep|borrow|check\s*out|have)\b"
+    # "how many TIME I can keep" -- the non-native student's phrasing, and
+    # `time`/`times` was not in the unit list beside days and weeks. Also
+    # accepts a bare "how many ... keep" so an unlisted unit cannot block it.
+    r"|\bhow\s+many\s+(days?|weeks?|times?|months?)?\b[^.?!]{0,30}"
+    r"\b(keep|borrow|check\s*out|have)\b"
     r"|\bloan\s+(period|length|time)\b"
     r"|\b(book|item|material)s?\s+due\s+(back|in)\b",
     re.IGNORECASE,
@@ -4457,6 +4536,21 @@ def _booking_flow_active(history: Optional[list]) -> bool:
 # contains no "find <Person>" question at all, and a patron who wants a
 # person says "contact"/"who is"/"email".
 _CONTACT_BY_NAME_RE = re.compile(
+    # THE VERB MUST BE A VERB.
+    #
+    # Live student 2026-07-30 wrote "I got an email saying something arrived
+    # but I genuinely don't know where I'm supposed to go", and the bot
+    # replied "I don't have a listing for saying something in the Libraries
+    # staff directory". `email` here is a NOUN -- "an email" -- and the two
+    # words after it got captured as a first and last name. The closed-class
+    # guard could not help: "saying" and "something" are ordinary words.
+    #
+    # A determiner in front is the giveaway. "email Jennifer Hicks" has none;
+    # "an email", "the email", "my email", "that email" all do. Same trap
+    # applies to `contact` ("my contact"), `number` and `address` further down.
+    r"(?<!\ba\s)(?<!\ban\s)(?<!\bthe\s)(?<!\bmy\s)(?<!\byour\s)"
+    r"(?<!\bthis\s)(?<!\bthat\s)(?<!\bsome\s)(?<!\bany\s)(?<!\bno\s)"
+    r"(?<!\bhis\s)(?<!\bher\s)(?<!\btheir\s)(?<!\bour\s)"
     r"\b(?:contact|email|e-?mail|reach|get\s+in\s+touch\s+with|"
     r"who\s+is|talk\s+to|speak\s+(?:to|with))\s+"
     r"(?:dr\.?\s+|prof\.?\s+|professor\s+)?"
@@ -5115,10 +5209,14 @@ def _clarify_response(
     candidate intents as buttons; clicking one re-runs the turn with
     that intent forced.
     """
+    # "out of scope" is not a thing a patron can choose. Live simulation
+    # 2026-07-30 offered "Options: out of scope, contacting a staff member"
+    # for a booking request -- asking someone to pick our own failure mode.
     top_two = [
         {"intent": intent, "score": score}
-        for intent, score in classification.candidates[:2]
-    ]
+        for intent, score in classification.candidates[:3]
+        if intent != "out_of_scope"
+    ][:2]
     return TurnResponse(
         answer=(
             "I'm not sure which of these you meant. Can you pick one?"
