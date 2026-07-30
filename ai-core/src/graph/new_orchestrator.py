@@ -355,6 +355,19 @@ def _run_turn(
         bind_request_context(intent="subject_librarian",
                              margin=classification.margin)
 
+    # --- 2.029. "<subject> databases" override ---
+    # See _subject_plus_databases: the abbreviation form had no exemplar.
+    if (
+        not booking_flow
+        and classification.intent == "out_of_scope"
+        and _subject_plus_databases(request.user_message)
+    ):
+        classification = _dc_replace(
+            classification, intent="databases", needs_clarification=False,
+        )
+        bind_request_context(intent="databases",
+                             margin=classification.margin)
+
     # --- 2.03. Contact-a-person-by-name override ---
     # See _looks_like_person_name: the by-name lookup works, but the
     # classifier only routed to it for names it had memorised.
@@ -685,6 +698,7 @@ def _run_turn(
             ("digital_exhibits", _digital_exhibits_answer),
             ("gov_docs", _gov_docs_answer),
             ("fee_policy", _fee_policy_answer),
+            ("bot_identity", _bot_identity_answer),
         ):
             _res = _fn(request.user_message)
             if _res is not None:
@@ -3085,6 +3099,68 @@ _LIBRARIAN_IS_MINE_RE = re.compile(
     r"|\blibrarian\s+(for\s+me|who'?s\s+mine)\b",
     re.IGNORECASE,
 )
+
+
+# "cs databases" was called out-of-scope while "computer science databases"
+# routed to `databases` (live simulation 2026-07-30). The alias table already
+# resolves the abbreviation -- find_subject_by_alias("cs") returns Computer
+# Science and Software Engineering -- so nothing was missing but an exemplar
+# for the two-word keyword shape. Resolve it here instead of guessing.
+_DATABASE_WORD_RE = re.compile(
+    r"\bdata\s?bases?\b|\bdb\b|\ba-?z\s+list\b", re.IGNORECASE
+)
+
+
+# "Are you an AI or a person?" got the out-of-scope deflection (live simulation
+# 2026-07-30, margin 0.347 -- confidently wrong). A student asking who they are
+# talking to deserves a straight answer, and evading it reads worse than any
+# answer would. It is also the one question where a library service has a
+# positive duty to be clear.
+_BOT_IDENTITY_RE = re.compile(
+    # `an` as well as `a`: the question is literally "are you an AI".
+    r"\bare\s+you\s+(an?\s+)?(real|actual|live|genuine)?\s*"
+    r"(ai|a\.i\.|bot|robot|human|person|"
+    r"machine|computer|chatgpt|gpt)\b"
+    r"|\bam\s+i\s+(talking|speaking|chatting)\s+(to|with)\s+(a\s+)?"
+    r"(bot|robot|ai|human|person|real\s+person)\b"
+    r"|\bis\s+this\s+(an?\s+)?(real|actual|live|genuine)?\s*"
+    r"(bot|robot|ai|human|person)\b"
+    r"|\bwho\s+am\s+i\s+(talking|speaking)\s+(to|with)\b",
+    re.IGNORECASE,
+)
+
+
+def _bot_identity_answer(message: str) -> "Optional[tuple[str, list[dict]]]":
+    """Say plainly what this is. No citation -- it is a fact about ourselves."""
+    if not _BOT_IDENTITY_RE.search(message or ""):
+        return None
+    return (
+        "I'm an automated assistant for Miami University Libraries -- software, "
+        "not a person. I can help with hours, study spaces, borrowing, "
+        "policies, and finding your subject librarian, and I'll point you to a "
+        "real librarian through Ask Us whenever a person would do better: "
+        "https://www.lib.miamioh.edu/research/research-support/ask/",
+        [],
+    )
+
+
+def _subject_plus_databases(message: str) -> Optional[str]:
+    """The subject named alongside a database word, or None."""
+    m = message or ""
+    if not _DATABASE_WORD_RE.search(m):
+        return None
+    from src.tools.subject_aliases import find_subject_by_alias
+
+    words = [w.lower() for w in re.findall(r"[A-Za-z&'-]+", m)]
+    for span in (3, 2, 1):
+        for i in range(len(words) - span + 1):
+            phrase = " ".join(words[i:i + span])
+            if _DATABASE_WORD_RE.fullmatch(phrase):
+                continue
+            hit = find_subject_by_alias(phrase)
+            if hit:
+                return hit
+    return None
 
 
 def _subject_named_with_librarian(message: str) -> Optional[str]:
