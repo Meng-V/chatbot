@@ -389,6 +389,13 @@ def test_item_request_is_never_out_of_scope() -> None:
     from src.graph.new_orchestrator import _looks_like_item_request
 
     for q in ("Do you have a copy of Braiding Sweetgrass?",
+              # The all-lowercase, no-noun phrasings are exactly the ones the
+              # classifier misroutes, so they matter most. An item signal is
+              # sufficient but NOT required -- naming the facilities instead
+              # (see _NON_LIBRARY_THING_RE) keeps these while still leaving
+              # "do you have parking?" alone.
+              "do u have braiding sweetgrass",
+              "do you hav braiding sweetgras",
               "Braiding Sweetgrass — in your collection?",
               "I was hoping to borrow Braiding Sweetgrass. Do you happen to "
               "have a copy?",
@@ -423,11 +430,17 @@ def test_item_request_is_never_out_of_scope() -> None:
               "braiding sweetgrass"):
         assert not _looks_like_item_request(q), q
 
-    # KNOWN LIMIT, accepted deliberately: an all-lowercase title with no item
-    # noun is indistinguishable from "do you have parking" without knowing the
-    # title. These two stay unrescued rather than risk the facilities error.
-    for q in ("do u have braiding sweetgrass",
-              "do you hav braiding sweetgras"):
+    # Campus amenities keep their scope deflection, which is the right answer
+    # for them. This list is what lets the item signal be optional.
+    for q in ("do you have parking?",
+              "do you have a gym?",
+              "do you have tutoring?",
+              "do you have a dentist?",
+              "do you have football tickets?",
+              "do you have a swimming pool?",
+              "does miami have a medical school?",
+              "do you have a bookstore?",
+              "do you have an ATM?"):
         assert not _looks_like_item_request(q), q
 
 

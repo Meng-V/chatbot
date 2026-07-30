@@ -2726,6 +2726,25 @@ _ITEM_SIGNAL_RE = re.compile(
 )
 
 
+# Campus amenities and services -- NOT things in a catalogue. "Do you have
+# parking?" must keep the scope deflection it gets today, which is a correct
+# and polite answer; sending it to Primo would be worse. This list is what
+# makes the item signal optional rather than required, so an all-lowercase
+# title still gets rescued.
+_NON_LIBRARY_THING_RE = re.compile(
+    r"\bparking\b|\bgarage\b|\bshuttle\b|\bbus\b|\bgym\b|\brec\s*center\b"
+    r"|\bswimming\b|\bpool\b|\bdorm|\bhousing\b|\bmeal\s*plan\b|\bdining\b"
+    r"|\bcafeteria\b|\btickets?\b|\bstadium\b|\bfootball\b|\bbasketball\b"
+    r"|\btutoring\b|\btutor\b|\badvising\b|\badvisor\b|\bregistrar\b"
+    r"|\bbursar\b|\btuition\b|\bscholarship\b|\bfinancial\s+aid\b"
+    r"|\bdentist\b|\bdoctor\b|\bclinic\b|\bhealth\s+(center|services)\b"
+    r"|\bcounseling\b|\btherapist\b|\bpharmacy\b|\bgym\s*membership\b"
+    r"|\bmedical\s+school\b|\blaw\s+school\b|\bbookstore\b|\bnotary\b"
+    r"|\bpost\s+office\b|\batm\b|\bmailroom\b|\bid\s+card\b",
+    re.IGNORECASE,
+)
+
+
 def _looks_like_item_request(message: str) -> bool:
     """True when the message asks whether the library HAS a specific item.
 
@@ -2739,7 +2758,14 @@ def _looks_like_item_request(message: str) -> bool:
         return False
     if _CATALOG_HAVE_EXCLUDE_RE.search(m):
         return False
-    return bool(_ITEM_SIGNAL_RE.search(m))
+    # An item signal is sufficient but not necessary. Requiring it cost the
+    # two all-lowercase phrasings ("do u have braiding sweetgrass") that are
+    # exactly the ones the classifier misroutes -- measured, 2 of 10 on Q10.
+    # Naming the facilities instead recovers them: campus amenities are a
+    # bounded, knowable set, and a title is precisely what is left over.
+    if _ITEM_SIGNAL_RE.search(m):
+        return True
+    return not _NON_LIBRARY_THING_RE.search(m)
 
 
 def _fee_policy_answer(message: str) -> "Optional[tuple[str, list[dict]]]":
