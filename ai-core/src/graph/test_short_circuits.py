@@ -334,21 +334,43 @@ def test_loan_period_answer_states_the_user_type_split() -> None:
     """
     from src.graph.new_orchestrator import _renewal_paths_answer
 
+    # WHEN THEY SAY WHO THEY ARE, ANSWER FOR THEM. The first live student on
+    # 2026-07-30 had written "if I'm a grad student" and got all four borrower
+    # types read back; they said so, and they were right. This test used to
+    # assert the four-way list -- the rubric only ever asked that the answer
+    # DEPEND on user type, and a real reader wants their own number first.
     for q in ("How long can I keep a book, and can I renew it if I'm a grad "
               "student?",
               "how long can i keep books, can grad students renew",
               "Loan period + grad renewal policy?",
               "loan period renewal grad",
               "Book loan length, and grad student renewals?",
+              "What's the loan period for graduate students?",
               "How many days I can keep the book? And for graduate student, "
-              "renew is possible?",
-              "How long can I check out a book?"):
+              "renew is possible?"):
         res = _renewal_paths_answer(q)
         assert res is not None, q
         answer = res[0].lower()
+        assert "graduate students" in answer, q
+        assert "one semester" in answer, q
+        # ...and NOT the types they did not ask about.
+        assert "undergraduate" not in answer, q
+        assert "faculty" not in answer, q
+        assert "myaccount" in answer or "library account" in answer, q
+
+    # No type stated, or a comparison wanted -> the full table is right.
+    for q in ("How long can I keep a book?",
+              "How long can I check out a book?",
+              "loan period for undergrads vs grad students?"):
+        answer = _renewal_paths_answer(q)[0].lower()
         assert "undergraduate" in answer and "graduate" in answer, q
         assert "faculty" in answer, q
-        assert "myaccount" in answer or "library account" in answer, q
+
+    # Other stated types get their own figure.
+    assert "one year" in _renewal_paths_answer(
+        "I'm faculty — how long can I keep a book?")[0]
+    assert "6 weeks" in _renewal_paths_answer(
+        "undergrad, how long can i keep a book")[0]
 
     # "Renew it FOR me" is an action the bot must refuse, not a policy answer.
     for q in ("renew my book for me", "please renew it for me"):
@@ -1618,3 +1640,96 @@ def test_disclaimer_does_not_swallow_operational_intents() -> None:
                    "cross_campus_comparison", "human_handoff",
                    "out_of_scope", "service_howto"):
         assert intent not in INC, f"{intent} is operational, not research"
+
+
+#
+# From the FIRST LIVE STUDENT, 2026-07-30 11:00. Real feedback, which is worth
+# more than the ten simulated voices: these are things the simulation missed.
+#
+
+def test_subject_librarian_named_in_any_sentence() -> None:
+    """"How about music librarian at King?" answered about JOB OPENINGS.
+
+    Asked plainly ("who is the music librarian?") the same system returns Barry
+    Zaslow and his email, and find_subject_by_alias("music") resolves to Music,
+    so neither the data nor the lookup was at fault -- the classifier simply
+    did not route that phrasing to subject_librarian. Naming a subject next to
+    the word "librarian" is unambiguous whatever sentence it sits in.
+    """
+    from src.graph.new_orchestrator import _subject_named_with_librarian
+
+    assert _subject_named_with_librarian(
+        "How about music librarian at King?") == "Music"
+    for q, expected in (("music librarian", "Music"),
+                        ("who is the music librarian?", "Music"),
+                        ("the biology librarian", "Biology"),
+                        ("How about the history librarian?", "History"),
+                        ("music theory librarian", "Music"),
+                        ("nursing liaison", "Nursing")):
+        assert _subject_named_with_librarian(q) == expected, q
+
+    # Library JOBS -- what the bot wrongly answered -- and service requests
+    # that have their own answers, including three gold cases.
+    for q in ("Can I chat with a librarian?",
+              "Can I schedule an appointment with a librarian?",
+              "Can a librarian come teach my class?",
+              "how do I become a librarian",
+              "librarian job openings",
+              "are you hiring librarians",
+              "librarian salary"):
+        assert _subject_named_with_librarian(q) is None, q
+
+    # "MY subject librarian" keeps its ask-which-subject flow.
+    for q in ("Who is my subject librarian?",
+              "who's my subject librarian",
+              "Subject librarian — who's mine?"):
+        assert _subject_named_with_librarian(q) is None, q
+
+
+def test_cancel_recovers_the_booking_it_made() -> None:
+    """The bot booked the room, then asked the patron for the details back.
+
+    Its own confirmation text says "Confirmation number: <id>", and the email
+    came from the patron two turns earlier -- yet asking to cancel produced a
+    demand for both. The student's verdict was "very annoying".
+
+    A confirm step is kept before the destructive call, matching book_room,
+    which structurally cannot POST without confirm=true. It costs one turn and
+    prevents cancelling the wrong booking.
+    """
+    from src.graph.new_orchestrator import _cancel_reservation_answer
+
+    booked = {
+        "role": "assistant",
+        "content": "King 105 with capacity 6 is booked from 2:00pm to 3:00pm "
+                   "on 2026-07-31 at King Library. Confirmation number: "
+                   "cs_9f3ab21c. A confirmation email has been sent.",
+    }
+    history = [{"role": "user", "content": "book a room at King tomorrow 2pm"},
+               {"role": "user", "content": "Meng Qu qum@miamioh.edu"},
+               booked]
+
+    asked = _cancel_reservation_answer("cancel my reservation", history)
+    assert asked is not None
+    # It must show WHAT it is about to cancel, not ask for it.
+    assert "cs_9f3ab21c" in asked[0]
+    assert "qum@miamioh.edu" in asked[0]
+    assert "I need two things" not in asked[0]
+
+    # The reply to that prompt carries no cancel verb, so the prompt itself is
+    # the state. Without this the patron is stuck one step from what they asked
+    # for -- the same dead end, one turn later.
+    from src.graph.new_orchestrator import _CANCEL_CONFIRM_MARKER
+    assert _CANCEL_CONFIRM_MARKER in asked[0]
+
+    # With no booking in the conversation, the original guidance still stands.
+    plain = _cancel_reservation_answer("cancel my reservation", [])
+    assert plain is not None and "I need two things" in plain[0]
+
+    # A bare affirmative with nothing pending must not start cancelling.
+    assert _cancel_reservation_answer("confirm", []) is None
+    assert _cancel_reservation_answer("yes", history) is None
+    # Policy questions are not cancel actions.
+    assert _cancel_reservation_answer(
+        "what is the cancellation policy", history + [
+            {"role": "assistant", "content": asked[0]}]) is None

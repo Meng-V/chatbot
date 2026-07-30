@@ -312,6 +312,27 @@ def _run_turn(
         bind_request_context(intent="find_resource",
                              margin=classification.margin)
 
+    # --- 2.028. "<subject> librarian" override ---
+    # First live student, 2026-07-30: "Does King Library have a music section?"
+    # then "How about music librarian at King?" -- and the bot answered about
+    # JOB OPENINGS. Asked plainly ("who is the music librarian?") it returns
+    # Barry Zaslow and his email, and `find_subject_by_alias("music")` resolves
+    # to Music, so neither the data nor the lookup was at fault: the classifier
+    # simply did not route the follow-up phrasing to subject_librarian.
+    #
+    # Naming a subject next to the word "librarian" is unambiguous, whatever
+    # sentence it sits in, so resolve it here instead of hoping the kNN does.
+    if (
+        not booking_flow
+        and not subject_reply
+        and _subject_named_with_librarian(request.user_message)
+    ):
+        classification = _dc_replace(
+            classification, intent="subject_librarian", needs_clarification=False,
+        )
+        bind_request_context(intent="subject_librarian",
+                             margin=classification.margin)
+
     # --- 2.03. Contact-a-person-by-name override ---
     # See _looks_like_person_name: the by-name lookup works, but the
     # classifier only routed to it for names it had memorised.
@@ -508,7 +529,9 @@ def _run_turn(
     # <code>" used to loop/error. Handle it deterministically + gracefully.
     # Skipped mid-booking-flow (there, "cancel" means abort the new booking).
     if not booking_flow:
-        _cx = _cancel_reservation_answer(request.user_message)
+        _cx = _cancel_reservation_answer(
+            request.user_message, request.conversation_history
+        )
         if _cx is not None:
             _ans, _cites = _cx
             latency_ms = int((time.monotonic() - turn_start) * 1000)
@@ -1811,11 +1834,107 @@ _CANCEL_FALLBACK = (
 )
 
 
-def _cancel_reservation_answer(message: str) -> "Optional[tuple[str, list[dict]]]":
+# Byte-stable substring of the cancel-confirmation prompt below. The reply to
+# it ("confirm") contains no cancel verb, so this sentence is what tells the
+# next turn what is being confirmed.
+_CANCEL_CONFIRM_MARKER = "and I'll cancel it"
+_AFFIRMATIVE_RE = re.compile(
+    r"^\s*(yes|yeah|yep|yup|ok|okay|sure|confirm(ed)?|do\s+it|go\s+ahead"
+    r"|please\s+do|correct|that'?s\s+right)\b",
+    re.IGNORECASE,
+)
+
+
+def _do_cancel(
+    message: str, code: str, email: str,
+) -> "tuple[str, list[dict]]":
+    """Place the cancellation. Never raises -- a failed destructive call
+    degrades to the fallback text, not a crash."""
+    cite = [{"n": 1, "url": _ROOMS_URL,
+             "snippet": "Miami University Libraries — Room Reservations"}]
+    try:
+        from src.eval.real_backends import _bridge
+        from src.tools.libcal_comprehensive_tools import (
+            LibCalCancelReservationTool,
+        )
+        get_logger("new_orchestrator").info(
+            "cancel_reservation: attempting booking_id=%s", code
+        )
+        res = _bridge(
+            LibCalCancelReservationTool().execute(
+                query=message, booking_id=code, email=email),
+            timeout=30.0,
+        )
+        text = res.get("text") if isinstance(res, dict) else None
+        get_logger("new_orchestrator").info(
+            "cancel_reservation: booking_id=%s -> %s", code,
+            "ok" if text else "no text",
+        )
+        return ((text + " [1]") if text else _CANCEL_FALLBACK), cite
+    except Exception:  # noqa: BLE001 -- destructive call must never crash a turn
+        get_logger("new_orchestrator").exception("cancel_reservation failed")
+        return _CANCEL_FALLBACK, cite
+
+
+def _booking_details_from_history(
+    history: "Optional[list]",
+) -> "tuple[Optional[str], Optional[str]]":
+    """(confirmation code, email) for a booking made EARLIER IN THIS CHAT.
+
+    First live student, 2026-07-30: the bot booked them a room -- its own
+    confirmation text says "Confirmation number: <id>" -- and then, when they
+    asked to cancel, demanded the confirmation number and the email address
+    back. It was asking for two things it had just written down itself. Their
+    verdict on that was "very annoying", and they were right.
+
+    The code is read only out of the ASSISTANT's own confirmation line, so its
+    provenance is the booking this conversation made, not something scraped
+    from whatever the user typed. The email is read from either side, since the
+    user supplied it to book in the first place.
+    """
+    code: Optional[str] = None
+    email: Optional[str] = None
+    for entry in (history or []):
+        if not isinstance(entry, dict):
+            continue
+        content = str(entry.get("content") or "")
+        if entry.get("role") == "assistant":
+            found = re.search(
+                r"confirmation\s+number:?\s*([A-Za-z0-9_]{3,})", content,
+                re.IGNORECASE,
+            )
+            if found:
+                code = found.group(1)
+        found_email = _ANY_EMAIL_RE.search(content)
+        if found_email:
+            email = found_email.group(0)
+    return code, email
+
+
+def _cancel_reservation_answer(
+    message: str, history: "Optional[list]" = None,
+) -> "Optional[tuple[str, list[dict]]]":
     """Deterministic room-reservation cancellation. Returns (answer, cites) or
     None. NEVER raises: a failed destructive call degrades to a graceful
     fallback, not a crash."""
     m = message or ""
+
+    # A bare "confirm" answering our own cancel prompt carries no cancel verb,
+    # so _CANCEL_INTENT_RE would miss it and the patron would be stuck one
+    # step from the thing they asked for -- the same dead end, one turn later.
+    # Our own sentence is the state, as in _booking_flow_active.
+    awaiting_cancel = False
+    for entry in reversed(history or []):
+        if isinstance(entry, dict) and entry.get("role") == "assistant":
+            awaiting_cancel = _CANCEL_CONFIRM_MARKER in str(
+                entry.get("content") or ""
+            )
+            break
+    if awaiting_cancel and _AFFIRMATIVE_RE.search(m):
+        h_code, h_email = _booking_details_from_history(history)
+        if h_code and h_email:
+            return _do_cancel(m, h_code, h_email)
+
     if not _CANCEL_INTENT_RE.search(m):
         return None
     # Extract the code from the message WITH EMAILS BLANKED so a hex-ish
@@ -1832,21 +1951,32 @@ def _cancel_reservation_answer(message: str) -> "Optional[tuple[str, list[dict]]
              "snippet": "Miami University Libraries — Room Reservations"}]
     code_m = _CONF_CODE_RE.search(m_no_email)
     email_m = _ANY_EMAIL_RE.search(m)
-    if not (code_m and email_m):
+    code = code_m.group(0) if code_m else None
+    email = email_m.group(0) if email_m else None
+
+    if not (code and email):
+        # Fall back to what this conversation already established.
+        h_code, h_email = _booking_details_from_history(history)
+        recovered = (not code and h_code) or (not email and h_email)
+        code = code or h_code
+        email = email or h_email
+        if code and email and recovered:
+            # Confirm before a destructive external call -- same discipline as
+            # book_room, which structurally cannot POST without confirm=true.
+            # It costs one turn and prevents cancelling the wrong booking, but
+            # the patron no longer has to hunt for details we already hold.
+            if not re.search(r"\b(yes|confirm|confirmed|do\s+it|go\s+ahead|"
+                             r"please\s+do|correct)\b", m, re.IGNORECASE):
+                return (
+                    f"I can cancel the reservation I booked for you in this "
+                    f"chat -- confirmation {code}, booked with {email}. Reply "
+                    f"\"confirm\" and I'll cancel it. If you meant a different "
+                    f"reservation, send me its confirmation number [1].",
+                    cite,
+                )
+    if not (code and email):
         return _CANCEL_HELP, cite
-    try:
-        from src.eval.real_backends import _bridge
-        from src.tools.libcal_comprehensive_tools import LibCalCancelReservationTool
-        res = _bridge(
-            LibCalCancelReservationTool().execute(
-                query=m, booking_id=code_m.group(0), email=email_m.group(0)),
-            timeout=30.0,
-        )
-        text = res.get("text") if isinstance(res, dict) else None
-        return ((text + " [1]") if text else _CANCEL_FALLBACK), cite
-    except Exception:  # noqa: BLE001 -- destructive call must never crash a turn
-        get_logger("new_orchestrator").exception("cancel_reservation failed")
-        return _CANCEL_FALLBACK, cite
+    return _do_cancel(m, code, email)
 
 
 # University Archivist / Special Collections contact. The operator-gold KB had
@@ -2756,6 +2886,63 @@ _NON_LIBRARY_THING_RE = re.compile(
 )
 
 
+# Questions that contain "librarian" but are NOT asking who a subject
+# librarian is. Employment came first because that is what the live bot
+# actually answered ("Miami University Libraries posts job openings on the
+# library employment page") when a student asked for the music librarian.
+_LIBRARIAN_NOT_SUBJECT_RE = re.compile(
+    r"\b(job|jobs|position|positions|vacancy|vacancies|hiring|apply|"
+    r"application|employment|career|salary|become\s+a|how\s+do\s+i\s+become|"
+    r"qualifications?|degree|mls|mlis)\b"
+    # "chat with a librarian", "appointment with a librarian", "can a librarian
+    # come teach my class" -- service requests with their own answers, and gold
+    # cases (hh_chat_with_librarian, rc_appointment, ir_class_visit).
+    r"|\b(chat|talk|speak|meet|appointment|consultation|zoom|come\s+teach|"
+    r"teach\s+my|visit\s+my)\b",
+    re.IGNORECASE,
+)
+# "my subject librarian" has its own flow: ASK which subject, don't guess.
+_LIBRARIAN_IS_MINE_RE = re.compile(
+    r"\bmy\s+(subject|liaison|personal|own|assigned)?\s*librarian\b"
+    r"|\blibrarian\s+(for\s+me|who'?s\s+mine)\b",
+    re.IGNORECASE,
+)
+
+
+def _subject_named_with_librarian(message: str) -> Optional[str]:
+    """The subject named next to "librarian", or None.
+
+    "How about music librarian at King?" -> "Music". Returns the canonical
+    subject so the caller can route to subject_librarian and let the existing
+    lookup do the work; the value is also handy in logs.
+
+    Deliberately narrow: the message must contain "librarian" (or "liaison"),
+    must not be about library JOBS or about booking a person's time, and must
+    not be the "who is MY librarian" ask, which has its own clarifying flow.
+    """
+    m = message or ""
+    if not re.search(r"\blibrarian\b|\bliaison\b", m, re.IGNORECASE):
+        return None
+    if _LIBRARIAN_NOT_SUBJECT_RE.search(m) or _LIBRARIAN_IS_MINE_RE.search(m):
+        return None
+
+    from src.tools.subject_aliases import find_subject_by_alias
+
+    # Try the longest plausible phrase first: "music theory librarian" should
+    # resolve on "music theory", not stop at "theory".
+    words = re.findall(r"[A-Za-z&'-]+", m)
+    lowered = [w.lower() for w in words]
+    for span in (4, 3, 2, 1):
+        for i in range(len(lowered) - span + 1):
+            phrase = " ".join(lowered[i:i + span])
+            if phrase in ("librarian", "liaison"):
+                continue
+            hit = find_subject_by_alias(phrase)
+            if hit:
+                return hit
+    return None
+
+
 def _looks_like_item_request(message: str) -> bool:
     """True when the message asks whether the library HAS a specific item.
 
@@ -2996,6 +3183,49 @@ _LOAN_PERIOD_RE = re.compile(
 # All four of those are gold cases, and the first draft of _LOAN_PERIOD_RE
 # captured every one of them -- the unit tests passed because they are eval
 # cases, not unit tests. Checking the golden set by hand is what caught it.
+# Loan periods per the policy page, read live 2026-07-30. Keyed by the phrase
+# the answer uses, so it reads naturally: "For graduate students, Miami books
+# circulate for one semester."
+_BORROWER_LOAN_PERIOD = {
+    "undergraduates": "6 weeks",
+    "graduate students": "one semester",
+    "faculty": "one year",
+    "staff": "6 weeks",
+}
+# Plurals must be INSIDE the group: `student\b` cannot match "students", so
+# "graduate students" silently missed and got the full four-way table back --
+# the same trailing-\b mistake that let "do you have printers?" through
+# earlier. Every noun here carries its own optional s.
+_BORROWER_TYPE_RE = (
+    (r"\b(grad(uate)?\s+students?|grads?|masters?|phd|doctoral|dissertation"
+     r"|thesis)\b", "graduate students"),
+    (r"\b(undergrad(uate)?s?|freshm[ae]n|sophomores?|juniors?|seniors?)\b",
+     "undergraduates"),
+    (r"\b(faculty|professors?|instructors?|lecturers?)\b", "faculty"),
+    (r"\b(staff\s+members?|i'?m\s+staff|as\s+staff)\b", "staff"),
+)
+
+
+def _stated_borrower_type(message: str) -> Optional[str]:
+    """The borrower type the reader said they are, or None.
+
+    Only fires on first-person framing -- "I'm a grad student", "as a grad
+    student", "if I'm a grad student", "grad student here". A question ABOUT
+    another type ("what's the loan period for faculty?") also counts, since the
+    reader has still named exactly one type and wants that one answered.
+    """
+    m = message or ""
+    for pattern, label in _BORROWER_TYPE_RE:
+        if re.search(pattern, m, re.IGNORECASE):
+            # Two or more types named means they want the comparison.
+            others = [
+                lab for pat, lab in _BORROWER_TYPE_RE
+                if lab != label and re.search(pat, m, re.IGNORECASE)
+            ]
+            return None if others else label
+    return None
+
+
 _LOAN_PERIOD_EXCLUDE_RE = re.compile(
     r"\breserves?\b|\bon\s+reserve\b|\breserve\s+(textbook|book|item)"
     r"|\blaptop|\bchromebook|\bipad|\btablet|\bcamera|\bdslr|\bcamcorder"
@@ -3034,17 +3264,34 @@ def _renewal_paths_answer(message: str) -> "Optional[tuple[str, list[dict]]]":
     # loan periods -- see _LOAN_PERIOD_EXCLUDE_RE.
     if _LOAN_PERIOD_EXCLUDE_RE.search(m):
         return None
+    # IF THEY SAID WHO THEY ARE, ANSWER FOR THEM.
+    #
+    # The first live student on 2026-07-30 had written "if I'm a grad student"
+    # and got all four borrower types read back at them. Their words: they had
+    # already said which one they were, so listing undergraduates, faculty and
+    # other patrons was noise. The rubric only asked that the answer depend on
+    # user type; a real reader wants THEIR number first.
+    _stated = _stated_borrower_type(m)
+    if _stated:
+        _period = _BORROWER_LOAN_PERIOD[_stated]
+        opening = (
+            f"For {_stated}, Miami books circulate for {_period} [1]. "
+        )
+    else:
+        opening = (
+            "How long depends on who you are. Per the circulation policy, "
+            "Miami books circulate for 6 weeks to undergraduates, a semester "
+            "to graduate students, a year to faculty, and 6 weeks to other "
+            "patrons [1]. "
+        )
     return (
-        "How long depends on who you are. Per the circulation policy, Miami "
-        "books circulate for 6 weeks to undergraduates, a semester to "
-        "graduate students, a year to faculty, and 6 weeks to other patrons "
-        "[1]. Renewal then works differently depending on where the item "
-        "came from: for Miami materials the renewal limits are on that same "
-        "page [1], and for OhioLINK and interlibrary loan items see the "
-        "OhioLINK & ILL loan periods page [2]. Either way you renew by "
-        "signing in to your library account (MyAccount) [3]. If you've "
-        "reached the renewal limit, contact the circulation desk at "
-        "(513) 529-4141.",
+        opening
+        + "Renewal works differently depending on where the item came from: "
+        "for Miami materials the renewal limits are on that same page [1], "
+        "and for OhioLINK and interlibrary loan items see the OhioLINK & ILL "
+        "loan periods page [2]. Either way you renew by signing in to your "
+        "library account (MyAccount) [3]. If you've reached the renewal "
+        "limit, contact the circulation desk at (513) 529-4141.",
         [
             {"n": 1, "url": _LOAN_FINES_URL,
              "snippet": "Miami University Libraries — loan periods & fines"},
