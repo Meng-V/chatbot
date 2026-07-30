@@ -5001,6 +5001,60 @@ def _capability_response(
     )
 
 
+# The clarify chips used to print the raw intent id with its underscores
+# swapped for spaces, so a live student on 2026-07-30 was offered
+# "Options: find resource, hours" -- our internal vocabulary, for a question
+# ("Does King Library have a music section") where neither option describes
+# what they wanted in words they would recognise. If we have to ask, the
+# choices have to be readable.
+_INTENT_CHOICE_LABELS = {
+    "hours": "opening hours",
+    "location_directions": "where something is",
+    "staff_lookup": "contacting a staff member",
+    "subject_librarian": "finding my subject librarian",
+    "circulation_basic": "borrowing and checkouts",
+    "renewal": "renewing an item",
+    "loan_policy": "loan periods and fines",
+    "account": "my library account",
+    "interlibrary_loan": "requesting from another library",
+    "course_reserves": "course reserves",
+    "find_resource": "finding a book or article",
+    "room_booking": "booking a study room",
+    "space_info": "study spaces and facilities",
+    "makerspace_3d": "the MakerSpace and 3D printing",
+    "printing_wifi": "printing and WiFi",
+    "tech_checkout": "borrowing equipment",
+    "software_access": "software on library computers",
+    "adobe_access": "Adobe software",
+    "av_production": "recording and media studios",
+    "databases": "which database to use",
+    "citation_help": "citations and citation managers",
+    "research_consultation": "meeting a librarian about my research",
+    "data_services": "data, GIS and statistics help",
+    "digital_collections": "digital collections",
+    "special_collections": "special collections and archives",
+    "newspapers": "newspapers",
+    "remote_access": "getting in from off campus",
+    "copyright_permissions": "copyright and permissions",
+    "scholarly_publishing": "publishing and open access",
+    "events_news": "events and news",
+    "instruction_request": "a library session for my class",
+    "accessibility_services": "accessibility and accommodations",
+    "library_employment": "jobs at the libraries",
+    "website_feedback": "reporting a website problem",
+    "service_howto": "how to use a service",
+    "cross_campus_comparison": "how the campuses differ",
+    "human_handoff": "talking to a librarian",
+}
+
+
+def _intent_choice_label(intent: str) -> str:
+    """Patron-readable name for an intent, falling back to the prettified id
+    so a newly added intent degrades to today's behaviour rather than a
+    KeyError."""
+    return _INTENT_CHOICE_LABELS.get(intent, intent.replace("_", " "))
+
+
 def _clarify_response(
     classification: Classification,
     scope: Scope,
@@ -5021,7 +5075,7 @@ def _clarify_response(
             "I'm not sure which of these you meant. Can you pick one?"
             + "\n\nOptions: "
             + ", ".join(
-                opt["intent"].replace("_", " ") for opt in top_two
+                _intent_choice_label(opt["intent"]) for opt in top_two
             )
         ),
         is_refusal=False,
