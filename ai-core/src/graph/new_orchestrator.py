@@ -278,6 +278,29 @@ def _run_turn(
         bind_request_context(intent="subject_librarian",
                              margin=classification.margin)
 
+    # --- 2.025. "Do you have <title>?" rescued from out_of_scope ---
+    # A bare title carries no library vocabulary, so the stateless kNN can
+    # send an ownership question anywhere. Simulating ten students on
+    # 2026-07-30, "Do you have a copy of Braiding Sweetgrass?" routed to
+    # find_resource and got the right Primo + Interlibrary Loan answer, while
+    # "do u have braiding sweetgrass" was classified OUT OF SCOPE -- the bot
+    # told a student that asking whether the library has a book is outside
+    # what a library chatbot covers.
+    #
+    # Only out_of_scope is overridden, and only to hand the turn to the
+    # find_resource path that already answers this well (step 2.05). Turns
+    # the classifier routed somewhere sensible are left alone.
+    if (
+        not booking_flow
+        and classification.intent == "out_of_scope"
+        and _looks_like_item_request(request.user_message)
+    ):
+        classification = _dc_replace(
+            classification, intent="find_resource", needs_clarification=False,
+        )
+        bind_request_context(intent="find_resource",
+                             margin=classification.margin)
+
     # --- 2.03. Contact-a-person-by-name override ---
     # See _looks_like_person_name: the by-name lookup works, but the
     # classifier only routed to it for names it had memorised.
@@ -1614,6 +1637,27 @@ _MS_3D_RE = re.compile(
     r"\b3-?d\s*(model|file)|\bg-?code\b|\bresin print",
     re.IGNORECASE,
 )
+# WHEN IS IT OPEN wins over WHAT IS IN IT.
+#
+# docs/STUDENT-TEST-2026-07.md logged this as a known rough edge and worded
+# its Q1 around it: mention 3D printing and hours together and the bot
+# answers the 3D printing. Simulating ten students on 2026-07-30 walked
+# straight back into it, because naming the machine you came for is how
+# people ask -- "I'm free Saturday and wanted to use the 3D printer, is the
+# MakerSpace open?" and "I'm working on a project that needs a laser cutter
+# ... will the MakerSpace be open this Saturday?" both lost the hours. That
+# was 2 of the 3 Q1 failures.
+#
+# An explicit open/closed/hours question is unambiguous about what the
+# patron wants, so both MakerSpace short-circuits defer to the hours path
+# when it is present. The equipment or 3D question without an hours question
+# is unaffected.
+_MS_HOURS_Q_RE = re.compile(
+    r"\b(open|opening|closed?|closing|hours?)\b"
+    r"|\bwhat\s+time\b"
+    r"|\bhow\s+late\b",
+    re.IGNORECASE,
+)
 _MS_USE_RE = re.compile(
     r"\b(can i|could i|i (need|want|'?d like|wanna)|how (do|can|to)|where|"
     r"do you have|is there|are there|available|access|use|using|book|reserve|"
@@ -1642,6 +1686,10 @@ def _makerspace_3d_answer(message: str, scope: "Scope") -> "Optional[tuple[str, 
     is_3d = bool(_MS_3D_RE.search(m))
     is_ms = bool(_MAKERSPACE_RE.search(m))
     if not (is_3d or (is_ms and names_king)):
+        return None
+    # An hours question about the MakerSpace is an HOURS question, whichever
+    # machine the patron mentioned wanting to use (see _MS_HOURS_Q_RE).
+    if is_ms and _MS_HOURS_Q_RE.search(m):
         return None
     if is_ms and not is_3d and not _MS_USE_RE.search(m):
         return None
@@ -2402,17 +2450,35 @@ _APPT_EXCLUDE_RE = re.compile(
 # was pointed at the same unrelated person (found live 2026-07-27,
 # operator-reported). The roster leak itself is now blocked in
 # real_backends.lookup(); this is the answer-side half: ask, don't guess.
+# `who\s+(is|'s)` required whitespace before the apostrophe, so "who's my
+# subject librarian" -- no space -- did not match, while "who is my subject
+# librarian" did. Simulating ten students on 2026-07-30, this regex fired for
+# only 3 of their 10 phrasings; the rest reached the agent, and the follow-up
+# then broke because the continuation marker was missing. _awaiting_subject is
+# now robust to that on its own, but the deterministic reply is still the
+# better answer, so the trigger is widened to the shapes students actually
+# type: the contraction, the inverted "who my librarian is", and the bare
+# noun phrase ("my subject librarian", "subject librarian for me").
 _MY_LIBRARIAN_RE = re.compile(
-    r"\b(who\s+(is|'s)\s+my"
+    r"\b(who(\s+is|\s*'s)\s+my"
+    r"|who\s+my\b[^.?!]{0,24}\blibrarian\s+is"
     r"|do\s+i\s+have\s+an?"
     r"|can\s+i\s+(talk|speak|meet)\s+(to|with)\s+my"
     r"|how\s+(do|can)\s+i\s+(find|reach|contact|get)\s+(a\s+hold\s+of\s+)?my)"
-    r"\s*(personal|own|assigned|subject|liaison)?\s*librarian\b",
+    r"\s*(personal|own|assigned|subject|liaison)?\s*librarian\b"
+    # Bare noun phrase with no interrogative: "my subject librarian",
+    # "subject librarian for me?", "Subject librarian -- who's mine?".
+    r"|\bmy\s+(subject|liaison)\s+librarian\b"
+    r"|\b(subject|liaison)\s+librarian\s+(for\s+me|who'?s\s+mine)\b",
     re.IGNORECASE,
 )
 # A subject/course named anywhere means we can look it up -- don't ask.
 _SUBJECT_NAMED_RE = re.compile(
-    r"\b(for|in|about|studying|majoring\s+in|major\s+in|department\s+of)\s+\w"
+    # NOT a pronoun: "a subject librarian for me?" names no subject, but
+    # `for\s+\w` matched "for m" and suppressed the ask-which-subject reply
+    # (found simulating students 2026-07-30). Same for "about it", "in my".
+    r"\b(for|in|about|studying|majoring\s+in|major\s+in|department\s+of)\s+"
+    r"(?!me\b|us\b|myself\b|it\b|this\b|that\b|them\b|my\b|our\b)\w"
     # First-person "I study X" / "my major is X". Deliberately anchored to
     # a pronoun: a bare `study\s+\w` would swallow "I need a study room"
     # and "where can I study", which are not subject asks. Without this,
@@ -2509,6 +2575,8 @@ def _makerspace_equipment_answer(message: str) -> "Optional[tuple[str, list[dict
         return None
     if _MS_3D_RE.search(m):  # 3D questions -> the 2.10 short-circuit
         return None
+    if _MS_HOURS_Q_RE.search(m):  # "open Saturday?" -> the hours path
+        return None
     if not _MS_EQUIP_Q_RE.search(m):
         return None
     return (
@@ -2536,6 +2604,72 @@ _GOV_DOCS_RE = re.compile(
     r"|\bgov\s?docs\b",
     re.IGNORECASE,
 )
+
+
+_PRIMO_SEARCH_URL = (
+    "https://ohiolink-mu.primo.exlibrisgroup.com/discovery/search"
+    "?vid=01OHIOLINK_MU:MU"
+)
+
+# "Do you have <title>?" -- an ownership question, not a catalog SEARCH the
+# bot is asked to run, so capability_scope deliberately lets it through to the
+# agent (catalog_search is gated behind an action signal). That works when the
+# classifier routes it sensibly. It does not always: simulating ten students on
+# 2026-07-30, "Do you have a copy of Braiding Sweetgrass?" answered well, but
+# "do u have braiding sweetgrass" was classified OUT OF SCOPE and the student
+# was told a book request is outside a library chatbot's remit. A bare title
+# carries no library vocabulary for a stateless classifier to hold on to.
+#
+# So catch the QUESTION SHAPE deterministically and hand off to Primo. Shapes
+# taken from the ten simulated phrasings: `u` for you, `hav` for have, "happen
+# to have", "in your collection", "got it?", and the unidiomatic "you are
+# having it?". No title noun is required -- we cannot know that a phrase is a
+# title, and the shape is the signal.
+_CATALOG_HAVE_RE = re.compile(
+    r"\bdo(es)?\s+(you|u|ya|the\s+librar\w+|miami)\s+"
+    r"(have|has|hav|ave|own|carry|stock)\b"
+    r"|\bdo\s+(you|u)\s+happen\s+to\s+have\b"
+    r"|\bin\s+(your|the)\s+(collection|catalog|holdings)\b"
+    r"|\byou\s+(are\s+)?hav(e|ing)\s+it\b"
+    r"|\b(got|have)\s+it\s*\?"
+    r"|\b(available|owned)\s+(at|by)\s+(the\s+)?librar\w+\b",
+    re.IGNORECASE,
+)
+# These have their own better answers and must not be swallowed: databases and
+# newspapers are subscription questions, equipment is a lending question, and
+# a room is a room. All were verified to fall through on 2026-07-30.
+_CATALOG_HAVE_EXCLUDE_RE = re.compile(
+    # Plurals matter here: `printer\b` does not match "printers", which let
+    # "do you have printers?" through to the catalogue handoff. Every noun in
+    # this list is written to match its plural.
+    r"\b(databases?|nyt|new york times|wall street journal|newspapers?"
+    r"|microfilms?|journal\s+subscriptions?|laptops?|chargers?|calculators?"
+    r"|cameras?|equipment|rooms?|spaces?|printers?|printing|3d\s*print\w*"
+    r"|makerspace|maker\s+space|hours?|open|clos\w+"
+    # Food/drink is a building-amenity question, and the scope deflection it
+    # currently gets is the right answer.
+    r"|coffee|cafe|café|food|drinks?|vending|microwave"
+    # "books in Chinese", "anything in Spanish" -- a collection-language
+    # question deserves the agent's fuller answer, not a title handoff.
+    r"|in\s+(chinese|spanish|french|german|japanese|korean|arabic|russian"
+    r"|portuguese|italian|hindi)\b"
+    r")\b",
+    re.IGNORECASE,
+)
+
+
+def _looks_like_item_request(message: str) -> bool:
+    """True when the message asks whether the library HAS a specific item.
+
+    Used only to rescue a misrouted turn, never to answer one: the
+    `find_resource` intent already has a Primo + Interlibrary Loan handoff at
+    step 2.05, and it is a better answer than anything this module would
+    compose. The bug was purely that these phrasings never reached it.
+    """
+    m = message or ""
+    if not _CATALOG_HAVE_RE.search(m):
+        return False
+    return not _CATALOG_HAVE_EXCLUDE_RE.search(m)
 
 
 def _fee_policy_answer(message: str) -> "Optional[tuple[str, list[dict]]]":
@@ -2719,6 +2853,30 @@ _MYACCOUNT_URL = (
     "https://ohiolink-mu.primo.exlibrisgroup.com/discovery/account"
     "?vid=01OHIOLINK_MU:MU&section=overview&lang=en"
 )
+# "How long can I keep a book?" is the OTHER half of the acceptance test's Q8
+# ("How long can I keep a book, and can I renew it if I'm a grad student?").
+# The renewal answer used to reply only about renewal PATHS -- Miami vs
+# OhioLINK/ILL -- and never said the loan period varies by borrower, which is
+# exactly what the Q8 rubric requires. Simulating ten students on 2026-07-30
+# it failed for every phrasing that reached it.
+#
+# It also needs its own trigger, because several natural phrasings carry no
+# renewal verb the old regex could see: "Loan period + grad renewal policy?",
+# "loan period renewal grad", "Book loan length, and grad student renewals?",
+# and "How many days I can keep the book?" all missed _RENEW_HOWTO_RE (its
+# `[^.?!]*` cannot span the '?' in a two-sentence question).
+#
+# Figures are quoted because the policy page states them -- undergraduate
+# 6 weeks, graduate 1 semester, faculty 1 year, other patrons 6 weeks, read
+# from the live page 2026-07-30 -- and the page stays the cited authority so
+# a reader can check a number that has since changed.
+_LOAN_PERIOD_RE = re.compile(
+    r"\bhow\s+long\b[^.?!]*\b(keep|borrow|check\s*out|have|hold)\b"
+    r"|\bhow\s+many\s+(days?|weeks?)\b[^.?!]*\b(keep|borrow|check\s*out|have)\b"
+    r"|\bloan\s+(period|length|time)\b"
+    r"|\b(book|item|material)s?\s+due\s+(back|in)\b",
+    re.IGNORECASE,
+)
 _RENEW_HOWTO_RE = re.compile(
     r"\b(can|how\s+(do|can|to)|where\s+(do|can))\b[^.?!]*\brenew\b"
     r"|\brenew\b[^.?!]*\b(online|books?|items?|loans?|materials?)\b"
@@ -2739,16 +2897,21 @@ _RENEW_ACTOR_RE = re.compile(
 
 def _renewal_paths_answer(message: str) -> "Optional[tuple[str, list[dict]]]":
     m = message or ""
-    if not _RENEW_HOWTO_RE.search(m) or _RENEW_ACTOR_RE.search(m):
+    if not (_RENEW_HOWTO_RE.search(m) or _LOAN_PERIOD_RE.search(m)):
+        return None
+    if _RENEW_ACTOR_RE.search(m):
         return None
     return (
-        "Yes -- but renewal works differently depending on where the item "
-        "came from. For Miami materials, renewal limits and loan periods "
-        "are on the circulation policies page [1]. For OhioLINK and "
-        "interlibrary loan items, see the OhioLINK & ILL loan periods "
-        "page [2]. In both cases you renew by signing in to your library "
-        "account (MyAccount) [3]. If you've reached the renewal limit, "
-        "contact the circulation desk at (513) 529-4141.",
+        "How long depends on who you are. Per the circulation policy, Miami "
+        "books circulate for 6 weeks to undergraduates, a semester to "
+        "graduate students, a year to faculty, and 6 weeks to other patrons "
+        "[1]. Renewal then works differently depending on where the item "
+        "came from: for Miami materials the renewal limits are on that same "
+        "page [1], and for OhioLINK and interlibrary loan items see the "
+        "OhioLINK & ILL loan periods page [2]. Either way you renew by "
+        "signing in to your library account (MyAccount) [3]. If you've "
+        "reached the renewal limit, contact the circulation desk at "
+        "(513) 529-4141.",
         [
             {"n": 1, "url": _LOAN_FINES_URL,
              "snippet": "Miami University Libraries — loan periods & fines"},
@@ -3914,6 +4077,24 @@ _ASK_SUBJECT_MARKER = "Tell me your subject, major, or course"
 previous assistant turn contains it, this turn is the patron naming
 their subject."""
 
+# The SYNTHESIZER also asks which subject, in its own words, whenever the
+# deterministic reply above didn't fire -- e.g. "Which subject or department
+# are you asking about?". Ten simulated students on 2026-07-30 showed why
+# that matters: the deterministic reply fired for only 3 of their 10
+# phrasings, and for the other 7 the follow-up died. Anchoring the
+# continuation on ONE exact sentence meant the bot asked a question and then
+# told the patron their answer was out of scope.
+#
+# Matching on the interrogative + a subject noun is safe: an assistant turn
+# containing "which subject" is asking which subject, whoever composed it.
+_ASK_SUBJECT_RE = re.compile(
+    r"\b(which|what)\s+(subject|major|department|field|discipline|area)\b"
+    r"|\bsubject\s+or\s+department\b"
+    r"|\btell me your subject\b"
+    r"|\b(subject|major|course)\s+(are|is)\s+(you|this)\b",
+    re.IGNORECASE,
+)
+
 
 def _awaiting_subject(history: Optional[list]) -> bool:
     """True when the last assistant turn asked WHICH subject.
@@ -3924,11 +4105,16 @@ def _awaiting_subject(history: Optional[list]) -> bool:
     gets a scope refusal one turn after we asked them to name a subject
     (live repro 2026-07-27 -- "Biology" happened to classify correctly,
     which is why the flow looked fine when it shipped). Same shape as
-    _booking_flow_active: our own byte-stable text is the state.
+    _booking_flow_active: our own text is the state -- but the text may be
+    the synthesizer's wording, not only our canned sentence, so match the
+    QUESTION rather than one byte-stable string (see _ASK_SUBJECT_RE).
     """
     for entry in reversed(history or []):
         if isinstance(entry, dict) and entry.get("role") == "assistant":
-            return _ASK_SUBJECT_MARKER in str(entry.get("content") or "")
+            content = str(entry.get("content") or "")
+            return bool(
+                _ASK_SUBJECT_MARKER in content or _ASK_SUBJECT_RE.search(content)
+            )
     return False
 
 

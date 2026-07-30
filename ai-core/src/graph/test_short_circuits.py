@@ -251,6 +251,140 @@ def test_cancel_does_not_overfire():
         assert _cancel_reservation_answer(q) is None, q
 
 
+#
+# The three tests below come from simulating ten students against the
+# acceptance sheet on 2026-07-30. Each student read the question and typed it
+# their own way, which is what will happen in the room; every failure here was
+# a phrasing the code had simply never seen.
+#
+
+def test_ask_which_subject_survives_the_students_phrasings() -> None:
+    """The ask-which-subject flow must not depend on one exact sentence.
+
+    `who\\s+(is|'s)` required a space before the apostrophe, so "who's my
+    subject librarian" missed the deterministic reply while "who is my subject
+    librarian" hit it -- 3 of 10 student phrasings reached it. That alone was
+    survivable; what was not is that the CONTINUATION keyed off a byte-stable
+    substring of that same reply. When the synthesizer asked the question in
+    its own words instead ("Which subject or department are you asking
+    about?"), the follow-up turn no longer counted as naming a subject, and a
+    bare "marketing" came back as OUT OF SCOPE. The bot asked a question and
+    then told the student their answer was off-topic.
+    """
+    from src.graph.new_orchestrator import (
+        _awaiting_subject,
+        _my_librarian_ask_subject,
+    )
+
+    # Contraction, inverted word order and the bare noun phrase all reach the
+    # deterministic reply now.
+    for q in ("Who is my subject librarian?",
+              "who's my subject librarian",
+              "New transfer student — who's my subject librarian?",
+              "Hello, I'd like to find out who my subject librarian is.",
+              "my subject librarian",
+              "Subject librarian for me?",
+              "Please tell me who is my subject librarian."):
+        assert _my_librarian_ask_subject(q) is not None, q
+
+    # A named subject still skips the ask -- we can just look it up.
+    for q in ("who is my librarian for Biology?",
+              "I study Engineering Technology, who is my librarian?",
+              "who is my librarian for PSY 201"):
+        assert _my_librarian_ask_subject(q) is None, q
+
+    # The continuation recognises the question however it was worded.
+    for asked in ("... Tell me your subject, major, or course (for example "
+                  "\"Biology\") and I'll look it up.",
+                  "Which subject or department are you asking about?",
+                  "What subject are you studying?",
+                  "Which major is this for?"):
+        assert _awaiting_subject([{"role": "assistant", "content": asked}]), asked
+
+    # ...and does not fire on turns that are not asking.
+    for other in ("Your subject librarian is Ginny Boehme (boehmemv@miamioh.edu).",
+                  "King Library closes today at 9:00pm.",
+                  "The MakerSpace is closed this Saturday."):
+        assert not _awaiting_subject([{"role": "assistant", "content": other}]), other
+
+
+def test_loan_period_answer_states_the_user_type_split() -> None:
+    """Q8 asks two things; the answer used to address only one.
+
+    "How long can I keep a book, and can I renew it if I'm a grad student?"
+    got a renewal answer split by item SOURCE (Miami vs OhioLINK/ILL) that
+    never mentioned the borrower, while the rubric requires the loan period
+    "depends on user type". It failed for all ten phrasings. Several of those
+    phrasings also carried no renewal verb the old trigger could see -- its
+    `[^.?!]*` cannot span the '?' in a two-sentence question.
+
+    Figures are the policy page's own (undergraduate 6 weeks, graduate 1
+    semester, faculty 1 year, other patrons 6 weeks), read from the live page
+    on 2026-07-30, with the page cited so a changed number is checkable.
+    """
+    from src.graph.new_orchestrator import _renewal_paths_answer
+
+    for q in ("How long can I keep a book, and can I renew it if I'm a grad "
+              "student?",
+              "how long can i keep books, can grad students renew",
+              "Loan period + grad renewal policy?",
+              "loan period renewal grad",
+              "Book loan length, and grad student renewals?",
+              "How many days I can keep the book? And for graduate student, "
+              "renew is possible?",
+              "How long can I check out a book?"):
+        res = _renewal_paths_answer(q)
+        assert res is not None, q
+        answer = res[0].lower()
+        assert "undergraduate" in answer and "graduate" in answer, q
+        assert "faculty" in answer, q
+        assert "myaccount" in answer or "library account" in answer, q
+
+    # "Renew it FOR me" is an action the bot must refuse, not a policy answer.
+    for q in ("renew my book for me", "please renew it for me"):
+        assert _renewal_paths_answer(q) is None, q
+
+
+def test_item_request_is_never_out_of_scope() -> None:
+    """"do u have braiding sweetgrass" was answered as off-topic.
+
+    The full sentence routed to find_resource and got the right Primo +
+    Interlibrary Loan handoff; the abbreviated one classified as out_of_scope,
+    so the student was told that asking whether the library has a book is
+    outside a library chatbot's remit.
+
+    This only rescues the ROUTING -- find_resource's existing answer is better
+    than a second handoff written here, which is why an earlier attempt at a
+    parallel short-circuit was dropped (it preempted `point_to_url` and broke
+    test_find_resource_intent_short_circuits_to_primo).
+    """
+    from src.graph.new_orchestrator import _looks_like_item_request
+
+    for q in ("Do you have a copy of Braiding Sweetgrass?",
+              "do u have braiding sweetgrass",
+              "do you hav braiding sweetgras",
+              "Braiding Sweetgrass — in your collection?",
+              "I was hoping to borrow Braiding Sweetgrass. Do you happen to "
+              "have a copy?",
+              "The book Braiding Sweetgrass, you are having it?",
+              "Trying to read Braiding Sweetgrass for a book club. Got it?",
+              "Braiding Sweetgrass — do you have it?"):
+        assert _looks_like_item_request(q), q
+
+    # Not item requests: these have their own, better answers. Note the
+    # plurals -- `printer\b` did not match "printers", which is how "do you
+    # have printers?" first got swallowed.
+    for q in ("do you have printers?",
+              "Do you have NYT access?",
+              "Do you have study rooms with whiteboards?",
+              "do you have free coffee?",
+              "Do you have microfilm of old Ohio newspapers?",
+              "Do you have books in Chinese language?",
+              "makerspace open saturday?",
+              "braiding sweetgrass"):
+        assert not _looks_like_item_request(q), q
+
+
 def test_fee_policy_question_answers_instead_of_refusing() -> None:
     """"How much are late fees?" hard-refused live on 2026-07-30.
 
