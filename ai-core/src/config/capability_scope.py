@@ -481,7 +481,10 @@ def get_ill_response(user_message: str) -> str:
 
 POLICY_URLS = {
     "loan_periods": {
-        "url": "https://libguides.lib.miamioh.edu/circulation-policies/loan-periods-fines",
+        # `mul-` prefix: both guides are live with the same content, but this
+        # is the maintained copy (Last Updated 2026-06-25 vs 2026-02-04) and
+        # the one all 23 circulation-policy gold cases cite. Fixed 2026-07-30.
+        "url": "https://libguides.lib.miamioh.edu/mul-circulation-policies/loan-periods-fines",
         "description": "Loan periods and fines for different patron types",
         "patterns": [
             r'\b(how\s*long|loan\s*period|checkout\s*period|borrow\s*period)\b',
@@ -496,7 +499,7 @@ POLICY_URLS = {
         ],
     },
     "circulation_policies": {
-        "url": "https://libguides.lib.miamioh.edu/circulation-policies",
+        "url": "https://libguides.lib.miamioh.edu/mul-circulation-policies",
         "description": "General circulation policies",
         "patterns": [
             r'\bcirculation\s*(policy|policies)\b',

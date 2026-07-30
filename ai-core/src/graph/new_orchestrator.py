@@ -605,6 +605,7 @@ def _run_turn(
             ("course_reserves", _course_reserves_answer),
             ("digital_exhibits", _digital_exhibits_answer),
             ("gov_docs", _gov_docs_answer),
+            ("fee_policy", _fee_policy_answer),
         ):
             _res = _fn(request.user_message)
             if _res is not None:
@@ -2281,8 +2282,52 @@ def _locker_answer(message: str) -> "Optional[tuple[str, list[dict]]]":
 
 # Case #40: there is NO alumni library card (operator-critical note).
 # The bot must not invent one; point to the circulation policies page.
+#
+# `mul-circulation-policies`, not `circulation-policies`. BOTH are live
+# LibGuides with the same fines content, but the `mul-` one is the
+# maintained copy (Last Updated 2026-06-25 vs 2026-02-04) and it is the URL
+# all 23 circulation-policy gold cases cite. Checked 2026-07-30.
 _LOAN_FINES_URL = (
-    "https://libguides.lib.miamioh.edu/circulation-policies/loan-periods-fines"
+    "https://libguides.lib.miamioh.edu/mul-circulation-policies/"
+    "loan-periods-fines"
+)
+
+# "How much are late fees?" hard-refused live on 2026-07-30 ("I don't have a
+# reliable answer to that"), and so did the gold question verbatim -- gold
+# `loan_late_fees` expects expected_outcome=answer, so that case was failing.
+#
+# Cause: the only chunks indexed for the circulation-policy URLs are the
+# operator-verified gold annotations; the PAGES themselves were never crawled
+# (they entered LIBGUIDE_SEED on 2026-05-17, after the 2026-05-14 index was
+# built). So the synthesizer's only evidence was the rubric line "Quote fee
+# policy ONLY if the page states one; otherwise refuse to estimate" -- and it
+# obeyed the word "refuse" literally, with no page text to answer from.
+#
+# There is a mechanism for exactly this already: capability_scope.POLICY_URLS
+# carries a fines pattern and an authoritative URL. It is DEAD CODE -- nothing
+# outside capability_scope.py calls check_policy_question / policy_response --
+# and wiring it the night before student testing would also hand it "how long
+# can I check out a book?", which the agent answers well today. So this stays
+# narrow and matches the 2.15 pointer style around it.
+#
+# Amount policy, per the operator rule: the page DOES state replacement costs
+# ($70 per book, $2,000 per laptop) but states no per-day overdue rate, so
+# this answer names no figure and sends the reader to the page for current
+# amounts. That also keeps the answer from going stale when the numbers change.
+_FEE_POLICY_RE = re.compile(
+    r"\b(overdue|late)\s+(fees?|fines?|charges?)\b"
+    r"|\bfines?\s+(polic\w+|amounts?|rates?)\b"
+    r"|\b(what|how\s+much)\b[^.?!]*\b(fines?|late\s+fees?)\b",
+    re.IGNORECASE,
+)
+# Personal-account and payment asks are NOT policy questions: "check my
+# fines" and "pay my fine" have their own correct answers (the Primo account
+# pointer, and the capability_scope payment refusal at step 2.4 which runs
+# AFTER this block). This must not swallow them.
+_FEE_ACCOUNT_RE = re.compile(
+    r"\bmy\b|\bi\s+owe\b|\bowe\b|\bbalance\b|\baccount\b"
+    r"|\b(pay|paying|payment)\b|\bcheck\b",
+    re.IGNORECASE,
 )
 _ALUMNI_RE = re.compile(r"\b(alumni|alumnus|alumna|alum|graduated)\b", re.IGNORECASE)
 _ALUMNI_BORROW_RE = re.compile(
@@ -2491,6 +2536,32 @@ _GOV_DOCS_RE = re.compile(
     r"|\bgov\s?docs\b",
     re.IGNORECASE,
 )
+
+
+def _fee_policy_answer(message: str) -> "Optional[tuple[str, list[dict]]]":
+    """Overdue-fine / late-fee POLICY questions -> the maintained policy page.
+
+    Names no figure: the page states replacement costs but no per-day overdue
+    rate, and the operator rule is to quote an amount only where the page
+    states one. Personal-balance and payment asks fall through to their own
+    paths (see _FEE_ACCOUNT_RE).
+    """
+    m = message or ""
+    if not _FEE_POLICY_RE.search(m):
+        return None
+    if _FEE_ACCOUNT_RE.search(m):
+        return None
+    return (
+        "Overdue fines and replacement charges are set by Miami's "
+        "circulation policy. The Loan Periods, Fines and Charges page lists "
+        "the current amounts, including replacement costs for lost items "
+        "[1] -- I'd rather point you there than quote a figure that may have "
+        "changed. For what a specific item would cost you, the circulation "
+        "desk at the library you borrowed from can tell you exactly.",
+        [{"n": 1, "url": _LOAN_FINES_URL,
+          "snippet": "Miami University Libraries — Loan Periods, Fines and "
+                     "Charges (Miami University items)"}],
+    )
 
 
 def _gov_docs_answer(message: str) -> "Optional[tuple[str, list[dict]]]":

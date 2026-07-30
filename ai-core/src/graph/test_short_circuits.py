@@ -251,6 +251,63 @@ def test_cancel_does_not_overfire():
         assert _cancel_reservation_answer(q) is None, q
 
 
+def test_fee_policy_question_answers_instead_of_refusing() -> None:
+    """"How much are late fees?" hard-refused live on 2026-07-30.
+
+    The gold question verbatim ("Are there late fees if I return a book
+    overdue?", case `loan_late_fees`, expected_outcome=answer) refused too, so
+    that case was failing against its own rubric. The synthesizer's only
+    evidence was the rubric line itself -- gold expected_answers are indexed as
+    retrievable chunks and the policy PAGES are not in the corpus -- and the
+    line said "otherwise refuse to estimate", which it obeyed literally.
+
+    Personal-balance and payment asks must still reach their own paths: those
+    have correct answers already (the Primo account pointer, and the
+    capability_scope payment refusal at step 2.4, which runs AFTER this one).
+    """
+    import re
+
+    from src.graph.new_orchestrator import _fee_policy_answer
+
+    for q in ("How much are late fees?",
+              "Are there late fees if I return a book overdue?",
+              "What are the overdue fines?",
+              "what is the fine policy?",
+              "How much is the late fee for a book?"):
+        res = _fee_policy_answer(q)
+        assert res is not None, q
+        answer, cites = res
+        assert "mul-circulation-policies/loan-periods-fines" in cites[0]["url"], q
+        # No invented figure: the page states replacement costs but no
+        # per-day overdue rate, so the answer must name neither.
+        assert "$" not in answer, q
+        assert not re.search(r"\b\d+\s*(cents?|dollars?)\b", answer), q
+        assert "per day" not in answer.lower(), q
+
+    for q in ("Can you check my fines?", "Pay my library fine.",
+              "Can I pay my library fines through the chatbot?",
+              "How much do I owe for a late book?", "what's my balance?",
+              "How long can I check out a book?", "When is my book due?"):
+        assert _fee_policy_answer(q) is None, q
+
+
+def test_circulation_policy_urls_use_the_maintained_guide() -> None:
+    """Cite `mul-circulation-policies`, not the frozen duplicate.
+
+    Both guides are live with the same fines content, but `mul-` was last
+    updated 2026-06-25 against 2026-02-04, and it is the URL all 23
+    circulation-policy gold cases cite. Three code sites pointed at the stale
+    copy until 2026-07-30.
+    """
+    from src.config.capability_scope import POLICY_URLS
+    from src.graph.new_orchestrator import _LOAN_FINES_URL
+
+    assert "/mul-circulation-policies/" in _LOAN_FINES_URL
+    for key in ("loan_periods", "circulation_policies"):
+        url = POLICY_URLS[key]["url"]
+        assert "/mul-circulation-policies" in url, (key, url)
+
+
 def test_undated_availability_question_is_deterministic() -> None:
     """"What's available?" with no time must not be a coin flip.
 
