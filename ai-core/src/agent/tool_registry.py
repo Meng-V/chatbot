@@ -22,8 +22,11 @@ tool list (search_kb, lookup_librarian, get_hours, etc.).
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass, field
 from typing import Any, Callable, Optional
+
+logger = logging.getLogger(__name__)
 
 
 # --- Public types ---------------------------------------------------------
@@ -287,10 +290,36 @@ class ToolRegistry:
                 error=f"Unknown tool: {call.name!r}",
             )
 
+        def _trace(outcome: str, latency_s: float, detail: str = "") -> None:
+            # WHICH tool the agent chose, in the text log.
+            #
+            # Prometheus counters above aggregate; they cannot tell you what
+            # happened in ONE turn. On 2026-07-30 a room question refused on
+            # 3 of 5 identical asks and the log showed only "completion_with_tools
+            # -> ok" either way, so there was no way to see whether the agent
+            # had called book_room, called something else, or called nothing.
+            # Tool choice is the agent's main decision; it belongs in the log.
+            #
+            # `arguments` are keys-only -- a booking call carries a patron's
+            # name and email, and this log is not the place for them.
+            try:
+                logger.info(
+                    "tool %s -> %s in %dms (args: %s)%s",
+                    call.name, outcome, int(latency_s * 1000),
+                    ",".join(sorted((call.arguments or {}).keys())) or "none",
+                    f" {detail}" if detail else "",
+                )
+            except Exception:  # pragma: no cover -- logging must never break a turn
+                pass
+
         start = time.monotonic()
         try:
             data = tool.handler(call.arguments)
             _meter("ok", time.monotonic() - start)
+            _empty = not data or (isinstance(data, dict) and not any(data.values()))
+            # "ok but empty" is the case the agent is told to fall back from,
+            # so it needs to be distinguishable from a useful result.
+            _trace("empty" if _empty else "ok", time.monotonic() - start)
             return ToolResult(
                 call_id=call.id,
                 name=call.name,
@@ -299,6 +328,7 @@ class ToolRegistry:
             )
         except ToolError as e:
             _meter("error", time.monotonic() - start)
+            _trace("error", time.monotonic() - start, detail=f"-- {e.message[:160]}")
             return ToolResult(
                 call_id=call.id,
                 name=call.name,

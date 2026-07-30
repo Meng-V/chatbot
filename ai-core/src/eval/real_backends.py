@@ -959,11 +959,41 @@ def _make_get_room_availability() -> Callable[[dict], list]:
                 f"({e}). The bot should say live availability is "
                 f"unavailable, not guess."
             ) from e
+        # A FAILURE MUST NOT BE PACKAGED AS DATA.
+        #
+        # This used to wrap whatever came back -- including the tool's own
+        # "Missing required parameters: date, start_time, end_time" -- as a
+        # single slot. The handler above then returned {"slots": [it],
+        # "count": 1}, so a tool that could not run looked to the agent like
+        # one useful result. The agent stopped calling tools, the synthesizer
+        # got an error string as its only evidence, and the turn ended in
+        # "I don't have a reliable answer to that."
+        #
+        # Live on 2026-07-30 that made "I need a group study room for 6
+        # people -- what's available?" refuse on 3 of 5 identical asks: the
+        # agent picks book_room (works) or get_room_availability (this path)
+        # depending on the roll, and only one of them could answer.
+        #
+        # `success` is safe to branch on because the legacy tool distinguishes
+        # the two cases properly: it returns success=TRUE with "No rooms
+        # available at ..." when it ran and found nothing, and success=False
+        # only when it could not run at all (missing or unparseable date /
+        # start_time / end_time). So this raises on "could not run" and never
+        # on a legitimately empty result.
+        if not res.get("success"):
+            raise ToolError(
+                f"get_room_availability could not run: "
+                f"{res.get('text') or 'no reason given'} "
+                f"This tool needs date, start_time and end_time. For a "
+                f"booking request, or an availability question with no "
+                f"specific time, use book_room instead."
+            )
         # Handler does len() on this -> always a list. The legacy tool
-        # returns one formatted block; wrap it as a single "slot" the
-        # LLM narrates (incl. its own missing-params / no-rooms text).
+        # returns one formatted block; wrap it as a single "slot" the LLM
+        # narrates (incl. its own no-rooms-available text, which IS a real
+        # answer and arrives here with success=True).
         return [{
-            "success": bool(res.get("success")),
+            "success": True,
             "text": res.get("text", ""),
         }]
 

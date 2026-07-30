@@ -251,6 +251,117 @@ def test_cancel_does_not_overfire():
         assert _cancel_reservation_answer(q) is None, q
 
 
+def test_undated_availability_question_is_deterministic() -> None:
+    """"What's available?" with no time must not be a coin flip.
+
+    Live 2026-07-30, "I need a group study room for 6 people -- what's
+    available?" refused on 3 of 5 identical asks. Nothing was broken
+    intermittently: the question matched no deterministic path, so the
+    answer depended on which tool the model picked that turn --
+    book_room (slot collection, for someone who never asked to book) or
+    get_room_availability (cannot run with no time window -> no evidence
+    -> refusal).
+
+    An undated availability question now gets the reservation page's live
+    grid. The three shapes that must KEEP their old behaviour are pinned
+    too, since this widened a short-circuit that runs before the agent.
+    """
+    from src.graph.new_orchestrator import _room_availability_answer
+    from src.scope.resolver import Scope
+
+    scope = Scope(campus="oxford", library=None, source="test")
+
+    class _NoDeps:
+        tool_registry = None  # never dispatched: there is no time window
+
+    for q in ("I need a group study room for 6 people — what's available?",
+              "what group study rooms are available?",
+              "which rooms are free?"):
+        res = _room_availability_answer(q, scope, _NoDeps())
+        assert res is not None, q
+        assert "reservation page" in res[0].lower(), q
+        # It must NOT open the booking flow for a question.
+        assert "first name" not in res[0].lower(), q
+
+    # Existence questions keep the agent's evidence-based answer.
+    for q in ("are there study rooms at King?", "do you have study rooms?"):
+        assert _room_availability_answer(q, scope, _NoDeps()) is None, q
+    # A booking verb is a transaction -- 2.14 / book_room own it.
+    for q in ("Can I book a room at Wertz?", "I want to reserve a study room",
+              "cancel my room reservation"):
+        assert _room_availability_answer(q, scope, _NoDeps()) is None, q
+
+
+def test_availability_tool_reports_failure_as_failure() -> None:
+    """A tool that could not run must not return a result that looks fine.
+
+    The backend wrapped whatever the legacy LibCal tool returned -- including
+    its own "Missing required parameters: date, start_time, end_time" -- as a
+    single slot, and the registry handler reported {"count": 1}. So a tool
+    that had not run looked like one useful result: the agent stopped, the
+    synthesizer got an error string as its only evidence, and the turn
+    refused.
+
+    Branching on `success` is sound because the legacy tool separates the
+    cases: success=True with "No rooms available at ..." when it ran and
+    found nothing, success=False only when it could not run.
+    """
+    from src.agent.tool_registry import ToolError
+
+    calls = {}
+
+    def fake_tool_execute(**kwargs):
+        calls.update(kwargs)
+        return {"success": False,
+                "text": "Missing required parameters: date, start_time, "
+                        "end_time. Please provide these."}
+
+    import src.eval.real_backends as rb
+
+    orig = rb._bridge
+    rb._bridge = lambda coro: coro  # our fake returns a plain dict
+    try:
+        class _FakeTool:
+            def execute(self, **kw):
+                return fake_tool_execute(**kw)
+
+        handler = rb._make_get_room_availability.__wrapped__ \
+            if hasattr(rb._make_get_room_availability, "__wrapped__") else None
+        # Build the closure with the fake tool patched in.
+        import src.tools.libcal_comprehensive_tools as lct
+        orig_cls = lct.LibCalEnhancedAvailabilityTool
+        lct.LibCalEnhancedAvailabilityTool = _FakeTool
+        try:
+            fn = rb._make_get_room_availability()
+            raised = None
+            try:
+                fn({"library": "king", "date": "2026-07-31"})
+            except ToolError as e:
+                raised = e
+            assert raised is not None, (
+                "a tool that could not run must raise, not return data")
+            assert "could not run" in raised.message
+            assert "book_room" in raised.message, (
+                "the error should tell the agent what to do instead")
+
+            # ...and a genuine empty result is NOT an error.
+            class _EmptyOK:
+                def execute(self, **kw):
+                    return {"success": True,
+                            "text": "No rooms available at King for that time."}
+
+            lct.LibCalEnhancedAvailabilityTool = _EmptyOK
+            fn2 = rb._make_get_room_availability()
+            out = fn2({"library": "king", "date": "2026-07-31",
+                       "start_time": "09:00", "end_time": "10:00"})
+            assert out and out[0]["success"] is True
+            assert "No rooms available" in out[0]["text"]
+        finally:
+            lct.LibCalEnhancedAvailabilityTool = orig_cls
+    finally:
+        rb._bridge = orig
+
+
 def test_archivist_names_the_archivist_formally():
     """Operator rule 2026-07-28: the bot SPEAKS the formal name. The cited
     archives page calls her "Jacky"; we say "Jacqueline Johnson". Asking

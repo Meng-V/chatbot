@@ -2137,7 +2137,27 @@ def _room_availability_answer(
     slots = _extract_booking_slots([m])
     has_window = bool(slots.get("start_time") and slots.get("end_time"))
     if not has_window and not slots.get("date"):
-        return None  # undated existence/how-to question -- existing paths
+        # An undated EXISTENCE question ("are there study rooms at King?")
+        # still belongs to the agent's evidence-based answer / the 2.14
+        # pointer -- that was the original intent of returning None here.
+        if _ROOM_EXISTS_RE.search(m):
+            return None
+        # But an undated AVAILABILITY question -- "what group study rooms
+        # are available?", "I need a group study room for 6 people, what's
+        # available?" -- matched nothing deterministic and fell through to
+        # the agent, where the answer depended on which tool the model
+        # happened to pick that turn:
+        #   book_room               -> slot collection ("I still need your
+        #                              first name, last name, email...")
+        #                              for someone who never asked to book
+        #   get_room_availability   -> cannot run without a time window ->
+        #                              no evidence -> "I don't have a
+        #                              reliable answer to that."
+        # Measured live 2026-07-30: 3 refusals in 5 identical asks, and the
+        # non-refusals answered the wrong question. There IS a right answer
+        # for "what's available" with no time given -- the live grid on the
+        # reservation page, already composed at the end of this function --
+        # so fall through to it instead of rolling the dice.
     canon = _avail_canonical_library(m, scope)
     reserve_url, reserve_label = _AVAIL_RESERVE_PAGES[canon]
     citations = [{"n": 1, "url": reserve_url, "snippet": reserve_label}]
