@@ -344,6 +344,24 @@ def test_loan_period_answer_states_the_user_type_split() -> None:
     for q in ("renew my book for me", "please renew it for me"):
         assert _renewal_paths_answer(q) is None, q
 
+    # THE FIGURES ARE FOR BOOKS. Each of these has a different loan period and
+    # would be answered wrongly with "6 weeks". The first draft of the trigger
+    # captured all of them; the unit suite stayed green because they are eval
+    # gold cases, not unit tests, so they are pinned here now.
+    #   reserves_loan_period      2 hours / 1 day / 3 days, set by the instructor
+    #   tech_chromebook_period    30 days, per the tech-checkout page
+    #   tech2_camera_checkout     per the tech-checkout page
+    #   circ2_hold_pickup_window  hold-shelf duration, a different clock
+    #   (journals)                24 hours for graduate students and faculty
+    for q in ("How long can I check out a reserve textbook?",
+              "How long is the chromebook checkout period?",
+              "How long can I keep a DSLR camera if I check one out?",
+              "How long does the library hold a book for me after it's ready?",
+              "how long can I keep a laptop",
+              "How long can I keep a DVD?",
+              "how long can grad students check out journals"):
+        assert _renewal_paths_answer(q) is None, q
+
 
 def test_item_request_is_never_out_of_scope() -> None:
     """"do u have braiding sweetgrass" was answered as off-topic.

@@ -2898,10 +2898,32 @@ _MYACCOUNT_URL = (
 # from the live page 2026-07-30 -- and the page stays the cited authority so
 # a reader can check a number that has since changed.
 _LOAN_PERIOD_RE = re.compile(
-    r"\bhow\s+long\b[^.?!]*\b(keep|borrow|check\s*out|have|hold)\b"
+    r"\bhow\s+long\b[^.?!]*\b(keep|borrow|check\s*out|have)\b"
     r"|\bhow\s+many\s+(days?|weeks?)\b[^.?!]*\b(keep|borrow|check\s*out|have)\b"
     r"|\bloan\s+(period|length|time)\b"
     r"|\b(book|item|material)s?\s+due\s+(back|in)\b",
+    re.IGNORECASE,
+)
+# The figures above are for BOOKS. Everything in this list has its own,
+# different loan period, and answering it with "6 weeks" would be wrong:
+#
+#   reserves_loan_period       2 hours / 1 day / 3 days, set by the instructor
+#   tech_chromebook_period     30 days, per the tech-checkout page
+#   tech2_camera_checkout      per the tech-checkout page, not the book policy
+#   circ2_hold_pickup_window   hold-shelf duration, a different clock entirely
+#   (journals)                 24 hours for graduate students and faculty
+#
+# All four of those are gold cases, and the first draft of _LOAN_PERIOD_RE
+# captured every one of them -- the unit tests passed because they are eval
+# cases, not unit tests. Checking the golden set by hand is what caught it.
+_LOAN_PERIOD_EXCLUDE_RE = re.compile(
+    r"\breserves?\b|\bon\s+reserve\b|\breserve\s+(textbook|book|item)"
+    r"|\blaptop|\bchromebook|\bipad|\btablet|\bcamera|\bdslr|\bcamcorder"
+    r"|\bprojector|\bcalculator|\bcharger|\bheadphones?|\bmicrophone"
+    r"|\btech(nology)?\s+(checkout|loan|equipment)|\bequipment\b"
+    r"|\bhold\s+(shelf|it|the\s+book|a\s+book)|\bhold\s+for\s+me"
+    r"|\bpick\s*up\s+window|\bjournals?\b|\bperiodicals?\b"
+    r"|\bdvd|\bblu-?ray|\bmedia\s+item|\bmusic\s+score",
     re.IGNORECASE,
 )
 _RENEW_HOWTO_RE = re.compile(
@@ -2927,6 +2949,10 @@ def _renewal_paths_answer(message: str) -> "Optional[tuple[str, list[dict]]]":
     if not (_RENEW_HOWTO_RE.search(m) or _LOAN_PERIOD_RE.search(m)):
         return None
     if _RENEW_ACTOR_RE.search(m):
+        return None
+    # Reserves, tech equipment, hold shelves and journals all have their own
+    # loan periods -- see _LOAN_PERIOD_EXCLUDE_RE.
+    if _LOAN_PERIOD_EXCLUDE_RE.search(m):
         return None
     return (
         "How long depends on who you are. Per the circulation policy, Miami "
