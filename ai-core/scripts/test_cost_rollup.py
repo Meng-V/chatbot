@@ -51,6 +51,8 @@ from scripts.cost_rollup import (  # noqa: E402
     UsageRow,
     anomaly_ratio,
     compute_cost_usd,
+    is_priced,
+    normalise_model,
     rollup_by_model,
 )
 
@@ -257,3 +259,70 @@ def main() -> int:
 
 if __name__ == "__main__":
     sys.exit(main())
+
+
+# --- dated snapshots, unpriced detection, and the o4-mini regression ---
+#
+# These pin the specific hole that let o4-mini bill as $0 for five months:
+# the model string in the DB was "o4-mini-2025-04-16", a dated snapshot, and
+# nothing normalised it or flagged it as unpriced.
+
+
+def test_dated_snapshot_normalises_to_base_model():
+    assert normalise_model("o4-mini-2025-04-16") == "o4-mini"
+    assert normalise_model("gpt-5.4-mini-2026-03-17") == "gpt-5.4-mini"
+
+
+def test_undated_model_is_left_alone():
+    # gpt-5.2 / gpt-4.1 must not be mangled by the date-stripping regex.
+    for m in ("gpt-5.6-luna", "gpt-5.2", "gpt-4.1-nano", "text-embedding-3-large"):
+        assert normalise_model(m) == m
+
+
+def test_dated_snapshot_is_priced_at_base_rate():
+    """The real historical row: 2,692,981 in (no cache) + 817,527 out."""
+    snapshot = compute_cost_usd("o4-mini-2025-04-16", 2_692_981, 0, 817_527)
+    base = compute_cost_usd("o4-mini", 2_692_981, 0, 817_527)
+    assert snapshot == base
+    # ~$2.96 input + ~$3.60 output. The point is that it is NOT $0.
+    assert 6.0 < snapshot < 7.0, snapshot
+
+
+def test_o4_mini_is_priced_because_it_served_1518_real_turns():
+    assert is_priced("o4-mini")
+    assert is_priced("o4-mini-2025-04-16")
+
+
+def test_is_priced_is_false_for_genuinely_unknown_model():
+    # A dashboard must be able to tell "$0 because free" from "$0 because
+    # we have no rate", which compute_cost_usd alone cannot express.
+    assert not is_priced("gpt-experimental-99")
+    assert compute_cost_usd("gpt-experimental-99", 1_000_000, 0, 1_000_000) == 0.0
+
+
+def test_sol_stays_out_of_the_table_while_unused():
+    """Operator's rule: models we don't call don't belong in the rate card.
+
+    If Sol is ever wired up, this test should fail loudly rather than let it
+    bill silently at $0 -- add the row (5.00/0.50/30.00 as of 2026-07-30)
+    and delete this test.
+    """
+    assert "gpt-5.6-sol" not in PRICE_PER_1M_TOKENS
+
+
+def test_every_model_in_our_usage_history_is_priced():
+    """The six model strings ModelTokenUsage actually holds on 2026-07-31.
+
+    Hard-coded rather than read from the DB so the test runs offline and so a
+    future unpriced model shows up as a failing assertion here first.
+    """
+    seen_in_production = [
+        "o4-mini-2025-04-16",       # 1,518 turns, 2025-12-17 ~ 2026-05-12
+        "gpt-5.6-luna",             #   457 turns, 2026-07-18 ~
+        "gpt-5.6-terra",            #   359 turns, 2026-07-17 ~
+        "gpt-5.4-mini",             #   158 turns, 2026-06-11 ~ 2026-07-17
+        "gpt-5.2",                  #    46 turns, 2026-06-12 ~ 2026-07-15
+        "gpt-5.4-mini-2026-03-17",  #    16 turns, 2026-05-24 ~ 2026-05-27
+    ]
+    unpriced = [m for m in seen_in_production if not is_priced(m)]
+    assert not unpriced, f"models with real usage but no price row: {unpriced}"

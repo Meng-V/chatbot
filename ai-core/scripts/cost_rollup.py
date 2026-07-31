@@ -27,6 +27,8 @@ thin wrapper that's easy to add.
 
 from __future__ import annotations
 
+import re
+
 import argparse
 import asyncio
 import logging
@@ -45,69 +47,96 @@ logger = logging.getLogger("cost_rollup")
 # (b) grep-ability matters -- "where did we get that $X number" should
 # resolve to a file, not a DB row.
 #
-# gpt-5.4 family rates VERIFIED 2026-05-19 against the operator's
-# OpenAI dashboard (same source that set src/config/models.py). An
-# UNKNOWN model (e.g. a dated snapshot like "o4-mini-2025-04-16", or a
-# model not yet priced here) -> compute_cost_usd returns $0 and logs a
-# WARN: the rollup still records the token counts, it just can't price
-# them until someone adds a row here. That is the deliberate safe
-# behavior (a mis-priced/guessed rate is worse than a flagged $0).
+# Rates re-read 2026-07-30 against the operator's OpenAI pricing pages.
+#
+# An UNKNOWN model -> compute_cost_usd returns $0 and logs a WARN: the
+# rollup still records the token counts, it just can't price them. A
+# guessed rate would be worse than a flagged $0, so that stays.
+#
+# What did NOT stay: this comment used to offer "o4-mini-2025-04-16" as
+# an example of a harmlessly-unknown model. It was not harmless. It was
+# the production model for 1,518 turns from 2025-12-17 to 2026-05-12,
+# and every cost report for that period read $0.00. Two consequences:
+#   1. dated snapshots now normalise to their base model (normalise_model),
+#      so pinning a version no longer zeroes the bill;
+#   2. anything that shows money to a human must call is_priced() and
+#      print "unpriced", because a silent $0 is indistinguishable from
+#      free and that is precisely how five months went unbilled.
 # Operator-maintained: add a row when a new model ships.
 
 PRICE_PER_1M_TOKENS: dict[str, dict[str, float]] = {
-    "gpt-5.4": {
-        "input": 2.50,
-        "cached_input": 0.25,
-        "output": 15.00,
-    },
-    # GPT-5.6 family. REPRICED 2026-07-30 -- read off the operator's OpenAI
-    # models page that day, not from memory. Terra came down 20% and Luna 80%,
-    # and Sol appeared above Terra, so Terra is now the MIDDLE tier of the
-    # three rather than the top. Note: 5.6 bills cache WRITES at 1.25x input;
-    # this table prices cache READS (the cachedInputTokens column).
+    # $ per 1M tokens: input / cached input / output.
     #
-    # Previous values, kept here because historical rows were billed at them
-    # and anyone reconciling an old invoice will need them:
-    #   terra  2.50 / 0.25 / 15.00      luna  1.00 / 0.10 / 6.00
-    "gpt-5.6-sol": {
-        "input": 5.00,
-        "cached_input": 0.50,
-        "output": 30.00,
-    },
-    "gpt-5.6-terra": {
-        "input": 2.00,
-        "cached_input": 0.20,
-        "output": 12.00,
-    },
-    "gpt-5.6-luna": {
-        "input": 0.20,
-        "cached_input": 0.02,
-        "output": 1.20,
-    },
-    "gpt-5.4-mini": {
-        "input": 0.75,
-        "cached_input": 0.08,
-        "output": 4.50,
-    },
-    "gpt-5.4-nano": {
-        "input": 0.20,
-        "cached_input": 0.02,
-        "output": 1.25,
-    },
-    # Pre-rebuild model; kept so historical ModelTokenUsage rows price
-    # correctly. (Superseded by the gpt-5.4 tiers per the model-tier
-    # refactor; safe to leave.)
-    "gpt-5.2": {
-        "input": 2.50,
-        "cached_input": 1.25,
-        "output": 10.00,
-    },
+    # Read off the operator's OpenAI pricing pages on 2026-07-30. Covers every
+    # model this project has EVER recorded in ModelTokenUsage plus the rest of
+    # the current line-up, because an unpriced model is reported as $0 and that
+    # is how o4-mini ran for five months without appearing on any cost report.
+    #
+    # KNOWN LIMITATION, worth saying out loud: this is ONE price per model, and
+    # it prices historical rows at TODAY's rate. When a price changes, past
+    # reports move with it. Proper reconciliation would need effective-dated
+    # prices; until then, treat old totals as indicative, not invoice-grade.
+    # The 2026-07-30 repricing moved terra -20% and luna -80%.
+
+    # --- GPT-5.6 (current) ---------------------------------------------------
+    # Sol is deliberately ABSENT: nothing here calls it, and the operator's
+    # rule is that unused models stay out of the table. If it is ever wired,
+    # add it (5.00 / 0.50 / 30.00 as of 2026-07-30) or it bills as $0.
+    "gpt-5.6-terra": {"input": 2.00, "cached_input": 0.20, "output": 12.00},
+    "gpt-5.6-luna": {"input": 0.20, "cached_input": 0.02, "output": 1.20},
+
+    # --- GPT-5.4 (previous serving family) -----------------------------------
+    "gpt-5.4": {"input": 2.50, "cached_input": 0.25, "output": 15.00},
+    "gpt-5.4-mini": {"input": 0.75, "cached_input": 0.08, "output": 4.50},
+    "gpt-5.4-nano": {"input": 0.20, "cached_input": 0.02, "output": 1.25},
+
+    # --- GPT-5.2 / 5.1 / 5 ---------------------------------------------------
+    # gpt-5.2 was in this table at 2.50 / 1.25 / 10.00. The pricing page reads
+    # 1.75 / 0.175 / 14.00 on 2026-07-30, so the old entry was either stale or
+    # wrong; it ran 46 turns here in Jun-Jul 2026 and its historical total will
+    # shift with this correction.
+    "gpt-5.2": {"input": 1.75, "cached_input": 0.175, "output": 14.00},
+    "gpt-5.2-pro": {"input": 21.00, "cached_input": 21.00, "output": 168.00},
+    "gpt-5.1": {"input": 1.25, "cached_input": 0.125, "output": 10.00},
+    "gpt-5": {"input": 1.25, "cached_input": 0.125, "output": 10.00},
+    "gpt-5-mini": {"input": 0.25, "cached_input": 0.025, "output": 2.00},
+    "gpt-5-nano": {"input": 0.05, "cached_input": 0.005, "output": 0.40},
+    "gpt-5-pro": {"input": 15.00, "cached_input": 15.00, "output": 120.00},
+
+    # --- GPT-4.1 / 4o --------------------------------------------------------
+    "gpt-4.1": {"input": 2.00, "cached_input": 0.50, "output": 8.00},
+    "gpt-4.1-mini": {"input": 0.40, "cached_input": 0.10, "output": 1.60},
+    "gpt-4.1-nano": {"input": 0.10, "cached_input": 0.025, "output": 0.40},
+    "gpt-4o": {"input": 2.50, "cached_input": 1.25, "output": 10.00},
+    "gpt-4o-mini": {"input": 0.15, "cached_input": 0.075, "output": 0.60},
+
+    # --- o-series ------------------------------------------------------------
+    # o4-mini is not an experiment: it served 1,518 turns from 2025-12-17 to
+    # 2026-05-12 -- the pre-rebuild bot -- and reported $0 the whole time
+    # because it was never in this table. That is the bug this row fixes.
+    "o4-mini": {"input": 1.10, "cached_input": 0.275, "output": 4.40},
+    "o3": {"input": 2.00, "cached_input": 0.50, "output": 8.00},
+    "o3-mini": {"input": 1.10, "cached_input": 0.55, "output": 4.40},
+
+    # --- embeddings ----------------------------------------------------------
     "text-embedding-3-large": {
         "input": 0.13,
         "cached_input": 0.13,  # embeddings don't cache
         "output": 0.0,
     },
 }
+
+# OpenAI pins dated snapshots ("o4-mini-2025-04-16", "gpt-5.4-mini-2026-03-17")
+# and both appear in our own history. They bill as the base model, so strip the
+# date rather than requiring a table row per snapshot -- otherwise every pin is
+# another silent $0.
+_DATED_SNAPSHOT_RE = re.compile(r"^(.*?)-(\d{4}-\d{2}-\d{2})$")
+
+
+def normalise_model(model: str) -> str:
+    """Base model id for pricing: strips a trailing -YYYY-MM-DD snapshot."""
+    m = _DATED_SNAPSHOT_RE.match((model or "").strip())
+    return m.group(1) if m else (model or "").strip()
 
 
 # --- Data shapes ----------------------------------------------------------
@@ -169,12 +198,17 @@ def compute_cost_usd(
     as cost-free rather than crashing -- an experimental model
     mis-deployed shouldn't block the rollup for everyone else.
 
+    $0 is safe for the ROLLUP but dangerous as a REPORT: o4-mini served
+    1,518 turns unpriced and read as free on every cost page. Anything
+    that displays a total must call `is_priced()` and say "unpriced"
+    out loud rather than printing a $0 that looks like a real zero.
+
     NOTE: `input_tokens` in the OpenAI billing model is the TOTAL
     input tokens (including the cached portion). The cached portion
     gets a discount; the uncached portion is billed at full rate. So
     billable_uncached = input_tokens - cached_input_tokens.
     """
-    rates = PRICE_PER_1M_TOKENS.get(model)
+    rates = PRICE_PER_1M_TOKENS.get(normalise_model(model))
     if rates is None:
         logger.warning(
             "Unknown model %s -- treating as $0 for rollup (add to PRICE_PER_1M_TOKENS)",
@@ -189,6 +223,16 @@ def compute_cost_usd(
         + cached * rates["cached_input"] / 1_000_000
         + output_tokens * rates["output"] / 1_000_000
     )
+
+
+def is_priced(model: str) -> bool:
+    """True if we can actually price this model.
+
+    Callers that show money to a human MUST branch on this: a $0 from
+    compute_cost_usd means either "genuinely free" or "we have no idea",
+    and those must not look the same on a dashboard.
+    """
+    return normalise_model(model) in PRICE_PER_1M_TOKENS
 
 
 def rollup_by_model(
