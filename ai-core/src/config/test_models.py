@@ -34,18 +34,39 @@ def _reload_clean():
 
 
 def test_defaults_are_gpt54_family() -> None:
+    """The BASIC/REASONING fallbacks are still the 5.4 family on purpose --
+    they are what runs if .env is missing, and a conservative fallback is the
+    point. CHEAP moved to luna on 2026-07-30 because the repricing made luna
+    cheaper than nano outright (0.20/0.02/1.20 against 0.20/0.02/1.25) with a
+    1.05M window instead of 400K, so the cheap fallback is now also the better
+    model."""
     _reload_clean()
     assert M.BASIC_MODEL == "gpt-5.4-mini", M.BASIC_MODEL
     assert M.REASONING_MODEL == "gpt-5.4", M.REASONING_MODEL
-    assert M.CHEAP_MODEL == "gpt-5.4-nano", M.CHEAP_MODEL
+    assert M.CHEAP_MODEL == "gpt-5.6-luna", M.CHEAP_MODEL
     assert M.EMBEDDING_MODEL == "text-embedding-3-large"
+
+
+def test_cheap_default_is_not_dearer_than_basic() -> None:
+    """CHEAP must never cost more than BASIC -- that would invert the tiers.
+
+    Pins the relationship rather than the model id, so the next repricing is
+    caught by arithmetic instead of by someone remembering.
+    """
+    from scripts.cost_rollup import PRICE_PER_1M_TOKENS as P
+
+    _reload_clean()
+    cheap, basic = P.get(M.CHEAP_MODEL), P.get(M.BASIC_MODEL)
+    assert cheap and basic, (M.CHEAP_MODEL, M.BASIC_MODEL)
+    for k in ("input", "cached_input", "output"):
+        assert cheap[k] <= basic[k], (k, cheap[k], basic[k])
 
 
 def test_resolve_model_three_tiers() -> None:
     _reload_clean()
     assert M.resolve_model("basic") == "gpt-5.4-mini"
     assert M.resolve_model("reasoning") == "gpt-5.4"
-    assert M.resolve_model("cheap") == "gpt-5.4-nano"
+    assert M.resolve_model("cheap") == "gpt-5.6-luna"
     try:
         M.resolve_model("bogus")  # type: ignore[arg-type]
         assert False, "expected ValueError"

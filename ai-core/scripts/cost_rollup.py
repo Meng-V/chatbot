@@ -60,18 +60,29 @@ PRICE_PER_1M_TOKENS: dict[str, dict[str, float]] = {
         "cached_input": 0.25,
         "output": 15.00,
     },
-    # GPT-5.6 family (GA 2026-07-09; prices verified against the OpenAI
-    # pricing page 2026-07-17). Note: 5.6 bills cache WRITES at 1.25x
-    # input; this table prices cache READS (the cachedInputTokens column).
+    # GPT-5.6 family. REPRICED 2026-07-30 -- read off the operator's OpenAI
+    # models page that day, not from memory. Terra came down 20% and Luna 80%,
+    # and Sol appeared above Terra, so Terra is now the MIDDLE tier of the
+    # three rather than the top. Note: 5.6 bills cache WRITES at 1.25x input;
+    # this table prices cache READS (the cachedInputTokens column).
+    #
+    # Previous values, kept here because historical rows were billed at them
+    # and anyone reconciling an old invoice will need them:
+    #   terra  2.50 / 0.25 / 15.00      luna  1.00 / 0.10 / 6.00
+    "gpt-5.6-sol": {
+        "input": 5.00,
+        "cached_input": 0.50,
+        "output": 30.00,
+    },
     "gpt-5.6-terra": {
-        "input": 2.50,
-        "cached_input": 0.25,
-        "output": 15.00,
+        "input": 2.00,
+        "cached_input": 0.20,
+        "output": 12.00,
     },
     "gpt-5.6-luna": {
-        "input": 1.00,
-        "cached_input": 0.10,
-        "output": 6.00,
+        "input": 0.20,
+        "cached_input": 0.02,
+        "output": 1.20,
     },
     "gpt-5.4-mini": {
         "input": 0.75,

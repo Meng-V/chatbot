@@ -62,11 +62,25 @@ from typing import Literal
 # (guides/reasoning, /text, /migrate-to-responses):
 #
 #   id              reasoning  ctx      $/1M in / cached / out
-#   gpt-5.6-terra   5/5        1M       2.50 / 0.25 / 15.00   <- REASONING since 2026-07-17
-#   gpt-5.6-luna    4/5        1M       1.00 / 0.10 /  6.00   <- BASIC since 2026-07-17
+#   gpt-5.6-sol     5/5        1.05M    5.00 / 0.50 / 30.00
+#   gpt-5.6-terra   4/5        1.05M    2.00 / 0.20 / 12.00   <- REASONING since 2026-07-17
+#   gpt-5.6-luna    3/5        1.05M    0.20 / 0.02 /  1.20   <- BASIC since 2026-07-17,
+#                                                                CHEAP since 2026-07-30
 #   gpt-5.4         5/5        1.05M    2.50 / 0.25 / 15.00
 #   gpt-5.4-mini    4/5        400K     0.75 / 0.08 /  4.50
 #   gpt-5.4-nano    3/5        400K     0.20 / 0.02 /  1.25
+#
+# REPRICED 2026-07-30, read off the operator's OpenAI models page that day.
+# Terra fell 20% and Luna 80%, and SOL appeared above Terra -- so Terra is now
+# the MIDDLE model of the 5.6 line, not the top, and our REASONING tier points
+# at a mid model. Whether that should move to Sol is a quality-per-dollar
+# decision for the operator, deliberately not taken here.
+#
+# The repricing makes Luna cheaper than gpt-5.4-nano outright (0.20/0.02/1.20
+# against 0.20/0.02/1.25) while carrying a 1.05M window instead of 400K and a
+# newer cutoff, so CHEAP moved from nano to luna: strictly better on every axis
+# that matters, at a marginally lower price. Nano is left in the price table
+# because historical rows were billed at it.
 #
 # All three are REASONING models (reasoning-token support), expose both
 # /v1/chat/completions and /v1/responses, 128K max output, cutoff
@@ -82,7 +96,7 @@ REASONING_MODEL: str = os.getenv("LLM_MODEL_REASONING", "gpt-5.4").strip()
 """Hard / sophisticated questions: ambiguous synthesis, multi-step
 tool calls, clarification. Env: LLM_MODEL_REASONING."""
 
-CHEAP_MODEL: str = os.getenv("LLM_MODEL_CHEAP", "gpt-5.4-nano").strip()
+CHEAP_MODEL: str = os.getenv("LLM_MODEL_CHEAP", "gpt-5.6-luna").strip()
 """High-volume MECHANICAL calls where weak instruction-following is
 low-risk: LLM-as-judge in eval, classifier-fallback, light
 extraction/normalization. ~3.7x cheaper than basic, ~12x vs reasoning.
