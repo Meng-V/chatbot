@@ -16,6 +16,7 @@ from __future__ import annotations
 from src.scope.resolver import Scope
 from src.graph.new_orchestrator import (
     _greeting_answer,
+    _dean_answer,
     _GREETING_TEXT,
     _THANKS_TEXT,
     _facilities_policy_answer,
@@ -1942,3 +1943,53 @@ def test_dean_is_answerable_and_salary_is_not() -> None:
     # The liaison flow keeps its own questions.
     for q in ("who is my subject librarian", "who is the music librarian"):
         assert _dean_answer(q) is None, q
+
+
+# --- dean: don't invent a second question -------------------------------------
+#
+# _dean_answer was written for the compound ask ("who is the dean and what is
+# their salary?"), where "On the other half of your question" is accurate. For a
+# salary-ONLY ask it claimed a half the student never asked. Found in the
+# pre-launch smoke run 2026-07-31.
+
+
+def test_salary_only_ask_does_not_claim_there_was_another_half():
+    ans, _ = _dean_answer("How much does the dean of the libraries get paid?")
+    assert "other half of your question" not in ans
+    assert "don't have salary information" in ans
+    # Still volunteers what IS public -- declining the salary shouldn't cost
+    # the student the answerable part.
+    assert "Jerome Conley" in ans
+
+
+def test_compound_dean_and_salary_still_says_other_half():
+    ans, _ = _dean_answer("Who is the dean of the libraries and what is their salary?")
+    assert "other half of your question" in ans
+    assert "Jerome Conley" in ans
+
+
+def test_identity_only_ask_has_no_salary_preamble():
+    ans, _ = _dean_answer("Who is the dean of the libraries?")
+    assert "salary" not in ans.lower()
+    assert ans.startswith("Miami University Libraries is led by")
+
+
+def test_salary_phrasings_without_a_who_never_fabricate_a_second_half():
+    for q in (
+        "What is the dean's salary?",
+        "how much is the university librarian paid",
+        "dean of libraries compensation",
+    ):
+        ans, _ = _dean_answer(q)
+        assert "other half" not in ans, q
+        assert "Who holds the role is public" in ans, q
+
+
+def test_asks_containing_an_identity_signal_keep_the_other_half_framing():
+    for q in (
+        "Who is the dean and how much do they earn?",
+        "name of the dean and their pay",
+        "what's the dean's email and salary",
+    ):
+        ans, _ = _dean_answer(q)
+        assert "other half of your question" in ans, q

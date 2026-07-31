@@ -3370,6 +3370,19 @@ _SALARY_RE = re.compile(
 )
 
 
+# Does the message actually ask WHO, as well as what they earn? _DEAN_RE
+# matches "the dean" in any framing, so it cannot tell "who is the dean and
+# what's their salary" (two questions) from "how much does the dean get paid"
+# (one). Without this, a salary-only ask was answered with "On the other half
+# of your question: ..." -- claiming a second question the student never asked.
+# Caught in the pre-launch smoke run 2026-07-31.
+_DEAN_IDENTITY_ASK_RE = re.compile(
+    r"\b(who|whos|whose|name|names|named|which\s+person|led\s+by|leads"
+    r"|runs|in\s+charge|contact|email)\b",
+    re.IGNORECASE,
+)
+
+
 def _dean_answer(message: str) -> "Optional[tuple[str, list[dict]]]":
     """Name the dean from the roster; decline the salary without dodging."""
     m = message or ""
@@ -3379,12 +3392,21 @@ def _dean_answer(message: str) -> "Optional[tuple[str, list[dict]]]":
     if _LIBRARIAN_IS_MINE_RE.search(m):
         return None
     salary = bool(_SALARY_RE.search(m))
-    prefix = (
-        "I don't have salary information and wouldn't be the right source for "
-        "it -- public employee compensation requests go through the "
-        "University, not the Libraries. On the other half of your question: "
-        if salary else ""
-    )
+    if not salary:
+        prefix = ""
+    else:
+        decline = (
+            "I don't have salary information and wouldn't be the right source "
+            "for it -- public employee compensation requests go through the "
+            "University, not the Libraries. "
+        )
+        # Only call it "the other half" when there genuinely was one. For a
+        # salary-only ask, pivot to what IS public without inventing a question.
+        prefix = decline + (
+            "On the other half of your question: "
+            if _DEAN_IDENTITY_ASK_RE.search(m)
+            else "Who holds the role is public, though: "
+        )
     return (
         prefix
         + "Miami University Libraries is led by Jerome Conley, Dean and "
