@@ -63,6 +63,20 @@ _CANONICAL_RE = re.compile(
 )
 
 
+# Rejection reason for a page that was fetched fine and whose HTML is
+# substantial, but which carries no extractable article text -- almost always
+# client-side rendering. Deliberately NOT "empty": an empty response means the
+# page is gone, while this means our crawler cannot read a page that is very
+# much alive, and the two must never lead to the same action.
+NO_EXTRACTABLE_TEXT = "no_extractable_text"
+
+# Above this much HTML, "no article text" means a client-rendered shell rather
+# than a page with nothing on it. /about/locations/hours/ is 33KB of chrome
+# wrapped around 8 LibCal widget <script> tags; /use/borrow/reserves/ is a
+# 553-byte stub. Both extract to nothing and they are not the same problem.
+SHELL_MIN_HTML_CHARS = 4000
+
+
 def _norm_url(u: str) -> str:
     return (u or "").rstrip("/").lower()
 
@@ -161,6 +175,20 @@ def extract(html: str, url: str, last_modified: Optional[str] = None) -> Extract
     """
     title: Optional[str] = None
     body_text: str = ""
+    # Did the GOOD extractor actually get to run? The fallback chain below was
+    # built for "the dependency isn't installed", but it also fired when
+    # trafilatura ran fine and reported that the page has no article content --
+    # and then the stdlib tag-stripper's scrape of the NAV MENU won, and was
+    # recorded as a successful extraction because a menu is longer than 200
+    # characters.
+    #
+    # That is how the 2026-08-03 refresh came to propose deleting 285 chunks of
+    # live service content: /use/technology/printing/ is 28.9KB of HTML whose
+    # words "per page", "PaperCut" and "cents" appear ZERO times -- the site is
+    # client-rendered now -- so all we could scrape was its menu, and the
+    # pipeline treated that as the page.
+    trafilatura_ran = False
+    trafilatura_chars = 0
 
     # Try trafilatura first (best-quality on Miami's Drupal site).
     try:
@@ -173,6 +201,8 @@ def extract(html: str, url: str, last_modified: Optional[str] = None) -> Extract
             no_fallback=False,
             url=url,
         )
+        trafilatura_ran = True
+        trafilatura_chars = len(result or "")
         if result and len(result) >= config.EXTRACT_MIN_BODY_CHARS:
             body_text = result.strip()
         try:
@@ -186,8 +216,12 @@ def extract(html: str, url: str, last_modified: Optional[str] = None) -> Extract
     except Exception as e:  # noqa: BLE001 -- never let extractor crash pipeline
         logger.warning("trafilatura failed", extra={"url": url, "error": str(e)})
 
-    # Fallback: readability-lxml.
-    if not body_text:
+    # Fallback: readability-lxml -- same rule as the stdlib stripper below.
+    # readability is a boilerplate GUESSER: handed a content-less shell it
+    # happily returns the navigation menu, which is exactly what it did for
+    # /use/technology/printing/ (231 chars of menu from 28.9KB of chrome).
+    # It is a fallback for "trafilatura is missing", not a second opinion.
+    if not body_text and not trafilatura_ran:
         try:
             from readability import Document  # type: ignore
 
@@ -202,8 +236,37 @@ def extract(html: str, url: str, last_modified: Optional[str] = None) -> Extract
         except Exception as e:  # noqa: BLE001
             logger.warning("readability failed", extra={"url": url, "error": str(e)})
 
-    # Final fallback: stdlib stripper.
+    # Final fallback: stdlib stripper -- ONLY when no real extractor got a
+    # verdict. If trafilatura ran and found next to nothing, that IS the
+    # verdict: this page carries no extractable article text. A tag-stripper
+    # cannot know better; it can only scrape chrome.
+    if not body_text and not trafilatura_ran:
+        title_fb, body_text = _strip_html_fallback(html)
+        title = title or title_fb
+
+    if not body_text and trafilatura_ran and len(html or "") >= SHELL_MIN_HTML_CHARS:
+        # A SUBSTANTIAL page that yields no article text: a client-rendered
+        # shell. The size test matters -- a genuinely empty or stub response is
+        # "empty"/"too_short" (the page has nothing), while this is "the page
+        # has plenty and we cannot read it". Same output, opposite causes, and
+        # only one of them is a crawler bug to fix.
+        # Keep a title if we can, purely so the reject row is readable.
+        title_fb, _ = _strip_html_fallback(html)
+        return ExtractedDoc(
+            url=url, title=title or title_fb, body_text="", breadcrumbs=[],
+            word_count=0, schema_org_json=None, last_modified=last_modified,
+            # A distinct reason, not "empty": the fetch worked and the HTML is
+            # substantial, so this is "we cannot READ this page", which is a
+            # crawler problem to fix -- not a page that went away. The
+            # tombstone step keys off this to avoid deleting what it failed to
+            # re-read.
+            rejection_reason=NO_EXTRACTABLE_TEXT,
+            redirect_to=find_redirect_target(html, url),
+        )
+
     if not body_text:
+        # Small page, nothing from trafilatura -- scrape it. On a stub there is
+        # no chrome to mistake for content, so the old behaviour is right here.
         title_fb, body_text = _strip_html_fallback(html)
         title = title or title_fb
 

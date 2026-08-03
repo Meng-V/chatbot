@@ -139,6 +139,29 @@ EXCLUDE_URL_SUBSTRINGS: Final[tuple[str, ...]] = (
     "readme",
     "/404",
     "/test-page",
+    # --- Binary attachments -------------------------------------------------
+    # Added 2026-08-03. There is no PDF text extraction in this pipeline: a
+    # .pdf was fetched, run through an HTML tag-stripper, and the resulting
+    # MOJIBAKE was indexed as page text. Measured on the serving index:
+    # 19,700 of 20,608 chunks -- 95.6% of the entire corpus -- were binary PDF
+    # bytes chunked into 4,201-character blobs. Signage_Proposal.pdf alone
+    # produced hundreds; org-chart.pdf produced 447.
+    #
+    # That is not merely wasted space: every one of those chunks is a
+    # candidate the retriever has to rank against real content, and we paid
+    # to embed all of them.
+    #
+    # Excluding is the honest interim state. If a PDF's content is genuinely
+    # needed (the org chart, a policy sheet), add real extraction (pypdf) and
+    # remove the relevant line here -- do NOT re-enable this without it.
+    ".pdf",
+    ".doc",
+    ".docx",
+    ".xls",
+    ".xlsx",
+    ".ppt",
+    ".pptx",
+    ".zip",
 )
 
 

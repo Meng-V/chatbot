@@ -1,1 +1,15 @@
 websocket-client>=1.7  # post_deploy_check.sh socket client transport
+
+# --- ETL content extraction -------------------------------------------------
+# extract.py documents a 3-tier strategy (trafilatura -> readability -> stdlib
+# tag-stripper) but NEITHER of the first two was ever declared here, so on this
+# box only the stdlib tier had ever run. A tag-stripper handed a modern CMS page
+# returns the NAVIGATION MENU, and because a menu clears the 200-char minimum it
+# was recorded as a successful extraction.
+#
+# Cost of leaving it undeclared, measured 2026-08-03: /about/organization/
+# liaisons/ "extracted" 2,935 characters of menu instead of its 2,968 characters
+# of actual content, and the refresh proposed dropping 285 chunks of live
+# service pages. Pinning it here is the difference between the pipeline the
+# docstring describes and the one that ran.
+trafilatura>=2.2.0

@@ -433,3 +433,62 @@ def main() -> int:
 
 if __name__ == "__main__":
     sys.exit(main())
+
+
+# --- the extractor that was never installed ---------------------------------
+#
+# extract.py's docstring promised trafilatura -> readability -> stdlib stripper,
+# but neither of the first two was in requirements.txt, so only the stripper
+# had ever run on this box. Handed a modern CMS page a tag-stripper returns the
+# NAVIGATION MENU, and a menu clears the 200-char minimum, so it was recorded
+# as a successful extraction. Measured 2026-08-03: the liaisons page
+# "extracted" 2,935 chars of menu; the refresh proposed dropping 285 chunks of
+# live service pages it could no longer read.
+
+
+def test_a_content_less_shell_is_rejected_not_scraped_for_chrome():
+    """The bug in one test. A big page with only navigation must NOT come back
+    as a successful extraction of that navigation."""
+    shell = (
+        "<html><head><title>Library Hours</title></head><body>"
+        "<a href='#main'>Skip to main content</a>"
+        "<ul><li>Library Hours</li><li>King Library</li><li>Wertz Art</li>"
+        "<li>Special Collections</li><li>Locations &amp; Hours</li></ul>"
+        "<div id='main-content'></div>"
+        "<script src='https://api3.libcal.com/js/hours_grid.js'></script>"
+        + "<!-- padding -->" * 400
+        + "</body></html>"
+    )
+    out = extract(shell, "https://www.lib.miamioh.edu/about/locations/hours/")
+    assert out.body_text == ""
+    assert out.rejection_reason == extract_mod.NO_EXTRACTABLE_TEXT
+    assert "Skip to main content" not in (out.body_text or "")
+
+
+def test_a_small_stub_is_empty_not_unreadable():
+    """Opposite cause, same symptom: a 553-byte stub has nothing on it, which
+    is not the same as a page we failed to read, and the two must not be
+    reported identically."""
+    out = extract("<html><body></body></html>", "https://x/")
+    assert out.rejection_reason == "empty"
+    assert out.rejection_reason != extract_mod.NO_EXTRACTABLE_TEXT
+
+
+def test_the_shell_threshold_is_about_html_size_not_text_size():
+    small = "<html><body><div></div></body></html>"
+    big = small + "<!-- x -->" * 500
+    assert len(big) >= extract_mod.SHELL_MIN_HTML_CHARS
+    assert extract(small, "https://x/").rejection_reason == "empty"
+    assert (extract(big, "https://x/").rejection_reason
+            == extract_mod.NO_EXTRACTABLE_TEXT)
+
+
+def test_real_article_text_still_extracts():
+    """The guard must not start rejecting pages that DO have content."""
+    body = " ".join(
+        ["Printing costs ten cents per page for black and white output."] * 12
+    )
+    html = f"<html><body><article><p>{body}</p></article></body></html>"
+    out = extract(html, "https://www.lib.miamioh.edu/use/technology/printing/")
+    assert out.rejection_reason is None
+    assert "per page" in out.body_text
