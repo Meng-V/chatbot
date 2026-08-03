@@ -393,6 +393,38 @@ class WeaviateETLAdapter:
             return {}
         return out
 
+    def snapshot_urls(self, *, collection: str) -> dict:
+        """`{object_uuid: source_url}` for every LIVE chunk in `collection`.
+
+        Exists so the preview can say WHICH pages are going away, not just how
+        many. The diff a librarian signs reported "No longer produced by the
+        crawl: 854" with no list -- a signature on a number. The operator asked
+        the obvious question ("will this drag back what we removed, or drop
+        something we need?") and the report could not answer it.
+
+        A separate pass rather than one more property on snapshot_hashes: that
+        keeps the hot comparison read unchanged, and this one is only called
+        when previewing, where a few seconds over 20k rows is already the
+        budget. Only the ORPHANED uuids are looked up in the result.
+        """
+        try:
+            if not self.client.collections.exists(collection):
+                return {}
+        except Exception:  # noqa: BLE001
+            return {}
+        coll = self.client.collections.get(collection)
+        out: dict = {}
+        try:
+            for obj in coll.iterator(return_properties=["source_url", "deleted"]):
+                if obj.properties.get("deleted"):
+                    continue
+                out[str(obj.uuid)] = obj.properties.get("source_url") or ""
+        except Exception as e:  # noqa: BLE001 -- a preview must never break a run
+            logger.warning("snapshot_urls failed",
+                           extra={"collection": collection, "error": str(e)})
+            return {}
+        return out
+
     def soft_delete_by_url(
         self,
         *,

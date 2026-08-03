@@ -52,6 +52,18 @@ class UpsertResult:
     # librarian that 852 chunks had been hard-deleted when nothing had been
     # written at all.
     orphaned_chunk_count: int = 0
+    # PREVIEW only: `{source_url: chunk_count}` for those orphans. The count
+    # alone made the approval gate a signature on a number -- a librarian was
+    # asked to approve dropping 854 chunks with no way to see whether the
+    # stale pages we meant to remove were in there, or something we need.
+    orphaned_urls: dict = field(default_factory=dict)
+    # PREVIEW only: `{source_url: chunk_count}` for the NEW chunks. Needed
+    # beside orphaned_urls to tell the two apart: a page in BOTH lists was
+    # edited (normal churn), a page in ONLY the orphan list is being lost.
+    # Without this the report showed core pages -- the liaisons directory, the
+    # circulation policy guide -- under "no longer produced" with no way to see
+    # they were simply re-chunked.
+    new_urls: dict = field(default_factory=dict)
     # Chunks that could not be written after retries. Non-fatal by design:
     # see the comment in make_upsert_step. A run with a handful of these is
     # still a good index; a run with thousands is not, which is why the count
@@ -70,6 +82,10 @@ class UpsertResult:
         self.tombstoned_urls += other.tombstoned_urls
         self.gc_deleted_chunk_count += other.gc_deleted_chunk_count
         self.orphaned_chunk_count += other.orphaned_chunk_count
+        for _u, _n in (other.orphaned_urls or {}).items():
+            self.orphaned_urls[_u] = self.orphaned_urls.get(_u, 0) + _n
+        for _u, _n in (other.new_urls or {}).items():
+            self.new_urls[_u] = self.new_urls.get(_u, 0) + _n
         self.failed_chunk_ids += other.failed_chunk_ids
         self.new_url_count += other.new_url_count
         # The index total is a snapshot, not a sum -- keep the latest.
@@ -418,6 +434,8 @@ def preview_against_live(
         existing_hash = snapshot.get(uid)
         if existing_hash is None:
             result.new_chunk_ids.append(chunk.chunk_id)
+            _u = chunk.source_url or "(unknown url)"
+            result.new_urls[_u] = result.new_urls.get(_u, 0) + 1
         elif existing_hash == chunk.content_hash:
             result.deduped_chunk_ids.append(chunk.chunk_id)
             still_present.add(uid)
@@ -426,11 +444,24 @@ def preview_against_live(
             still_present.add(uid)
 
     # Live chunks the crawl no longer produces -> they would be tombstoned.
-    # Reported as a COUNT of chunks; the URL-level list needs source_url,
-    # which the snapshot deliberately does not carry (it would triple the
-    # read for a number the operator reads as "how much is going away").
-    result.orphaned_chunk_count = len(set(snapshot) - still_present)
+    orphaned_uuids = set(snapshot) - still_present
+    result.orphaned_chunk_count = len(orphaned_uuids)
     result.total_chunks_in_index = len(snapshot)
+
+    # ...and WHICH pages those are. Resolved with a second, url-only pass over
+    # the same collection, and only the orphaned uuids are kept. Guarded by
+    # getattr so a WeaviateLike without the method (test doubles, older
+    # adapters) previews exactly as before instead of failing.
+    if orphaned_uuids:
+        _urls_of = getattr(weaviate, "snapshot_urls", None)
+        if callable(_urls_of):
+            try:
+                uuid_to_url = _urls_of(collection=live_collection) or {}
+            except Exception:  # noqa: BLE001 -- a preview must never break
+                uuid_to_url = {}
+            for uid in orphaned_uuids:
+                url = uuid_to_url.get(uid) or "(unknown url)"
+                result.orphaned_urls[url] = result.orphaned_urls.get(url, 0) + 1
     return result
 
 

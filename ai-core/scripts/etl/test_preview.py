@@ -20,16 +20,30 @@ def _chunk(chunk_id: str, content_hash: str, url: str = "https://x/1") -> Chunk:
 
 
 class FakeWeaviate:
-    """Only `snapshot_hashes` -- if the preview calls anything else it is
-    touching a write path and the test should fail loudly."""
+    """Reads only -- if the preview calls anything else it is touching a
+    write path and the test should fail loudly.
 
-    def __init__(self, snapshot):
+    `snapshot_urls` is on the allowed list because the invariant here is "no
+    WRITES during preview", and resolving which pages are being dropped is a
+    read. It is listed explicitly rather than allowed by name pattern so a
+    new method still has to be justified by whoever adds it.
+    """
+
+    _READS = ("snapshot_hashes", "snapshot_urls")
+
+    def __init__(self, snapshot, urls=None):
         self._snapshot = snapshot
+        self._urls = urls or {}
         self.calls = 0
+        self.url_calls = 0
 
     def snapshot_hashes(self, *, collection):
         self.calls += 1
         return dict(self._snapshot)
+
+    def snapshot_urls(self, *, collection):
+        self.url_calls += 1
+        return dict(self._urls)
 
     def __getattr__(self, name):
         raise AssertionError(f"preview must not call {name}()")
@@ -267,3 +281,55 @@ def test_the_failure_count_survives_slice_merging():
     total.absorb(UpsertResult(failed_chunk_ids=["c-a"]))
     total.absorb(UpsertResult(new_chunk_ids=["c-b"]))
     assert total.failed_chunk_ids == ["c-a"]
+
+
+def test_preview_names_the_pages_it_would_drop():
+    """The approval gate reported "854 chunks going away" with no list, so a
+    librarian was signing a number. The operator could not answer their own
+    question -- does this drop something we still need? -- from the report."""
+    live = {
+        _chunk_uuid("c-keep"): "hash-keep",
+        _chunk_uuid("c-gone-a"): "hash-a",
+        _chunk_uuid("c-gone-b"): "hash-b",
+    }
+    urls = {
+        _chunk_uuid("c-keep"): "https://www.lib.miamioh.edu/keep",
+        _chunk_uuid("c-gone-a"): "https://www.lib.miamioh.edu/libraryhealthy/",
+        _chunk_uuid("c-gone-b"): "https://www.lib.miamioh.edu/libraryhealthy/",
+    }
+    fake = FakeWeaviate(live, urls)
+    result = preview_against_live(
+        fake, [_chunk("c-keep", "hash-keep")], {"https://x/1"},
+        live_collection="Chunk_vtest",
+    )
+    assert result.orphaned_chunk_count == 2
+    # Both orphans came from the same page, so it reports one URL with 2 chunks
+    # -- a librarian recognises pages, not chunk counts.
+    assert result.orphaned_urls == {
+        "https://www.lib.miamioh.edu/libraryhealthy/": 2}
+    assert fake.url_calls == 1  # one extra pass, only when there ARE orphans
+
+
+def test_preview_skips_the_url_pass_when_nothing_is_orphaned():
+    live = {_chunk_uuid("c-keep"): "hash-keep"}
+    fake = FakeWeaviate(live, {})
+    result = preview_against_live(
+        fake, [_chunk("c-keep", "hash-keep")], {"https://x/1"},
+        live_collection="Chunk_vtest",
+    )
+    assert result.orphaned_chunk_count == 0
+    assert result.orphaned_urls == {}
+    assert fake.url_calls == 0
+
+
+def test_preview_still_works_against_an_adapter_without_snapshot_urls():
+    """Older adapters and other test doubles must preview exactly as before."""
+
+    class OldWeaviate:
+        def snapshot_hashes(self, *, collection):
+            return {_chunk_uuid("c-gone"): "h"}
+
+    result = preview_against_live(OldWeaviate(), [], set(),
+                                  live_collection="Chunk_vtest")
+    assert result.orphaned_chunk_count == 1
+    assert result.orphaned_urls == {}

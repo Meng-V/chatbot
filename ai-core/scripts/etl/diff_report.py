@@ -77,7 +77,8 @@ def render_markdown(report: DiffReport) -> str:
                  f"**{len(report.upsert.deduped_chunk_ids)}**")
     if preview:
         lines.append(f"- No longer produced by the crawl: "
-                     f"**{report.upsert.orphaned_chunk_count}**")
+                     f"**{report.upsert.orphaned_chunk_count}**"
+                     f"{' (listed below)' if report.upsert.orphaned_urls else ''}")
         lines.append(f"- Live chunks in the serving index: "
                      f"**{report.upsert.total_chunks_in_index}**")
     else:
@@ -134,6 +135,58 @@ def render_markdown(report: DiffReport) -> str:
             lines.append(f"- `{url}` — {err}")
         if len(report.fetch_failures) > 30:
             lines.append(f"- ... and {len(report.fetch_failures) - 30} more")
+        lines.append("")
+
+    if getattr(report.upsert, "orphaned_urls", None):
+        # THE section this gate was missing. Approving a diff means approving
+        # the removals too, and until now the removals were a bare count. The
+        # operator's question -- "will this drag back what we removed, or drop
+        # something we still need?" -- is only answerable from a list.
+        #
+        # Sorted by chunk count so the biggest losses are at the top, and
+        # grouped nowhere: the raw URL is what a librarian recognises.
+        orphans = sorted(report.upsert.orphaned_urls.items(),
+                         key=lambda kv: (-kv[1], kv[0]))
+        lines.append("## 🗑 Pages no longer produced by the crawl")
+        lines.append("")
+        lines.append(f"{len(orphans)} URL(s), "
+                     f"{sum(n for _, n in orphans)} chunks. Approving this "
+                     f"diff tombstones them. Two normal reasons a page is "
+                     f"here: it was EDITED (its chunk ids changed, so the old "
+                     f"ones orphan and new ones appear above), or it is now "
+                     f"excluded at crawl time. A page you still need appearing "
+                     f"here is the thing to catch.")
+        lines.append("")
+        new_by_url = getattr(report.upsert, "new_urls", None) or {}
+        # LOST = orphaned and gained nothing back. That is the column to read.
+        lost = [(u, n) for u, n in orphans if u not in new_by_url]
+        churn = [(u, n) for u, n in orphans if u in new_by_url]
+        lines.append(f"**{len(churn)} of these were merely re-chunked** "
+                     f"(edited text: they appear in the new chunks too). "
+                     f"**{len(lost)} URL(s) / "
+                     f"{sum(n for _, n in lost)} chunks would be LOST outright** "
+                     f"-- those are the rows to check.")
+        lines.append("")
+        lines.append("### Lost outright (gained no new chunks)")
+        lines.append("")
+        if lost:
+            lines.append("| chunks | URL |")
+            lines.append("|---:|---|")
+            for url, n in lost[:200]:
+                lines.append(f"| {n} | {url} |")
+            if len(lost) > 200:
+                lines.append(f"| … | and {len(lost) - 200} more URL(s) |")
+        else:
+            lines.append("_None -- every dropped page gained new chunks._")
+        lines.append("")
+        lines.append("### Re-chunked (edited, not lost)")
+        lines.append("")
+        lines.append("| old | new | URL |")
+        lines.append("|---:|---:|---|")
+        for url, n in churn[:200]:
+            lines.append(f"| {n} | {new_by_url.get(url, 0)} | {url} |")
+        if len(churn) > 200:
+            lines.append(f"| … | … | and {len(churn) - 200} more URL(s) |")
         lines.append("")
 
     if report.extraction_rejects:
