@@ -902,7 +902,17 @@ _CANON_TO_LIBCAL_NAME = {
 }
 
 
-_TODAY_TAG = "  <-- TODAY"
+def _today_sentence() -> str:
+    """"Monday, August 3, 2026 (2026-08-03)" -- the anchor the model lacked.
+
+    LibCalWeekHoursTool returns seven dated rows and marks none of them as
+    current, and builder.py deliberately keeps the date out of the cached
+    system prefix, so the model had nothing to anchor on and copied the
+    weekday from the synthesizer prompt's own example: on Monday 2026-08-03
+    it answered "closes today, Wednesday, August 5".
+    """
+    d = _library_today()
+    return f"{d.strftime('%A')}, {d.strftime('%B')} {d.day}, {d.year} ({d.isoformat()})"
 
 
 def _library_today() -> "_dt.date":
@@ -917,52 +927,6 @@ def _library_today() -> "_dt.date":
     import pytz as _pytz
 
     return _dt.datetime.now(_pytz.timezone("America/New_York")).date()
-
-
-def _stamp_today(hours_text: str) -> str:
-    """Mark which line of the week schedule is today.
-
-    LibCalWeekHoursTool returns all seven days with dates and NO indication
-    of which is current, and nothing else injects the date (builder.py
-    deliberately keeps it out of the cached system prefix). So the model had
-    to guess -- and guessed the day in the synthesizer prompt's own example,
-    answering "closes today, Wednesday, August 5" on Monday the 3rd. It
-    reproduced 2 times in 3 when an hours question followed a booking turn,
-    and never when asked cold: the booking turn's "tomorrow" was enough to
-    push the guess forward. The closing TIME happened to be right, which is
-    what made it easy to miss.
-
-    Anchoring it in the evidence -- not the system prefix -- keeps the prompt
-    cache intact.
-    """
-    text = hours_text or ""
-    if not text.strip():
-        return text
-    today = _library_today()
-    weekday = today.strftime("%A")
-    # The agent legitimately calls get_hours more than once in a turn. Without
-    # this, the second pass prepends a second header -- and that header line
-    # carries both the weekday and the date, so it then gets tagged as if it
-    # were a day row.
-    if text.lstrip().startswith("Today is ") or _TODAY_TAG in text:
-        return text
-    stamped = []
-    for line in text.splitlines():
-        # The date alone is not enough: the header reads "Week of
-        # 2026-08-03", which would get tagged as if it were today's row.
-        # Require the weekday NAME too, which only the day rows carry.
-        if (
-            today.isoformat() in line
-            and weekday in line
-            and _TODAY_TAG not in line
-        ):
-            line = f"{line}{_TODAY_TAG}"
-        stamped.append(line)
-    header = (
-        f"Today is {today.strftime('%A')}, {today.strftime('%B')} "
-        f"{today.day}, {today.year} ({today.isoformat()}).\n"
-    )
-    return header + "\n".join(stamped)
 
 
 def _make_get_hours() -> Callable[[str], dict]:
@@ -994,7 +958,18 @@ def _make_get_hours() -> Callable[[str], dict]:
         return {
             "success": bool(res.get("success")),
             "library": library_id,
-            "hours": _stamp_today(res.get("text", "")),
+            # PRISTINE. Several callers print this verbatim -- e.g.
+            # _special_collections_hours_answer builds its whole answer from it
+            # -- so it must never carry anything meant only for the model.
+            # Stamping the day INTO this field (2026-08-03, first attempt at
+            # the wrong-weekday fix) leaked "Today is Monday, August 3, 2026"
+            # and a "<-- TODAY" marker straight into a patron answer, along
+            # with the full week's schedule that prompt rule 12 forbids.
+            "hours": res.get("text", ""),
+            # The day the model needs, as its own field. The evidence dict is
+            # serialised whole, so the model sees this without `hours` being
+            # touched.
+            "today": _today_sentence(),
             # Operator-provided and WebFetch-verified 2026-05-16:
             # 200, title "Library Hours | Miami University Libraries",
             # canonical hours hub, no redirect. (Earlier guesses

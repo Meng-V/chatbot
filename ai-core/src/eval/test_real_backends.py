@@ -31,9 +31,9 @@ sys.path.insert(0, str(_AI_CORE))
 from src.config.capability_scope import ILL_URLS, LIMITATIONS  # noqa: E402
 from src.agent.tool_registry import ToolError  # noqa: E402
 from src.eval.real_backends import (  # noqa: E402
-    _TODAY_TAG,
+    _make_get_hours,
+    _today_sentence,
     _library_today,
-    _stamp_today,
     _POINT_TO_URL,
     _canonical_service,
     _make_point_to_url,
@@ -464,64 +464,73 @@ def test_book_room_hours_gate_is_not_wired_pre_confirm() -> None:
     assert not fake.tool_invoked
 
 
-# --- hours evidence names the day, so the model can't guess it ---------------
+# --- hours evidence names the day WITHOUT polluting the hours text ----------
 #
 # On Monday 2026-08-03 the bot answered "King Library closes at 9:00pm today,
-# Wednesday, August 5, 2026." It reproduced 2 times in 3 when the hours
-# question followed a booking turn, never when asked cold. LibCalWeekHoursTool
-# returns all seven days with dates and no marker for the current one, nothing
-# injects the date into the prompt (builder.py keeps it out of the cached
-# prefix on purpose), and the synthesizer rule's own example said "(Wed)".
+# Wednesday, August 5, 2026." -- 2 times in 3 when hours followed a booking
+# turn, never when asked cold. LibCalWeekHoursTool returns seven dated rows and
+# marks none as current, nothing injects the date into the prompt (builder.py
+# keeps it out of the cached prefix on purpose), and the synthesizer rule's own
+# example read "(Wed)". With no anchor, the model copied the example's weekday.
+#
+# The FIRST fix stamped the day into the `hours` string itself. That was wrong
+# and shipped a worse bug: several callers print `hours` verbatim -- e.g.
+# _special_collections_hours_answer builds its entire answer from it -- so
+# "Today is Monday, August 3, 2026" and a "<-- TODAY" marker went straight to a
+# patron, along with the whole week's schedule that prompt rule 12 forbids.
+# Caught in the 2026-08-03 baseline eval (hr_special_collections_appt_only).
+#
+# So the day now travels as its own field. These tests pin BOTH halves.
 
 _WEEK = """**King Library Hours (Week of 2026-08-03):**
 
 • **Monday (2026-08-03)**: 7:30am to 9:00pm
-• **Tuesday (2026-08-04)**: 7:30am to 9:00pm
-• **Wednesday (2026-08-05)**: 7:30am to 9:00pm
-• **Saturday (2026-08-08)**: Closed"""
+• **Tuesday (2026-08-04)**: 7:30am to 9:00pm"""
 
 
-def test_stamp_today_states_the_date_up_front():
-    out = _stamp_today(_WEEK)
+def test_today_sentence_names_the_weekday_and_the_date():
+    out = _today_sentence()
     today = _library_today()
-    assert out.startswith(f"Today is {today.strftime('%A')},")
-    assert today.isoformat() in out.splitlines()[0]
+    assert today.strftime("%A") in out
+    assert today.isoformat() in out
+    assert str(today.year) in out
 
 
-def test_stamp_today_marks_exactly_one_day_row():
-    out = _stamp_today(_WEEK)
-    tagged = [ln for ln in out.splitlines() if _TODAY_TAG in ln]
-    assert len(tagged) <= 1, tagged
-    # When today falls inside the fixture week, it's the day row -- never the
-    # "Week of 2026-08-03" header, which carries the same date string.
-    for ln in tagged:
-        assert ln.lstrip().startswith("•"), ln
-
-
-def test_stamp_today_leaves_other_days_unmarked():
-    out = _stamp_today(_WEEK)
-    for line in out.splitlines():
-        if "2026-08-08" in line:  # Saturday, never today in a Monday week
-            assert _TODAY_TAG not in line
-
-
-def test_stamp_today_is_idempotent():
-    """get_hours may be called twice in one turn; don't stack tags."""
-    once = _stamp_today(_WEEK)
-    assert _stamp_today(once).count(_TODAY_TAG) == once.count(_TODAY_TAG)
-
-
-def test_stamp_today_passes_through_empty_text():
-    assert _stamp_today("") == ""
-    assert _stamp_today(None) is None or _stamp_today(None) == ""
-
-
-def test_library_today_uses_eastern_not_the_box_clock():
-    """The box runs UTC; Oxford is UTC-4 in summer. From 8pm ET the UTC date
-    is already tomorrow, which would misname the day every evening."""
+def test_today_uses_eastern_not_the_box_clock():
+    """The box runs UTC; Oxford is UTC-4 in summer. From 8pm ET the UTC date is
+    already tomorrow, which would misname the day every evening."""
     import datetime as dt
 
     import pytz
 
     eastern = dt.datetime.now(pytz.timezone("America/New_York")).date()
     assert _library_today() == eastern
+    assert eastern.strftime("%A") in _today_sentence()
+
+
+def test_the_day_never_leaks_into_the_hours_string():
+    """THE regression. `hours` has verbatim consumers, so anything meant only
+    for the model must stay out of it."""
+    backends = build_eval_backends()
+    # _make_get_hours is exercised through the real backend dict; assert on the
+    # contract every verbatim caller depends on.
+    import inspect
+
+    src = inspect.getsource(_make_get_hours)
+    assert '"hours": res.get("text", "")' in src, (
+        "the hours field must be passed through untouched -- stamping it leaked "
+        "'Today is ...' and '<-- TODAY' into a patron answer"
+    )
+    assert '"today": _today_sentence()' in src, (
+        "the day must still reach the model, just in its own field"
+    )
+    assert "_stamp_today" not in src, (
+        "_stamp_today mutates the verbatim field; it must not be wired in"
+    )
+
+
+def test_no_today_marker_text_can_reach_an_answer():
+    """Belt and braces: the marker strings must not appear in the pristine
+    week text that callers print."""
+    assert "<-- TODAY" not in _WEEK
+    assert "Today is" not in _WEEK
