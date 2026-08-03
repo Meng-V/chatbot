@@ -16,6 +16,7 @@ from __future__ import annotations
 from src.scope.resolver import Scope
 from src.graph.new_orchestrator import (
     _greeting_answer,
+    _CANCEL_CONFIRM_MARKER,
     _booking_flow_active,
     _awaiting_subject,
     _dean_answer,
@@ -2106,3 +2107,40 @@ def test_two_liaison_plural_answer_also_ends_the_subject_flow():
     assert _awaiting_subject(_h(("who?", ask), ("nursing", answered))) is False
     # ...and the ask itself must NOT read as already-resolved.
     assert _awaiting_subject(_h(("who?", ask))) is True
+
+
+# --- cancel flow: asymmetric window, because cancelling is a WRITE ----------
+#
+# Same last-message-only shape as the booking flow, but it must not get the
+# same treatment: a bare "yes" three turns after our prompt is at least as
+# likely to be agreeing to something else, and the cost of guessing wrong is
+# a cancelled reservation.
+
+_CANCEL_PROMPT = _CANCEL_CONFIRM_MARKER
+_BOOKED_EARLIER = ("King 103 is booked. Confirmation number: abc123def456. "
+                   "A confirmation email has been sent to qum@miamioh.edu.")
+
+
+def test_bare_yes_is_honoured_immediately_after_our_cancel_prompt():
+    hist = _h(("cancel my booking", _BOOKED_EARLIER),
+              ("cancel it", _CANCEL_PROMPT))
+    assert _cancel_reservation_answer("yes", hist) is not None
+
+
+def test_bare_yes_is_NOT_honoured_after_an_interposed_turn():
+    """The safety half of the fix. Making the patron repeat "yes" is the
+    right way to be wrong; cancelling a reservation they didn't mean is not."""
+    hist = _h(("cancel my booking", _BOOKED_EARLIER),
+              ("cancel it", _CANCEL_PROMPT),
+              ("actually what time does King close?", _HOURS_ANSWER))
+    assert _cancel_reservation_answer("yes", hist) is None
+
+
+def test_explicit_code_and_email_DO_cross_an_interposed_turn():
+    """A booking code is unambiguous -- nobody types one by accident -- so
+    this shape is safe to honour even after the patron asked something else."""
+    hist = _h(("cancel my booking", _CANCEL_HELP),
+              ("hold on, where is the makerspace?", "The MakerSpace is at King."))
+    out = _cancel_reservation_answer(
+        "abc123def456 and qum@miamioh.edu", hist)
+    assert out is not None

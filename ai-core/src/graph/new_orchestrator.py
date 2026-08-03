@@ -2232,20 +2232,35 @@ def _cancel_reservation_answer(
     # so _CANCEL_INTENT_RE would miss it and the patron would be stuck one
     # step from the thing they asked for -- the same dead end, one turn later.
     # Our own sentence is the state, as in _booking_flow_active.
-    awaiting_cancel = False
-    awaiting_details = False
-    for entry in reversed(history or []):
-        if isinstance(entry, dict) and entry.get("role") == "assistant":
-            _last = str(entry.get("content") or "")
-            awaiting_cancel = _CANCEL_CONFIRM_MARKER in _last
-            awaiting_details = _CANCEL_HELP_MARKER in _last
-            break
-    if awaiting_cancel or awaiting_details:
-        # Either prompt was the last thing we said, so this turn is the answer
-        # to it. Two shapes count as consent, and neither contains a verb that
-        # _CANCEL_INTENT_RE could see:
-        #   "confirm"                              -> use what we recovered
-        #   "<code> & <email>"                     -> use what they supplied
+    # Deliberately NOT the same window as _booking_flow_active. Cancelling is
+    # a destructive write, and the two consent shapes do not carry the same
+    # weight:
+    #
+    #   "<code> & <email>"  -- unambiguous. Nobody types a booking code by
+    #                          accident, so this is safe to honour even if the
+    #                          patron asked something else in between.
+    #   "yes" / "confirm"   -- a generic token. Three turns after our prompt it
+    #                          is at least as likely to be agreeing to
+    #                          something else, and the cost of guessing wrong
+    #                          is a cancelled reservation.
+    #
+    # So: details may cross ONE interposed turn; a bare affirmative must answer
+    # the prompt immediately. Erring toward making the patron repeat themselves
+    # is the right way to be wrong here.
+    _recent = _recent_assistant_texts(history, 2)
+    _immediately_prior = _recent[0] if _recent else ""
+    awaiting_cancel = _CANCEL_CONFIRM_MARKER in _immediately_prior
+    awaiting_details = any(_CANCEL_HELP_MARKER in c for c in _recent)
+    awaiting_cancel_recent = any(_CANCEL_CONFIRM_MARKER in c for c in _recent)
+    if awaiting_cancel_recent or awaiting_details:
+        # One of our cancel prompts is still open, so this turn may be the
+        # answer to it. Two shapes count as consent, and neither contains a
+        # verb that _CANCEL_INTENT_RE could see:
+        #   "confirm"            -> use what we recovered (STRICT window:
+        #                           `awaiting_cancel`, prompt must be the
+        #                           immediately preceding turn)
+        #   "<code> & <email>"   -> use what they supplied (may cross one
+        #                           interposed turn; a code is unambiguous)
         # Supplying the details is at least as explicit as saying yes, and a
         # patron who was asked for them will often send them rather than the
         # word we suggested. Requiring the word is how the live transcript
