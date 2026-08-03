@@ -270,8 +270,22 @@ def _run_turn(
     # routing.
     subject_reply = (
         not booking_flow
-        and _awaiting_subject(request.conversation_history)
         and len((request.user_message or "").split()) <= 6
+        and (
+            _awaiting_subject(request.conversation_history)
+            # ...or we TALKED about subject librarians without actually asking.
+            # Live student 2026-08-03 got a bare directory link rather than
+            # "which subject?", said "Marketing" anyway, and was told that was
+            # out of scope. Requiring our own question to have been well-formed
+            # makes the patron's memory depend on the synthesizer's wording;
+            # theirs shouldn't. Gated on the word RESOLVING to a real subject
+            # (see _names_a_known_subject), so "thanks" / "hours" / "yes" after
+            # the same deflection keep normal routing.
+            or (
+                _subject_liaison_context(request.conversation_history)
+                and _names_a_known_subject(request.user_message)
+            )
+        )
     )
     if subject_reply:
         classification = _dc_replace(
@@ -3037,9 +3051,70 @@ _SUBJECT_NAMED_RE = re.compile(
 )
 
 
+# The trailing `<qualifier>? <LIBRARIAN_WORD>` in _MY_LIBRARIAN_RE applies to
+# EVERY alternative, including the "who my librarian is" branch that already
+# consumed the noun -- so that branch only matched "who my librarian is
+# librarian" and was dead in practice. Rather than restructure a regex that
+# five separate live findings are pinned to, the shapes it cannot express live
+# here and the two are OR'd.
+#
+# Live student, reported 2026-08-03: asked who their librarian was, got a bare
+# directory link instead of "which subject?", answered "Marketing" anyway and
+# was told that was out of scope. "who is my librarian" hits; "I need to find
+# my librarian" and "can you tell me who my librarian is" both missed, and the
+# synthesizer then deflected to the directory with no question in it, so there
+# was nothing for the follow-up to attach to.
+#
+# _LIBRARIAN_IS_MINE_RE already recognises "MY librarian" in 9 of 10 natural
+# phrasings; what was missing is the SEEKING half in front of it.
+_MY_LIBRARIAN_SEEK_RE = re.compile(
+    r"\b(?:"
+    # "I need to find / I'm looking for / help me find / I want to talk to"
+    r"i\s+(?:need|want|wanna|would\s+like|'?d\s+like)\s+to\s+"
+    r"(?:find|reach|contact|know|meet|talk\s+to|speak\s+(?:to|with)|see)"
+    r"|i'?m\s+(?:looking|trying)\s+(?:for|to\s+find)"
+    r"|(?:help|tell|show)\s+me\b[^.?!]{0,12}\b(?:find|who|which)"
+    r"|(?:can|could|would)\s+you\s+(?:tell|show|help)\s+me"
+    r"|(?:how\s+do\s+i|where\s+do\s+i|i\s+need)\b"
+    r")",
+    re.IGNORECASE,
+)
+
+# Shapes that are self-sufficient: they name the possessive relationship
+# without any seeking verb, so they must not be AND'd with one.
+_MY_LIBRARIAN_STANDALONE_RE = re.compile(
+    r"\bwhich\s+" + _LIBRARIAN_WORD + r"\s+(?:is\s+)?mine\b"
+    r"|\b" + _LIBRARIAN_WORD + r"\s+(?:assigned\s+)?to\s+me\b",
+    re.IGNORECASE,
+)
+
+# "my librarian" / "my subject librarian" with an optional qualifier between.
+_MY_LIBRARIAN_POSSESSIVE_RE = re.compile(
+    r"\bmy\s+(?:personal|own|assigned|liaison|" + _SUBJECT_WORD + r"\s*)?\s*"
+    + _LIBRARIAN_WORD + r"\b",
+    re.IGNORECASE,
+)
+
+
+def _asks_for_my_librarian(message: str) -> bool:
+    """Is this "who is MY librarian?", however the patron phrased it?
+
+    Three ways in: the original shape-matching regex; a self-sufficient
+    possessive shape; or a seeking phrase next to "my librarian".
+    """
+    m = message or ""
+    if _MY_LIBRARIAN_RE.search(m) or _MY_LIBRARIAN_STANDALONE_RE.search(m):
+        return True
+    if not _MY_LIBRARIAN_SEEK_RE.search(m):
+        return False
+    return bool(
+        _MY_LIBRARIAN_POSSESSIVE_RE.search(m) or _LIBRARIAN_IS_MINE_RE.search(m)
+    )
+
+
 def _my_librarian_ask_subject(message: str) -> "Optional[tuple[str, list[dict]]]":
     m = message or ""
-    if not _MY_LIBRARIAN_RE.search(m) or _SUBJECT_NAMED_RE.search(m):
+    if not _asks_for_my_librarian(m) or _SUBJECT_NAMED_RE.search(m):
         return None
     return (
         "Miami's subject librarians are assigned by subject area rather "
@@ -5173,6 +5248,54 @@ def _subject_was_resolved(content: str) -> bool:
     if any(m in content for m in _SUBJECT_RESOLVED_MARKERS):
         return True
     return bool(_ANY_EMAIL_RE.search(content)) and "librarian" in content.lower()
+
+
+# Any recent assistant turn ABOUT subject liaisons, question or not. Broader
+# than _ASK_SUBJECT_RE on purpose: the synthesizer's deflections ("use the
+# subject liaisons directory to find your librarian by subject area") contain
+# no question at all, yet a bare major named right after one is still obviously
+# the patron naming their subject.
+_SUBJECT_LIAISON_CONTEXT_RE = re.compile(
+    r"\bsubject\s+(?:librarian|liaison)s?\b"
+    r"|\bliaisons?\s+directory\b"
+    r"|\blibrarian\s+(?:for|by)\s+(?:your\s+)?(?:subject|major|program|"
+    r"department|area)\b",
+    re.IGNORECASE,
+)
+
+
+def _subject_liaison_context(history: Optional[list]) -> bool:
+    """Was the conversation just about finding a subject librarian?"""
+    return any(
+        _SUBJECT_LIAISON_CONTEXT_RE.search(c)
+        for c in _recent_assistant_texts(history, 2)
+    )
+
+
+def _names_a_known_subject(message: str) -> bool:
+    """Does this short reply resolve to a real Miami subject?
+
+    The guard that makes the widened arming safe. Uses the same alias table
+    the lookup itself uses, so "Marketing" and "Zoology" pass while "thanks",
+    "hours", "yes", "printing" and "nvm" do not -- no new vocabulary to keep
+    in sync, and no DB call on the hot path.
+    """
+    text = (message or "").strip().strip("?.!,").strip()
+    if not text:
+        return False
+    try:
+        from src.tools.subject_aliases import find_subject_by_alias
+
+        if find_subject_by_alias(text):
+            return True
+        # "marketing major", "I'm in Finance" -- the subject plus a word or two.
+        return any(
+            find_subject_by_alias(w)
+            for w in re.findall(r"[A-Za-z][\w'-]{2,}", text)
+        )
+    except Exception:  # noqa: BLE001 -- a guard must never break the turn
+        logger.warning("subject alias guard failed for %r", text, exc_info=True)
+        return False
 
 
 def _awaiting_subject(history: Optional[list]) -> bool:

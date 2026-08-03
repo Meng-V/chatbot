@@ -16,6 +16,9 @@ from __future__ import annotations
 from src.scope.resolver import Scope
 from src.graph.new_orchestrator import (
     _greeting_answer,
+    _asks_for_my_librarian,
+    _names_a_known_subject,
+    _subject_liaison_context,
     _CANCEL_CONFIRM_MARKER,
     _booking_flow_active,
     _awaiting_subject,
@@ -2144,3 +2147,88 @@ def test_explicit_code_and_email_DO_cross_an_interposed_turn():
     out = _cancel_reservation_answer(
         "abc123def456 and qum@miamioh.edu", hist)
     assert out is not None
+
+
+# --- "who is my librarian" -> "Marketing" must not die ----------------------
+#
+# Live student, reported 2026-08-03: asked who their librarian was, got a bare
+# directory link instead of "which subject?", answered "Marketing" anyway, and
+# was told that was out of scope.
+#
+# Two independent defects. (1) _MY_LIBRARIAN_RE missed most natural phrasings,
+# so the deterministic "which subject?" reply never fired and the synthesizer
+# deflected with no question in it. Its "who my librarian is" branch was in
+# fact DEAD: the trailing librarian-word requirement applies to every
+# alternative, so it only matched "who my librarian is librarian".
+# (2) The continuation override required OUR question to have been well-formed,
+# which made the patron's memory depend on the synthesizer's wording.
+
+
+def test_natural_phrasings_of_who_is_my_librarian_all_trigger_the_ask():
+    for q in (
+        "who is my librarian?",
+        "who's my librarian?",
+        "I need to find my librarian",          # the reported miss
+        "can you tell me who my librarian is",  # the reported miss
+        "I'm looking for my librarian",
+        "help me find my librarian",
+        "which librarian is mine",
+        "I want to talk to my librarian",
+        "how do i contact my librarian",
+        "I'd like to meet my subject librarian",
+        "hoo is my subjekt libarian",           # typo case, kept from before
+    ):
+        assert _asks_for_my_librarian(q) is True, q
+        assert _my_librarian_ask_subject(q) is not None, q
+
+
+def test_the_dead_who_my_librarian_is_branch_now_actually_matches():
+    """It required "who my librarian is librarian" to fire."""
+    assert _asks_for_my_librarian("can you tell me who my librarian is") is True
+
+
+def test_unrelated_asks_do_not_trigger_the_subject_question():
+    """The seeking verbs are common; they must not hijack other intents."""
+    for q in (
+        "what time does King close",
+        "I need to find a book",
+        "I'm looking for a study room",
+        "can you tell me the wifi password",
+        "who is the dean",
+        "how do i print",
+        "I need to renew my books",
+        "can you help me find articles on marketing",
+        "who is the music librarian",  # a NAMED subject, not "mine"
+        "I want to talk to someone about my fines",
+    ):
+        assert _asks_for_my_librarian(q) is False, q
+
+
+def test_a_real_major_is_recognised_but_a_pleasantry_is_not():
+    """The guard that makes the widened arming safe."""
+    for subject in ("Marketing", "marketing", "Zoology", "Political Science",
+                    "marketing major", "Finance", "Kinesiology"):
+        assert _names_a_known_subject(subject) is True, subject
+    for other in ("thanks", "ok thanks", "hours", "yes", "printing", "wifi",
+                  "nvm", "", "   "):
+        assert _names_a_known_subject(other) is False, repr(other)
+
+
+def test_a_directory_deflection_still_counts_as_subject_context():
+    """No question in it, but a bare major right after is still a subject."""
+    for deflection in (
+        "Use the Miami University Libraries subject liaisons directory to "
+        "find your librarian by subject area [1].",
+        "Miami University Libraries assigns subject librarians by subject "
+        "area; use the Subject Librarians directory [1].",
+        "The subject liaisons directory lists librarians by subject area.",
+    ):
+        assert _subject_liaison_context(
+            [{"role": "assistant", "content": deflection}]) is True, deflection
+
+
+def test_unrelated_answers_are_not_subject_context():
+    assert _subject_liaison_context(
+        [{"role": "assistant", "content": "King Library closes at 9pm."}]) is False
+    assert _subject_liaison_context([]) is False
+    assert _subject_liaison_context(None) is False
