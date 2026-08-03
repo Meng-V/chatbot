@@ -53,6 +53,7 @@ Two connection models, each matched to its constraint:
 from __future__ import annotations
 
 import asyncio
+import datetime as _dt
 import logging
 import re
 from typing import Any, Awaitable, Callable, Iterable, Optional
@@ -901,6 +902,69 @@ _CANON_TO_LIBCAL_NAME = {
 }
 
 
+_TODAY_TAG = "  <-- TODAY"
+
+
+def _library_today() -> "_dt.date":
+    """Today in the libraries' own timezone.
+
+    NOT `date.today()`: this box runs UTC and Oxford is UTC-4 in summer, so
+    from 8pm ET onwards the UTC date is already tomorrow and every "what time
+    do you close today" answer would name the wrong day for four hours each
+    evening. America/New_York is the convention already used by the LibCal
+    tools and askus_hours.
+    """
+    import pytz as _pytz
+
+    return _dt.datetime.now(_pytz.timezone("America/New_York")).date()
+
+
+def _stamp_today(hours_text: str) -> str:
+    """Mark which line of the week schedule is today.
+
+    LibCalWeekHoursTool returns all seven days with dates and NO indication
+    of which is current, and nothing else injects the date (builder.py
+    deliberately keeps it out of the cached system prefix). So the model had
+    to guess -- and guessed the day in the synthesizer prompt's own example,
+    answering "closes today, Wednesday, August 5" on Monday the 3rd. It
+    reproduced 2 times in 3 when an hours question followed a booking turn,
+    and never when asked cold: the booking turn's "tomorrow" was enough to
+    push the guess forward. The closing TIME happened to be right, which is
+    what made it easy to miss.
+
+    Anchoring it in the evidence -- not the system prefix -- keeps the prompt
+    cache intact.
+    """
+    text = hours_text or ""
+    if not text.strip():
+        return text
+    today = _library_today()
+    weekday = today.strftime("%A")
+    # The agent legitimately calls get_hours more than once in a turn. Without
+    # this, the second pass prepends a second header -- and that header line
+    # carries both the weekday and the date, so it then gets tagged as if it
+    # were a day row.
+    if text.lstrip().startswith("Today is ") or _TODAY_TAG in text:
+        return text
+    stamped = []
+    for line in text.splitlines():
+        # The date alone is not enough: the header reads "Week of
+        # 2026-08-03", which would get tagged as if it were today's row.
+        # Require the weekday NAME too, which only the day rows carry.
+        if (
+            today.isoformat() in line
+            and weekday in line
+            and _TODAY_TAG not in line
+        ):
+            line = f"{line}{_TODAY_TAG}"
+        stamped.append(line)
+    header = (
+        f"Today is {today.strftime('%A')}, {today.strftime('%B')} "
+        f"{today.day}, {today.year} ({today.isoformat()}).\n"
+    )
+    return header + "\n".join(stamped)
+
+
 def _make_get_hours() -> Callable[[str], dict]:
     from src.tools.libcal_comprehensive_tools import LibCalWeekHoursTool
 
@@ -930,7 +994,7 @@ def _make_get_hours() -> Callable[[str], dict]:
         return {
             "success": bool(res.get("success")),
             "library": library_id,
-            "hours": res.get("text", ""),
+            "hours": _stamp_today(res.get("text", "")),
             # Operator-provided and WebFetch-verified 2026-05-16:
             # 200, title "Library Hours | Miami University Libraries",
             # canonical hours hub, no redirect. (Earlier guesses

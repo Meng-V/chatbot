@@ -31,6 +31,9 @@ sys.path.insert(0, str(_AI_CORE))
 from src.config.capability_scope import ILL_URLS, LIMITATIONS  # noqa: E402
 from src.agent.tool_registry import ToolError  # noqa: E402
 from src.eval.real_backends import (  # noqa: E402
+    _TODAY_TAG,
+    _library_today,
+    _stamp_today,
     _POINT_TO_URL,
     _canonical_service,
     _make_point_to_url,
@@ -459,3 +462,66 @@ def test_book_room_hours_gate_is_not_wired_pre_confirm() -> None:
     # tool this assertion is what should change.
     assert out["stage"] == "needs_confirmation"
     assert not fake.tool_invoked
+
+
+# --- hours evidence names the day, so the model can't guess it ---------------
+#
+# On Monday 2026-08-03 the bot answered "King Library closes at 9:00pm today,
+# Wednesday, August 5, 2026." It reproduced 2 times in 3 when the hours
+# question followed a booking turn, never when asked cold. LibCalWeekHoursTool
+# returns all seven days with dates and no marker for the current one, nothing
+# injects the date into the prompt (builder.py keeps it out of the cached
+# prefix on purpose), and the synthesizer rule's own example said "(Wed)".
+
+_WEEK = """**King Library Hours (Week of 2026-08-03):**
+
+• **Monday (2026-08-03)**: 7:30am to 9:00pm
+• **Tuesday (2026-08-04)**: 7:30am to 9:00pm
+• **Wednesday (2026-08-05)**: 7:30am to 9:00pm
+• **Saturday (2026-08-08)**: Closed"""
+
+
+def test_stamp_today_states_the_date_up_front():
+    out = _stamp_today(_WEEK)
+    today = _library_today()
+    assert out.startswith(f"Today is {today.strftime('%A')},")
+    assert today.isoformat() in out.splitlines()[0]
+
+
+def test_stamp_today_marks_exactly_one_day_row():
+    out = _stamp_today(_WEEK)
+    tagged = [ln for ln in out.splitlines() if _TODAY_TAG in ln]
+    assert len(tagged) <= 1, tagged
+    # When today falls inside the fixture week, it's the day row -- never the
+    # "Week of 2026-08-03" header, which carries the same date string.
+    for ln in tagged:
+        assert ln.lstrip().startswith("•"), ln
+
+
+def test_stamp_today_leaves_other_days_unmarked():
+    out = _stamp_today(_WEEK)
+    for line in out.splitlines():
+        if "2026-08-08" in line:  # Saturday, never today in a Monday week
+            assert _TODAY_TAG not in line
+
+
+def test_stamp_today_is_idempotent():
+    """get_hours may be called twice in one turn; don't stack tags."""
+    once = _stamp_today(_WEEK)
+    assert _stamp_today(once).count(_TODAY_TAG) == once.count(_TODAY_TAG)
+
+
+def test_stamp_today_passes_through_empty_text():
+    assert _stamp_today("") == ""
+    assert _stamp_today(None) is None or _stamp_today(None) == ""
+
+
+def test_library_today_uses_eastern_not_the_box_clock():
+    """The box runs UTC; Oxford is UTC-4 in summer. From 8pm ET the UTC date
+    is already tomorrow, which would misname the day every evening."""
+    import datetime as dt
+
+    import pytz
+
+    eastern = dt.datetime.now(pytz.timezone("America/New_York")).date()
+    assert _library_today() == eastern

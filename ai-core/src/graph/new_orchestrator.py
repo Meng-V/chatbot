@@ -4908,20 +4908,74 @@ _BOOKING_FLOW_MARKERS = (
     "I still need",
 )
 """Byte-stable substrings of OUR booking-flow texts (delivered verbatim
-by the 4.5 short-circuit). If the last assistant message contains one,
+by the 4.5 short-circuit). If a recent assistant message contains one,
 the next user message is a booking-flow continuation."""
 
 
-def _booking_flow_active(history: Optional[list]) -> bool:
-    """True when the most recent ASSISTANT message in the (OpenAI-shaped)
-    history is a mid-flow booking text. Successful-booking and
-    we-don't-book-there texts contain no marker, so the flow exits
-    naturally after completion/rejection."""
+# Texts that genuinely END a booking flow. These have to be named
+# explicitly. The original design inferred "ended" from "no marker
+# present", which is true of a completed booking -- and equally true of
+# every unrelated answer in between, so ONE interposed question killed
+# the flow:
+#
+#   T1 "book a study room tomorrow 3pm to 4pm" -> we ask for name/email
+#   T2 "wait, what time does King close today?" -> hours answer
+#   T3 "ok, Meng Qu, qum@miamioh.edu"           -> OUT OF SCOPE REFUSAL
+#
+# A patron interrupting their own booking with one question is not an
+# edge case, it is how people talk. Repro 2026-07-31.
+_BOOKING_FLOW_ENDED_MARKERS = (
+    "Confirmation number:",  # v1 tool's success text -- the booking exists
+    "has been cancelled",  # cancel_booking success
+)
+
+# How many assistant turns back to look for the flow. Bounded so a booking
+# abandoned twenty turns ago cannot resurrect itself and swallow a bare
+# reply that has nothing to do with rooms.
+_FLOW_LOOKBACK_TURNS = 3
+
+
+def _recent_assistant_texts(
+    history: Optional[list], limit: int
+) -> "list[str]":
+    """The most recent assistant messages, NEWEST FIRST, at most `limit`."""
+    out: list[str] = []
     for entry in reversed(history or []):
         if isinstance(entry, dict) and entry.get("role") == "assistant":
-            content = str(entry.get("content") or "")
-            return any(m in content for m in _BOOKING_FLOW_MARKERS)
+            out.append(str(entry.get("content") or ""))
+            if len(out) >= limit:
+                break
+    return out
+
+
+def _flow_active(
+    history: Optional[list],
+    start_markers: "tuple[str, ...]",
+    end_markers: "tuple[str, ...]",
+    lookback: int = _FLOW_LOOKBACK_TURNS,
+) -> bool:
+    """Is one of our own multi-turn flows still open?
+
+    Walks back over recent assistant turns, newest first. An end marker
+    closes the flow; a start marker opens it. Unrelated turns in between
+    are SKIPPED rather than treated as the end -- that is the whole point.
+    Checked in that order so a turn containing both (we booked, and then
+    offered another booking) reads as closed.
+    """
+    for content in _recent_assistant_texts(history, lookback):
+        if any(m in content for m in end_markers):
+            return False
+        if any(m in content for m in start_markers):
+            return True
     return False
+
+
+def _booking_flow_active(history: Optional[list]) -> bool:
+    """True when a mid-flow booking text is still the open question,
+    even if the patron asked something else in between."""
+    return _flow_active(
+        history, _BOOKING_FLOW_MARKERS, _BOOKING_FLOW_ENDED_MARKERS
+    )
 
 
 # "How do I contact Jennifer Hicks?" -- a patron who already knows a
@@ -5078,6 +5132,34 @@ _ASK_SUBJECT_RE = re.compile(
 )
 
 
+# Texts that mean the subject question has been ANSWERED, so a later bare
+# noun is a fresh topic rather than a late reply. Mirrors
+# _BOOKING_FLOW_ENDED_MARKERS: name the end, don't infer it from silence.
+#
+# Phrase matching alone was wrong here: the ASK itself says "Miami's subject
+# librarians are organized by subject area", so "subject librarians are"
+# closed the flow on the very turn that opened it. What actually separates an
+# answer from a question is that an answer NAMES someone -- and naming a
+# liaison always carries their address.
+# Note the SINGULAR here. "subject librarians are" (plural) is what the ask
+# says; "subject librarian is" only ever introduces one named person.
+_SUBJECT_RESOLVED_MARKERS = (
+    "subject librarian is",
+    "doesn't have a subject librarian listed",
+    "isn't a librarian based at",
+)
+
+
+def _subject_was_resolved(content: str) -> bool:
+    """Did this assistant turn actually deliver a liaison (or say there is
+    none)? Either the singular lead-in, or -- for the two-liaison plural
+    wording, which shares its opening with the ask -- an email next to the
+    word "librarian", since naming a person always carries their address."""
+    if any(m in content for m in _SUBJECT_RESOLVED_MARKERS):
+        return True
+    return bool(_ANY_EMAIL_RE.search(content)) and "librarian" in content.lower()
+
+
 def _awaiting_subject(history: Optional[list]) -> bool:
     """True when the last assistant turn asked WHICH subject.
 
@@ -5090,13 +5172,17 @@ def _awaiting_subject(history: Optional[list]) -> bool:
     _booking_flow_active: our own text is the state -- but the text may be
     the synthesizer's wording, not only our canned sentence, so match the
     QUESTION rather than one byte-stable string (see _ASK_SUBJECT_RE).
+
+    Survives ONE interposed turn, not three. This flow is looser than the
+    booking one -- it makes a bare noun mean "my subject" -- and plenty of
+    bare library nouns aren't subjects ("printing", "hours"). Naming a
+    liaison closes it; so does a turn that already resolved the subject.
     """
-    for entry in reversed(history or []):
-        if isinstance(entry, dict) and entry.get("role") == "assistant":
-            content = str(entry.get("content") or "")
-            return bool(
-                _ASK_SUBJECT_MARKER in content or _ASK_SUBJECT_RE.search(content)
-            )
+    for content in _recent_assistant_texts(history, 2):
+        if _subject_was_resolved(content):
+            return False
+        if _ASK_SUBJECT_MARKER in content or _ASK_SUBJECT_RE.search(content):
+            return True
     return False
 
 

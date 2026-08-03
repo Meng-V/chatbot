@@ -16,6 +16,8 @@ from __future__ import annotations
 from src.scope.resolver import Scope
 from src.graph.new_orchestrator import (
     _greeting_answer,
+    _booking_flow_active,
+    _awaiting_subject,
     _dean_answer,
     _GREETING_TEXT,
     _THANKS_TEXT,
@@ -1993,3 +1995,114 @@ def test_asks_containing_an_identity_signal_keep_the_other_half_framing():
     ):
         ans, _ = _dean_answer(q)
         assert "other half of your question" in ans, q
+
+
+# --- multi-turn flows survive an interposed question -------------------------
+#
+# The operator's report, 2026-07-31: "context has no memory". A patron who
+# interrupted their own booking with one unrelated question lost the whole
+# flow and got a scope refusal when they answered our question. Both flows
+# inferred "ended" from "the last assistant message has no marker", which is
+# also true of every unrelated answer in between.
+
+_ASK_DETAILS = ("To complete your room reservation, I still need: first name, "
+                "last name, @miamioh.edu email address.")
+_HOURS_ANSWER = "King Library closes today at 9:00pm. [1]"
+_BOOKED = ("King 103 with capacity 4 is booked from 3pm to 4pm on 2026-08-01 "
+           "at King. Confirmation number: abc123def456. A confirmation email "
+           "has been sent to your email.")
+
+
+def _h(*pairs):
+    """(user, assistant) pairs -> OpenAI-shaped history."""
+    out = []
+    for u, a in pairs:
+        out.append({"role": "user", "content": u})
+        out.append({"role": "assistant", "content": a})
+    return out
+
+
+def test_booking_flow_survives_one_interposed_question():
+    """The exact repro: book -> ask hours -> give name/email."""
+    hist = _h(("book a study room tomorrow 3pm to 4pm", _ASK_DETAILS),
+              ("wait, what time does King close today?", _HOURS_ANSWER))
+    assert _booking_flow_active(hist) is True
+
+
+def test_booking_flow_survives_two_interposed_questions():
+    hist = _h(("book a room tomorrow 3pm", _ASK_DETAILS),
+              ("what time does King close?", _HOURS_ANSWER),
+              ("where is the makerspace?", "The MakerSpace is on the first floor."))
+    assert _booking_flow_active(hist) is True
+
+
+def test_booking_flow_gives_up_after_the_lookback_window():
+    """Bounded: an abandoned booking must not resurrect much later and
+    swallow a bare reply that has nothing to do with rooms."""
+    hist = _h(("book a room tomorrow 3pm", _ASK_DETAILS),
+              ("q1", _HOURS_ANSWER), ("q2", _HOURS_ANSWER), ("q3", _HOURS_ANSWER))
+    assert _booking_flow_active(hist) is False
+
+
+def test_completed_booking_ends_the_flow_immediately():
+    hist = _h(("book a room tomorrow 3pm", _ASK_DETAILS),
+              ("Meng Qu, qum@miamioh.edu", _BOOKED))
+    assert _booking_flow_active(hist) is False
+
+
+def test_completed_booking_still_ends_the_flow_after_other_questions():
+    """The confirmation is older than the last turn, but it still closed
+    the flow -- otherwise a booked patron gets pulled back into booking."""
+    hist = _h(("book a room", _ASK_DETAILS),
+              ("Meng Qu, qum@miamioh.edu", _BOOKED),
+              ("thanks, what time does King close?", _HOURS_ANSWER))
+    assert _booking_flow_active(hist) is False
+
+
+def test_cancellation_ends_the_flow():
+    hist = _h(("book a room", _ASK_DETAILS),
+              ("cancel it", "Your reservation for King 103 (confirmation "
+                            "number: abc123) has been cancelled successfully."))
+    assert _booking_flow_active(hist) is False
+
+
+def test_no_booking_ask_means_no_flow():
+    assert _booking_flow_active(_h(("what time does King close?", _HOURS_ANSWER))) is False
+    assert _booking_flow_active([]) is False
+    assert _booking_flow_active(None) is False
+
+
+def test_subject_flow_survives_one_interposed_question():
+    ask = "Tell me your subject, major, or course and I'll look it up."
+    hist = _h(("who is my subject librarian?", ask),
+              ("actually, what time does King close?", _HOURS_ANSWER))
+    assert _awaiting_subject(hist) is True
+
+
+def test_subject_flow_is_shorter_than_the_booking_one():
+    """A bare noun meaning "my subject" is a looser reading than a bare
+    name/email meaning "my booking details", so it gets a tighter leash:
+    two assistant turns, not three."""
+    ask = "Tell me your subject, major, or course and I'll look it up."
+    hist = _h(("who is my subject librarian?", ask),
+              ("q1", _HOURS_ANSWER), ("q2", _HOURS_ANSWER))
+    assert _awaiting_subject(hist) is False
+
+
+def test_naming_a_liaison_ends_the_subject_flow():
+    ask = "Tell me your subject, major, or course and I'll look it up."
+    answered = ("Your subject librarian is Ginny Boehme at Oxford "
+                "(boehmemv@miamioh.edu) [1].")
+    hist = _h(("who is my subject librarian?", ask), ("biology", answered))
+    assert _awaiting_subject(hist) is False
+
+
+def test_two_liaison_plural_answer_also_ends_the_subject_flow():
+    """The plural wording shares its opening with the ask, so this case
+    relies on the email-next-to-librarian signal instead of the phrase."""
+    ask = "Miami's subject librarians are organized by subject area. Tell me your major."
+    answered = ("Your subject librarians are A One at Oxford (aone@miamioh.edu); "
+                "B Two at Hamilton (btwo@miamioh.edu) [1]. Any of them can help.")
+    assert _awaiting_subject(_h(("who?", ask), ("nursing", answered))) is False
+    # ...and the ask itself must NOT read as already-resolved.
+    assert _awaiting_subject(_h(("who?", ask))) is True

@@ -190,9 +190,17 @@ named several or asked to compare.
 12. DEFAULT-DAY DISCIPLINE (hours questions). When the user asks \
 "when is X open" / "what time does X close" without naming a day or \
 date, ANSWER ABOUT TODAY ONLY. Do NOT dump the full week's schedule. \
-Examples of WRONG output: "King is open Wed 7am-9pm, Thu 7am-6:30pm, \
-Fri 7am-5pm, Closed Sat/Sun." -- that's a week, not today. CORRECT: \
-"King is open today (Wed) 7am-9pm." If the user named a day ("when \
+Examples of WRONG output: "King is open <day1> 7am-9pm, <day2> \
+7am-6:30pm, <day3> 7am-5pm, Closed weekend." -- that's a week, not \
+today. CORRECT: "King is open today 7am-9pm." NEVER copy a weekday or \
+date from these instructions or from another row of the schedule: the \
+hours evidence states "Today is <weekday>, <month> <day>, <year>" and \
+marks that row "<-- TODAY". Use ONLY that row, and if it is absent, \
+give the time without naming a day rather than guessing one. (A \
+concrete weekday in this example used to get copied verbatim -- on \
+Monday 2026-08-03 the bot answered "closes today, Wednesday, August \
+5", because Wednesday was the example's day and its 9:00pm closing \
+matched.) If the user named a day ("when \
 does King close Saturday?") answer about that day only. If they \
 asked about a range ("hours this week"), then a multi-day answer is \
 appropriate. Listing multiple days when one was asked is verbose and \
