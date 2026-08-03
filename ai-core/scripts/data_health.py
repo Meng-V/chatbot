@@ -320,7 +320,20 @@ def main(force_email: bool, quiet: bool) -> int:
         lines += [f"       {d}" for d in f.detail]
     body = "\n".join(lines)
 
-    if not quiet:
+    if quiet:
+        # --quiet used to mean "no stdout at all". Under cron that wrote a
+        # 0-byte log forever, which reads as "the check never ran" -- and it
+        # cost real time: the 81-day-old corpus and an unhealthy dependency
+        # were both being reported here every morning, to a file nobody could
+        # tell apart from silence. Quiet now means "only the things that need
+        # a human", so an empty log genuinely means all clear.
+        if problems:
+            act = [lines[0], ""]
+            for f in problems:
+                act.append(f"[ACT] {f.name}: {f.summary}")
+                act += [f"       {d}" for d in f.detail]
+            print("\n".join(act))
+    else:
         print(body)
 
     if problems or force_email:
@@ -331,6 +344,12 @@ def main(force_email: bool, quiet: bool) -> int:
             send_alert_email(subject, body + (
                 "\n\nA quiet inbox means every check passed -- this mail is "
                 "only sent when there is something to act on."))
+            # WARNING, not INFO: under cron the root level is WARNING, so an
+            # INFO "email sent" line was dropped and the log could not show
+            # whether anyone had been told. Whether a human was notified is
+            # exactly what this log is for.
+            logger.warning("data health: emailed %d problem(s): %s",
+                           len(problems), subject)
         except Exception as e:  # noqa: BLE001
             logger.error("could not send the health email: %s", e)
             return 2
