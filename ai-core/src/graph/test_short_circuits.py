@@ -16,6 +16,8 @@ from __future__ import annotations
 from src.scope.resolver import Scope
 from src.graph.new_orchestrator import (
     _greeting_answer,
+    _CANCEL_HELP_MARKER,
+    _dismissal_answer,
     _asks_for_my_librarian,
     _names_a_known_subject,
     _subject_liaison_context,
@@ -2232,3 +2234,99 @@ def test_unrelated_answers_are_not_subject_context():
         [{"role": "assistant", "content": "King Library closes at 9pm."}]) is False
     assert _subject_liaison_context([]) is False
     assert _subject_liaison_context(None) is False
+
+
+# --- "nvm" is a withdrawal, not a question ----------------------------------
+#
+# data_health's 24h refusal list, 2026-07-31: a student said "nvm cancel it"
+# and a bare "nvm" both ended in refusals. The compound form belongs to
+# _CANCEL_PRONOUN_RE; the bare form had no owner, so a patron withdrawing
+# their question was told that withdrawing it was out of scope.
+
+
+def test_bare_dismissals_are_acknowledged_not_refused():
+    for q in ("nvm", "nevermind", "never mind", "Never mind.", "forget it",
+              "disregard", "skip it", "no thanks", "I'm good", "all good",
+              "that's all", "nothing else", "ok nevermind", "actually nvm",
+              "my bad", "oops"):
+        assert _dismissal_answer(q) is not None, q
+
+
+def test_dismissal_does_not_steal_the_cancel_phrasings():
+    """"nvm cancel it" withdraws a RESERVATION, not the conversation, and
+    _CANCEL_PRONOUN_RE owns it. Anchoring keeps the two apart."""
+    for q in ("nvm cancel it", "cancel it nvm", "never mind, cancel that"):
+        assert _dismissal_answer(q) is None, q
+
+
+def test_dismissal_does_not_swallow_a_real_question():
+    for q in ("no", "yes", "thanks", "what time does King close",
+              "forget it, where is King?", "I'm good at marketing"):
+        assert _dismissal_answer(q) is None, q
+
+
+def test_abandoning_a_booking_says_nothing_was_booked():
+    """The one fact that patron needs, unprompted -- cheaper than finding
+    out at the room door."""
+    hist = _h(("book a study room tomorrow 3pm", _ASK_DETAILS))
+    out = _dismissal_answer("nvm", hist)
+    assert "nothing was booked" in out
+
+
+def test_abandoning_the_subject_ask_offers_the_way_back_in():
+    hist = _h(("who is my librarian?",
+               "Tell me your subject, major, or course and I'll look it up."))
+    out = _dismissal_answer("nvm", hist)
+    assert "subject librarian" in out
+
+
+def test_a_dismissal_closes_the_open_flow():
+    """Otherwise the flow stays armed for the rest of the lookback window and
+    a later unrelated reply gets read as a slot-fill."""
+    hist = _h(("book a study room tomorrow 3pm", _ASK_DETAILS))
+    hist += [{"role": "user", "content": "nvm"},
+             {"role": "assistant", "content": _dismissal_answer("nvm", hist)}]
+    assert _booking_flow_active(hist) is False
+
+    subj = _h(("who is my librarian?",
+               "Tell me your subject, major, or course and I'll look it up."))
+    subj += [{"role": "user", "content": "nvm"},
+             {"role": "assistant", "content": _dismissal_answer("nvm", subj)}]
+    assert _awaiting_subject(subj) is False
+
+
+def test_pronoun_cancel_with_nothing_to_resolve_asks_instead_of_refusing():
+    """"cancel it" / "nvm cancel it" when this chat never booked anything.
+    We understood them perfectly; we just don't know WHICH booking. Returning
+    None dropped these into the out-of-scope refusal (data_health, 2026-07-31)."""
+    for q in ("cancel it", "nvm cancel it", "cancel that",
+              "never mind, cancel that", "actually can I cancel that"):
+        out = _cancel_reservation_answer(q, [])
+        assert out is not None, q
+        assert _CANCEL_HELP_MARKER in out[0], q
+
+
+def test_pronoun_cancel_still_confirms_when_a_booking_is_recoverable():
+    """The ask is only the fallback -- a booking made in this chat must still
+    reach the confirm-before-destructive-call gate, not a request for details
+    we already hold."""
+    booked = ("King 103 is booked. Confirmation number: abc123def456. A "
+              "confirmation email has been sent to qum@miamioh.edu.")
+    hist = _h(("book a room", booked))
+    for q in ("cancel it", "nvm cancel it", "cancel that"):
+        out = _cancel_reservation_answer(q, hist)
+        assert out is not None and "abc123def456" in out[0], q
+        assert _CANCEL_HELP_MARKER not in out[0], q
+
+
+def test_pronoun_cancel_fallback_does_not_claim_non_room_things():
+    """"cancel my hold on this book" carries a pronoun, so the fallback sees
+    it -- but answering with the ROOM cancellation procedure would be a
+    confident non-answer. Regression: the fallback broke this on first write."""
+    # "cancel this appointment" is NOT here: _CANCEL_CTX_RE claims "appointment"
+    # as room-ish, so it takes the normal path and always has -- pre-existing,
+    # verified against HEAD~, not something this fallback changed.
+    for q in ("cancel my hold on this book", "cancel this interlibrary loan",
+              "cancel my fines on it", "cancel that request",
+              "cancel my ebook loan on it"):
+        assert _cancel_reservation_answer(q, []) is None, q

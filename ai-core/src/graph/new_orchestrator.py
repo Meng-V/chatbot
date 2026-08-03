@@ -423,7 +423,12 @@ def _run_turn(
     # back deterministically instead. Skipped mid-booking-flow so a
     # slot-fill that happens to look like a greeting still reaches the
     # agent.
-    _greet_text = None if booking_flow else _greeting_answer(request.user_message)
+    # Dismissal is checked BEFORE the booking-flow skip, and deliberately is
+    # NOT skipped by it: "nvm" mid-booking is the case that most needs
+    # answering, because that patron needs telling that nothing was booked.
+    _greet_text = _dismissal_answer(
+        request.user_message, request.conversation_history
+    ) or (None if booking_flow else _greeting_answer(request.user_message))
     if _greet_text:
         latency_ms = int((time.monotonic() - turn_start) * 1000)
         record_request(endpoint="/chat", status="greeting",
@@ -1636,6 +1641,59 @@ _THANKS_TEXT = (
 )
 
 
+# "nvm" is a patron withdrawing the question, not a question. The kNN has no
+# library signal to work with, so it landed in out_of_scope and a student who
+# said "never mind" was told never-minding is outside what a library chatbot
+# covers (seen in data_health's 24h refusal list, 2026-07-31).
+#
+# "nvm cancel it" is a DIFFERENT thing -- an abandonment of a reservation, not
+# of the conversation -- and _CANCEL_PRONOUN_RE already owns it. Anchored to
+# the whole message so the two never collide.
+_DISMISSAL_RE = re.compile(
+    r"^\s*(?:ok(?:ay)?\s+)?(?:actually\s+)?"
+    r"(?:nvm|nevermind|never\s*mind|forget\s+it|forget\s+that|disregard"
+    r"|skip\s+it|no\s+thanks?|no\s+thank\s+you|i'?m\s+good|im\s+good"
+    r"|all\s+good|that'?s\s+all|that\s+is\s+all|thats\s+all|nothing\s+else"
+    r"|my\s+bad|oops|sorry\s+wrong\s+(?:chat|window)"
+    r")\s*[!.,]*\s*$",
+    re.IGNORECASE,
+)
+
+# Byte-stable and shared by every dismissal reply, so this turn CLOSES the
+# open flow instead of leaving it armed for the lookback window. Same
+# name-the-end discipline as _BOOKING_FLOW_ENDED_MARKERS.
+_DISMISSAL_MARKER = "Nothing is pending on my end."
+
+_DISMISSAL_TEXT = (
+    f"No problem. {_DISMISSAL_MARKER} Just ask whenever something comes up."
+)
+# A patron walking away mid-booking most needs to know they do NOT have a
+# reservation. Saying so unprompted is cheaper than them finding out at the
+# room door.
+_DISMISSAL_BOOKING_TEXT = (
+    f"No problem -- nothing was booked, so there's no reservation to worry "
+    f"about. {_DISMISSAL_MARKER} If you want a room later, just tell me the "
+    f"day and time."
+)
+_DISMISSAL_SUBJECT_TEXT = (
+    f"No problem. {_DISMISSAL_MARKER} If you want your subject librarian "
+    f"later, just name the subject or course and I'll look it up."
+)
+
+
+def _dismissal_answer(
+    message: str, history: Optional[list] = None
+) -> "Optional[str]":
+    """Acknowledge a withdrawn question, tailored to what was open."""
+    if not _DISMISSAL_RE.match(message or ""):
+        return None
+    if _booking_flow_active(history):
+        return _DISMISSAL_BOOKING_TEXT
+    if _awaiting_subject(history):
+        return _DISMISSAL_SUBJECT_TEXT
+    return _DISMISSAL_TEXT
+
+
 def _greeting_answer(message: str) -> "Optional[str]":
     """Friendly reply for a bare greeting, an identity/capability question
     ('who are you', 'what can you help with'), or a thanks -- each of which a
@@ -2136,6 +2194,22 @@ _CONF_CODE_RE = re.compile(
     re.IGNORECASE,
 )
 _ANY_EMAIL_RE = re.compile(r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b")
+# Things that are cancellable but are NOT a room, so the room-reservation help
+# text would be a confident non-answer. "cancel my hold on this book" contains
+# a pronoun, which is enough for _CANCEL_PRONOUN_RE; before the fallback below
+# existed it fell through harmlessly, and it must keep doing so.
+#
+# "appointment" is deliberately ABSENT: _CANCEL_CTX_RE already claims it as
+# a room-ish thing, so it never reaches this branch. Listing it here would
+# imply a behaviour change that isn't happening (verified against HEAD~:
+# "cancel this appointment" returned the room help before this fix too).
+_CANCEL_NOT_A_ROOM_RE = re.compile(
+    r"\b(hold|holds|book|books|ebook|item|items|loan|loans|renewal|fine|fines"
+    r"|account|card|ill|interlibrary|document\s+delivery|request|requests"
+    r"|subscription|newsletter)\b",
+    re.IGNORECASE,
+)
+
 _CANCEL_HELP = (
     "To cancel a room reservation I need two things: the confirmation number "
     "(it's in your booking confirmation message/email) and the email "
@@ -2298,6 +2372,22 @@ def _cancel_reservation_answer(
     if not (has_code or _CANCEL_CTX_RE.search(m)):
         # "cancel that" right after we issued a confirmation number.
         booked_here, _ = _booking_details_from_history(history)
+        if (
+            not booked_here
+            and _CANCEL_PRONOUN_RE.search(m)
+            and not _CANCEL_NOT_A_ROOM_RE.search(m)
+        ):
+            # A pronoun cancel with nothing to resolve it against: "cancel it"
+            # / "nvm cancel it" when this conversation never booked anything.
+            # Returning None dropped these into the generic out-of-scope
+            # refusal -- the patron was told that cancelling a room is outside
+            # what a library chatbot covers (data_health refusal list,
+            # 2026-07-31). We understood them perfectly; we just don't know
+            # WHICH booking. Ask, the same as the noun forms already do.
+            return _CANCEL_HELP, [{
+                "n": 1, "url": _ROOMS_URL,
+                "snippet": "Miami University Libraries — Room Reservations",
+            }]
         if not (booked_here and _CANCEL_PRONOUN_RE.search(m)):
             return None
     # informational ("cancellation policy/fee") with no concrete code -> let the
@@ -5017,6 +5107,7 @@ the next user message is a booking-flow continuation."""
 _BOOKING_FLOW_ENDED_MARKERS = (
     "Confirmation number:",  # v1 tool's success text -- the booking exists
     "has been cancelled",  # cancel_booking success
+    _DISMISSAL_MARKER,  # the patron said "nvm" -- flow withdrawn, not pending
 )
 
 # How many assistant turns back to look for the flow. Bounded so a booking
@@ -5237,6 +5328,7 @@ _SUBJECT_RESOLVED_MARKERS = (
     "subject librarian is",
     "doesn't have a subject librarian listed",
     "isn't a librarian based at",
+    _DISMISSAL_MARKER,  # withdrawn counts as closed, same as answered
 )
 
 
