@@ -263,6 +263,12 @@ LIBRARY_HOST_PREFIXES: Final[tuple[str, ...]] = (
     "www.lib.",    # www.lib.miamioh.edu
     "libguides.",  # libguides.lib.miamioh.edu -- curated LIBGUIDE_SEED
                    # only; discover never bulk-crawls this host.
+    # Special Collections and University Archives. Its whole site was being
+    # rejected as "not_library_url" because the host is spec.lib.miamioh.edu
+    # and this tuple only matched hosts STARTING with "lib."/"www.lib.".
+    # Found 2026-08-03 while auditing which patron topics the corpus covers:
+    # special collections had zero chunks, and this was why.
+    "spec.",
 )
 
 LIBRARY_PATH_SUBSTRINGS: Final[tuple[str, ...]] = (
@@ -354,6 +360,26 @@ FEATURED_SERVICE_PATTERNS: Final[tuple[tuple[str, str], ...]] = (
 # "all" = university-wide (cross-campus guard passes "all").
 #
 # (url, campus, library, featured_service|None)
+# Curated seeds for library hosts that have NO sitemap of their own and are
+# therefore invisible to discover()'s sitemap loop. Same 4-tuple shape as
+# LIBGUIDE_SEED so classify.py handles them identically.
+#
+# SEED_URLS could not serve this purpose: it is a FALLBACK, consulted only when
+# a campus sitemap fails, and Oxford's sitemap works fine -- so an Oxford entry
+# there would never be read.
+#
+# Special Collections and University Archives: spec.lib.miamioh.edu/sitemap.xml
+# is a 404, so allowing the host (LIBRARY_HOST_PREFIXES) was necessary but not
+# sufficient. A topic audit on 2026-08-03 found zero special-collections chunks
+# in the corpus; between the host filter and this gap, the whole department was
+# missing.
+ALWAYS_SEED: Final[tuple[tuple[str, str, str, Optional[str]], ...]] = (
+    ("https://spec.lib.miamioh.edu/home/", "oxford", "special", None),
+    ("https://spec.lib.miamioh.edu/home/staff/", "oxford", "special", None),
+    ("https://spec.lib.miamioh.edu/", "oxford", "special", None),
+)
+
+
 LIBGUIDE_SEED: Final[tuple[tuple[str, str, str, Optional[str]], ...]] = (
     ("https://libguides.lib.miamioh.edu/middletown_tec_lab/home",
      "middletown", "gardner_harvey", "makerspace"),
@@ -362,6 +388,13 @@ LIBGUIDE_SEED: Final[tuple[tuple[str, str, str, Optional[str]], ...]] = (
     ("https://libguides.lib.miamioh.edu/newspapers",
      "all", "all", "newspapers"),
     ("https://libguides.lib.miamioh.edu/citation",
+     "all", "all", None),
+    # The A-Z databases list -- the single most research-relevant page on the
+    # site and it was in NO seed. The vanity path /databases/ is a 182-byte
+    # redirect shim, so nothing reached the real list; a topic audit on
+    # 2026-08-03 found zero database chunks in a corpus meant to assist
+    # research. Extracts 1,888 characters.
+    ("https://libguides.lib.miamioh.edu/az/databases",
      "all", "all", None),
     ("https://libguides.lib.miamioh.edu/mul-circulation-policies",
      "all", "all", None),

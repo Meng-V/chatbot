@@ -209,6 +209,25 @@ def discover() -> list[DiscoveredUrl]:
             extra={"libguide_kept": libguide_kept},
         )
 
+    # --- Curated seeds for sitemap-less library hosts (config.ALWAYS_SEED) ---
+    # Same treatment as the LibGuide seeds above, for hosts whose sitemap is a
+    # 404. SEED_URLS cannot cover this: it only fires when a CAMPUS sitemap
+    # fails, and Oxford's works.
+    always_kept = 0
+    for a_url, a_campus, _alib, _afs in getattr(config, "ALWAYS_SEED", ()):
+        excluded, reason = _is_excluded(a_url)
+        if excluded:
+            rejected.append((a_url, reason or "unknown"))
+            continue
+        if a_url not in seen:
+            seen[a_url] = DiscoveredUrl(
+                url=a_url, campus=a_campus, source="always_seed",
+            )
+            always_kept += 1
+    if always_kept:
+        logger.info("added curated always-seeds",
+                    extra={"always_kept": always_kept})
+
     logger.info(
         "discovery complete",
         extra={
