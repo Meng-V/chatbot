@@ -122,6 +122,76 @@ EXCLUDE_URL_PREFIXES: Final[tuple[str, ...]] = (
     "/strategic/2022",
     "/strategic/2024",
     "/strategic/hidden-for",
+
+    # --- Operator rule 2026-08-03 ------------------------------------------
+    # "This is a website-navigation and research-assistance bot, not a bot for
+    # recording history." News, celebration pieces, staff spotlights,
+    # newsletters and past exhibits are out, whatever path they live under.
+    #
+    # The dated-post regex below already caught 158 of these, but only when the
+    # date STARTS the path. These survived it and are the reason this block
+    # exists -- each line below was verified against the live sitemap:
+    "/carousel/",          # /carousel/2026-06-15-...honors-dr-glenn-platt,
+    "/carousel-preview/",  # retirements, "celebrating ..." -- dated, but the
+                           # date is not first so the regex could not see it
+    "/library-events",
+    # NOTE: bare "/news" is NOT here. As a prefix it also matched
+    # libguides' /newspapers guide, which is real research content. It lives
+    # in EXCLUDE_URL_REGEXES below with an explicit boundary instead.
+    "/MoveInMiami",
+    "/Illuminant20",       # the Illuminant newsletter
+    "/past-digital-exhibits-archive",
+
+    # COVID-era guidance and the services that existed only while the building
+    # was shut. /libraryhealthy is above; these are its other spellings.
+    "/coronavirus",
+    "/library-healthy",
+    # "/curbside" was here and is NOT COVID-dead: the page returns real
+    # content and an existing test pins it as current. Left in the corpus.
+
+    # The Amos Music Library CLOSED Sept 2023. Its location page is already
+    # excluded above; these are its /system/ and vanity aliases. The music
+    # LIBRARIAN is unaffected -- Barry Zaslow comes from Postgres, not here.
+    "/system/amos-music-library",
+    "/system/music-library",
+
+    # Internal, unpublished and machine-facing pages. Every one of these was
+    # in the crawl's surviving set, and none is an answer to a patron
+    # question: a FONT sample page, a Google site-verification file, an
+    # explicitly-unpublished draft, the analytics admin.
+    "/about/usability-bookmark",
+    "/about/usability-home",
+    "/auto-search",        # /auto-search.html and /auto-search-widget.html
+    "/book-search",
+    "/eds-request",
+    "/assets/fonts/",
+    "/king-posts-test",
+    "/inclusive-excellence-unpublished",
+    "/GoDigitalPreview",
+    "/GetMeData",
+    "/tracking",
+    "/reports/",
+    "/user/",
+    "/schedule-select",
+    "/conversion-request-form",
+    "/system/",            # internal aliases of pages we index properly
+
+    # Time-bound building-project pages.
+    "/reno",
+    "/renovation",
+
+    # --- Pages that are structurally unreadable (operator-agreed 2026-08-03) -
+    # These are shells: the HTML is chrome wrapped around third-party widget
+    # <script> tags, and the content only exists after JavaScript runs. The
+    # hours page is 33KB in which the strings "7:30", "9:00" and "Sunday"
+    # appear ZERO times -- it embeds eight LibCal hours widgets.
+    #
+    # Excluding rather than logging a reject every run, because the answer is
+    # already better elsewhere: hours come from the LibCal API live
+    # (get_hours), so a corpus copy could only ever be a stale second opinion.
+    # If one of these ever stops being widget-driven, remove its line.
+    "/about/locations/hours/",
+    "/hours/",
 )
 
 # Dated news/blog posts: `/YYYY-MM-DD-slug`, 2014 onward. `events_news` is
@@ -132,6 +202,13 @@ EXCLUDE_URL_PREFIXES: Final[tuple[str, ...]] = (
 # starts with a date.
 EXCLUDE_URL_REGEXES: Final[tuple[str, ...]] = (
     r"^/20\d\d-\d\d-\d\d-",
+    # Bare "/news" and "/news/" but NOT "/newspapers" -- as a plain prefix,
+    # "/news" swallowed libguides' newspapers research guide.
+    r"^/news(/|$)",
+    # A date anywhere in the path, for news that is not at the root:
+    # /carousel/2026-06-15-slug. Covered by the "/carousel/" prefix too, but
+    # this catches the next section someone adds dated posts to.
+    r"/20\d\d-\d\d-\d\d-",
 )
 
 # Specific path patterns to drop in addition to the prefixes above.

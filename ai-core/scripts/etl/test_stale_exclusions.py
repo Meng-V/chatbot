@@ -66,3 +66,121 @@ def test_the_serving_denylist_and_the_crawl_filter_agree():
         assert excluded, (
             f"{url} is denied at serving time but would still be crawled and "
             f"embedded -- wasted index, and a trap after a promotion")
+
+
+# --- operator rule 2026-08-03: navigation + research, not a history archive ---
+#
+# "This is a website-navigation and research-assistance bot, not a bot for
+# recording history." Each URL below was taken from the live sitemap, which is
+# why they are spelled out rather than described: the dated-post regex only
+# matched when the date STARTED the path, so /carousel/2026-06-15-... slipped
+# through, as did a bare "/news" (the rule was "/news/").
+
+
+def _excluded(path: str) -> bool:
+    ok, _ = _is_excluded("https://www.lib.miamioh.edu" + path)
+    return ok
+
+
+def test_news_and_celebration_pieces_are_excluded():
+    for path in (
+        "/carousel/2026-06-15-miami-university-libraries-honors-dr-glenn-platt",
+        "/carousel/2026-06-16-celebrating-the-retirement-of-stan-brown",
+        "/carousel/carousel-2024-digital-humanities",
+        "/carousel-preview/",
+        "/library-events",
+        "/news",                 # bare -- the "/news/" prefix missed this
+        "/MoveInMiami/",
+        "/Illuminant20",         # newsletter
+        "/past-digital-exhibits-archive/",
+        "/2016-10-06-staff-spotlighttiffany-dogan",
+    ):
+        assert _excluded(path), path
+
+
+def test_covid_era_pages_and_services_are_excluded():
+    for path in ("/coronavirus/", "/library-healthy/", "/libraryhealthy/"):
+        assert _excluded(path), path
+
+
+def test_curbside_is_NOT_treated_as_covid_dead():
+    """It reads like COVID-era language ("extra personal space") and I excluded
+    it on that hunch. Wrong: the page returns real content describing a current
+    service, and an existing test already pinned it. Verified 200 + real body
+    on 2026-08-03."""
+    assert not _excluded("/use/borrow/curbside/")
+    assert not _excluded("/curbside/")
+
+
+def test_the_news_rule_does_not_swallow_the_newspapers_guide():
+    """"/news" as a plain PREFIX also matched libguides' /newspapers research
+    guide -- real content, and exactly the over-exclusion that would only
+    surface when a patron asked about the NYT. Hence a boundary-anchored
+    regex instead of a prefix."""
+    assert _excluded("/news")
+    assert _excluded("/news/")
+    ok, _ = _is_excluded("https://libguides.lib.miamioh.edu/newspapers")
+    assert not ok
+    assert not _excluded("/Newspapers")
+
+
+def test_closed_music_library_aliases_are_excluded():
+    for path in ("/system/amos-music-library", "/system/music-library",
+                 "/about/locations/music-library/"):
+        assert _excluded(path), path
+
+
+def test_internal_and_machine_facing_pages_are_excluded():
+    for path in (
+        "/about/usability-home/",
+        "/auto-search.html",
+        "/auto-search-widget.html",
+        "/book-search.html",
+        "/eds-request.html",
+        "/assets/fonts/adelle-cufonfonts-webfont/example.html",
+        "/king-posts-test/",
+        "/inclusive-excellence-unpublished/",
+        "/tracking/admin/",
+        "/reports/youtube_tags/",
+        "/user/",
+    ):
+        assert _excluded(path), path
+
+
+def test_binary_attachments_are_excluded():
+    """No PDF text extraction exists, so a .pdf was indexed as mojibake --
+    19,700 of the serving index's 20,608 chunks. Operator 2026-08-03: drop
+    them permanently."""
+    for path in ("/assets/docs/org-chart.pdf",
+                 "/sites/default/files/Signage_Proposal.pdf",
+                 "/assets/docs/policy.docx", "/files/data.xlsx"):
+        assert _excluded(path), path
+
+
+def test_widget_only_shells_are_excluded():
+    """33KB of chrome around eight LibCal <script> embeds; "7:30" and "Sunday"
+    appear zero times in the HTML. Hours come from the live API instead."""
+    for path in ("/about/locations/hours/", "/hours/"):
+        assert _excluded(path), path
+
+
+def test_the_pages_the_bot_actually_answers_from_survive():
+    """The other half of the rule. Over-excluding is the failure mode that
+    would be invisible until a patron asked."""
+    for path in (
+        "/about/organization/liaisons/",
+        "/about/organization/staff/",
+        "/use/spaces/room-reservations/",
+        "/use/technology/printing/",
+        "/use/technology/tech-checkout/",
+        "/research/research-support/ask/",
+        "/databases/",
+        "/policies/borrowing",
+        "/policies/privacy",
+        "/tech/equipment-for-checkout",
+        "/theses/",
+        "/Newspapers",
+        "/about/locations/king-library/",
+        "/strategic/",            # current plan; only the dated years are out
+    ):
+        assert not _excluded(path), path
