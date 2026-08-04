@@ -4820,6 +4820,66 @@ def _fmt_clock(minutes: int) -> str:
     return f"{h12}:{m:02d}{suffix}" if m else f"{h12}{suffix}"
 
 
+def _get_hours_data(deps: "OrchestratorDeps", library: str) -> "Optional[dict]":
+    """get_hours for one library, retried, or None.
+
+    ONE place, because the retry is not optional. The first hours call in a
+    freshly restarted process comes back with ToolResult.error UNSET but
+    data={"success": False} and a 64-character body -- the LibCal bridge binds
+    its event loop lazily and the cold call loses the race. Every hours
+    short-circuit was therefore degrading its first answer after a restart,
+    silently, and each caller having its own dispatch meant fixing it in one
+    place fixed it in one place only (observed twice on 2026-08-04).
+    """
+    try:
+        from src.agent.tool_registry import ToolCall
+        res = None
+        for attempt in range(3):
+            res = deps.tool_registry.dispatch(
+                ToolCall(id=f"hours-{library}-{attempt}", name="get_hours",
+                         arguments={"library": library})
+            )
+            if not res.error and (res.data or {}).get("success"):
+                break
+            log.info("hours: %s attempt %d unusable (error=%s success=%s)",
+                     library, attempt + 1, res.error,
+                     (res.data or {}).get("success"))
+        if res is None or res.error:
+            return None
+        data = res.data or {}
+        if not data.get("success") or not str(data.get("hours") or "").strip():
+            log.info("hours: %s declined, success=%s hours_len=%d", library,
+                     data.get("success"), len(str(data.get("hours") or "")))
+            return None
+        return data
+    except Exception:  # noqa: BLE001 -- never break the turn
+        log.warning("hours: %s raised", library, exc_info=True)
+        return None
+
+
+def _today_hours_sentence(hours_text: str, name: str) -> "Optional[str]":
+    """"X is open today, Tuesday, from 7:30am to 9:00pm." -- or None.
+
+    Shared by the deterministic hours short-circuits so they narrow to today
+    the way the synthesizer is required to. None when today's row cannot be
+    read, so callers can fall back rather than invent.
+    """
+    import datetime as _datetime
+
+    import pytz as _pytz
+    now = _datetime.datetime.now(_pytz.timezone("America/New_York"))
+    state = _open_state(hours_text, now)
+    if state is None:
+        return None
+    day = now.strftime("%A")
+    if state["always"]:
+        return f"{name} is open around the clock today ({day})."
+    if state["closed_all_day"]:
+        return f"{name} is closed today ({day})."
+    return (f"{name} is open today ({day}) from "
+            f"{_fmt_clock(state['opens'])} to {_fmt_clock(state['closes'])}.")
+
+
 def _open_right_now_answer(
     message: str, deps: "OrchestratorDeps", scope: "Scope",
 ) -> "Optional[tuple[str, list[dict]]]":
@@ -4833,47 +4893,11 @@ def _open_right_now_answer(
                  m, re.IGNORECASE):
         return None
     library = (scope.library or "king").strip().lower() or "king"
-    try:
-        from src.agent.tool_registry import ToolCall
-        # Retried once. The LibCal bridge binds its event loop lazily, so the
-        # FIRST hours call in a freshly restarted process can fail -- and the
-        # only symptom is this short-circuit silently declining, which reads as
-        # "the deterministic answer doesn't work" rather than "the process was
-        # cold". Observed on the first request after a restart, 2026-08-04.
-        # Retry on a FAILED RESULT, not just on a raised error. The first
-        # hours call in a freshly restarted process comes back with
-        # ToolResult.error unset but data={"success": False} and a 64-char
-        # body -- the LibCal bridge binds its event loop lazily, and the cold
-        # call loses the race. Keying the retry off res.error alone missed it
-        # entirely (2026-08-04).
-        res = None
-        for _attempt in range(3):
-            res = deps.tool_registry.dispatch(
-                ToolCall(id=f"open-now-{_attempt}", name="get_hours",
-                         arguments={"library": library})
-            )
-            if not res.error and (res.data or {}).get("success"):
-                break
-            log.info("open-now: get_hours attempt %d unusable "
-                     "(error=%s success=%s)", _attempt + 1, res.error,
-                     (res.data or {}).get("success"))
-        if res is None or res.error:
-            log.info("open-now: declining, get_hours error=%s",
-                     getattr(res, "error", "no result"))
-            return None
-        data = res.data or {}
-        text = str(data.get("hours") or "")
-        if not data.get("success") or not text:
-            # Say WHY. A short-circuit that declines in silence is
-            # indistinguishable from one that isn't wired up, which cost an
-            # hour of guessing on 2026-08-04.
-            log.info("open-now: declining, success=%s hours_len=%d",
-                        data.get("success"), len(text))
-            return None
-        source_url = str(data.get("source_url") or "")
-    except Exception:  # noqa: BLE001 -- never break the turn
-        log.warning("open-now: declining on exception", exc_info=True)
+    data = _get_hours_data(deps, library)
+    if data is None:
         return None
+    text = str(data.get("hours") or "")
+    source_url = str(data.get("source_url") or "")
 
     import datetime as _datetime
 
@@ -4916,23 +4940,22 @@ def _special_collections_hours_answer(
     research access must be requested through spec.lib.miamioh.edu even
     when the reading room is open. Returns None when LibCal has no data
     (the agent/refusal path is the correct degradation for live hours)."""
-    try:
-        from src.agent.tool_registry import ToolCall
-        result = deps.tool_registry.dispatch(
-            ToolCall(id="sc-hours", name="get_hours",
-                     arguments={"library": "special"})
-        )
-        if result.error:
-            return None
-        data = result.data or {}
-        hours_text = str(data.get("hours") or "").strip()
-        if not data.get("success") or not hours_text:
-            return None
-        source_url = str(data.get("source_url") or "")
-    except Exception:  # noqa: BLE001 -- never break the turn; agent fallback
+    data = _get_hours_data(deps, "special")
+    if data is None:
         return None
+    hours_text = str(data.get("hours") or "").strip()
+    source_url = str(data.get("source_url") or "")
+    # TODAY, not the whole week. Prompt rule 12 forbids dumping a seven-day
+    # table when nobody asked for one, but that rule governs the SYNTHESIZER
+    # and this short-circuit bypasses it -- so a patron asking "what are
+    # Special Collections hours?" got seven bullet points with a "Week of
+    # 2026-08-03" header (eval case hr_special_collections_appt_only).
+    # Falls back to the full table only when today cannot be read out of it,
+    # which is better than saying nothing.
+    _today_line = _today_hours_sentence(
+        hours_text, "Walter Havighurst Special Collections")
     answer = (
-        f"{hours_text} [1]\n\n"
+        f"{_today_line or hours_text} [1]\n\n"
         "Note: research access to the Walter Havighurst Special "
         "Collections & University Archives is by appointment -- please "
         "request an appointment through the Special Collections site "

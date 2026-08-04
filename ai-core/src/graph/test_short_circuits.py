@@ -16,6 +16,8 @@ from __future__ import annotations
 from src.scope.resolver import Scope
 from src.graph.new_orchestrator import (
     _greeting_answer,
+    _get_hours_data,
+    _today_hours_sentence,
     _NOT_A_SUBJECT_WORD,
     _fmt_clock,
     _OPEN_NOW_RE,
@@ -2573,3 +2575,85 @@ def test_a_refusal_without_a_subject_stays_a_plain_refusal():
     for q in ("what's the wifi password", "is the library open right now?",
               "who won the game", "what time is it"):
         assert _resolve_subject(q) is None, q
+
+
+# --- hours answers narrow to today, and the fetch is retried once -----------
+
+
+def test_today_sentence_reads_like_an_answer_not_a_table():
+    """Prompt rule 12 forbids dumping the week, but it governs the SYNTHESIZER,
+    and the deterministic hours short-circuits bypass it. So a patron asking
+    "what are Special Collections hours?" got seven bullet points under a
+    "Week of 2026-08-03" header (hr_special_collections_appt_only)."""
+    week = ("**X Hours (Week of 2026-08-04):**\n\n"
+            "• **Monday (2026-08-03)**: 9:00am to 4:00pm\n"
+            "• **Tuesday (2026-08-04)**: 9:00am to 4:00pm\n")
+    import datetime as dt
+    import pytz
+    # Only assert the shape when today is actually in the fixture week.
+    now = dt.datetime.now(pytz.timezone("America/New_York"))
+    out = _today_hours_sentence(week, "Special Collections")
+    if now.date().isoformat() in week:
+        assert out and "Week of" not in out and "•" not in out
+        assert now.strftime("%A") in out
+    else:
+        assert out is None, "a date not in the table must not be invented"
+
+
+def test_today_sentence_returns_none_rather_than_inventing():
+    """Callers fall back to the full table, which is worse but true."""
+    assert _today_hours_sentence("", "X") is None
+    assert _today_hours_sentence("hours vary by term", "X") is None
+
+
+def test_hours_fetch_retries_a_failed_result_not_just_an_error():
+    """The cold-start bug, in one test. The first hours call in a freshly
+    restarted process returns ToolResult.error UNSET with
+    data={"success": False} -- the LibCal bridge binds its loop lazily and the
+    cold call loses the race. A retry keyed on res.error alone never fires."""
+
+    class _Res:
+        def __init__(self, data, error=None):
+            self.data, self.error = data, error
+
+    class _Registry:
+        def __init__(self):
+            self.calls = 0
+
+        def dispatch(self, call):
+            self.calls += 1
+            if self.calls == 1:
+                return _Res({"success": False, "hours": "x" * 64})
+            return _Res({"success": True, "hours": "• **Monday (2026-01-01)**: 9am to 5pm",
+                         "source_url": "https://example.invalid/hours"})
+
+    class _Deps:
+        def __init__(self):
+            self.tool_registry = _Registry()
+
+    deps = _Deps()
+    data = _get_hours_data(deps, "king")
+    assert data is not None and data["success"] is True
+    assert deps.tool_registry.calls == 2, "must have retried the failed result"
+
+
+def test_hours_fetch_gives_up_rather_than_looping_forever():
+    class _Res:
+        data = {"success": False, "hours": ""}
+        error = None
+
+    class _Registry:
+        def __init__(self):
+            self.calls = 0
+
+        def dispatch(self, call):
+            self.calls += 1
+            return _Res()
+
+    class _Deps:
+        def __init__(self):
+            self.tool_registry = _Registry()
+
+    deps = _Deps()
+    assert _get_hours_data(deps, "king") is None
+    assert deps.tool_registry.calls == 3
