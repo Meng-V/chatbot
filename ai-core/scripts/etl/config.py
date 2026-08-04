@@ -154,6 +154,13 @@ EXCLUDE_URL_PREFIXES: Final[tuple[str, ...]] = (
     # LIBRARIAN is unaffected -- Barry Zaslow comes from Postgres, not here.
     "/system/amos-music-library",
     "/system/music-library",
+    # The bare vanity path. Not excluded at first, and it meta-refreshes to
+    # /2023-08-02-amos-music-library-to-close-sept-1 -- so the closure NEWS
+    # story about a library that no longer exists walked into the corpus
+    # behind an allowed URL (found in the 2026-08-04 apply). run_etl now
+    # re-checks redirect targets too, but the shim itself has no reason to be
+    # crawled either.
+    "/music/",
 
     # Internal, unpublished and machine-facing pages. Every one of these was
     # in the crawl's surviving set, and none is an answer to a patron

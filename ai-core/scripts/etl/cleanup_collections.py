@@ -27,12 +27,41 @@ WHAT IT REFUSES TO DELETE
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import re
 import sys
 from pathlib import Path
+from typing import Optional
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+
+
+SERVING_STATE = Path("/opt/chatbot/ai-core/data/serving_corpus.json")
+
+
+def _protected_as_rollback(
+    state: "Optional[Path]" = None,
+) -> tuple[set[str], list[str]]:
+    """The collection we would roll back to, read from switch_corpus's state.
+
+    THE 2026-07-29 FAILURE, closed properly. The rule that deleted 19,972 good
+    chunks was "every Chunk_* that isn't serving is a failed-run leftover".
+    Promotion makes the PREVIOUS corpus non-serving -- so under that rule,
+    promoting anything schedules your own rollback for deletion. Marker files
+    protect a collection *awaiting* promotion; this protects the one that has
+    been *superseded by* one, which is the other half of the same hole.
+    """
+    state = state or SERVING_STATE
+    if not state.exists():
+        return set(), []
+    try:
+        hist = json.loads(state.read_text()).get("history", [])
+    except Exception as e:  # noqa: BLE001
+        return set(), [f"{state.name}: unreadable ({e}) -- a rollback target "
+                       f"may therefore look deletable"]
+    live = [h for h in hist if not h.get("rolled_back")]
+    return ({live[-1]["from"]} if live and live[-1].get("from") else set()), []
 
 
 def _protected_by_markers(diff_dir: Path) -> tuple[set[str], list[str]]:
@@ -86,6 +115,9 @@ def main() -> int:
         return 2
 
     protected, warnings = _protected_by_markers(diff_dir)
+    rollback, rb_warnings = _protected_as_rollback()
+    protected |= rollback
+    warnings += rb_warnings
     client = get_weaviate_client()
     if client is None:
         print("REFUSING: no Weaviate client.")
@@ -112,6 +144,8 @@ def main() -> int:
                 count = f"?({e})"
             if name == serving:
                 print(f"  KEEP   {name} ({count})  serving")
+            elif name in rollback:
+                print(f"  KEEP   {name} ({count})  rollback target")
             elif name in protected:
                 print(f"  KEEP   {name} ({count})  approved, awaiting promotion")
             else:

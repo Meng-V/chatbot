@@ -329,6 +329,20 @@ def run(
                 )
                 continue
             if extract._norm_url(resolved) != extract._norm_url(canon_url):
+                # Re-apply the exclusion rules to the TARGET. Discovery checks
+                # every URL it finds, but a vanity shim's destination arrives
+                # here instead, and it was going straight to extract --
+                # so an excluded page could walk in behind an allowed one.
+                #
+                # Real case, 2026-08-04: /music/ is not excluded and
+                # meta-refreshes to /2023-08-02-amos-music-library-to-close-
+                # sept-1, which IS excluded (dated news, and about a library
+                # that closed). It landed in the corpus anyway. An exclusion
+                # list a single redirect can bypass is not an exclusion list.
+                _ex, _why = discover._is_excluded(resolved)
+                if _ex:
+                    report.rejected_urls.append((resolved, _why or "excluded"))
+                    continue
                 h2, lm2, c2, e2 = pipeline.fetch(resolved)
                 if e2 or h2 is None:
                     report.extraction_rejects.append(

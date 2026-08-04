@@ -184,3 +184,27 @@ def test_the_pages_the_bot_actually_answers_from_survive():
         "/strategic/",            # current plan; only the dated years are out
     ):
         assert not _excluded(path), path
+
+
+def test_the_bare_music_vanity_path_is_excluded():
+    """/music/ meta-refreshes to the 2023 closure announcement for a library
+    that no longer exists. It was not excluded, and the news story reached the
+    corpus through it."""
+    assert _excluded("/music/")
+    assert _excluded("/2023-08-02-amos-music-library-to-close-sept-1")
+
+
+def test_a_redirect_cannot_smuggle_an_excluded_page_in():
+    """run_etl re-checks the TARGET of a vanity shim. Discovery checks every
+    URL it finds, but a shim's destination arrives later in the pipeline, and
+    it used to go straight to extract -- so an exclusion list could be bypassed
+    with one redirect. This pins the rule the orchestrator now enforces."""
+    for target in (
+        "https://www.lib.miamioh.edu/2023-08-02-amos-music-library-to-close-sept-1",
+        "https://www.lib.miamioh.edu/news/",
+        "https://www.lib.miamioh.edu/carousel/2026-06-15-something",
+        "https://www.lib.miamioh.edu/assets/docs/org-chart.pdf",
+    ):
+        ok, why = _is_excluded(target)
+        assert ok, f"{target} must be excluded wherever it is reached from"
+        assert why
