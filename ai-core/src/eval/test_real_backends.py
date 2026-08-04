@@ -31,6 +31,7 @@ sys.path.insert(0, str(_AI_CORE))
 from src.config.capability_scope import ILL_URLS, LIMITATIONS  # noqa: E402
 from src.agent.tool_registry import ToolError  # noqa: E402
 from src.eval.real_backends import (  # noqa: E402
+    _mark_todays_row,
     _make_get_hours,
     _today_sentence,
     _library_today,
@@ -524,8 +525,13 @@ def test_the_day_never_leaks_into_the_hours_string():
     assert '"today": _today_sentence()' in src, (
         "the day must still reach the model, just in its own field"
     )
-    assert "_stamp_today" not in src, (
-        "_stamp_today mutates the verbatim field; it must not be wired in"
+    assert "_mark_todays_row(res.get" in src, (
+        "the model still needs today's row marked -- with only a bare `today` "
+        "sentence, 'is the library open right now?' came back as the whole "
+        "week plus 'depends on the current day and time'"
+    )
+    assert '"hours": _mark' not in src and '"hours": _stamp' not in src, (
+        "the marked-up week must never be assigned to `hours`"
     )
 
 
@@ -534,3 +540,27 @@ def test_no_today_marker_text_can_reach_an_answer():
     week text that callers print."""
     assert "<-- TODAY" not in _WEEK
     assert "Today is" not in _WEEK
+
+
+def test_marked_week_tags_exactly_todays_row():
+    week = ("**King Library Hours (Week of 2026-08-03):**\n\n"
+            "• **Monday (2026-08-03)**: 7:30am to 9:00pm\n"
+            "• **Tuesday (2026-08-04)**: 7:30am to 9:00pm")
+    out = _mark_todays_row(week)
+    assert out.startswith("Today is ")
+    tagged = [ln for ln in out.splitlines() if "<-- TODAY" in ln]
+    assert len(tagged) <= 1, tagged
+    for ln in tagged:
+        # never the "Week of 2026-08-03" header, which carries the same date
+        assert ln.lstrip().startswith("•"), ln
+
+
+def test_marked_week_is_idempotent():
+    """get_hours can be called twice in one turn; don't stack headers."""
+    week = "• **Monday (2026-08-03)**: 7:30am to 9:00pm"
+    once = _mark_todays_row(week)
+    assert _mark_todays_row(once).count("<-- TODAY") <= 1
+
+
+def test_marked_week_passes_through_empty():
+    assert _mark_todays_row("") == ""

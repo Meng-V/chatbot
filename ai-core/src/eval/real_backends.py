@@ -911,8 +911,16 @@ def _today_sentence() -> str:
     weekday from the synthesizer prompt's own example: on Monday 2026-08-03
     it answered "closes today, Wednesday, August 5".
     """
-    d = _library_today()
-    return f"{d.strftime('%A')}, {d.strftime('%B')} {d.day}, {d.year} ({d.isoformat()})"
+    import pytz as _pytz
+
+    now = _dt.datetime.now(_pytz.timezone("America/New_York"))
+    d = now.date()
+    # The TIME matters as much as the date. With only a date, "is the library
+    # open right now?" came back as "I can't determine whether it is open
+    # right now without the current time" -- one of the most common questions
+    # a patron asks, answered with a shrug while the schedule sat in evidence.
+    return (f"{d.strftime('%A')}, {d.strftime('%B')} {d.day}, {d.year} "
+            f"({d.isoformat()}), {now.strftime('%-I:%M%p').lower()} Eastern")
 
 
 def _library_today() -> "_dt.date":
@@ -927,6 +935,37 @@ def _library_today() -> "_dt.date":
     import pytz as _pytz
 
     return _dt.datetime.now(_pytz.timezone("America/New_York")).date()
+
+
+_TODAY_TAG = "  <-- TODAY"
+
+
+def _mark_todays_row(hours_text: str) -> str:
+    """The week schedule with today's row tagged, FOR THE MODEL ONLY.
+
+    NEVER assign this to the `hours` key. Several callers print `hours`
+    verbatim -- _special_collections_hours_answer builds its whole reply from
+    it -- and doing exactly that on 2026-08-03 shipped "<-- TODAY" and an
+    internal "Today is ..." header into a patron answer.
+    """
+    text = hours_text or ""
+    if not text.strip():
+        return text
+    # The agent legitimately calls get_hours more than once in a turn. Without
+    # this, the second pass stacks another header -- and that header carries
+    # both the weekday and the date, so it then gets tagged as a day row.
+    if text.lstrip().startswith("Today is ") or _TODAY_TAG in text:
+        return text
+    today = _library_today()
+    weekday = today.strftime("%A")
+    out = []
+    for line in text.splitlines():
+        # Both the date AND the weekday name: the header reads "Week of
+        # 2026-08-03" and would otherwise be tagged as if it were a day row.
+        if today.isoformat() in line and weekday in line and _TODAY_TAG not in line:
+            line = f"{line}{_TODAY_TAG}"
+        out.append(line)
+    return f"Today is {_today_sentence()}.\n" + "\n".join(out)
 
 
 def _make_get_hours() -> Callable[[str], dict]:
@@ -970,6 +1009,14 @@ def _make_get_hours() -> Callable[[str], dict]:
             # serialised whole, so the model sees this without `hours` being
             # touched.
             "today": _today_sentence(),
+            # ...and the same week with TODAY's row marked. A bare "today"
+            # sentence turned out not to be enough: with only that, "is the
+            # library open right now?" came back as the full week plus
+            # "whether it is open right now depends on the current day and
+            # time" -- the model had the date but would not commit to a row.
+            # Marking the row inline restores that, and keeping it in its own
+            # field keeps `hours` safe for verbatim callers.
+            "hours_today_marked": _mark_todays_row(res.get("text", "")),
             # Operator-provided and WebFetch-verified 2026-05-16:
             # 200, title "Library Hours | Miami University Libraries",
             # canonical hours hub, no redirect. (Earlier guesses
