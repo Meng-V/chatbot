@@ -383,6 +383,16 @@ FEATURED_SERVICE_PATTERNS: Final[tuple[tuple[str, str], ...]] = (
 ALWAYS_SEED: Final[tuple[tuple[str, str, str, Optional[str]], ...]] = (
     ("https://spec.lib.miamioh.edu/home/", "oxford", "special", None),
     ("https://spec.lib.miamioh.edu/home/staff/", "oxford", "special", None),
+    # Added 2026-08-04 after four eval cases about Special Collections still
+    # failed with only the landing page seeded. These are where the answers
+    # actually live -- reading-room registration on /visiting/, appointment and
+    # photography rules on /about-archives/. Verified extractable: 1,745B,
+    # 1,632B and 562B respectively.
+    ("https://spec.lib.miamioh.edu/home/visiting/", "oxford", "special", None),
+    ("https://spec.lib.miamioh.edu/home/about-archives/", "oxford", "special", None),
+    ("https://spec.lib.miamioh.edu/home/resources/", "oxford", "special", None),
+    # The bare host 302s to /home/; kept last so the redirect resolution has a
+    # canonical target already in the set.
     ("https://spec.lib.miamioh.edu/", "oxford", "special", None),
 )
 

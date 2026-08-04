@@ -142,6 +142,13 @@ class EvalResult:
     bot_was_refusal: Optional[bool] = None
     bot_refusal_trigger: Optional[str] = None
     bot_citations_count: Optional[int] = None
+    # The URLs, not just how many. Without them, citation correctness cannot be
+    # checked after a run: the only signal left is the judge's own subjective
+    # `citation_validity` field, and a run's per-case data is the one place you
+    # can go back to. Auditing 234 cases on 2026-08-04 was impossible for
+    # exactly this reason -- 36 of them happened to carry a bare URL in the
+    # answer text and the other 198 were unauditable.
+    bot_citation_urls: Optional[list] = None
     # Judge verdict (None until LLM-as-judge wires up)
     judge_verdict: Optional[str] = None
     # Telemetry
@@ -567,6 +574,7 @@ def _run_bot(q: GoldQuestion, deps: OrchestratorDeps) -> dict:
             "bot_was_refusal": None,
             "bot_refusal_trigger": None,
             "bot_citations_count": None,
+            "bot_citation_urls": None,
             "latency_ms": None,
         }
 
@@ -581,6 +589,8 @@ def _run_bot(q: GoldQuestion, deps: OrchestratorDeps) -> dict:
         "bot_was_refusal": resp.is_refusal,
         "bot_refusal_trigger": resp.refusal_trigger,
         "bot_citations_count": len(resp.citations),
+        "bot_citation_urls": [c.get("url") for c in resp.citations
+                              if isinstance(c, dict) and c.get("url")],
         "latency_ms": resp.latency_ms,
         "input_tokens": resp.tokens.get("input"),
         "cached_input_tokens": resp.tokens.get("cached_input"),
@@ -1149,6 +1159,11 @@ def _result_row(r: "EvalResult") -> dict:
         "bot_was_refusal": r.bot_was_refusal,
         "bot_refusal_trigger": r.bot_refusal_trigger,
         "bot_citations_count": r.bot_citations_count,
+        # The URLs themselves. Recording only the COUNT made citation
+        # correctness unauditable after a run: of 234 cases on 2026-08-04, 36
+        # happened to carry a bare URL in the answer text and the other 198
+        # could only be judged by the judge's own subjective field.
+        "bot_citation_urls": r.bot_citation_urls,
         "judge_verdict": r.judge_verdict,
         "latency_ms": r.latency_ms,
         "input_tokens": r.input_tokens,

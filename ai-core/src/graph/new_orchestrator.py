@@ -721,6 +721,7 @@ def _run_turn(
             # here costs the patron money. The synthesizer had the policy
             # page and still said "any Miami University library".
             ("ill_return", _ill_return_answer),
+            ("sc_campus", _special_collections_campus_answer),
             ("fee_policy", _fee_policy_answer),
             ("bot_identity", _bot_identity_answer),
             ("complaint", _complaint_answer),
@@ -3589,6 +3590,48 @@ _DEAN_IDENTITY_ASK_RE = re.compile(
     r"|runs|in\s+charge|contact|email)\b",
     re.IGNORECASE,
 )
+
+
+# Special Collections exists at ONE campus. Two eval cases turned on that fact
+# (xcc_special_collections_all_campuses, xc_special_collections_at_hamilton_refusal)
+# and the bot got both wrong -- one said "the Hamilton library site lists
+# Special Collections among its resources", which is a plausible-sounding
+# sentence about a department that is not there. A student who walks to
+# Rentschler expecting an archive has been sent to the wrong building.
+_SC_WHERE_RE = re.compile(
+    r"\b(special\s+collections?|archives?|rare\s+books?)\b",
+    re.IGNORECASE,
+)
+_SC_OTHER_CAMPUS_RE = re.compile(
+    r"\b(hamilton|rentschler|middletown|gardner[- ]?harvey|regional|"
+    r"every|all|each|both|other)\b",
+    re.IGNORECASE,
+)
+
+
+def _special_collections_campus_answer(
+    message: str,
+) -> "Optional[tuple[str, list[dict]]]":
+    """Special Collections is Oxford-only. Say so, and say where it is."""
+    m = message or ""
+    if not (_SC_WHERE_RE.search(m) and _SC_OTHER_CAMPUS_RE.search(m)):
+        return None
+    # "archives" also appears in digital-collections and government-documents
+    # asks, which have their own better answers.
+    if re.search(r"\b(digital|online|government|gov\s*docs?|newspaper)\b",
+                 m, re.IGNORECASE):
+        return None
+    return (
+        "Special Collections is only at Oxford -- the Walter Havighurst "
+        "Special Collections & University Archives, on the third floor of "
+        "King Library. Neither Rentschler at Hamilton nor Gardner-Harvey at "
+        "Middletown has its own archive or rare-book collection, so a visit "
+        "means coming to Oxford. Research access is by appointment, which you "
+        "request through the Special Collections site [1].",
+        [{"n": 1, "url": _SPEC_APPOINTMENTS_URL,
+          "snippet": "Walter Havighurst Special Collections & University "
+                     "Archives — visiting and appointments"}],
+    )
 
 
 def _dean_answer(message: str) -> "Optional[tuple[str, list[dict]]]":
