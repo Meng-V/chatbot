@@ -318,3 +318,38 @@ def main() -> int:
 
 if __name__ == "__main__":
     sys.exit(main())
+
+
+def test_named_platform_access_has_exemplars_pointing_at_databases() -> None:
+    """"Can I access EBSCO?" was classified out_of_scope and got the generic
+    Ask Us refusal (eval case db_ebsco).
+
+    The `databases` intent is already POINT_TO_URL with the A-Z list as its
+    canonical URL -- which is exactly what gold asks for ("point to A-Z; do not
+    confirm specific platform names"). So nothing about the ANSWER was wrong;
+    the turn simply never reached that intent. A vendor name carries no library
+    vocabulary, and all 526 pre-existing `databases` exemplars were phrased
+    around searching or registering, never "do we have X".
+
+    This asserts the exemplars exist and are labelled, which is the part that
+    can silently disappear. Whether the classifier then picks `databases` is
+    measured by the eval, not here -- a kNN assertion in a unit test would be
+    pinning a score, not a behaviour.
+    """
+    import json
+    from pathlib import Path
+
+    path = (Path(__file__).parent / "exemplars"
+            / "exemplars_platform_access_2026_08_04.jsonl")
+    assert path.exists(), "the platform-access exemplar file is gone"
+    rows = [json.loads(l) for l in path.read_text().splitlines()
+            if l.strip() and not l.startswith("//")]
+    assert len(rows) >= 12, f"only {len(rows)} exemplars"
+    assert all(r["intent"] == "databases" for r in rows)
+    utterances = {r["utterance"].lower() for r in rows}
+    assert "can I access EBSCO?".lower() in utterances, "the reported case"
+    # The shape is the point, not a vendor list: several must be phrased as
+    # availability rather than as a search.
+    assert sum(1 for u in utterances
+               if any(k in u for k in ("do we have", "is ", "can i get",
+                                       "subscribe", "available"))) >= 6
