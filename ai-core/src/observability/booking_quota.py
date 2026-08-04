@@ -58,9 +58,26 @@ def _i_env(name: str, default: int) -> int:
 MAX_PER_CONVERSATION = _i_env("BOOKING_MAX_PER_CONVERSATION", 2)
 MAX_PER_EMAIL_PER_DAY = _i_env("BOOKING_MAX_PER_EMAIL_PER_DAY", 2)
 
-LEDGER_PATH = Path(
-    os.getenv("BOOKING_QUOTA_PATH", "/opt/chatbot/data/booking_quota.json")
-)
+_DEFAULT_LEDGER = "/opt/chatbot/data/booking_quota.json"
+
+LEDGER_PATH = Path(os.getenv("BOOKING_QUOTA_PATH", _DEFAULT_LEDGER))
+"""Module-level for readability; every read goes through _ledger() so an env
+var set after import -- or a test's monkeypatch -- is honoured."""
+
+
+def _ledger() -> Path:
+    """Resolved per call, deliberately.
+
+    A module constant frozen at import made the unit suite read and WRITE the
+    production ledger: test_real_backends drives book_room with confirm=True
+    against a fake LibCal, `record()` fired, and the operator's own address was
+    left sitting at its daily cap in real state (caught 2026-08-04). Tests must
+    be able to redirect this, and production must not depend on import order.
+    """
+    override = (os.getenv("BOOKING_QUOTA_PATH") or "").strip()
+    if override:
+        return Path(override)
+    return LEDGER_PATH
 
 # Keep a few days so a late-evening booking near midnight is still counted
 # against the right day, and so the file can be read for a report.
@@ -81,7 +98,7 @@ def _today() -> str:
 
 def _load() -> dict:
     try:
-        data = json.loads(LEDGER_PATH.read_text())
+        data = json.loads(_ledger().read_text())
         return data if isinstance(data, dict) else {}
     except FileNotFoundError:
         return {}
@@ -101,10 +118,11 @@ def _save(data: dict) -> None:
                      if d >= cutoff},
             "conversations": data.get("conversations") or {}}
     try:
-        LEDGER_PATH.parent.mkdir(parents=True, exist_ok=True)
-        tmp = LEDGER_PATH.with_suffix(".json.tmp")
+        target = _ledger()
+        target.parent.mkdir(parents=True, exist_ok=True)
+        tmp = target.with_suffix(".json.tmp")
         tmp.write_text(json.dumps(data, indent=2) + "\n")
-        os.replace(tmp, LEDGER_PATH)
+        os.replace(tmp, target)
     except Exception as e:  # noqa: BLE001 -- must never fail a booking
         log.error("could not write booking quota ledger: %s", e)
 

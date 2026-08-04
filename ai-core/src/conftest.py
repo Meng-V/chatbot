@@ -47,3 +47,16 @@ def _isolate_prefix_registry():
     finally:
         builder._REGISTRY.clear()
         builder._REGISTRY.update(_BASELINE_REGISTRY)
+
+# --- never let a test touch production booking state ---------------------
+#
+# Caught 2026-08-04: test_real_backends drives book_room with confirm=True
+# against a fake LibCal, so booking_quota.record() fired against the REAL
+# ledger at /opt/chatbot/data/booking_quota.json and left the operator's own
+# address sitting at its daily cap. A unit suite must not be able to consume
+# a real student's allowance, so this is enforced for every test rather than
+# remembered per file.
+@pytest.fixture(autouse=True)
+def _isolate_booking_ledger(tmp_path, monkeypatch):
+    monkeypatch.setenv("BOOKING_QUOTA_PATH", str(tmp_path / "booking_quota.json"))
+    yield

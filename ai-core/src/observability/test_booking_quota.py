@@ -15,8 +15,16 @@ from src.observability import booking_quota as Q
 
 @pytest.fixture(autouse=True)
 def _ledger(tmp_path, monkeypatch):
-    monkeypatch.setattr(Q, "LEDGER_PATH", tmp_path / "quota.json")
-    yield tmp_path / "quota.json"
+    """Redirect via the ENV VAR, not the module constant.
+
+    booking_quota resolves its path per call through _ledger(), which reads
+    BOOKING_QUOTA_PATH first -- and src/conftest.py sets that for every test
+    in the suite so nothing can reach production state. Patching the module
+    constant instead would be silently overridden by that guard.
+    """
+    path = tmp_path / "quota.json"
+    monkeypatch.setenv("BOOKING_QUOTA_PATH", str(path))
+    yield path
 
 
 def test_the_limits_are_two_and_two():

@@ -192,10 +192,26 @@ class WeaviateSearchAdapter:
                     type(e).__name__, e,
                 )
 
+        # Widen ONLY the keyword leg. Weaviate 1.28.6 has no English stemmer
+        # (WORD tokenization lowercases and splits, nothing more), so
+        # "charger" scored zero against a chunk reading "Chargers (Mac, PC,
+        # assorted phones)" and two eval cases were answered "the equipment
+        # list does not specify charger cables". The vector above was already
+        # computed from the ORIGINAL query and stays that way -- appending
+        # variants to the embedded text would blur it.
+        bm25_query = query
+        try:
+            from src.retrieval.query_expansion import expand_for_bm25
+            bm25_query = expand_for_bm25(query)
+            if bm25_query != query:
+                logger.debug("bm25 query widened: %r -> %r", query, bm25_query)
+        except Exception as e:  # noqa: BLE001 -- never break retrieval
+            logger.warning("query expansion failed (%s); using the raw query", e)
+
         try:
             coll = self.client.collections.get(collection)
             kwargs = dict(
-                query=query,
+                query=bm25_query,
                 alpha=alpha,
                 limit=limit,
                 filters=filters,
