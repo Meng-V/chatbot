@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import importlib
 import os
+import pytest
 import sys
 from pathlib import Path
 
@@ -122,3 +123,90 @@ def main() -> int:
 
 if __name__ == "__main__":
     sys.exit(main())
+
+
+# budget.py keeps a process-global 15-second cache of the state file so the
+# hot path does not re-read it per turn. That cache leaks between tests: a
+# test that writes level 4 leaves the next test resolving `reasoning` as the
+# cheap model, which failed test_resolve_model_three_tiers with a completely
+# unrelated-looking error. Reset it around EVERY test in this module.
+@pytest.fixture(autouse=True)
+def _isolate_budget_cache():
+    from src.config import budget as B
+    B.reset_cache()
+    yield
+    B.reset_cache()
+
+# --- budget-driven downgrade (level 2) -----------------------------------
+#
+# The reasoning model costs 21x the cheap one per call and is 83% of spend on
+# 15% of calls (measured 2026-08-04), so substituting it is the single
+# strongest cost lever -- and it keeps every feature working, which is why it
+# sits two rungs below refusing students.
+
+
+def _budget_state(tmp_path, monkeypatch, level):
+    import datetime
+    from src.config import budget as B
+    p = tmp_path / "state.json"
+    monkeypatch.setattr(B, "STATE_PATH", p)
+    B.write_state(B.BudgetState(
+        level=level, month=datetime.date.today().strftime("%Y-%m")), p)
+    B.reset_cache()
+    return p
+
+
+def test_reasoning_tier_is_normal_below_level_two(tmp_path, monkeypatch):
+    from src.config import budget as B
+    for lvl in (B.L_NORMAL, B.L_ALERT):
+        _budget_state(tmp_path, monkeypatch, lvl)
+        assert M.resolve_model("reasoning") == M.resolve_model("reasoning")
+        assert M.resolve_model("reasoning") != M.resolve_model("cheap"), (
+            f"level {lvl} must not downgrade the reasoning tier"
+        )
+
+
+def test_level_two_serves_reasoning_from_the_cheap_tier(tmp_path, monkeypatch):
+    from src.config import budget as B
+    _budget_state(tmp_path, monkeypatch, B.L_CHEAP)
+    assert M.resolve_model("reasoning") == M.resolve_model("cheap")
+
+
+def test_higher_levels_stay_downgraded(tmp_path, monkeypatch):
+    from src.config import budget as B
+    for lvl in (B.L_TIGHTEN, B.L_REFUSE):
+        _budget_state(tmp_path, monkeypatch, lvl)
+        assert M.resolve_model("reasoning") == M.resolve_model("cheap")
+
+
+def test_basic_and_cheap_tiers_are_never_touched(tmp_path, monkeypatch):
+    """Only the expensive tier is substituted. Downgrading `basic` would
+    change every routine turn for no meaningful saving."""
+    from src.config import budget as B
+    _budget_state(tmp_path, monkeypatch, B.L_NORMAL)
+    basic, cheap = M.resolve_model("basic"), M.resolve_model("cheap")
+    _budget_state(tmp_path, monkeypatch, B.L_REFUSE)
+    assert M.resolve_model("basic") == basic
+    assert M.resolve_model("cheap") == cheap
+
+
+def test_unreadable_budget_state_does_not_downgrade(tmp_path, monkeypatch):
+    """Model resolution must never fail or silently change behaviour because
+    of a bad JSON file."""
+    from src.config import budget as B
+    p = tmp_path / "state.json"
+    p.write_text("{ not json")
+    monkeypatch.setattr(B, "STATE_PATH", p)
+    B.reset_cache()
+    assert M.resolve_model("reasoning") != M.resolve_model("cheap")
+
+
+def test_budget_lookup_cannot_raise(tmp_path, monkeypatch):
+    from src.config import budget as B
+
+    def boom():
+        raise RuntimeError("budget exploded")
+
+    monkeypatch.setattr(B, "current_state", boom)
+    assert M._budget_forces_cheap() is False
+    assert M.resolve_model("reasoning")  # still resolves

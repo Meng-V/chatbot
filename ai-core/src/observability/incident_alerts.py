@@ -7,11 +7,31 @@ Operator alerts for the three things the operator told colleagues we watch.
     (3) suspicious activity: abuse of the rate limiter, or a message that
         looks like an attempt to talk the bot out of its instructions.
 
-WHO GETS THESE
-    `ALERT_EMAIL_TO` only -- one recipient, the operator. The colleagues
-    named in the announcement are deliberately NOT on these: an alert that
-    reaches people who cannot act on it trains everyone to ignore the
-    mailbox. Handing off later is a change to that one env var.
+WHO GETS THESE, AND WHEN (revised 2026-08-04 for the handover)
+    Two tiers, because handing somebody 30-50 emails a day guarantees they
+    build a filter rule and stop reading. That is worse than not adding
+    them, since everyone then believes it is being watched.
+
+      URGENT   -- something needs a person: the service or a dependency is
+                  down, or the monthly budget is exhausted. Sent
+                  immediately to `ALERT_EMAIL_TO_URGENT` (the operator plus
+                  whoever is covering). Falls back to ALERT_EMAIL_TO when
+                  unset, so nothing changes until that variable is set.
+
+      DIGEST   -- worth reading, not worth waking for: a thumbs-down, an
+                  injection attempt that was refused, a rate-limit trip, a
+                  low rating. Appended to a queue and mailed as ONE message
+                  by scripts/alert_digest.py.
+
+    The commitment made to colleagues was that suspicious activity reaches
+    us -- not that it pages us. A daily count of injection attempts is more
+    useful than thirty separate emails, each of which says the bot
+    correctly refused something.
+
+    NOTHING here pages anyone overnight. The bot is promoted after hours,
+    when nobody is on duty; its failure mode is a refusal plus a pointer to
+    Ask Us, the budget throttles itself, and the kill switch can wait until
+    morning. Whoever covers the handover is not on a night shift.
 
 NEVER BLOCK A TURN
     Every function here is best-effort. A patron's answer must not depend on
@@ -26,11 +46,14 @@ RATE-LIMITED BY DESIGN
 
 from __future__ import annotations
 
+import datetime as dt
+import json
 import logging
 import os
 import re
 import threading
 import time
+from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
@@ -60,6 +83,40 @@ def _should_send(kind: str) -> tuple[bool, int]:
         return True, held
 
 
+# Kinds that need a person, and therefore go out at once to the wider list.
+# Everything else is queued for the daily digest. Keep this set SMALL: its
+# whole value is that a message from it is worth interrupting someone for.
+URGENT_KINDS = frozenset({
+    "health",          # the service or a dependency is down
+    "budget_exhausted",  # the monthly student purse is spent; students are
+                         # being turned away
+})
+
+DIGEST_PATH = Path(
+    os.getenv("ALERT_DIGEST_PATH", "/opt/chatbot/data/alert_digest.jsonl")
+)
+
+
+def urgent_recipients() -> "str | None":
+    """The wider list, or None to use the default single recipient."""
+    return (os.getenv("ALERT_EMAIL_TO_URGENT") or "").strip() or None
+
+
+def _queue_for_digest(kind: str, subject: str, body: str) -> bool:
+    """Append to the digest queue. Returns True when queued."""
+    try:
+        DIGEST_PATH.parent.mkdir(parents=True, exist_ok=True)
+        with DIGEST_PATH.open("a") as fh:
+            fh.write(json.dumps({
+                "at": dt.datetime.now().astimezone().isoformat(timespec="seconds"),
+                "kind": kind, "subject": subject, "body": body,
+            }) + "\n")
+        return True
+    except Exception as e:  # noqa: BLE001 -- must never break a turn
+        logger.error("could not queue %s for the digest: %s", kind, e)
+        return False
+
+
 def _send(kind: str, subject: str, body: str) -> bool:
     ok, held = _should_send(kind)
     if not ok:
@@ -69,10 +126,15 @@ def _send(kind: str, subject: str, body: str) -> bool:
         body += (f"\n\n{held} further {kind} event(s) occurred in the last "
                  f"{int(_MIN_GAP_SECONDS // 60)} minutes and were folded into "
                  f"this one message.")
+    if kind not in URGENT_KINDS:
+        queued = _queue_for_digest(kind, subject, body)
+        logger.info("alert %s %s for the daily digest", kind,
+                    "queued" if queued else "NOT queued")
+        return queued
     try:
         from src.observability.alerting import send_alert_email
 
-        return bool(send_alert_email(subject, body))
+        return bool(send_alert_email(subject, body, to=urgent_recipients()))
     except Exception as e:  # noqa: BLE001 -- alerting must never break a turn
         logger.error("could not send %s alert: %s", kind, e)
         return False

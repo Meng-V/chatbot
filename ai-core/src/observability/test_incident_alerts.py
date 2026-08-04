@@ -17,11 +17,40 @@ def _reset():
 
 
 @pytest.fixture
-def sent(monkeypatch):
-    out = []
+def sent(monkeypatch, tmp_path):
+    """Everything an alert produced, whichever route it took.
+
+    Since 2026-08-04 only URGENT_KINDS are emailed; the rest are queued for
+    the daily digest (see the module docstring for why). These tests care
+    about suppression and content, not the transport, so this fixture reads
+    both and yields (subject, body) either way.
+    """
+    from src.observability import incident_alerts as _ia
+    monkeypatch.setattr(_ia, "DIGEST_PATH", tmp_path / "digest.jsonl")
+    mailed: list = []
     monkeypatch.setattr("src.observability.alerting.send_alert_email",
-                        lambda s, b: out.append((s, b)) or True)
-    return out
+                        lambda s, b, to=None: mailed.append((s, b)) or True)
+
+    class _Delivered:
+        def _all(self):
+            import json
+            out = list(mailed)
+            try:
+                for line in (tmp_path / "digest.jsonl").read_text().splitlines():
+                    if line.strip():
+                        r = json.loads(line)
+                        out.append((r["subject"], r["body"]))
+            except FileNotFoundError:
+                pass
+            return out
+
+        def __len__(self):
+            return len(self._all())
+
+        def __getitem__(self, i):
+            return self._all()[i]
+
+    return _Delivered()
 
 
 # --- what MUST be flagged --------------------------------------------------
@@ -104,9 +133,15 @@ def test_low_rating_email_carries_the_comment(sent):
     assert "2 out of 5" in sent[0][1]
 
 
-def test_alerting_failure_never_raises(monkeypatch):
+def test_alerting_failure_never_raises(monkeypatch, tmp_path):
+    """A patron's turn cannot depend on SMTP, or on a writable disk."""
     def boom(*a, **k):
         raise RuntimeError("smtp down")
     monkeypatch.setattr("src.observability.alerting.send_alert_email", boom)
-    # must return False, not propagate -- a patron's turn cannot depend on SMTP
+    # An URGENT kind does reach the mailer -- a dead SMTP must return False.
+    assert ia._send("health", "s", "b") is False
+    # A DIGEST kind never touches SMTP, so an unwritable queue is the
+    # equivalent failure: also False, also no exception.
+    monkeypatch.setattr(ia, "DIGEST_PATH", tmp_path / "dir")
+    (tmp_path / "dir").mkdir()
     assert ia.alert_thumbs_down(message_id="m", question="q", answer="a") is False

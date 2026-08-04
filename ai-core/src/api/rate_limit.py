@@ -67,15 +67,23 @@ class SlidingWindowLimiter:
         self.window_s = window_s
         self._hits: dict[str, Deque[float]] = defaultdict(deque)
 
-    def allow(self, key: str, *, now: float | None = None) -> bool:
+    def allow(self, key: str, *, now: float | None = None,
+              max_events: int | None = None) -> bool:
         """True if `key` is under the limit (and records the hit).
-        False if it should be throttled."""
+        False if it should be throttled.
+
+        `max_events` overrides the construction-time ceiling for this call
+        only. The budget guard uses it to tighten the limit without
+        rebuilding the limiter, which would discard every client's window
+        and hand a burst to whoever was already being throttled.
+        """
         now = time.monotonic() if now is None else now
         cutoff = now - self.window_s
         q = self._hits[key]
         while q and q[0] < cutoff:
             q.popleft()
-        if len(q) >= self.max_events:
+        ceiling = self.max_events if max_events is None else max_events
+        if len(q) >= ceiling:
             if not q:                       # pragma: no cover - defensive
                 del self._hits[key]
             return False
@@ -117,11 +125,34 @@ def validate_message(raw: object) -> str:
     return text
 
 
+def _budget_limits() -> tuple[int, int]:
+    """(rate_max, max_turns) for right now, per the budget ladder.
+
+    At level 3 the ceiling drops from 20/min to 6/min and the turn cap from
+    80 to 20. A real student asks three to five questions and never notices;
+    a script issuing 28,800 messages a day -- enough to spend the whole
+    monthly budget in six hours -- does. Returns the normal limits if the
+    budget state cannot be read (see budget.py: FAIL OPEN, LOUDLY).
+    """
+    try:
+        from src.config.budget import current_state
+        st = current_state()
+        return st.rate_max, st.max_turns
+    except Exception:  # noqa: BLE001 -- the limiter must never 500 the bot
+        return RATE_MAX, MAX_TURNS_PER_CONVERSATION
+
+
 def check_rate(client_key: str) -> None:
     """Raise MessageRejected(429) if `client_key` is over the rate.
     FAIL-OPEN: a limiter bug must not deny a legitimate user."""
     try:
-        if not _chat_limiter.allow(client_key or "unknown"):
+        # The STRICTEST limit that applies, not "budget always wins": a
+        # deliberately-lowered CHAT_RATE_MAX must keep its effect, and an
+        # unreadable budget state must not silently RAISE the ceiling.
+        budget_ceiling, _ = _budget_limits()
+        ceiling = min(_chat_limiter.max_events, budget_ceiling)
+        if not _chat_limiter.allow(client_key or "unknown",
+                                   max_events=ceiling):
             raise MessageRejected(
                 "You're sending messages too quickly. Please wait a "
                 "few seconds and try again.",
@@ -135,7 +166,7 @@ def check_rate(client_key: str) -> None:
 
 def conversation_turn_exceeded(turn_count: int) -> bool:
     """True if this conversation has hit the hard turn ceiling."""
-    return turn_count >= MAX_TURNS_PER_CONVERSATION
+    return turn_count >= _budget_limits()[1]
 
 
 def client_ip_from_request(request) -> str:

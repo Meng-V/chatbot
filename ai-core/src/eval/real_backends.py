@@ -1565,6 +1565,30 @@ def _make_book_room() -> Callable[[dict], dict]:
                     ),
                 }
 
+        # Abuse cap, checked in the last moment before the write and only
+        # for a call that will actually write. The email is already required
+        # to be @miamioh.edu, but nothing proves the address belongs to the
+        # person typing -- so a per-address daily cap is what bounds a stream
+        # of bookings made in someone else's name. See booking_quota.py.
+        if args.get("confirm") and not missing:
+            try:
+                from src.observability import booking_quota
+                _v = booking_quota.check(
+                    str(args.get("email") or ""),
+                    args.get("conversation_id"),
+                )
+                if not _v.allowed:
+                    logger.warning("book_room: quota refused %s (conv=%s)",
+                                   args.get("email"),
+                                   args.get("conversation_id"))
+                    return {"success": False, "stage": "quota_exceeded",
+                            "text": _v.reason}
+            except Exception:  # noqa: BLE001 -- a cap bug must not block a
+                # legitimate booking; bulk abuse needs many successful
+                # writes, which show up in LibCal and in the alerts anyway.
+                logger.warning("book_room: quota check failed, allowing",
+                               exc_info=True)
+
         # Missing slots -> v1 returns its "I still need ..." text and
         # cannot book. confirm=true -> v1 validates everything
         # (email domain, date/time parsing, 2h cap, building hours,
@@ -1584,9 +1608,20 @@ def _make_book_room() -> Callable[[dict], dict]:
             ),
             timeout=60.0,
         )
+        booked = bool(res.get("success"))
+        if booked:
+            # AFTER the write, never before: counting an attempt would let a
+            # LibCal outage burn a student's daily allowance.
+            try:
+                from src.observability import booking_quota
+                booking_quota.record(str(args.get("email") or ""),
+                                     args.get("conversation_id"))
+            except Exception:  # noqa: BLE001 -- the booking already happened
+                logger.warning("book_room: could not record quota usage",
+                               exc_info=True)
         return {
-            "success": bool(res.get("success")),
-            "stage": "booked" if res.get("success") else "tool_response",
+            "success": booked,
+            "stage": "booked" if booked else "tool_response",
             "text": res.get("text", ""),
         }
 

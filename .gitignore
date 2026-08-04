@@ -224,3 +224,13 @@ tran_raw_2026_5.csv
 ai-core/eval_results.jsonl
 ai-core/eval_results_20260714_postfix.jsonl
 docs/student interview/7_30_11_00.md
+
+# Runtime state under data/ -- never in git. These carry PII: the alert
+# digest holds verbatim student questions and answers, and the booking
+# ledger holds student email addresses. They are also per-machine state
+# that a checkout must not overwrite.
+data/alert_digest.jsonl
+data/booking_quota.json
+data/budget_state.json
+data/budget_events.jsonl
+data/SERVICE_PAUSED

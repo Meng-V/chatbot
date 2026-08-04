@@ -1,0 +1,32 @@
+# Budget enforcement and reporting -- append to root's crontab.
+#
+# Install (review first, this appends to the LIVE crontab):
+#     sudo crontab -l > /tmp/cron.bak && \
+#       cat /opt/chatbot/deploy/budget-cron.txt >> /tmp/cron.bak && \
+#       sudo crontab /tmp/cron.bak
+# Verify:  sudo crontab -l | grep budget
+# Undo:    sudo crontab -e   and delete the three lines
+#
+# Style matches the existing entries (cost_rollup, etl_watch, data_health):
+# cd into ai-core, source .env, run as a module, append to a log in logs/.
+
+# Every 15 minutes: recompute spend, set the degrade level, email on a change.
+# WHY 15 MINUTES: one client at the default rate limit can spend the whole
+# monthly ceiling in about six hours (measured 2026-08-04). A control that
+# looks once a day is not a control.
+*/15 * * * * cd /opt/chatbot/ai-core && bash -c "set -a; . /opt/chatbot/.env; set +a; .venv/bin/python -m scripts.budget_guard >> logs/budget_guard.log 2>&1"
+
+# Mondays 07:20: month-to-date digest, so a bad trend is seen in week one
+# rather than in the invoice.
+20 7 * * 1 cd /opt/chatbot/ai-core && bash -c "set -a; . /opt/chatbot/.env; set +a; .venv/bin/python -m scripts.budget_report --email >> logs/budget_report.log 2>&1"
+
+# 1st of the month 07:30: the closing report for the month that just ended.
+# Runs BEFORE nothing else matters -- the purse has already refilled, so this
+# is the permanent record of what the previous month actually cost.
+30 7 1 * * cd /opt/chatbot/ai-core && bash -c "set -a; . /opt/chatbot/.env; set +a; .venv/bin/python -m scripts.budget_report --month \$(date -d 'last month' +\%Y-\%m) --email >> logs/budget_report.log 2>&1"
+
+# Weekday mornings 07:10: one grouped email of everything that did NOT need a
+# person overnight (thumbs-down, refused injection attempts, rate-limit trips).
+# WHY: before this the operator got 30-50 individual alerts a day. Adding
+# colleagues to that stream would have produced filter rules, not attention.
+10 7 * * 1-5 cd /opt/chatbot/ai-core && bash -c "set -a; . /opt/chatbot/.env; set +a; .venv/bin/python -m scripts.alert_digest >> logs/alert_digest.log 2>&1"

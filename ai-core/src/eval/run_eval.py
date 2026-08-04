@@ -156,6 +156,11 @@ class EvalResult:
     input_tokens: Optional[int] = None
     cached_input_tokens: Optional[int] = None
     output_tokens: Optional[int] = None
+    # Which concrete model served the turn. Needed to price the run: the
+    # reasoning model costs 21x the cheap one per call, so attributing a
+    # whole run to either one is off by an order of magnitude. Also makes a
+    # budget-driven downgrade visible in the results.
+    model_used: Optional[str] = None
     # Classifier telemetry (FIX #1: clarification-gate calibration).
     # classify() was previously computed for routing then discarded;
     # persisting score/margin/candidates lets MARGIN_LOW and a future
@@ -595,6 +600,7 @@ def _run_bot(q: GoldQuestion, deps: OrchestratorDeps) -> dict:
         "input_tokens": resp.tokens.get("input"),
         "cached_input_tokens": resp.tokens.get("cached_input"),
         "output_tokens": resp.tokens.get("output"),
+        "model_used": getattr(resp, "model_used", None),
     }
 
 
@@ -1092,6 +1098,7 @@ def _print_report(report: EvalReport, verbose: bool, scope_only: bool) -> None:
                   f"(cache hit {cache_hit_pct:.1f}% -- plan §week-4 gate >=60%)")
             print(f"  output p50={_percentile(outputs, 50):.0f} p95={_percentile(outputs, 95):.0f} "
                   f"sum={sum(outputs):,}")
+            _record_spend(report)
 
         # Judge block (only when --with-judge produced anything).
         if report.judge_aggregate is not None:
@@ -1169,6 +1176,7 @@ def _result_row(r: "EvalResult") -> dict:
         "input_tokens": r.input_tokens,
         "cached_input_tokens": r.cached_input_tokens,
         "output_tokens": r.output_tokens,
+        "model_used": r.model_used,
         "clf_score": r.clf_score,
         "clf_margin": r.clf_margin,
         "clf_needs_clarification": r.clf_needs_clarification,
@@ -1177,6 +1185,112 @@ def _result_row(r: "EvalResult") -> dict:
         # up front even when truncated in a pager.
         "bot_answer": r.bot_answer,
     }
+
+
+def _eval_budget_ok(filter_category: "Optional[str]") -> bool:
+    """False when this run would breach the month's eval purse.
+
+    A category filter charges pro-rata rather than the full-run estimate, so
+    running `--filter hours` (11 of 234 cases) is not blocked by a purse that
+    merely lacks room for a full pass.
+
+    Fails OPEN if the purse cannot be read: an unreachable database should
+    not stop development. That is the opposite of the serving side, where an
+    unreadable state file must not RAISE limits -- here the risk is a wasted
+    $6, there it is a runaway month.
+    """
+    try:
+        from src.config import budget as B
+        from src.eval.golden_set import load_golden_set
+        from src.observability.spend_ledger import read_spend
+
+        spend = read_spend()
+        if spend is None:
+            logger.warning("eval budget: could not read spend -- proceeding")
+            return True
+        estimate = B.EVAL_RUN_ESTIMATE_USD
+        if filter_category:
+            gold = load_golden_set()
+            share = sum(1 for c in gold
+                        if getattr(c, "category", "") == filter_category)
+            if share and len(gold):
+                estimate *= share / len(gold)
+        left = B.MONTHLY_EVAL_USD - spend.eval_mtd
+        if spend.eval_mtd + estimate > B.MONTHLY_EVAL_USD:
+            print(f"\nEVAL BUDGET: not running.\n"
+                  f"  used this month : ${spend.eval_mtd:.2f} of "
+                  f"${B.MONTHLY_EVAL_USD:.2f}\n"
+                  f"  this run needs  : ${estimate:.2f}\n"
+                  f"  left            : ${left:.2f}\n"
+                  f"  Wait for the 1st, run a smaller --filter, or pass "
+                  f"--no-budget-gate deliberately.\n")
+            return False
+        logger.info("eval budget: $%.2f used of $%.2f, this run ~$%.2f",
+                    spend.eval_mtd, B.MONTHLY_EVAL_USD, estimate)
+        return True
+    except Exception as e:  # noqa: BLE001 -- never block development on this
+        logger.warning("eval budget check failed (%s) -- proceeding", e)
+        return True
+
+
+def _record_spend(report: "EvalReport") -> None:
+    """Charge this run to the eval purse, grouped by the model that served.
+
+    Until 2026-08-04 eval spend was recorded NOWHERE. The cost dashboard
+    read $0.62 for a month in which the eval had actually spent more than
+    $10 -- a dashboard that silently omits a quarter of the budget is worse
+    than no dashboard, because it gets trusted. See docs/BUDGET.md.
+
+    Grouped by `model_used` rather than attributed to one model, because the
+    reasoning tier costs 21x the cheap one per call; charging a whole run to
+    either would be wrong by an order of magnitude in one direction or the
+    other. Turns with no model recorded (stub runs, crashes) contribute
+    nothing and are reported so the omission is visible.
+    """
+    per: dict = {}
+    unattributed = 0
+    for r in report.results:
+        if r.input_tokens is None and r.output_tokens is None:
+            continue
+        model = (r.model_used or "").strip()
+        if not model:
+            unattributed += 1
+            continue
+        acc = per.setdefault(model, {"model": model, "input_tokens": 0,
+                                     "cached_input_tokens": 0,
+                                     "output_tokens": 0, "calls": 0})
+        acc["input_tokens"] += r.input_tokens or 0
+        acc["cached_input_tokens"] += r.cached_input_tokens or 0
+        acc["output_tokens"] += r.output_tokens or 0
+        acc["calls"] += 1
+    if not per:
+        if unattributed:
+            print(f"  eval spend NOT recorded: {unattributed} turn(s) carried "
+                  f"no model name. The eval purse will under-report.")
+        return
+    try:
+        from src.observability.spend_ledger import record_eval_spend
+        ok = record_eval_spend(list(per.values()))
+    except Exception as e:  # noqa: BLE001 -- accounting must not fail a run
+        print(f"  eval spend NOT recorded ({type(e).__name__}: {e})")
+        return
+    if not ok:
+        print("  eval spend NOT recorded -- see the log for why. The eval "
+              "purse will under-report until this is fixed.")
+        return
+    from scripts.cost_rollup import compute_cost_usd, is_priced
+    total = sum(compute_cost_usd(v["model"], v["input_tokens"],
+                                 v["cached_input_tokens"], v["output_tokens"])
+                for v in per.values())
+    unpriced = [v["model"] for v in per.values() if not is_priced(v["model"])]
+    print(f"  charged to the eval budget: ${total:.2f} across "
+          f"{len(per)} model(s)")
+    if unattributed:
+        print(f"    ({unattributed} turn(s) had no model name and are NOT "
+              f"included -- the real figure is higher)")
+    if unpriced:
+        print(f"    WARNING: unpriced model(s) counted as $0: "
+              f"{', '.join(sorted(set(unpriced)))}")
 
 
 def _dump_results_jsonl(report: "EvalReport", path: Path) -> None:
@@ -1230,6 +1344,13 @@ def main() -> int:
         help="Only check src/scope/resolver.py; don't build the bot.",
     )
     parser.add_argument(
+        "--no-budget-gate", action="store_true",
+        help=(
+            "Run even if it would breach the month's $25 eval purse. "
+            "Deliberate override; the spend is still recorded."
+        ),
+    )
+    parser.add_argument(
         "--with-judge", action="store_true",
         help=(
             "After each turn, run the LLM-as-judge against the bot's "
@@ -1276,6 +1397,15 @@ def main() -> int:
         level=logging.INFO,
         format="%(asctime)s %(levelname)s %(name)s: %(message)s",
     )
+
+    # The eval purse ($25/month, separate from the students' $75) is checked
+    # BEFORE the run, not during it: a full pass takes ~100 minutes and costs
+    # ~$6, and discovering the purse is empty at minute 80 wastes the money
+    # AND leaves a half-finished result set that cannot be compared to
+    # anything. --no-budget-gate exists for a deliberate override.
+    if not args.scope_only and not args.no_budget_gate:
+        if not _eval_budget_ok(args.filter):
+            return 3
 
     # Stream per-case rows to disk DURING the run (flushed per turn)
     # so a mid-run tunnel drop can't vaporize a long real-LLM run.

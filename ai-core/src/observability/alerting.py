@@ -37,12 +37,18 @@ def alert_enabled() -> bool:
     return _cfg("ALERT_EMAIL_ENABLED", "true").lower() not in ("0", "false", "no", "off")
 
 
-def send_alert_email(subject: str, body: str) -> bool:
-    """Send an alert email. Returns True on success, False otherwise. NEVER raises."""
+def send_alert_email(subject: str, body: str, to: "str | None" = None) -> bool:
+    """Send an alert email. Returns True on success, False otherwise. NEVER raises.
+
+    `to` overrides ALERT_EMAIL_TO -- used to send the small number of alerts
+    that need a human tonight to a wider list (the operator plus whoever is
+    covering) while everything else still goes to the operator alone. See
+    incident_alerts.URGENT_KINDS.
+    """
     if not alert_enabled():
         logger.info("alert email disabled (ALERT_EMAIL_ENABLED=false): %s", subject)
         return False
-    to_addr = _cfg("ALERT_EMAIL_TO", "qum@miamioh.edu")
+    to_addr = (to or "").strip() or _cfg("ALERT_EMAIL_TO", "qum@miamioh.edu")
     from_addr = _cfg("ALERT_EMAIL_FROM", "smartchatbot-alerts@lib.miamioh.edu")
     host = _cfg("ALERT_SMTP_HOST", "localhost")
     try:

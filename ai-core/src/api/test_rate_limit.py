@@ -149,3 +149,77 @@ def main() -> int:
 
 if __name__ == "__main__":
     sys.exit(main())
+
+
+# --- budget-driven tightening (level 3) ----------------------------------
+#
+# At level 3 the ceiling drops from 20/min to 6/min and the turn cap from 80
+# to 20. The reason is arithmetic, not policy: one client at 20/min can issue
+# 28,800 messages a day, which on the expensive model is the entire monthly
+# budget in about six hours (measured 2026-08-04).
+
+
+def _state(tmp_path, level):
+    from src.config import budget as B
+    p = tmp_path / "state.json"
+    B.write_state(B.BudgetState(level=level, month=__import__("datetime")
+                                .date.today().strftime("%Y-%m")), p)
+    return p
+
+
+def test_limits_are_normal_at_level_zero(tmp_path, monkeypatch):
+    from src.config import budget as B
+    monkeypatch.setattr(B, "STATE_PATH", _state(tmp_path, B.L_NORMAL))
+    B.reset_cache()
+    assert RL._budget_limits() == (B.RATE_MAX_NORMAL, B.MAX_TURNS_NORMAL)
+    assert RL.conversation_turn_exceeded(B.MAX_TURNS_NORMAL - 1) is False
+
+
+def test_level_three_tightens_both_knobs(tmp_path, monkeypatch):
+    from src.config import budget as B
+    monkeypatch.setattr(B, "STATE_PATH", _state(tmp_path, B.L_TIGHTEN))
+    B.reset_cache()
+    assert RL._budget_limits() == (B.RATE_MAX_TIGHTENED, B.MAX_TURNS_TIGHTENED)
+    # A conversation that was fine at 80 turns is now over the cap.
+    assert RL.conversation_turn_exceeded(B.MAX_TURNS_TIGHTENED) is True
+    assert RL.conversation_turn_exceeded(B.MAX_TURNS_TIGHTENED - 1) is False
+
+
+def test_level_two_does_not_tighten_limits(tmp_path, monkeypatch):
+    """Downgrading the model is NOT throttling. Conflating them would punish
+    students at the first sign of a busy day."""
+    from src.config import budget as B
+    monkeypatch.setattr(B, "STATE_PATH", _state(tmp_path, B.L_CHEAP))
+    B.reset_cache()
+    assert RL._budget_limits() == (B.RATE_MAX_NORMAL, B.MAX_TURNS_NORMAL)
+
+
+def test_the_strictest_limit_wins_not_the_budget(tmp_path, monkeypatch):
+    """A deliberately-lowered CHAT_RATE_MAX must keep its effect even when
+    the budget would allow more."""
+    from src.config import budget as B
+    monkeypatch.setattr(B, "STATE_PATH", _state(tmp_path, B.L_NORMAL))
+    B.reset_cache()
+    orig = RL._chat_limiter
+    RL._chat_limiter = SlidingWindowLimiter(max_events=1, window_s=999)
+    try:
+        check_rate("k")
+        try:
+            check_rate("k")
+            assert False, "a tighter local limiter must still throttle"
+        except MessageRejected as e:
+            assert e.code == 429
+    finally:
+        RL._chat_limiter = orig
+
+
+def test_unreadable_budget_state_does_not_raise_the_ceiling(tmp_path, monkeypatch):
+    """Failing open must mean "normal limits", never "no limits"."""
+    from src.config import budget as B
+    bad = tmp_path / "state.json"
+    bad.write_text("{ not json")
+    monkeypatch.setattr(B, "STATE_PATH", bad)
+    B.reset_cache()
+    rate, turns = RL._budget_limits()
+    assert rate == B.RATE_MAX_NORMAL
+    assert turns == B.MAX_TURNS_NORMAL

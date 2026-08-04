@@ -253,6 +253,12 @@ async def _health_alert_watcher() -> None:
     watcher failure only logs."""
     import asyncio
     from src.observability.alerting import send_alert_email, alert_enabled
+    from src.observability.incident_alerts import urgent_recipients
+
+    # Dependency up/down is the one thing that genuinely needs a person, so
+    # it goes to the wider handover list rather than the operator alone.
+    # Falls back to ALERT_EMAIL_TO until ALERT_EMAIL_TO_URGENT is set.
+    _urgent = urgent_recipients()
     from src.api.readiness_router import run_probes
 
     if not alert_enabled():
@@ -292,6 +298,7 @@ async def _health_alert_watcher() -> None:
                     send_alert_email(
                         "🔴 Smart Chatbot: dependency DOWN at startup (" + ", ".join(down) + ")",
                         _health_alert_body(results),
+                        to=_urgent,
                     )
             elif ok != last_ok:
                 last_ok = ok
@@ -299,11 +306,13 @@ async def _health_alert_watcher() -> None:
                     send_alert_email(
                         "✅ Smart Chatbot: recovered",
                         "All dependency checks pass again.\n\n" + _health_alert_body(results),
+                        to=_urgent,
                     )
                 else:
                     send_alert_email(
                         "🔴 Smart Chatbot: dependency DOWN (" + ", ".join(down) + ")",
                         _health_alert_body(results),
+                        to=_urgent,
                     )
         except asyncio.CancelledError:
             raise

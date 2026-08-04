@@ -2819,3 +2819,71 @@ def test_handling_answer_does_not_swallow_hours_or_location_asks():
               "Where are special collections at Hamilton?",
               "who is the archivist"):
         assert _special_collections_handling_answer(q) is None, q
+
+
+# --- the booking cap needs the conversation id to reach book_room ---------
+#
+# The cap lives in the backend because that is where the write happens, but
+# the backend has no idea which conversation it is serving. _SlotFillingRegistry
+# is the one path that already rewrites book_room arguments, so it carries the
+# id too. If this regresses, the per-conversation cap silently stops working
+# while the per-email cap keeps passing its own tests.
+
+
+class _RecordingRegistry:
+    def __init__(self):
+        self.seen = []
+
+    def as_responses_tools(self):
+        return []
+
+    def get(self, name):
+        return None
+
+    def dispatch(self, call):
+        self.seen.append(call)
+        return type("R", (), {"error": None, "data": {}})()
+
+
+def test_conversation_id_reaches_book_room():
+    from src.agent.tool_registry import ToolCall
+    from src.graph.new_orchestrator import _SlotFillingRegistry
+
+    inner = _RecordingRegistry()
+    reg = _SlotFillingRegistry(inner, {}, "conv-abc")
+    reg.dispatch(ToolCall(id="1", name="book_room", arguments={"building": "king"}))
+    assert inner.seen[0].arguments["conversation_id"] == "conv-abc"
+
+
+def test_a_model_supplied_conversation_id_cannot_override_ours():
+    """Otherwise a hallucinated id would dodge the per-conversation cap."""
+    from src.agent.tool_registry import ToolCall
+    from src.graph.new_orchestrator import _SlotFillingRegistry
+
+    inner = _RecordingRegistry()
+    reg = _SlotFillingRegistry(inner, {}, "real-conv")
+    reg.dispatch(ToolCall(id="1", name="book_room",
+                          arguments={"conversation_id": "made-up"}))
+    assert inner.seen[0].arguments["conversation_id"] == "real-conv"
+
+
+def test_other_tools_are_not_given_a_conversation_id():
+    from src.agent.tool_registry import ToolCall
+    from src.graph.new_orchestrator import _SlotFillingRegistry
+
+    inner = _RecordingRegistry()
+    reg = _SlotFillingRegistry(inner, {}, "conv-abc")
+    reg.dispatch(ToolCall(id="1", name="get_hours", arguments={"library": "king"}))
+    assert "conversation_id" not in inner.seen[0].arguments
+
+
+def test_slot_filling_still_works_alongside_the_id():
+    from src.agent.tool_registry import ToolCall
+    from src.graph.new_orchestrator import _SlotFillingRegistry
+
+    inner = _RecordingRegistry()
+    reg = _SlotFillingRegistry(inner, {"email": "a@miamioh.edu"}, "conv-abc")
+    reg.dispatch(ToolCall(id="1", name="book_room", arguments={}))
+    args = inner.seen[0].arguments
+    assert args["email"] == "a@miamioh.edu"
+    assert args["conversation_id"] == "conv-abc"

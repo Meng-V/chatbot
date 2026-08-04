@@ -137,6 +137,30 @@ def is_reasoning_model(model_id: str) -> bool:
     return m.startswith("o") or m.startswith("gpt-5")
 
 
+# --- Budget-driven downgrade -------------------------------------------------
+
+
+def _budget_forces_cheap() -> bool:
+    """True when the budget ladder has downgraded the reasoning tier.
+
+    Imported lazily and swallowed defensively on purpose. This module is
+    deliberately dependency-light (os + typing only) because it sits near
+    the bottom of the import graph, and resolving a model must never be
+    able to fail: any problem reading the budget state means "no
+    downgrade", never an exception on a live turn.
+
+    Not logged per call -- it would fire on every reasoning turn. The
+    transition is already emailed by scripts/budget_guard.py, and the
+    concrete model is recorded per turn as `modelUsed`, so a downgrade is
+    visible in the data rather than only in a log line.
+    """
+    try:
+        from src.config.budget import current_state
+        return current_state().force_cheap_model
+    except Exception:  # noqa: BLE001 -- model resolution must never raise
+        return False
+
+
 # --- Type aliases for routing decisions --------------------------------------
 
 ModelTier = Literal["basic", "reasoning", "cheap"]
@@ -172,6 +196,14 @@ def resolve_model(tier: ModelTier) -> str:
     if tier == "basic":
         return os.getenv("LLM_MODEL_BASIC", "").strip() or BASIC_MODEL
     if tier == "reasoning":
+        # Budget level 2 downgrades this tier to the cheap one. Measured
+        # 2026-08-04: the reasoning model is 21x the cheap one per call
+        # ($0.01379 vs $0.00066 over 1,054 calls) and accounts for 83% of
+        # spend on 15% of calls -- so this single substitution removes most
+        # of the cost while every feature keeps working. It sits two rungs
+        # below refusing students for exactly that reason.
+        if _budget_forces_cheap():
+            return os.getenv("LLM_MODEL_CHEAP", "").strip() or CHEAP_MODEL
         return os.getenv("LLM_MODEL_REASONING", "").strip() or REASONING_MODEL
     if tier == "cheap":
         return os.getenv("LLM_MODEL_CHEAP", "").strip() or CHEAP_MODEL

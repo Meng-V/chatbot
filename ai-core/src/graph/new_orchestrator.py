@@ -1003,8 +1003,10 @@ def _run_turn(
         _slots = _extract_booking_slots(
             _user_texts(request.conversation_history, request.user_message)
         )
-        if _slots:
-            agent_registry = _SlotFillingRegistry(deps.tool_registry, _slots)
+        # Wrap even with no slots to fill: the conversation id still has to
+        # reach book_room for the per-conversation booking cap.
+        agent_registry = _SlotFillingRegistry(
+            deps.tool_registry, _slots, request.conversation_id)
     agent_start = time.monotonic()
     agent_outcome: AgentOutcome = run_agent(
         agent_req,
@@ -6086,12 +6088,19 @@ class _SlotFillingRegistry:
     (see the section comment above). Duck-types the two methods the
     agent loop uses; every other tool passes through untouched."""
 
-    def __init__(self, inner: ToolRegistry, slots: dict) -> None:
+    def __init__(self, inner: ToolRegistry, slots: dict,
+                 conversation_id: "Optional[str]" = None) -> None:
         self._inner = inner
         self._slots = {
             k: v for k, v in slots.items()
             if k in _BOOKING_FILL_KEYS and v
         }
+        # Carried so the booking backend can enforce a per-conversation cap.
+        # The backend is where the write happens and is the only safe place
+        # to check, but it has no idea which conversation it is serving --
+        # this is the one path that already rewrites book_room arguments, so
+        # it is also the cheapest place to add one more.
+        self._conversation_id = conversation_id
 
     def as_responses_tools(self) -> list[dict]:
         return self._inner.as_responses_tools()
@@ -6100,12 +6109,16 @@ class _SlotFillingRegistry:
         return self._inner.get(name)
 
     def dispatch(self, call):
-        if call.name == "book_room" and self._slots:
+        if call.name == "book_room" and (self._slots or self._conversation_id):
             from src.agent.tool_registry import ToolCall
             merged = dict(call.arguments or {})
             for key, value in self._slots.items():
                 if not merged.get(key):
                     merged[key] = value
+            if self._conversation_id:
+                # Ours, not the model's -- overwrite rather than setdefault so
+                # a hallucinated value cannot dodge the cap.
+                merged["conversation_id"] = self._conversation_id
             call = ToolCall(id=call.id, name=call.name, arguments=merged)
         return self._inner.dispatch(call)
 
