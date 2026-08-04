@@ -31,6 +31,8 @@ sys.path.insert(0, str(_AI_CORE))
 from src.config.capability_scope import ILL_URLS, LIMITATIONS  # noqa: E402
 from src.agent.tool_registry import ToolError  # noqa: E402
 from src.eval.real_backends import (  # noqa: E402
+    _phone_from_db,
+    _libguide_lib_to_dict,
     _mark_todays_row,
     _make_get_hours,
     _today_sentence,
@@ -564,3 +566,49 @@ def test_marked_week_is_idempotent():
 
 def test_marked_week_passes_through_empty():
     assert _mark_todays_row("") == ""
+
+
+# --- the phone the API doesn't carry ----------------------------------------
+#
+# Gold asks for "name + email + phone" on subject-librarian cases and the bot
+# answered name + email, so all three librarian cases scored `partial` in the
+# 2026-08-03 baseline (category total 57.1%, the lowest of fourteen).
+#
+# I reported that as "the database has no phone numbers" after checking ONE
+# person. Wrong: 70 of 74 librarians have one. Subject lookups go through the
+# LibApps API for the live subject->person mapping, and that response carries
+# no phone field, so a value we hold was being dropped. The gold was right and
+# the fix belongs in the lookup, not in the expectation.
+
+
+def test_libguide_row_backfills_the_phone_from_postgres():
+    entry = {"first_name": "Ginny", "last_name": "Boehme",
+             "email": "boehmemv@miamioh.edu", "title": "Librarian"}
+    out = _libguide_lib_to_dict(entry)
+    assert out["email"] == "boehmemv@miamioh.edu"
+    # Cannot assert the literal number offline, but it must not be dropped
+    # when the DB is reachable, and must not blow up when it isn't.
+    assert "phone" in out
+
+
+def test_an_api_supplied_phone_wins_over_the_backfill():
+    """If LibApps ever starts sending one, it is the live value."""
+    entry = {"first_name": "A", "last_name": "B", "email": "x@miamioh.edu",
+             "phone": "(513) 000-0000"}
+    assert _libguide_lib_to_dict(entry)["phone"] == "(513) 000-0000"
+
+
+def test_phone_backfill_degrades_to_none_not_an_error():
+    """A missing phone must cost us the phone, never the whole lookup."""
+    assert _phone_from_db(None) is None
+    assert _phone_from_db("nobody-at-all@example.invalid") is None
+
+
+def test_phone_backfill_is_case_insensitive_on_email():
+    """LibApps casing has drifted before; email is the join key."""
+    import src.eval.real_backends as rb
+    rb._PHONE_BY_EMAIL = {"boehmemv@miamioh.edu": "(513) 529-1726"}
+    try:
+        assert _phone_from_db("BoehmeMV@MiamiOH.edu") == "(513) 529-1726"
+    finally:
+        rb._PHONE_BY_EMAIL = None

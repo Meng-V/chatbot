@@ -16,6 +16,7 @@ from __future__ import annotations
 from src.scope.resolver import Scope
 from src.graph.new_orchestrator import (
     _greeting_answer,
+    _subject_liaison_short_circuit,
     _CANCEL_HELP_MARKER,
     _dismissal_answer,
     _asks_for_my_librarian,
@@ -2330,3 +2331,53 @@ def test_pronoun_cancel_fallback_does_not_claim_non_room_things():
               "cancel my fines on it", "cancel that request",
               "cancel my ebook loan on it"):
         assert _cancel_reservation_answer(q, []) is None, q
+
+
+def _liaison_outcome(rows, subject="Biology"):
+    """AgentOutcome carrying a lookup_librarian result, same shape as the
+    existing test in test_new_orchestrator.py."""
+    from src.agent.agent import AgentOutcome, AgentTurn
+    from src.agent.tool_registry import ToolCall, ToolResult
+    return AgentOutcome(
+        terminal_message={"role": "assistant", "content": "x"},
+        turns=[AgentTurn(
+            iteration=0, llm_message={"role": "assistant"},
+            tool_calls=[ToolCall(id="t1", name="lookup_librarian",
+                                 arguments={"subject": subject})],
+            tool_results=[ToolResult(call_id="t1", name="lookup_librarian",
+                                     data={"librarians": rows})],
+        )],
+        stopped_reason="clean",
+    )
+
+
+def test_liaison_answer_includes_the_phone_when_we_have_one():
+    """Gold asks for name + email + phone; the template emitted only the first
+    two, so all three librarian cases scored `partial` in the 2026-08-03
+    baseline (57.1%, lowest of fourteen categories). 70 of 74 librarians have
+    a number in Postgres -- the value was there and we dropped it twice: the
+    LibApps API doesn't carry it, and this template didn't print it."""
+    out, _ = _subject_liaison_short_circuit(
+        _liaison_outcome([{
+            "name": "Ginny Boehme", "email": "boehmemv@miamioh.edu",
+            "phone": "(513) 529-1726", "campus": "Oxford",
+        }]),
+        Scope(campus="oxford", library=None, source="test"),
+    )
+    assert "Ginny Boehme" in out
+    assert "boehmemv@miamioh.edu" in out
+    assert "(513) 529-1726" in out
+
+
+def test_liaison_answer_omits_the_phone_cleanly_when_there_is_none():
+    """Four librarians have no number. They must not get empty brackets or a
+    dangling comma."""
+    out, _ = _subject_liaison_short_circuit(
+        _liaison_outcome([{
+            "name": "Leah Tabler", "email": "tablerl@miamioh.edu",
+            "phone": None, "campus": "Oxford",
+        }]),
+        Scope(campus="oxford", library=None, source="test"),
+    )
+    assert "(tablerl@miamioh.edu)" in out
+    assert ", )" not in out and "(, " not in out

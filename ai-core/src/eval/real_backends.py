@@ -318,6 +318,41 @@ def _resolve_subject_terms(subject: str, name: str) -> list[str]:
     return deduped
 
 
+_PHONE_BY_EMAIL: "Optional[dict[str, str]]" = None
+
+
+def _phone_from_db(email: "Optional[str]") -> "Optional[str]":
+    """Phone for this email from the Librarian table, or None.
+
+    Loaded once per process and cached: a subject lookup can return several
+    people, and this must not become a query per person on the hot path. A
+    stale phone is a far smaller problem than a missing one -- the numbers are
+    desk lines, not something that changes mid-session.
+
+    Never raises: a missing phone must degrade to the old behaviour (no phone
+    in the answer), never to a failed lookup.
+    """
+    global _PHONE_BY_EMAIL
+    if not email:
+        return None
+    if _PHONE_BY_EMAIL is None:
+        try:
+            async def _load(client):
+                return await client.librarian.find_many()
+            rows = _db(_load)
+            _PHONE_BY_EMAIL = {
+                str(r.email).strip().lower(): str(r.phone).strip()
+                for r in rows
+                if getattr(r, "email", None) and getattr(r, "phone", None)
+            }
+            logger.info("phone backfill: %d librarians have a phone",
+                        len(_PHONE_BY_EMAIL))
+        except Exception:  # noqa: BLE001 -- degrade, never fail the lookup
+            logger.warning("phone backfill unavailable", exc_info=True)
+            _PHONE_BY_EMAIL = {}
+    return _PHONE_BY_EMAIL.get(email.strip().lower())
+
+
 def _libguide_lib_to_dict(lib_entry: dict) -> dict:
     """Map a LibGuides API librarian dict to the bot's lookup_librarian shape.
 
@@ -335,7 +370,13 @@ def _libguide_lib_to_dict(lib_entry: dict) -> dict:
         "email": lib_entry.get("email"),
         "title": lib_entry.get("title"),
         "department": lib_entry.get("department"),
-        "phone": lib_entry.get("phone"),
+        # The LibApps API carries no phone number. 70 of our 74 librarians
+        # have one in Postgres, so a subject lookup -- which goes through the
+        # API for the live subject->person mapping -- was dropping a field we
+        # hold. Gold asks for "name + email + phone" and the bot answered
+        # name + email, which read as the eval being wrong about what we can
+        # do. Backfilled by email, which is unique in both systems.
+        "phone": lib_entry.get("phone") or _phone_from_db(lib_entry.get("email")),
         "campus": lib_entry.get("campus"),
         "profile_url": lib_entry.get("profile_url"),
         # Operator rule 2026-07-28: every person record says where it

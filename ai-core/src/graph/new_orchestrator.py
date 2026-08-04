@@ -4425,7 +4425,14 @@ def _subject_liaison_short_circuit(
         # "at hamilton" reads like a typo to a patron.
         campus = _campus_of(l).title()
         where = f" at {campus}" if campus else ""
-        return f"{l['name']}{where} ({l['email']})"
+        # Phone included when we have one. Gold asks for name + email + phone
+        # and this template emitted only the first two, so every
+        # subject-librarian case scored `partial` in the 2026-08-03 baseline.
+        # 70 of 74 librarians have a number; the four who don't simply get the
+        # old shape rather than an empty pair of brackets.
+        phone = str(l.get("phone") or "").strip()
+        contact = f"{l['email']}, {phone}" if phone else l["email"]
+        return f"{l['name']}{where} ({contact})"
 
     if mine and others:
         # Both the student's own campus and elsewhere -- name both, so the
