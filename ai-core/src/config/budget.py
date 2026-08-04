@@ -94,8 +94,28 @@ EVENT_LOG_PATH = Path(
 STALE_AFTER_S = _i_env("BUDGET_STALE_AFTER_S", 3 * 3600)
 
 
+LIBRARY_TZ = "America/New_York"
+
+
+def library_today() -> "_dt.date":
+    """Today in the libraries' own timezone, not the box's.
+
+    The box runs UTC and Oxford is UTC-4 in summer, so from 8pm ET on the last
+    day of a month `date.today()` already reports the NEXT month -- and the
+    purse would refill about four hours early, every month. The operator
+    accounts by natural calendar month starting at midnight on the 1st, which
+    means midnight in Oxford.
+
+    Same trap as real_backends._library_today, which was added after
+    "what time do you close today" named the wrong day for four hours each
+    evening. Fixed here before it could be observed rather than after.
+    """
+    import pytz
+    return _dt.datetime.now(pytz.timezone(LIBRARY_TZ)).date()
+
+
 def days_in_month(when: "Optional[_dt.date]" = None) -> int:
-    d = when or _dt.date.today()
+    d = when or library_today()
     return calendar.monthrange(d.year, d.month)[1]
 
 
@@ -319,7 +339,8 @@ def _parse_state(data: dict, *, now: "Optional[_dt.datetime]" = None) -> BudgetS
     # A state file from a previous month is not stale, it is void: the
     # purse refilled at midnight on the 1st and nobody should still be
     # refusing students on last month's numbers.
-    this_month = (now or _dt.datetime.now()).strftime("%Y-%m")
+    # Oxford's month, not the box's -- see library_today().
+    this_month = (now.date() if now else library_today()).strftime("%Y-%m")
     if st.month and st.month != this_month:
         log.info("budget state is from %s, this is %s -- treating as normal",
                  st.month, this_month)

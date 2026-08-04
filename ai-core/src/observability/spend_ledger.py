@@ -49,7 +49,14 @@ class Spend:
 
 
 def _month_start(when: "Optional[_dt.date]" = None) -> _dt.date:
-    d = when or _dt.date.today()
+    """The 1st of the month, in the libraries' timezone.
+
+    Natural calendar month per the operator: the purse refills at midnight on
+    the 1st, Oxford time. `date.today()` on this UTC box rolls over four hours
+    early -- see budget.library_today().
+    """
+    from src.config.budget import library_today
+    d = when or library_today()
     return d.replace(day=1)
 
 
@@ -130,7 +137,8 @@ def record_eval_spend(
     """
     if not rows:
         return True
-    day = the_date or _dt.date.today()
+    from src.config.budget import library_today
+    day = the_date or library_today()
     try:
         n = asyncio.run(_arecord_eval_spend(rows, day))
         total = sum(float(r.get("usd") or 0) for r in rows)
@@ -207,7 +215,8 @@ def read_spend(*, today: "Optional[_dt.date]" = None) -> Optional[Spend]:
     None rather than zeros: zeros would look like a quiet month and let the
     guard clear a degrade level it should be holding.
     """
-    day = today or _dt.date.today()
+    from src.config.budget import library_today
+    day = today or library_today()
     try:
         return asyncio.run(_aread_spend(day))
     except Exception as e:  # noqa: BLE001

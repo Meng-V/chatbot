@@ -132,7 +132,7 @@ def _events(month: str) -> list[dict]:
 
 def build(month: str) -> tuple[str, dict]:
     first, last = _month_bounds(month)
-    today = _dt.date.today()
+    today = B.library_today()
     data = asyncio.run(_gather(first, last))
 
     serve_rows, serve_total, unpriced = [], 0.0, []
@@ -409,7 +409,7 @@ def _md_to_html(md: str) -> str:
 def main(argv: "list[str] | None" = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--month", default=_dt.date.today().strftime("%Y-%m"),
+    ap.add_argument("--month", default=B.library_today().strftime("%Y-%m"),
                     help="YYYY-MM (default: this month)")
     ap.add_argument("--html", metavar="PATH", help="also write a standalone page")
     ap.add_argument("--email", action="store_true", help="send the report")

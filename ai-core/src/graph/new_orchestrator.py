@@ -43,6 +43,7 @@ import time
 from dataclasses import dataclass, field, replace as _dc_replace
 from typing import Any, Callable, Optional
 
+from src.graph import facility_facts as _ff
 from src.agent.agent import AgentLLM, AgentOutcome, AgentRequest, run_agent
 from src.agent.tool_registry import ToolRegistry
 from src.observability.logging import bind_request_context, get_logger
@@ -721,12 +722,25 @@ def _run_turn(
             # here costs the patron money. The synthesizer had the policy
             # page and still said "any Miami University library".
             ("ill_return", _ill_return_answer),
+            # Building facts the operator gave us that the website does not
+            # publish (src/graph/facility_facts.py). BEFORE the generic
+            # branches: the agent used to refuse all of these, and a refusal
+            # on "where are the bathrooms" is the worst kind of unhelpful.
+            # printing_scanning_wifi is LAST of this group -- its matcher is
+            # the broadest, so anything more specific gets first refusal.
+            ("quiet_study", _ff.quiet_study_answer),
+            ("reading_rooms", _ff.reading_room_answer),
+            ("restrooms", _ff.restroom_answer),
+            ("nursing_room", _ff.nursing_room_answer),
             ("sc_campus", _special_collections_campus_answer),
             ("sc_handling", _special_collections_handling_answer),
             ("fee_policy", _fee_policy_answer),
             ("bot_identity", _bot_identity_answer),
             ("complaint", _complaint_answer),
             ("dean", _dean_answer),
+            # Broad matcher -- keep last so a 3D-printing or fines question
+            # reaches its own handler first.
+            ("print_scan_wifi", _ff.printing_scanning_wifi_answer),
         ):
             _res = _fn(request.user_message)
             if _res is not None:
