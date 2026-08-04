@@ -16,6 +16,10 @@ from __future__ import annotations
 from src.scope.resolver import Scope
 from src.graph.new_orchestrator import (
     _greeting_answer,
+    _fmt_clock,
+    _OPEN_NOW_RE,
+    _open_state,
+    _ill_return_answer,
     _subject_liaison_short_circuit,
     _CANCEL_HELP_MARKER,
     _dismissal_answer,
@@ -2381,3 +2385,128 @@ def test_liaison_answer_omits_the_phone_cleanly_when_there_is_none():
     )
     assert "(tablerl@miamioh.edu)" in out
     assert ", )" not in out and "(, " not in out
+
+
+# --- where an interlibrary loan goes back ------------------------------------
+#
+# The synthesizer had the OhioLINK/ILL policy page in evidence and still
+# answered "you can return the interlibrary loan book to any Miami University
+# library" (eval case fs_ill_return, 2026-08-04). The page says the opposite:
+#
+#   "OhioLINK items should be returned to the bookdrop inside or outside the
+#    library from which they were borrowed."
+#
+# and the same page lists $0.50/day overdue plus $50 past 30 days. A patron
+# who follows the wrong answer gets charged for it, which is why this is
+# deterministic rather than synthesised -- the same call as the fines figure.
+
+
+def test_ill_return_names_the_borrowing_library_not_any_library():
+    out, cites = _ill_return_answer("Where do I return an interlibrary loan book?")
+    low = out.lower()
+    assert "borrowed it from" in low
+    assert "any miami" not in low, "the wrong answer this exists to prevent"
+    assert "bookdrop" in low or "book drop" in low
+    assert cites[0]["url"].endswith("loan-periods-ohiolink-ill")
+
+
+def test_ill_return_covers_the_phrasings_patrons_use():
+    for q in ("Where do I return an interlibrary loan book?",
+              "where do i return my ILL book",
+              "How do I return an OhioLINK book?",
+              "where should I drop off an interlibrary loan",
+              "which library do I return a SearchOHIO item to",
+              "where do I bring back an interlibrary loan"):
+        assert _ill_return_answer(q) is not None, q
+
+
+def test_ill_return_leaves_the_neighbouring_asks_alone():
+    """Requesting, renewing, turnaround time and ordinary Miami books all have
+    their own paths and better answers than this one."""
+    for q in ("Where do I return a Miami library book?",
+              "How do I request an interlibrary loan?",
+              "How long does ILL take?",
+              "can I renew my ILL book",
+              "where is King Library"):
+        assert _ill_return_answer(q) is None, q
+
+
+def test_ill_return_quotes_no_figure():
+    """Same rule as the fines answer: the page states the amounts, we don't.
+    They change, and a stale number is worse than a pointer."""
+    out, _ = _ill_return_answer("where do I return an ohiolink book")
+    assert "$" not in out
+    assert "0.50" not in out and "50" not in out.replace("$", "")
+
+
+# --- "is it open right now" is arithmetic, not judgement ---------------------
+#
+# The model had the schedule, today's date AND the current time in evidence and
+# still answered "whether it is open right now depends on the current day and
+# time" (hr_today_king). Three rounds of better evidence each moved it a little
+# without ever producing a yes or a no. Comparing a clock to a row is not a
+# judgement call, so it stopped being one.
+
+_WEEK_HOURS = (
+    "**King Library Hours (Week of 2026-08-04):**\n\n"
+    "• **Monday (2026-08-03)**: Closed\n"
+    "• **Tuesday (2026-08-04)**: 7:30am to 9:00pm\n"
+    "• **Wednesday (2026-08-05)**: 7:30am to 9:00pm\n"
+)
+
+
+def _et(hour, minute=0, day=4):
+    import datetime as dt
+    import pytz
+    return pytz.timezone("America/New_York").localize(
+        dt.datetime(2026, 8, day, hour, minute))
+
+
+def test_open_state_gets_the_boundaries_right():
+    """The minute before opening and the minute of closing are where a
+    plausible-looking implementation is wrong."""
+    for hour, minute, want in ((0, 56, False), (7, 29, False), (7, 30, True),
+                               (14, 0, True), (20, 59, True), (21, 0, False)):
+        st = _open_state(_WEEK_HOURS, _et(hour, minute))
+        assert st is not None and st["open"] is want, (hour, minute, st)
+
+
+def test_open_state_handles_a_closed_day():
+    st = _open_state(_WEEK_HOURS, _et(12, 0, day=3))
+    assert st["open"] is False and st["closed_all_day"] is True
+
+
+def test_open_state_declines_rather_than_guessing():
+    """Anything it cannot read confidently returns None, so the turn falls back
+    to the previous behaviour. A wrong "yes, it's open" is worse than vague."""
+    assert _open_state(_WEEK_HOURS, _et(12, 0, day=9)) is None, "date not in table"
+    assert _open_state("", _et(12, 0)) is None
+    assert _open_state("hours vary by term", _et(12, 0)) is None
+    assert _open_state("• **Tuesday (2026-08-04)**: see website", _et(12, 0)) is None
+
+
+def test_open_state_handles_round_the_clock():
+    st = _open_state("• **Tuesday (2026-08-04)**: Open 24 hours\n", _et(3, 0))
+    assert st["open"] is True and st["always"] is True
+
+
+def test_open_now_matches_how_patrons_ask():
+    for q in ("Is the library open right now?", "is king open now",
+              "are you still open?", "is the library open?",
+              "Is King open yet?", "is it already closed"):
+        assert _OPEN_NOW_RE.search(q), q
+
+
+def test_open_now_leaves_other_hours_questions_alone():
+    """A named day, a closing time, and a holiday all have their own paths --
+    and the holiday one deliberately refuses rather than guessing."""
+    for q in ("Is King open on Saturday?",
+              "what time does King close today?",
+              "is the library open on Christmas Day?",
+              "when does Wertz open tomorrow"):
+        assert not _OPEN_NOW_RE.search(q), q
+
+
+def test_clock_formatting_reads_like_a_person_wrote_it():
+    assert [_fmt_clock(x) for x in (450, 1260, 0, 720)] == \
+        ["7:30am", "9pm", "12am", "12pm"]

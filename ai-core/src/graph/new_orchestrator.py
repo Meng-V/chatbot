@@ -717,6 +717,10 @@ def _run_turn(
             ("course_reserves", _course_reserves_answer),
             ("digital_exhibits", _digital_exhibits_answer),
             ("gov_docs", _gov_docs_answer),
+            # Before fee_policy, and for the same reason: a wrong answer
+            # here costs the patron money. The synthesizer had the policy
+            # page and still said "any Miami University library".
+            ("ill_return", _ill_return_answer),
             ("fee_policy", _fee_policy_answer),
             ("bot_identity", _bot_identity_answer),
             ("complaint", _complaint_answer),
@@ -893,6 +897,29 @@ def _run_turn(
             fired_corrections=[], agent_stopped_reason="admin_role_short_circuit",
             latency_ms=latency_ms, cited_chunk_ids=[],
         )
+
+    # --- 3.55. "Is it open RIGHT NOW" short-circuit ---
+    # Placed before the Special Collections branch and after the long-period
+    # check, so "summer hours" and a named future day still take their own
+    # paths. Yes/no from arithmetic on today's row; returns None on anything it
+    # cannot parse, which falls through to the behaviour that was there before.
+    if classification.intent == "hours":
+        _now = _open_right_now_answer(request.user_message, deps, scope)
+        if _now is not None:
+            _ans, _cites = _now
+            latency_ms = int((time.monotonic() - turn_start) * 1000)
+            record_request(endpoint="/chat", status="open_now",
+                           latency_s=latency_ms / 1000)
+            return TurnResponse(
+                answer=_ans, is_refusal=False, refusal_trigger=None,
+                citations=_cites, confidence="high",
+                intent=classification.intent, scope=scope.as_filter(),
+                model_used=model_basic,
+                tokens={"input": 0, "cached_input": 0, "output": 0},
+                fired_corrections=[],
+                agent_stopped_reason="open_now_short_circuit",
+                latency_ms=latency_ms, cited_chunk_ids=[],
+            )
 
     # --- 3.6. Special Collections hours short-circuit ---
     # Live LibCal hours for the SCUA location + the appointment-only
@@ -3706,6 +3733,49 @@ def _looks_like_item_request(message: str) -> bool:
     return not _NON_LIBRARY_THING_RE.search(m)
 
 
+# WHERE an interlibrary loan goes back. The synthesizer had the policy page in
+# evidence and still answered "you can return it to any Miami University
+# library" (eval case fs_ill_return, 2026-08-04). The page says the opposite:
+#
+#   "OhioLINK items should be returned to the bookdrop inside or outside the
+#    library from which they were borrowed."
+#
+# and the same page lists $0.50/day overdue plus a $50 fine past 30 days. A
+# student who follows the wrong answer can be charged for it, which puts this in
+# the same class as the fines figure: deterministic, not synthesised.
+_ILL_RETURN_RE = re.compile(
+    r"\b(where|how|which)\b[^.?!]{0,40}\b(return|drop\s*off|give\s+back|"
+    r"bring\s+back|send\s+back)\b[^.?!]{0,40}"
+    r"\b(ill|interlibrary|inter-library|ohiolink|searchohio|borrowed\s+book)\b"
+    r"|\b(return|drop\s*off|give\s+back|bring\s+back)\b[^.?!]{0,30}"
+    r"\b(ill|interlibrary|inter-library|ohiolink|searchohio)\b[^.?!]{0,30}\b(book|item|loan)?\b",
+    re.IGNORECASE,
+)
+
+
+def _ill_return_answer(message: str) -> "Optional[tuple[str, list[dict]]]":
+    """Where an OhioLINK / ILL item must be returned.
+
+    States the rule the policy page states, and no more: the borrowing
+    library's bookdrop. It deliberately does NOT say "any Miami library",
+    which is what the synthesizer produced and what the page contradicts.
+    """
+    m = message or ""
+    if not _ILL_RETURN_RE.search(m):
+        return None
+    return (
+        "Return it to the library you borrowed it from -- its bookdrop, "
+        "inside or outside, is fine. OhioLINK and SearchOHIO items in "
+        "particular have to go back to that same library rather than to "
+        "whichever one is closest, and returning one late carries a daily "
+        "overdue charge, so it is worth the walk. The loan-periods policy "
+        "page has the current figures [1].",
+        [{"n": 1, "url": _LOAN_OHIOLINK_ILL_URL,
+          "snippet": "Miami University Libraries — Loan Periods: OhioLINK, "
+                     "SearchOHIO and Interlibrary Loan"}],
+    )
+
+
 def _fee_policy_answer(message: str) -> "Optional[tuple[str, list[dict]]]":
     """Overdue-fine / late-fee POLICY questions -> the maintained policy page.
 
@@ -4650,6 +4720,192 @@ _MAKERSPACE_WORD_RE = re.compile(r"\b" + _MAKERSPACE_WORD + r"\b", re.IGNORECASE
 _SPEC_APPOINTMENTS_URL = "https://spec.lib.miamioh.edu/home/"
 
 
+# --- "is the library open RIGHT NOW" ----------------------------------------
+#
+# This is arithmetic: compare a clock to today's row. It was being handed to the
+# model, which had the schedule, the date AND the current time in evidence and
+# still answered "King Library's posted hours are 7:30am-9:00pm Monday-Thursday
+# ... whether it is open right now depends on the current day and time." Three
+# rounds of feeding it better evidence each moved the answer slightly without
+# ever getting a yes or a no out of it (2026-08-03/04).
+#
+# So it stops being a judgement. Everything below is deterministic, and any
+# input it cannot parse returns None so the old behaviour still applies -- a
+# wrong "yes, it's open" is worse than a vague answer.
+
+# Names as a patron would say them, for the yes/no sentence.
+_LIBRARY_DISPLAY = {
+    "king": "King Library",
+    "wertz": "Wertz Art & Architecture Library",
+    "special": "Walter Havighurst Special Collections",
+    "makerspace": "the King Library MakerSpace",
+    "rentschler": "Rentschler Library",
+    "hamilton": "Rentschler Library",
+    "gardner_harvey": "Gardner-Harvey Library",
+    "middletown": "Gardner-Harvey Library",
+    "best": "B.E.S.T. Library",
+}
+
+_OPEN_NOW_RE = re.compile(
+    r"\b(open|closed)\b[^.?!]{0,24}\b(right\s+now|now|at\s+the\s+moment|"
+    r"currently|at\s+this\s+hour)\b"
+    r"|\b(is|are)\b[^.?!]{0,28}\b(open|closed)\b\s*[?]?\s*$"
+    r"|\bstill\s+open\b|\balready\s+closed\b|\bopen\s+yet\b",
+    re.IGNORECASE,
+)
+
+# "• **Tuesday (2026-08-04)**: 7:30am to 9:00pm"  /  ": Closed"
+_HOURS_ROW_RE = re.compile(
+    r"^[^\w]*\*{0,2}(?P<day>[A-Z][a-z]+)\*{0,2}\s*\((?P<date>\d{4}-\d{2}-\d{2})\)"
+    r"\*{0,2}\s*:\s*(?P<hours>.+?)\s*$",
+    re.MULTILINE,
+)
+_TIME_RE = re.compile(r"(\d{1,2})(?::(\d{2}))?\s*([ap])\.?m\.?", re.IGNORECASE)
+
+
+def _parse_clock(text: str) -> "Optional[int]":
+    """'7:30am' -> minutes since midnight. None if unparseable."""
+    m = _TIME_RE.search(text or "")
+    if not m:
+        return None
+    hour = int(m.group(1)) % 12
+    if m.group(3).lower() == "p":
+        hour += 12
+    return hour * 60 + int(m.group(2) or 0)
+
+
+def _todays_row(hours_text: str, today) -> "Optional[str]":
+    """The schedule text for today, or None if today isn't in the table."""
+    for m in _HOURS_ROW_RE.finditer(hours_text or ""):
+        if m.group("date") == today.isoformat():
+            return m.group("hours").strip()
+    return None
+
+
+def _open_state(hours_text: str, now) -> "Optional[dict]":
+    """Is it open at `now`? None when the text cannot be read confidently.
+
+    Returns {open: bool, opens: Optional[int], closes: Optional[int],
+             closed_all_day: bool, always: bool} in minutes-since-midnight.
+    """
+    row = _todays_row(hours_text, now.date())
+    if row is None:
+        return None
+    low = row.lower()
+    if "closed" in low:
+        return {"open": False, "opens": None, "closes": None,
+                "closed_all_day": True, "always": False}
+    if "24 hour" in low or "24/7" in low:
+        return {"open": True, "opens": None, "closes": None,
+                "closed_all_day": False, "always": True}
+    parts = re.split(r"\s+to\s+|\s*[-\u2013\u2014]\s*", row)
+    if len(parts) < 2:
+        return None
+    opens, closes = _parse_clock(parts[0]), _parse_clock(parts[1])
+    if opens is None or closes is None:
+        return None
+    minute = now.hour * 60 + now.minute
+    # A closing time before the opening time means it runs past midnight.
+    is_open = (opens <= minute < closes) if closes > opens else (
+        minute >= opens or minute < closes)
+    return {"open": is_open, "opens": opens, "closes": closes,
+            "closed_all_day": False, "always": False}
+
+
+def _fmt_clock(minutes: int) -> str:
+    h, m = divmod(minutes, 60)
+    suffix = "am" if h < 12 else "pm"
+    h12 = h % 12 or 12
+    return f"{h12}:{m:02d}{suffix}" if m else f"{h12}{suffix}"
+
+
+def _open_right_now_answer(
+    message: str, deps: "OrchestratorDeps", scope: "Scope",
+) -> "Optional[tuple[str, list[dict]]]":
+    """Yes or no, with the time it used so a patron can check the reasoning."""
+    m = message or ""
+    if not _OPEN_NOW_RE.search(m):
+        return None
+    # A named future day is a different question and has its own path.
+    if re.search(r"\b(tomorrow|saturday|sunday|monday|tuesday|wednesday|"
+                 r"thursday|friday|christmas|thanksgiving|break|semester)\b",
+                 m, re.IGNORECASE):
+        return None
+    library = (scope.library or "king").strip().lower() or "king"
+    try:
+        from src.agent.tool_registry import ToolCall
+        # Retried once. The LibCal bridge binds its event loop lazily, so the
+        # FIRST hours call in a freshly restarted process can fail -- and the
+        # only symptom is this short-circuit silently declining, which reads as
+        # "the deterministic answer doesn't work" rather than "the process was
+        # cold". Observed on the first request after a restart, 2026-08-04.
+        # Retry on a FAILED RESULT, not just on a raised error. The first
+        # hours call in a freshly restarted process comes back with
+        # ToolResult.error unset but data={"success": False} and a 64-char
+        # body -- the LibCal bridge binds its event loop lazily, and the cold
+        # call loses the race. Keying the retry off res.error alone missed it
+        # entirely (2026-08-04).
+        res = None
+        for _attempt in range(3):
+            res = deps.tool_registry.dispatch(
+                ToolCall(id=f"open-now-{_attempt}", name="get_hours",
+                         arguments={"library": library})
+            )
+            if not res.error and (res.data or {}).get("success"):
+                break
+            log.info("open-now: get_hours attempt %d unusable "
+                     "(error=%s success=%s)", _attempt + 1, res.error,
+                     (res.data or {}).get("success"))
+        if res is None or res.error:
+            log.info("open-now: declining, get_hours error=%s",
+                     getattr(res, "error", "no result"))
+            return None
+        data = res.data or {}
+        text = str(data.get("hours") or "")
+        if not data.get("success") or not text:
+            # Say WHY. A short-circuit that declines in silence is
+            # indistinguishable from one that isn't wired up, which cost an
+            # hour of guessing on 2026-08-04.
+            log.info("open-now: declining, success=%s hours_len=%d",
+                        data.get("success"), len(text))
+            return None
+        source_url = str(data.get("source_url") or "")
+    except Exception:  # noqa: BLE001 -- never break the turn
+        log.warning("open-now: declining on exception", exc_info=True)
+        return None
+
+    import datetime as _datetime
+
+    import pytz as _pytz
+    now = _datetime.datetime.now(_pytz.timezone("America/New_York"))
+    state = _open_state(text, now)
+    if state is None:
+        log.info("open-now: declining, could not read today (%s) out of "
+                    "%d chars of schedule", now.date().isoformat(), len(text))
+        return None
+
+    name = _LIBRARY_DISPLAY.get(library, library.title())
+    stamp = f"as of {_fmt_clock(now.hour * 60 + now.minute)} Eastern"
+    if state["always"]:
+        body = f"Yes -- {name} is open around the clock today ({stamp})."
+    elif state["closed_all_day"]:
+        body = f"No -- {name} is closed all day today ({stamp})."
+    elif state["open"]:
+        body = (f"Yes -- {name} is open right now ({stamp}) and closes at "
+                f"{_fmt_clock(state['closes'])} today.")
+    elif (state["opens"] or 0) > now.hour * 60 + now.minute:
+        body = (f"No -- {name} is closed right now ({stamp}). It opens at "
+                f"{_fmt_clock(state['opens'])} today.")
+    else:
+        body = (f"No -- {name} closed at {_fmt_clock(state['closes'])} today "
+                f"({stamp}).")
+    return (
+        body + " [1]",
+        [{"n": 1, "url": source_url or _HOURS_PAGE_URL["oxford"],
+          "snippet": "Miami University Libraries — Hours (live from LibCal)"}],
+    )
+
+
 def _special_collections_hours_answer(
     deps: "OrchestratorDeps",
 ) -> "Optional[tuple[str, list[dict]]]":
@@ -5393,7 +5649,7 @@ def _names_a_known_subject(message: str) -> bool:
             for w in re.findall(r"[A-Za-z][\w'-]{2,}", text)
         )
     except Exception:  # noqa: BLE001 -- a guard must never break the turn
-        logger.warning("subject alias guard failed for %r", text, exc_info=True)
+        log.warning("subject alias guard failed for %r", text, exc_info=True)
         return False
 
 
