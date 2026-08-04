@@ -127,7 +127,13 @@ celerybeat.pid
 *.sage.py
 
 # Environments
+# .env holds the OpenAI API key. The bare name is not enough: a backup written
+# as ".env.env.bak.20260804_044947" slipped past it and got committed, and only
+# GitHub's push protection stopped the key leaving the machine (2026-08-04).
+# Match every variant, and every backup shape.
 .env
+.env.*
+*.env.bak*
 .env.local
 .venv
 env/

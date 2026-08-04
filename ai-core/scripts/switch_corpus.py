@@ -119,10 +119,28 @@ def env_current() -> str:
     return ""
 
 
+# Backups of .env go OUTSIDE the repository. They contain the OpenAI API key.
+#
+# The first version wrote them next to .env using
+# ENV_PATH.with_suffix(f".env.bak.{stamp}"), which produces
+# "/opt/chatbot/.env.env.bak.20260804_044947" -- Path("/opt/chatbot/.env") has
+# an empty suffix and ".env" as its STEM, so with_suffix appends rather than
+# replaces. That name is not matched by the ".env" line in .gitignore, so
+# `git add -A` committed the key. Twice. GitHub's push protection caught it and
+# rejected the push, which is the only reason it never left the machine.
+#
+# Two independent things had to both be wrong for that to happen, so both are
+# fixed: the path (here) and the ignore rule (.gitignore now covers .env*).
+ENV_BACKUP_DIR = Path("/var/backups/chatbot-env")
+
+
 def env_set(value: str) -> None:
     """Rewrite the one line, keeping a timestamped backup of .env."""
-    backup = ENV_PATH.with_suffix(f".env.bak.{dt.datetime.now():%Y%m%d_%H%M%S}")
+    ENV_BACKUP_DIR.mkdir(parents=True, exist_ok=True)
+    ENV_BACKUP_DIR.chmod(0o700)
+    backup = ENV_BACKUP_DIR / f"env.{dt.datetime.now():%Y%m%d_%H%M%S}"
     shutil.copy2(ENV_PATH, backup)
+    backup.chmod(0o600)
     lines = ENV_PATH.read_text().splitlines(keepends=True)
     out, found = [], False
     for line in lines:
