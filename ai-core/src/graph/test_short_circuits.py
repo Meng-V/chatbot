@@ -16,6 +16,7 @@ from __future__ import annotations
 from src.scope.resolver import Scope
 from src.graph.new_orchestrator import (
     _greeting_answer,
+    _NOT_A_SUBJECT_WORD,
     _fmt_clock,
     _OPEN_NOW_RE,
     _open_state,
@@ -2510,3 +2511,65 @@ def test_open_now_leaves_other_hours_questions_alone():
 def test_clock_formatting_reads_like_a_person_wrote_it():
     assert [_fmt_clock(x) for x in (450, 1260, 0, 720)] == \
         ["7:30am", "9pm", "12am", "12pm"]
+
+
+# --- a refusal that names a subject should name that subject's librarian -----
+#
+# "Do my history homework for me" is correctly refused, but the patron named a
+# subject and we hold the liaison for it. Gold asks us to send them there
+# rather than to a generic help page (eval case ref_homework).
+#
+# The first version of this looped over every 3+ letter word, and the alias
+# table maps "the" -> "Theater". So a patron asking about the WEATHER, and one
+# asking who won the Bengals game, were both told they had "mentioned theater".
+# Hence the length floor and the closed-class denylist below.
+
+
+def _resolve_subject(text):
+    """Mirrors the fallback in _subject_referral_line, without the DB call."""
+    import re as _re
+    from src.tools.subject_aliases import find_subject_by_alias
+    s = find_subject_by_alias(text.strip())
+    if s:
+        return s
+    for w in _re.findall(r"[A-Za-z][A-Za-z'-]{4,}", text):
+        if w.lower() in _NOT_A_SUBJECT_WORD:
+            continue
+        s = find_subject_by_alias(w)
+        if s:
+            return s
+    return None
+
+
+def test_a_named_subject_is_recognised_in_a_refusable_ask():
+    assert _resolve_subject("Do my history homework for me.") == "History"
+    assert _resolve_subject("write my marketing essay") == "Marketing"
+    assert _resolve_subject("can you do my biology lab report") == "Biology"
+
+
+def test_the_definite_article_is_not_the_theater_department():
+    """The regression this guard exists for. "the" -> "Theater" in the alias
+    table, so any loose word loop hands a subject to every English sentence."""
+    from src.tools.subject_aliases import find_subject_by_alias
+    assert find_subject_by_alias("the") == "Theater", (
+        "if this ever stops being true the guard can relax -- until then it "
+        "is the reason the guard exists")
+    assert _resolve_subject("what's the weather today?") is None
+    assert _resolve_subject("who won the Bengals game") is None
+    assert _resolve_subject("where is the parking garage") is None
+    assert _resolve_subject("can you help me with the thing") is None
+
+
+def test_the_denylist_holds_only_real_words():
+    """A denylist with junk in it is a denylist nobody has read. Mine had
+    mojibake in its first version."""
+    for w in _NOT_A_SUBJECT_WORD:
+        assert w.isascii() and w.isalpha() and w == w.lower(), repr(w)
+
+
+def test_a_refusal_without_a_subject_stays_a_plain_refusal():
+    """Most out-of-scope questions name no subject, and appending a librarian
+    to those would be noise."""
+    for q in ("what's the wifi password", "is the library open right now?",
+              "who won the game", "what time is it"):
+        assert _resolve_subject(q) is None, q

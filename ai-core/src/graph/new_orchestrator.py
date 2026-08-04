@@ -867,6 +867,7 @@ def _run_turn(
         return _capability_response(
             classification, scope, capability, latency_ms,
             is_refusal=True,
+            extra=_subject_referral_line(request.user_message, deps),
         )
 
     # --- 3. Service-availability pre-check ---
@@ -6083,6 +6084,76 @@ def _long_period_hours_response(
     )
 
 
+# Words long enough to clear the length guard but never a subject a student
+# names. Kept short on purpose: the length rule does most of the work, and a
+# growing denylist is a sign the matcher itself is too loose.
+_NOT_A_SUBJECT_WORD = frozenset({
+    "about", "again", "anyone", "anything", "asked", "because", "before",
+    "could", "email", "every", "further", "getting", "going", "haven",
+    "hello", "homework", "instead", "library", "maybe", "might", "miami",
+    "myself", "never", "other", "please", "question", "really", "right",
+    "should", "something", "still", "thank", "thanks", "their", "there",
+    "these", "thing", "think", "those", "today", "tomorrow", "under",
+    "until", "using", "where", "which", "while", "would", "write", "wrote",
+    "your",
+})
+
+
+def _subject_referral_line(message: str, deps: "OrchestratorDeps") -> str:
+    """"...the Marketing subject librarian is X (email, phone)" -- or "".
+
+    A refusal that says only "that's outside what I cover" throws away
+    information we hold. "Do my history homework for me" is correctly refused,
+    but the patron named a subject, and gold asks us to send them to that
+    subject's librarian rather than to a generic help page (eval case
+    ref_homework).
+
+    Returns an empty string on ANY doubt -- no subject recognised, no liaison
+    found, lookup unavailable. A refusal must never fail louder than the thing
+    it is refusing.
+    """
+    try:
+        from src.tools.subject_aliases import find_subject_by_alias
+
+        text = (message or "").strip()
+        subject = find_subject_by_alias(text)
+        if not subject:
+            # Word-by-word fallback, deliberately narrow. The alias table maps
+            # "the" -> "Theater", so a loose loop over every 3+ letter word
+            # told a patron asking about the WEATHER and one asking who won the
+            # Bengals game that they had "mentioned theater". Require 5+
+            # letters and reject closed-class words: a subject name a student
+            # types is never one of these.
+            for word in re.findall(r"[A-Za-z][A-Za-z'-]{4,}", text):
+                if word.lower() in _NOT_A_SUBJECT_WORD:
+                    continue
+                subject = find_subject_by_alias(word)
+                if subject:
+                    break
+        if not subject:
+            return ""
+        from src.agent.tool_registry import ToolCall
+        res = deps.tool_registry.dispatch(
+            ToolCall(id="refusal-liaison", name="lookup_librarian",
+                     arguments={"subject": subject})
+        )
+        if res.error:
+            return ""
+        rows = [r for r in ((res.data or {}).get("librarians") or [])
+                if isinstance(r, dict) and r.get("email")]
+        if not rows:
+            return ""
+        r = rows[0]
+        phone = str(r.get("phone") or "").strip()
+        contact = f"{r['email']}, {phone}" if phone else r["email"]
+        return (f"\n\nYou did mention {subject.lower()} -- for help with the "
+                f"research itself, that subject's librarian is {r['name']} "
+                f"({contact}), and they can meet with you.")
+    except Exception:  # noqa: BLE001 -- a refusal must still be a refusal
+        log.info("refusal referral unavailable", exc_info=True)
+        return ""
+
+
 def _capability_response(
     classification: Classification,
     scope: Scope,
@@ -6090,6 +6161,7 @@ def _capability_response(
     latency_ms: int,
     *,
     is_refusal: bool,
+    extra: str = "",
 ) -> TurnResponse:
     """Templated TurnResponse for POINT_TO_URL or REFUSE intents.
 
@@ -6109,7 +6181,7 @@ def _capability_response(
         })
 
     return TurnResponse(
-        answer=capability.short_message,
+        answer=capability.short_message + (extra or ""),
         is_refusal=is_refusal,
         refusal_trigger=capability.refusal_trigger or None,
         citations=citations,
