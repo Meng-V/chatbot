@@ -272,10 +272,25 @@ async def check_google_cse_health() -> Dict[str, Any]:
 
 
 async def check_libanswers_health() -> Dict[str, Any]:
-    """Check LibAnswers API connectivity (for chat handoff)."""
-    client_id = os.getenv("LIBANSWERS_CLIENT_ID", "")
-    client_secret = os.getenv("LIBANSWERS_CLIENT_SECRET", "")
-    token_url = os.getenv("LIBANSWERS_TOKEN_URL", "")
+    """Check LibAnswers API connectivity (used for patron tickets).
+
+    Reads LIBANS_* FIRST. This probe looked for LIBANSWERS_* while the code
+    that actually talks to LibAnswers -- src/api/ticket.py, the live
+    /ticket/create endpoint -- reads LIBANS_*, which is what .env holds. So
+    /health reported "LibAnswers credentials not configured" permanently for a
+    service that was configured and working (found 2026-08-04 by diffing .env
+    against .env.example).
+
+    A health page that lies about a working dependency is worse than one that
+    omits it: it trains whoever is on call to ignore the row. Both spellings
+    are accepted so neither naming can break it again.
+    """
+    client_id = (os.getenv("LIBANS_CLIENT_ID")
+                 or os.getenv("LIBANSWERS_CLIENT_ID", ""))
+    client_secret = (os.getenv("LIBANS_CLIENT_SECRET")
+                     or os.getenv("LIBANSWERS_CLIENT_SECRET", ""))
+    token_url = (os.getenv("LIBANS_OAUTH_URL")
+                 or os.getenv("LIBANSWERS_TOKEN_URL", ""))
 
     if not all([client_id, client_secret, token_url]):
         return {
