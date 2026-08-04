@@ -13,6 +13,8 @@ Run: `pytest src/graph/test_short_circuits.py`
 """
 from __future__ import annotations
 
+import pytest
+
 from src.scope.resolver import Scope
 from src.graph.new_orchestrator import (
     _greeting_answer,
@@ -2887,3 +2889,76 @@ def test_slot_filling_still_works_alongside_the_id():
     args = inner.seen[0].arguments
     assert args["email"] == "a@miamioh.edu"
     assert args["conversation_id"] == "conv-abc"
+
+
+# --- confirmation-code enumeration guard ---------------------------------
+#
+# Cancelling already requires the code AND the matching email; the tool fetches
+# the booking and refuses on a mismatch. What was missing is that a WRONG guess
+# cost nothing. The operator confirmed 2026-08-04 that LibCal enforces nothing
+# of its own -- any request with a valid @miamioh.edu address activates a
+# booking -- so one real Miami address could enumerate codes against other
+# people's reservations for free.
+
+
+@pytest.fixture(autouse=False)
+def _fresh_cancel_limiter():
+    from src.graph import new_orchestrator as O
+    O._cancel_fail_limiter = None
+    yield
+    O._cancel_fail_limiter = None
+
+
+def test_failed_attempts_eventually_block(_fresh_cancel_limiter):
+    from src.graph import new_orchestrator as O
+    email = "guesser@miamioh.edu"
+    for i in range(O._CANCEL_FAIL_MAX):
+        assert O._cancel_blocked(email) is False, f"attempt {i + 1}"
+    assert O._cancel_blocked(email) is True, "the cap must actually bite"
+
+
+def test_the_block_is_per_address(_fresh_cancel_limiter):
+    from src.graph import new_orchestrator as O
+    for _ in range(O._CANCEL_FAIL_MAX + 1):
+        O._cancel_blocked("a@miamioh.edu")
+    assert O._cancel_blocked("b@miamioh.edu") is False, (
+        "one guesser must not lock out everyone else"
+    )
+
+
+def test_a_success_clears_the_counter(_fresh_cancel_limiter):
+    """A patron cancelling three rooms in an afternoon is not a code guesser.
+    Only misses accumulate."""
+    from src.graph import new_orchestrator as O
+    email = "busy@miamioh.edu"
+    for _ in range(O._CANCEL_FAIL_MAX - 1):
+        O._cancel_blocked(email)
+    O._cancel_clear(email)
+    for i in range(O._CANCEL_FAIL_MAX):
+        assert O._cancel_blocked(email) is False, f"after clear, attempt {i + 1}"
+
+
+def test_address_matching_ignores_case(_fresh_cancel_limiter):
+    from src.graph import new_orchestrator as O
+    for _ in range(O._CANCEL_FAIL_MAX + 1):
+        O._cancel_blocked("Mixed@MiamiOH.edu")
+    assert O._cancel_blocked("mixed@miamioh.edu") is True
+
+
+def test_blocked_message_routes_to_a_human(_fresh_cancel_limiter):
+    from src.graph import new_orchestrator as O
+    assert "529-4141" in O._CANCEL_TOO_MANY
+    assert "libcal" in O._CANCEL_TOO_MANY.lower()
+
+
+def test_guard_failure_does_not_block_a_real_cancellation(monkeypatch,
+                                                          _fresh_cancel_limiter):
+    """A bug in the guard must not stop a legitimate cancellation -- the
+    code+email match is the real control and is still enforced."""
+    from src.graph import new_orchestrator as O
+
+    def boom():
+        raise RuntimeError("limiter exploded")
+
+    monkeypatch.setattr(O, "_cancel_failures", boom)
+    assert O._cancel_blocked("a@miamioh.edu") is False

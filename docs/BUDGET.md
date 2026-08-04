@@ -186,3 +186,37 @@ is the one that died.
 - `--try-restart` makes **one** recovery attempt when systemd has given up,
   at most once per 30 minutes, and says in the mail what it did. Without the
   flag it only reports.
+
+## Load test, 2026-08-04 (no-cost run)
+
+Ramped concurrency against `/health` and socket connects only — no chat
+messages, so no model spend. Aborts if available memory drops below 350MB
+(this box lost 19,972 freshly embedded chunks to an OOM on 2026-07-29).
+
+**Memory was never the limit.** The service peaked at 1,799MB against a
+2,500MB cgroup ceiling and available memory stayed above 1GB throughout.
+
+**What it found instead:** `/health` ran live dependency probes on *every*
+request, including an outbound call to api.openai.com — 2,155ms per hit, and
+nginx exposes it publicly and unauthenticated (`location /health`), outside
+the chat rate limiter. 2,000 requests left the service unresponsive for 90
+seconds. That is amplification from a single curl loop.
+
+Fixed by caching probe results for 30s (`HEALTH_PROBE_TTL_S`):
+
+| | before | after |
+|---|---|---|
+| `/health` first hit | 2,155ms | 705ms |
+| `/health` repeat hit | 2,155ms | **103ms** |
+| throughput | 6.7 rps | **9.5 rps** |
+| 1,000 reqs @ conc 100 | 232 ok / 768 timeout | **1000 ok / 0 timeout** |
+| recovery after 2,000 reqs | 90s | **20s** |
+
+Failures are cached too, on purpose: a dependency that is down will still be
+down a second later, and re-probing per request is the amplification this
+exists to stop.
+
+**Still the ceiling:** ~200 concurrent HTTP requests saturates the single
+uvicorn worker regardless. That is a capacity fact, not a bug — worth knowing
+before a launch, and the reason `/health/live` (1.8ms, no dependencies) is
+what the watchdog polls.

@@ -2310,6 +2310,80 @@ _AFFIRMATIVE_RE = re.compile(
 )
 
 
+# --- confirmation-code enumeration guard ---------------------------------
+#
+# Cancelling already requires BOTH the confirmation code and the email that
+# made the booking: the tool fetches the booking, compares the address, and
+# refuses on a mismatch. That is the right check and it is enforced.
+#
+# What it does not do is make a WRONG guess cost anything. Operator confirmed
+# 2026-08-04 that LibCal has no enforcement of its own -- any API request with
+# a valid @miamioh.edu address activates a booking -- so someone with one real
+# Miami address could sit and enumerate confirmation codes against other
+# people's reservations, paying nothing per miss.
+#
+# So a miss now costs attempts. Deliberately keyed on the EMAIL rather than
+# the socket: a code guesser can reconnect freely, but the address is the one
+# thing the mismatch check forces them to hold still.
+#
+# In-process and reset by a restart, on purpose. This is friction against
+# enumeration, not an audit trail, and a file write on a destructive path is
+# a worse trade. Someone patient enough to wait out a restart is someone the
+# librarians should hear about instead, which is what the alert is for.
+def _cancel_env_int(name: str, default: int) -> int:
+    import os as _os
+    raw = (_os.getenv(name) or "").strip()
+    try:
+        return int(raw) if raw else default
+    except ValueError:
+        return default
+
+
+_CANCEL_FAIL_MAX = _cancel_env_int("CANCEL_FAIL_MAX", 5)
+_CANCEL_FAIL_WINDOW_S = _cancel_env_int("CANCEL_FAIL_WINDOW_S", 3600)
+
+_cancel_fail_limiter = None
+
+
+def _cancel_failures() -> Any:
+    """Lazily built so importing the orchestrator does not need the limiter."""
+    global _cancel_fail_limiter
+    if _cancel_fail_limiter is None:
+        from src.api.rate_limit import SlidingWindowLimiter
+        _cancel_fail_limiter = SlidingWindowLimiter(
+            _CANCEL_FAIL_MAX, _CANCEL_FAIL_WINDOW_S)
+    return _cancel_fail_limiter
+
+
+_CANCEL_TOO_MANY = (
+    "I've had too many failed cancellation attempts for that email address "
+    "recently, so I've stopped trying for now. Please call the library at "
+    "(513) 529-4141 and someone at the desk can cancel it for you, or cancel "
+    "it yourself at muohio.libcal.com."
+)
+
+
+def _cancel_blocked(email: str) -> bool:
+    """True when this address has burned through its failed attempts."""
+    key = (email or "").strip().lower() or "unknown"
+    try:
+        # allow() records the attempt and returns False once over the cap.
+        return not _cancel_failures().allow(f"cancel-fail:{key}")
+    except Exception:  # noqa: BLE001 -- a guard bug must not block a real
+        # cancellation; the code+email match is still enforced below.
+        log.warning("cancel guard failed for %s, allowing", key, exc_info=True)
+        return False
+
+
+def _cancel_clear(email: str) -> None:
+    """Forget this address's failed attempts after a successful cancellation."""
+    key = (email or "").strip().lower() or "unknown"
+    try:
+        _cancel_failures().reset(f"cancel-fail:{key}")
+    except Exception:  # noqa: BLE001
+        pass
+
+
 def _do_cancel(
     message: str, code: str, email: str,
 ) -> "tuple[str, list[dict]]":
@@ -2317,6 +2391,22 @@ def _do_cancel(
     degrades to the fallback text, not a crash."""
     cite = [{"n": 1, "url": _ROOMS_URL,
              "snippet": "Miami University Libraries — Room Reservations"}]
+    if _cancel_blocked(email):
+        log.warning("cancel_reservation: blocked, too many failures for %s",
+                    (email or "").strip().lower())
+        try:
+            from src.observability.incident_alerts import _send
+            _send("cancel_enumeration",
+                  "[chatbot] repeated failed cancellation attempts",
+                  f"{_CANCEL_FAIL_MAX} failed cancellation attempts within "
+                  f"{_CANCEL_FAIL_WINDOW_S // 60} minutes for "
+                  f"{(email or '').strip().lower()!r}.\n\n"
+                  f"Each miss means the confirmation code did not match a "
+                  f"booking, or matched one belonging to a different address. "
+                  f"That pattern is code guessing, not a forgetful patron.")
+        except Exception:  # noqa: BLE001
+            pass
+        return _CANCEL_TOO_MANY, cite
     try:
         from src.eval.real_backends import _bridge
         from src.tools.libcal_comprehensive_tools import (
@@ -2331,9 +2421,16 @@ def _do_cancel(
             timeout=30.0,
         )
         text = res.get("text") if isinstance(res, dict) else None
+        ok = bool(res.get("success")) if isinstance(res, dict) else False
+        if ok:
+            # Proof the caller held BOTH the code and the address it was booked
+            # under. Clear the counter so a patron who cancels several rooms in
+            # one afternoon is never treated as a code guesser -- only misses
+            # are allowed to accumulate.
+            _cancel_clear(email)
         get_logger("new_orchestrator").info(
             "cancel_reservation: booking_id=%s -> %s", code,
-            "ok" if text else "no text",
+            "ok" if ok else ("refused" if text else "no text"),
         )
         return ((text + " [1]") if text else _CANCEL_FALLBACK), cite
     except Exception:  # noqa: BLE001 -- destructive call must never crash a turn

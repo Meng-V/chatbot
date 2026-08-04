@@ -21,6 +21,54 @@ router = APIRouter()
 START_TIME = time.time()
 
 
+# --- probe result cache --------------------------------------------------
+#
+# /health runs LIVE dependency probes, one of which is an outbound call to
+# api.openai.com. Measured 2026-08-04 under a load test: 2,155ms per request,
+# ~6.7 requests/second ceiling, and 2,000 requests left the service
+# unresponsive for 90 seconds.
+#
+# nginx exposes /health publicly and unauthenticated (location /health), and
+# the chat rate limiter does not cover it. So an unauthenticated caller could
+# make us issue one outbound OpenAI request per hit and wedge the service --
+# amplification, from a single curl loop.
+#
+# Caching the expensive probes fixes both halves at once: repeated hits cost
+# one upstream call per TTL instead of one per request, and the endpoint stops
+# being a lever. 30 seconds is short enough that a monitor still sees a real
+# outage promptly and long enough that a flood costs nothing.
+#
+# Liveness (/health/live, in readiness_router) is unaffected and stays the
+# right target for a watchdog: 1.8ms, no dependencies.
+_PROBE_TTL_S = float(os.getenv("HEALTH_PROBE_TTL_S", "30"))
+_probe_cache: Dict[str, Any] = {}
+
+
+async def _cached(name: str, fn) -> Dict[str, Any]:
+    """Run `fn` at most once per _PROBE_TTL_S, keyed by `name`.
+
+    A failure is cached too, deliberately: a dependency that is down will be
+    down for the next caller a second later as well, and re-probing it on every
+    request is exactly the amplification this exists to stop. The TTL bounds
+    how stale any answer can be.
+    """
+    now = time.time()
+    hit = _probe_cache.get(name)
+    if hit is not None and (now - hit[0]) < _PROBE_TTL_S:
+        out = dict(hit[1])
+        out["cached"] = True
+        out["cacheAgeMs"] = int((now - hit[0]) * 1000)
+        return out
+    result = await fn()
+    _probe_cache[name] = (now, result)
+    return result
+
+
+def _reset_probe_cache() -> None:
+    """For tests."""
+    _probe_cache.clear()
+
+
 async def check_database_health() -> Dict[str, Any]:
     """Check database connectivity and response time."""
     try:
@@ -268,8 +316,10 @@ async def health_check():
     Comprehensive health check endpoint with external API status.
     Returns overall application health status and connectivity to all external services.
     """
-    # Core checks
-    db_health = await check_database_health()
+    # Core checks. Every dependency probe goes through _cached() -- see the
+    # comment on _PROBE_TTL_S: this endpoint is public, unauthenticated, and
+    # was issuing one outbound OpenAI call per request.
+    db_health = await _cached("database", check_database_health)
     memory_health = check_memory_health()
 
     # CPU usage
@@ -286,12 +336,12 @@ async def health_check():
         google_health,
         libanswers_health,
     ) = await asyncio.gather(
-        check_openai_health(),
-        check_weaviate_health(),
-        check_libcal_health(),
-        check_libguides_health(),
-        check_google_cse_health(),
-        check_libanswers_health(),
+        _cached("openai", check_openai_health),
+        _cached("weaviate", check_weaviate_health),
+        _cached("libcal", check_libcal_health),
+        _cached("libguides", check_libguides_health),
+        _cached("google_cse", check_google_cse_health),
+        _cached("libanswers", check_libanswers_health),
         return_exceptions=True,
     )
 
@@ -351,7 +401,7 @@ async def readiness_check():
     all_ready = True
 
     # Database connectivity check
-    db_health = await check_database_health()
+    db_health = await _cached("database", check_database_health)
     checks.append({"name": "database", **db_health})
     if db_health["status"] != "healthy":
         all_ready = False
@@ -388,7 +438,7 @@ async def metrics_endpoint():
     Basic metrics endpoint (JSON format).
     For Prometheus format, see /metrics/prometheus
     """
-    db_health = await check_database_health()
+    db_health = await _cached("database", check_database_health)
     memory_health = check_memory_health()
     process = psutil.Process()
     memory_info = process.memory_info()

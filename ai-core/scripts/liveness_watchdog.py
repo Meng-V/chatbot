@@ -50,7 +50,16 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-HEALTH_URL = os.getenv("WATCHDOG_HEALTH_URL", "http://127.0.0.1:8081/health")
+# /health/live, NOT /health. Measured 2026-08-04:
+#   /health/live   1.8ms   trivial, no dependencies
+#   /health/ready  402ms
+#   /health        2155ms  makes a live outbound OpenAI call PER REQUEST
+# Pointing a 5-minute watchdog at /health would have been 288 outbound OpenAI
+# calls a day, and it is also the endpoint that saturates first. The app's own
+# comment on /health/live says it best: "live probes that do real work cause
+# cascading restarts when a dep is briefly slow."
+HEALTH_URL = os.getenv("WATCHDOG_HEALTH_URL",
+                       "http://127.0.0.1:8081/health/live")
 UNIT = os.getenv("WATCHDOG_UNIT", "chatbot")
 STATE_PATH = Path(os.getenv("WATCHDOG_STATE_PATH",
                             "/opt/chatbot/data/watchdog_state.json"))
