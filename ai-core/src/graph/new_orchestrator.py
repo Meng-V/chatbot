@@ -722,6 +722,7 @@ def _run_turn(
             # page and still said "any Miami University library".
             ("ill_return", _ill_return_answer),
             ("sc_campus", _special_collections_campus_answer),
+            ("sc_handling", _special_collections_handling_answer),
             ("fee_policy", _fee_policy_answer),
             ("bot_identity", _bot_identity_answer),
             ("complaint", _complaint_answer),
@@ -3607,6 +3608,49 @@ _SC_OTHER_CAMPUS_RE = re.compile(
     r"every|all|each|both|other)\b",
     re.IGNORECASE,
 )
+
+
+# Reading-room CONDUCT rules -- pencils only, no food or drink, gloves,
+# supervised access. Gold expects them (fs2_special_collections_handling) and
+# they are NOT on the site: I read all five seeded Special Collections pages,
+# and /visiting/ covers driving to Oxford and registration, /about-archives/
+# covers appointments and which archives exist. Nothing states the conduct
+# rules. Gold's own last line is "should refuse specifics not on the page", so
+# refusing them is correct -- but refusing the WHOLE question threw away the
+# access facts we do hold, and left the patron with "ask a librarian" when we
+# could have told them where to go and that they need an appointment.
+_SC_HANDLING_RE = re.compile(
+    r"\b(rules?|policy|policies|allowed|permitted|can\s+i\s+(touch|handle|"
+    r"photograph|take\s+photos?)|handling|handle|conduct|etiquette|"
+    r"what\s+should\s+i\s+(know|expect|bring))\b",
+    re.IGNORECASE,
+)
+
+
+def _special_collections_handling_answer(
+    message: str,
+) -> "Optional[tuple[str, list[dict]]]":
+    """What we actually know about using the reading room, and no more."""
+    m = message or ""
+    if not (_SC_WHERE_RE.search(m) and _SC_HANDLING_RE.search(m)):
+        return None
+    if re.search(r"\b(digital|online|government|gov\s*docs?|newspaper|hours?|"
+                 r"open|closed)\b", m, re.IGNORECASE):
+        return None
+    return (
+        "Materials are consulted in the reading room on the third floor of "
+        "King Library -- nothing circulates, so you use it there. Access is "
+        "by appointment: request one through the Special Collections site "
+        "first, and you register when you arrive [1]. The specific "
+        "reading-room conditions -- what you may bring in, whether you can "
+        "photograph an item, how a fragile item is handled -- aren't spelled "
+        "out on the website, and I'd rather not guess at them. The staff on "
+        "that page will tell you when you book, and they are the right people "
+        "to ask about a particular item.",
+        [{"n": 1, "url": _SPEC_APPOINTMENTS_URL,
+          "snippet": "Walter Havighurst Special Collections & University "
+                     "Archives — visiting and appointments"}],
+    )
 
 
 def _special_collections_campus_answer(

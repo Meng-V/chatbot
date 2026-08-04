@@ -16,6 +16,8 @@ from __future__ import annotations
 from src.scope.resolver import Scope
 from src.graph.new_orchestrator import (
     _greeting_answer,
+    _special_collections_handling_answer,
+    _special_collections_campus_answer,
     _get_hours_data,
     _today_hours_sentence,
     _NOT_A_SUBJECT_WORD,
@@ -2657,3 +2659,54 @@ def test_hours_fetch_gives_up_rather_than_looping_forever():
     deps = _Deps()
     assert _get_hours_data(deps, "king") is None
     assert deps.tool_registry.calls == 3
+
+
+# --- Special Collections: say what we know, refuse what the site doesn't say -
+
+
+def test_special_collections_is_oxford_only():
+    """The bot had said "the Hamilton library site lists Special Collections
+    among its resources" -- a plausible sentence about a department that is not
+    there, which sends a student to the wrong building."""
+    for q in ("Are there special collections at every Miami library?",
+              "Where are special collections at Hamilton?",
+              "does Middletown have an archive",
+              "is there a rare books collection at all campuses"):
+        out, _ = _special_collections_campus_answer(q)
+        assert "only at Oxford" in out, q
+        assert "King Library" in out
+
+
+def test_special_collections_campus_answer_leaves_neighbours_alone():
+    for q in ("What are Special Collections hours?",
+              "How do I access materials in Special Collections?",
+              "where are the digital collections",
+              "do you have government documents at Hamilton",
+              "where is Rentschler Library"):
+        assert _special_collections_campus_answer(q) is None, q
+
+
+def test_handling_rules_give_what_we_have_and_refuse_what_we_don_t():
+    """The conduct rules gold asks for -- pencils only, no food, gloves -- are
+    NOT on the site. I read all five seeded Special Collections pages.
+    Gold's own last line is "should refuse specifics not on the page", so
+    refusing them is right; refusing the WHOLE question was the waste, because
+    we do know where the reading room is and that access is by appointment."""
+    out, cites = _special_collections_handling_answer(
+        "What are the rules for handling materials in Special Collections?")
+    low = out.lower()
+    assert "third floor" in low and "appointment" in low
+    assert "reading room" in low
+    # and it must NOT invent the specifics
+    for invented in ("pencil", "no food", "glove", "must not eat"):
+        assert invented not in low, f"invented {invented!r}"
+    assert "aren't spelled out" in low or "not spelled out" in low
+    assert cites[0]["url"]
+
+
+def test_handling_answer_does_not_swallow_hours_or_location_asks():
+    for q in ("What are Special Collections hours?",
+              "is Special Collections open right now?",
+              "Where are special collections at Hamilton?",
+              "who is the archivist"):
+        assert _special_collections_handling_answer(q) is None, q
