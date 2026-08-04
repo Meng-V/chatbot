@@ -40,6 +40,7 @@ from __future__ import annotations
 
 import argparse
 import logging
+import os
 import sys
 from collections import Counter
 from dataclasses import dataclass, field
@@ -1397,6 +1398,14 @@ def main() -> int:
         level=logging.INFO,
         format="%(asctime)s %(levelname)s %(name)s: %(message)s",
     )
+
+    # Measure the system AS CONFIGURED, never as degraded. If the budget
+    # guard had dropped serving to the cheap model, an eval running through
+    # the same resolve_model() would score that model instead and the report
+    # would look like a quality collapse -- when nothing about quality
+    # changed. The eval has its own purse; it is not the thing being
+    # throttled. Set before any model resolution happens.
+    os.environ.setdefault("BUDGET_IGNORE_DEGRADE", "1")
 
     # The eval purse ($25/month, separate from the students' $75) is checked
     # BEFORE the run, not during it: a full pass takes ~100 minutes and costs

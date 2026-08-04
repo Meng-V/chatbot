@@ -154,6 +154,15 @@ def _budget_forces_cheap() -> bool:
     concrete model is recorded per turn as `modelUsed`, so a downgrade is
     visible in the data rather than only in a log line.
     """
+    # The EVAL must never be degraded. It exists to measure the system as
+    # configured, and run_eval drives this same orchestrator -- so a level-2
+    # state during a run would silently score gpt-5.6-luna and report it as
+    # the system's quality, which reads as a large regression and is simply
+    # a different system. Same class of mistake as editing code mid-run.
+    # run_eval sets this for its own process; serving never does.
+    if (os.getenv("BUDGET_IGNORE_DEGRADE") or "").strip().lower() in (
+            "1", "true", "yes", "on"):
+        return False
     try:
         from src.config.budget import current_state
         return current_state().force_cheap_model

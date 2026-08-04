@@ -210,3 +210,28 @@ def test_budget_lookup_cannot_raise(tmp_path, monkeypatch):
     monkeypatch.setattr(B, "current_state", boom)
     assert M._budget_forces_cheap() is False
     assert M.resolve_model("reasoning")  # still resolves
+
+
+def test_the_eval_is_exempt_from_budget_degradation(tmp_path, monkeypatch):
+    """A degraded eval measures a DIFFERENT system and reads as a quality
+    collapse. run_eval sets BUDGET_IGNORE_DEGRADE for its own process; serving
+    never does."""
+    from src.config import budget as B
+    _budget_state(tmp_path, monkeypatch, B.L_REFUSE)
+    # Serving: downgraded.
+    assert M.resolve_model("reasoning") == M.resolve_model("cheap")
+    # Eval: not.
+    monkeypatch.setenv("BUDGET_IGNORE_DEGRADE", "1")
+    assert M._budget_forces_cheap() is False
+    assert M.resolve_model("reasoning") != M.resolve_model("cheap")
+
+
+def test_the_exemption_needs_a_real_truthy_value(tmp_path, monkeypatch):
+    from src.config import budget as B
+    _budget_state(tmp_path, monkeypatch, B.L_CHEAP)
+    for val in ("0", "false", "no", "", "maybe"):
+        monkeypatch.setenv("BUDGET_IGNORE_DEGRADE", val)
+        assert M._budget_forces_cheap() is True, val
+    for val in ("1", "true", "TRUE", "yes", "on"):
+        monkeypatch.setenv("BUDGET_IGNORE_DEGRADE", val)
+        assert M._budget_forces_cheap() is False, val
