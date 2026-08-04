@@ -30,3 +30,12 @@
 # WHY: before this the operator got 30-50 individual alerts a day. Adding
 # colleagues to that stream would have produced filter rules, not attention.
 10 7 * * 1-5 cd /opt/chatbot/ai-core && bash -c "set -a; . /opt/chatbot/.env; set +a; .venv/bin/python -m scripts.alert_digest >> logs/alert_digest.log 2>&1"
+
+# Every 5 minutes: watch the service FROM OUTSIDE it.
+# WHY: every other monitor runs inside the app and dies with it. systemd's
+# Restart=always covers a crash, but StartLimitBurst=5/60s means five failed
+# starts and systemd STOPS RETRYING -- at which point the bot is off, nothing
+# is bringing it back, and nobody is told because the thing that would have
+# told us is the dead process. --try-restart makes ONE recovery attempt in
+# that case, at most once every 30 minutes, and mails what it did.
+*/5 * * * * cd /opt/chatbot/ai-core && bash -c "set -a; . /opt/chatbot/.env; set +a; .venv/bin/python -m scripts.liveness_watchdog --try-restart >> logs/watchdog.log 2>&1"

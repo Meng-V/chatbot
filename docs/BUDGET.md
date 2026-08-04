@@ -167,3 +167,22 @@ a 30-day month, and every rung on the ladder moves with it automatically.
 | Booking caps | `src/observability/booking_quota.py` | 2 rooms per conversation, 2 per email per day, **through this bot only** |
 | Alert tiers | `src/observability/incident_alerts.py` | only `health` and `budget_exhausted` interrupt a person; the rest go to `scripts/alert_digest.py` |
 | Eval purse gate | `src/eval/run_eval.py` | refuses a run that would breach the $25, before it spends |
+
+## The external watchdog
+
+`ai-core/scripts/liveness_watchdog.py`, every 5 minutes from cron.
+
+Everything else that monitors this service runs **inside** it and dies with
+it. `Restart=always` covers an ordinary crash, but `StartLimitBurst=5` /
+`StartLimitIntervalSec=60` mean that five failed starts in a minute make
+systemd **stop retrying** — and then the bot is off, nothing is bringing it
+back, and nobody is told, because the process that would have sent the mail
+is the one that died.
+
+- Alive = **HTTP 200 from `/health`**, not "the port accepts a connection"
+  (uvicorn can be listening while the app is wedged).
+- Alerts on **transitions only**, after 2 consecutive failures, so a slow
+  response during a restart mails nobody. Recovery is mailed too.
+- `--try-restart` makes **one** recovery attempt when systemd has given up,
+  at most once per 30 minutes, and says in the mail what it did. Without the
+  flag it only reports.
