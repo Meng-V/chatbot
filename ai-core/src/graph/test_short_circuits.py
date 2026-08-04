@@ -2495,6 +2495,115 @@ def test_open_state_handles_round_the_clock():
     assert st["open"] is True and st["always"] is True
 
 
+# --- free-text hours rows -------------------------------------------------
+#
+# The Makerspace publishes its hours as LibCal free text ("9am-4pm by appt")
+# rather than as an interval, and the tool that renders the week understood
+# only intervals -- so it printed "Closed" for all seven days and a student
+# asking "when does Makerspace close today" was told it was closed on a day
+# it was open 9am to 4pm (2026-08-04). These pin both halves: the row is
+# readable, AND the appointment qualifier survives into the sentence.
+
+_MAKERSPACE_WEEK = (
+    "**Makerspace Hours (Week of 2026-08-03):**\n\n"
+    "• **Monday (2026-08-03)**: 9am-4pm by appointment\n"
+    "• **Tuesday (2026-08-04)**: 9am-4pm by appointment\n"
+    "• **Saturday (2026-08-08)**: Closed\n"
+)
+
+
+def test_open_state_reads_a_free_text_row():
+    st = _open_state(_MAKERSPACE_WEEK, _et(12, 0))
+    assert st is not None, "an appointment-only day is not an unreadable day"
+    assert st["open"] is True
+    assert st["closed_all_day"] is False
+    assert (st["opens"], st["closes"]) == (9 * 60, 16 * 60)
+
+
+def test_open_state_keeps_the_appointment_qualifier():
+    """Dropping it turns an appointment-only space into a walk-in one."""
+    assert _open_state(_MAKERSPACE_WEEK, _et(12, 0))["note"] == "by appointment"
+    only = "• **Tuesday (2026-08-04)**: 9am-4pm appt only\n"
+    assert _open_state(only, _et(12, 0))["note"] == "by appointment only"
+    assert _open_state(_WEEK_HOURS, _et(12, 0))["note"] is None
+
+
+def test_free_text_sentence_says_open_and_says_by_appointment():
+    line = _today_hours_sentence(_MAKERSPACE_WEEK, "the Makerspace")
+    assert line == ("the Makerspace is open today (Tuesday) from 9am to 4pm, "
+                    "by appointment.")
+    assert "closed" not in line.lower()
+
+
+def test_open_state_still_closed_on_a_genuinely_closed_day():
+    st = _open_state(_MAKERSPACE_WEEK, _et(12, 0, day=8))
+    assert st["closed_all_day"] is True
+
+
+def test_open_now_uses_the_named_subspace_not_the_default_building():
+    """"is the makerspace open right now" was answered "Yes -- King Library is
+    open right now": scope.library only ever carries a BUILDING, so a named
+    sub-space fell through to the `or "king"` default. King is open until 9pm
+    and the MakerSpace closes at 4pm by appointment, so that answer was
+    confidently about the wrong facility."""
+    from src.graph.new_orchestrator import _open_now_library
+
+    empty = Scope(campus="oxford", library=None, source="default")
+    for q in ("is the makerspace open right now", "is maker space open now",
+              "is the makerspce still open"):
+        assert _open_now_library(q, empty) == "makerspace", q
+    for q in ("are special collections open right now",
+              "is university archives open now",
+              "is havighurst open at the moment"):
+        assert _open_now_library(q, empty) == "special", q
+    # Unnamed still defaults, and a building in scope still wins.
+    assert _open_now_library("is the library open right now", empty) == "king"
+    assert _open_now_library(
+        "is the library open right now",
+        Scope(campus="hamilton", library="rentschler", source="test"),
+    ) == "rentschler"
+
+
+def test_close_today_fires_on_how_patrons_ask_and_not_otherwise():
+    """The gate only -- the answer itself is _today_hours_sentence, tested above.
+
+    "what time does king library close today" was answered with the full
+    weekday breakdown followed by "I haven't covered today's specific closing
+    time because the hours listing does not identify which date is today",
+    with today's row marked in evidence (observed live 2026-08-04).
+    """
+    from src.graph.new_orchestrator import (
+        _CLOSE_TODAY_RE, _OTHER_DAY_RE, _TODAY_WORD_RE,
+    )
+
+    def fires(q):
+        return bool(_CLOSE_TODAY_RE.search(q) and _TODAY_WORD_RE.search(q)
+                    and not _OTHER_DAY_RE.search(q))
+
+    for q in ("what time does king library close today",
+              "when do you close today",
+              "how late are you open today",
+              "what time does the makerspace close today",
+              "closing time today?",
+              "when does the library close tonight"):
+        assert fires(q), q
+    for q in ("what time does king close tomorrow",   # other day has its path
+              "when do you close on friday",
+              "what are your hours",                  # not a closing question
+              "when do you open today",               # opening, not closing
+              "is the library open right now"):       # open-now has its path
+        assert not fires(q), q
+
+
+def test_hours_not_posted_is_a_decline_not_a_closure():
+    """"Hours not posted" is what the renderer emits for a day LibCal gave us
+    no data for. It contains neither an interval nor the word "closed" as a
+    status -- and it must not be read as either."""
+    row = "• **Tuesday (2026-08-04)**: Hours not posted\n"
+    assert _open_state(row, _et(12, 0)) is None
+    assert _today_hours_sentence(row, "King Library") is None
+
+
 def test_open_now_matches_how_patrons_ask():
     for q in ("Is the library open right now?", "is king open now",
               "are you still open?", "is the library open?",

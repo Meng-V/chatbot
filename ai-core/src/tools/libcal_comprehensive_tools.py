@@ -1,4 +1,5 @@
 """Comprehensive LibCal tools matching legacy NestJS functionality."""
+import html
 import logging
 import os
 import re
@@ -51,6 +52,86 @@ if not LIBCAL_RESERVATION_URL and _LIBCAL_API_BASE:
 # DEPRECATED: Building mappings now retrieved from database via location_service
 # Legacy constants kept for backward compatibility during migration
 DEFAULT_BUILDING = "2047"  # King Library - hardcoded fallback
+
+# --- Reading one day out of the LibCal hours payload ---------------------
+#
+# LibCal expresses a single day's hours FOUR different ways, and every reader
+# in this file understood only one of them (`day_data["hours"]`), with a bare
+# `else: Closed` for everything it did not recognise.
+#
+# The Makerspace publishes `{"status": "text", "text": "<a href=...>9am-4pm
+# by appt</a>"}` and NO hours[] array at all. So `if day_data.get("hours")`
+# was false and we told patrons "The Makerspace is Closed today" -- on a day
+# it was open 9am to 4pm. A student hit exactly that on 2026-08-04. This is
+# the worst failure this bot can have: not a shrug, but a confident, cited
+# claim that turns someone away from an open building.
+#
+# So: one reader, used by every caller, that knows all four shapes and
+# distinguishes "closed" from "we don't know".
+
+_HTML_TAG_RE = re.compile(r"<[^>]+>")
+
+# LibCal's own free-text abbreviations, spelled out. A patron reading
+# "9am-4pm by appt" in a chat answer should not have to decode it.
+_TEXT_EXPANSIONS = (
+    (re.compile(r"\bby appt\b", re.IGNORECASE), "by appointment"),
+    (re.compile(r"\bappt only\b", re.IGNORECASE), "by appointment only"),
+)
+
+HOURS_NOT_POSTED = "Hours not posted"
+"""Rendered for a day LibCal returned no data for.
+
+Deliberately NOT "Closed". A day we have no data for is a day we must not
+make a claim about, and the old code's `else: Closed` made that claim
+twice over: once for genuinely-absent days, and once for every day the
+window did not cover (see LibCalWeekHoursTool, which asked LibCal for
+today..+6 while labelling rows Monday..Sunday -- so on a Thursday, three
+days of the current week were reported "Closed" purely because they were
+never fetched).
+"""
+
+
+def _clean_libcal_text(raw: str) -> str:
+    """LibCal free-text hours -> plain text.
+
+    The `text` field is HTML: '<a href="...">9am-4pm by appt</a>'. Left as
+    is, the markup ends up in the model's evidence and in patron answers.
+    """
+    txt = _HTML_TAG_RE.sub(" ", html.unescape(str(raw or "")))
+    txt = " ".join(txt.split())
+    for pattern, replacement in _TEXT_EXPANSIONS:
+        txt = pattern.sub(replacement, txt)
+    return txt
+
+
+def describe_libcal_day(day_data: Optional[Dict[str, Any]]) -> Tuple[str, str]:
+    """One `dates[YYYY-MM-DD]` entry -> (state, display text).
+
+    state is one of:
+      "open"     -- real intervals; `display` is "9:00am to 4:00pm"
+      "24hours"  -- open all day; no intervals published
+      "text"     -- hours published as a free-text note ("9am-4pm by
+                    appointment"); open, but on the space's own terms
+      "closed"   -- LibCal says closed
+      "unknown"  -- no data. NOT the same as closed; callers must decline
+                    rather than assert.
+    """
+    if not day_data:
+        return "unknown", HOURS_NOT_POSTED
+    status = str(day_data.get("status") or "").strip().lower()
+    hours_list = day_data.get("hours") or []
+    if status in ("24hours", "24 hours"):
+        return "24hours", "Open 24 hours"
+    if status == "text":
+        return "text", _clean_libcal_text(day_data.get("text")) or "See website"
+    if hours_list:
+        return "open", " and ".join(
+            f"{h.get('from')} to {h.get('to')}" for h in hours_list
+        )
+    if status == "closed":
+        return "closed", "Closed"
+    # status "open" with no intervals, or anything LibCal adds later.
+    return "unknown", HOURS_NOT_POSTED
 
 # Helper functions to get building/location IDs from database
 async def _get_building_id_from_db(building_name: str) -> str:
@@ -660,10 +741,21 @@ async def _check_building_hours(building_id: str, date: str, start_time: str, en
             dates = location.get("dates", {})
             day_data = dates.get(date)
             
-            if not day_data or not day_data.get("hours"):
-                # Building closed on this date
+            state, display = describe_libcal_day(day_data)
+            if state == "closed":
                 return False, f"The building is closed on {date}"
-            
+            if state != "open":
+                # "24hours", "text" (free-text hours) or "unknown" -- we have
+                # no interval to compare the request against. Refusing here
+                # would be inventing a closure, which is what the old
+                # `not day_data.get("hours")` branch did. Let the booking go
+                # through and let LibCal, which owns the schedule, decide.
+                logging.info(
+                    "[Building Hours] %s on %s is %r (%s) -- no intervals to "
+                    "check, deferring to LibCal", location_id, date, state, display
+                )
+                return True, None
+
             # Parse booking times
             start_normalized = start_time.replace("-", ":")
             end_normalized = end_time.replace("-", ":")
@@ -784,11 +876,15 @@ class LibCalWeekHoursTool(Tool):
             day_of_week = date_obj.weekday()  # 0=Monday, 6=Sunday
             monday = date_obj - timedelta(days=day_of_week)
             token = await _get_oauth_token()
-            
-            # Calculate date range (7 days)
-            from_date = date
-            to_date = (datetime.strptime(date, "%Y-%m-%d") + timedelta(days=6)).strftime("%Y-%m-%d")
-            
+
+            # Fetch the range we are about to PRINT, which is Monday..Sunday.
+            # Asking for today..today+6 while labelling rows Monday..Sunday
+            # meant every day earlier in the current week fell outside the
+            # response, and the reader's `else: Closed` then reported those
+            # days as closed. On a Thursday that fabricated three closures.
+            from_date = monday.strftime("%Y-%m-%d")
+            to_date = (monday + timedelta(days=6)).strftime("%Y-%m-%d")
+
             response = await _make_libcal_request(
                 url=f"{LIBCAL_HOUR_URL}/{location_id}",
                 method="GET",
@@ -807,23 +903,19 @@ class LibCalWeekHoursTool(Tool):
             location_name = location.get('name', building.title())
             
             hours_text = f"**{location_name} Hours (Week of {from_date}):**\n\n"
-            
+
             day_names = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
             current_date = monday
-            
+
             for day_name in day_names:
                 date_str = current_date.strftime("%Y-%m-%d")
-                day_data = dates.get(date_str)
-                
-                if day_data and day_data.get("hours"):
-                    hours_list = day_data["hours"]
-                    hours_str = " - ".join([f"{h['from']} to {h['to']}" for h in hours_list])
-                    hours_text += f"• **{day_name} ({date_str})**: {hours_str}\n"
-                else:
-                    hours_text += f"• **{day_name} ({date_str})**: Closed\n"
-                
+                # describe_libcal_day knows all four shapes LibCal uses --
+                # intervals, 24hours, free text, and closed -- and returns
+                # "Hours not posted" rather than "Closed" when it has no data.
+                _state, display = describe_libcal_day(dates.get(date_str))
+                hours_text += f"• **{day_name} ({date_str})**: {display}\n"
                 current_date += timedelta(days=1)
-            
+
             # Add website URL for Makerspace and Special Collections
             if building.lower() in ["makerspace", "maker space", "special collections", "special collection", "archives"]:
                 hours_text += "\n"
@@ -1691,45 +1783,49 @@ class AskUsChatHoursTool(Tool):
                 now = datetime.now(est)
                 today_str = now.strftime("%Y-%m-%d")
                 is_currently_open = False
-                
+                today_state = "unknown"
+
                 for day_name in day_names:
                     date_str = current_date.strftime("%Y-%m-%d")
                     day_data = dates.get(date_str)
                     
                     is_today = date_str == today_str
                     
-                    if day_data and day_data.get("status") == "open" and day_data.get("hours"):
-                        hours_list = day_data["hours"]
-                        hours_str = ", ".join([f"{h['from']} - {h['to']}" for h in hours_list])
-                        
-                        # Check if currently within hours
-                        if is_today:
-                            for h in hours_list:
-                                try:
-                                    open_time = datetime.strptime(h['from'], "%I:%M%p").replace(
-                                        year=now.year, month=now.month, day=now.day, tzinfo=est
-                                    )
-                                    close_time = datetime.strptime(h['to'], "%I:%M%p").replace(
-                                        year=now.year, month=now.month, day=now.day, tzinfo=est
-                                    )
-                                    if open_time <= now <= close_time:
-                                        is_currently_open = True
-                                except:
-                                    pass
-                        
-                        today_marker = " ← **TODAY**" if is_today else ""
-                        hours_text += f"• **{day_name}** ({current_date.strftime('%m/%d')}): {hours_str}{today_marker}\n"
-                    else:
-                        today_marker = " ← **TODAY**" if is_today else ""
-                        hours_text += f"• **{day_name}** ({current_date.strftime('%m/%d')}): Closed{today_marker}\n"
-                    
+                    state, display = describe_libcal_day(day_data)
+                    if is_today:
+                        today_state = state
+                    # Only an "open" day has intervals to clock-check;
+                    # "24hours" is open by definition, and a free-text day
+                    # cannot be clock-checked either way.
+                    if is_today and state == "24hours":
+                        is_currently_open = True
+                    elif is_today and state == "open":
+                        for h in day_data.get("hours") or []:
+                            try:
+                                open_time = datetime.strptime(h['from'], "%I:%M%p").replace(
+                                    year=now.year, month=now.month, day=now.day, tzinfo=est
+                                )
+                                close_time = datetime.strptime(h['to'], "%I:%M%p").replace(
+                                    year=now.year, month=now.month, day=now.day, tzinfo=est
+                                )
+                                if open_time <= now <= close_time:
+                                    is_currently_open = True
+                            except Exception:
+                                pass
+
+                    today_marker = " ← **TODAY**" if is_today else ""
+                    hours_text += f"• **{day_name}** ({current_date.strftime('%m/%d')}): {display}{today_marker}\n"
                     current_date += timedelta(days=1)
-                
+
                 # Add current status
                 if is_currently_open:
                     hours_text += "\n✅ **The Ask Us Chat is currently OPEN!** Click the chat widget on the library website to connect with a librarian.\n"
-                else:
+                elif today_state == "closed":
                     hours_text += "\n⏰ **The Ask Us Chat is currently closed.** Please submit a ticket or check back during business hours.\n"
+                else:
+                    # "text" or "unknown": we could not read today's row, so
+                    # "currently closed" would be a claim we cannot support.
+                    hours_text += "\n⏰ **Check the hours above for today** -- you can also submit a ticket any time.\n"
                 
                 hours_text += "\n**Need help outside these hours?**\n"
                 hours_text += "• Submit a ticket: https://www.lib.miamioh.edu/ask/\n"

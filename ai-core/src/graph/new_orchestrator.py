@@ -924,6 +924,28 @@ def _run_turn(
                 latency_ms=latency_ms, cited_chunk_ids=[],
             )
 
+    # --- 3.57. "What time do you close TODAY" short-circuit ---
+    # After open-now (a "still open?" question is that one, not this one) and
+    # before the Special Collections branch. Declines on anything it cannot
+    # read, which falls through to the behaviour that was there before.
+    if classification.intent == "hours":
+        _close = _close_today_answer(request.user_message, deps, scope)
+        if _close is not None:
+            _ans, _cites = _close
+            latency_ms = int((time.monotonic() - turn_start) * 1000)
+            record_request(endpoint="/chat", status="close_today",
+                           latency_s=latency_ms / 1000)
+            return TurnResponse(
+                answer=_ans, is_refusal=False, refusal_trigger=None,
+                citations=_cites, confidence="high",
+                intent=classification.intent, scope=scope.as_filter(),
+                model_used=model_basic,
+                tokens={"input": 0, "cached_input": 0, "output": 0},
+                fired_corrections=[],
+                agent_stopped_reason="close_today_short_circuit",
+                latency_ms=latency_ms, cited_chunk_ids=[],
+            )
+
     # --- 3.6. Special Collections hours short-circuit ---
     # Live LibCal hours for the SCUA location + the appointment-only
     # rider (human-verified eval review 2026-06-29, case #67). Placed
@@ -4870,22 +4892,53 @@ def _todays_row(hours_text: str, today) -> "Optional[str]":
     return None
 
 
+_HOURS_NOT_POSTED_MARKER = "hours not posted"
+
+# A free-text LibCal row carries a qualifier after the closing time --
+# "9am-4pm by appointment" is the Makerspace's actual schedule. The
+# qualifier is the part a patron most needs: dropping it turns an
+# appointment-only space into a walk-in one.
+# The abbreviated forms are already expanded by _clean_libcal_text before a
+# row is rendered, but this reader also sees rows from elsewhere, so it
+# accepts LibCal's shorthand too rather than silently dropping the qualifier.
+_ROW_NOTE_RE = re.compile(
+    r"\b(by appointment(?: only)?|by appt(?: only)?"
+    r"|appointment only|appt only)\b",
+    re.IGNORECASE,
+)
+
+
+def _row_note(row: str) -> "Optional[str]":
+    """The appointment qualifier in a schedule row, normalised, or None."""
+    m = _ROW_NOTE_RE.search(row or "")
+    if not m:
+        return None
+    return "by appointment only" if "only" in m.group(0).lower() else "by appointment"
+
+
 def _open_state(hours_text: str, now) -> "Optional[dict]":
     """Is it open at `now`? None when the text cannot be read confidently.
 
     Returns {open: bool, opens: Optional[int], closes: Optional[int],
-             closed_all_day: bool, always: bool} in minutes-since-midnight.
+             closed_all_day: bool, always: bool, note: Optional[str]} with
+    times in minutes-since-midnight.
     """
     row = _todays_row(hours_text, now.date())
     if row is None:
         return None
     low = row.lower()
+    # "Hours not posted" means LibCal gave us no data for today. It must NOT
+    # fall through to the "closed" branch below on the strength of the word
+    # "not": a day we know nothing about is a decline, not a closure.
+    if _HOURS_NOT_POSTED_MARKER in low:
+        return None
     if "closed" in low:
         return {"open": False, "opens": None, "closes": None,
-                "closed_all_day": True, "always": False}
+                "closed_all_day": True, "always": False, "note": None}
     if "24 hour" in low or "24/7" in low:
         return {"open": True, "opens": None, "closes": None,
-                "closed_all_day": False, "always": True}
+                "closed_all_day": False, "always": True, "note": None}
+    note = _row_note(row)
     parts = re.split(r"\s+to\s+|\s*[-\u2013\u2014]\s*", row)
     if len(parts) < 2:
         return None
@@ -4897,7 +4950,7 @@ def _open_state(hours_text: str, now) -> "Optional[dict]":
     is_open = (opens <= minute < closes) if closes > opens else (
         minute >= opens or minute < closes)
     return {"open": is_open, "opens": opens, "closes": closes,
-            "closed_all_day": False, "always": False}
+            "closed_all_day": False, "always": False, "note": note}
 
 
 def _fmt_clock(minutes: int) -> str:
@@ -4963,8 +5016,37 @@ def _today_hours_sentence(hours_text: str, name: str) -> "Optional[str]":
         return f"{name} is open around the clock today ({day})."
     if state["closed_all_day"]:
         return f"{name} is closed today ({day})."
+    rider = f", {state['note']}" if state.get("note") else ""
     return (f"{name} is open today ({day}) from "
-            f"{_fmt_clock(state['opens'])} to {_fmt_clock(state['closes'])}.")
+            f"{_fmt_clock(state['opens'])} to {_fmt_clock(state['closes'])}"
+            f"{rider}.")
+
+
+# A named SUB-SPACE keeps its own LibCal location and its own hours, and
+# `scope.library` only ever resolves to a BUILDING -- so "is the makerspace
+# open right now" arrived here as scope.library=None, fell through to the
+# `or "king"` default, and was answered "Yes -- King Library is open right
+# now" (observed 2026-08-04, while fixing the Makerspace "Closed" bug).
+# Confidently answering about a different facility is worse than declining:
+# the MakerSpace is appointment-only and King is not.
+_SUBSPACE_HOURS_RE = (
+    ("makerspace", _MAKERSPACE_WORD_RE),
+    ("special", re.compile(
+        r"\b(special\s+collections?|university\s+archives?|havighurst)\b",
+        re.IGNORECASE)),
+)
+
+
+def _open_now_library(message: str, scope: "Scope") -> str:
+    """Which location an "is it open right now" question is about.
+
+    A sub-space named in the message wins over the building in scope,
+    because scope only carries buildings.
+    """
+    for library, pattern in _SUBSPACE_HOURS_RE:
+        if pattern.search(message or ""):
+            return library
+    return (scope.library or "king").strip().lower() or "king"
 
 
 def _open_right_now_answer(
@@ -4979,7 +5061,7 @@ def _open_right_now_answer(
                  r"thursday|friday|christmas|thanksgiving|break|semester)\b",
                  m, re.IGNORECASE):
         return None
-    library = (scope.library or "king").strip().lower() or "king"
+    library = _open_now_library(m, scope)
     data = _get_hours_data(deps, library)
     if data is None:
         return None
@@ -4997,7 +5079,13 @@ def _open_right_now_answer(
         return None
 
     name = _LIBRARY_DISPLAY.get(library, library.title())
+    # "the King Library MakerSpace" reads fine mid-sentence, and these
+    # templates all put the name after "Yes -- " / "No -- ", so it never
+    # starts a sentence here.
     stamp = f"as of {_fmt_clock(now.hour * 60 + now.minute)} Eastern"
+    # An appointment-only space is not a walk-in one even inside its posted
+    # window, so "yes, it's open" on its own would mislead.
+    note = state.get("note")
     if state["always"]:
         body = f"Yes -- {name} is open around the clock today ({stamp})."
     elif state["closed_all_day"]:
@@ -5005,15 +5093,96 @@ def _open_right_now_answer(
     elif state["open"]:
         body = (f"Yes -- {name} is open right now ({stamp}) and closes at "
                 f"{_fmt_clock(state['closes'])} today.")
+        if note:
+            body += f" Access is {note}, so arrange a time before you go."
     elif (state["opens"] or 0) > now.hour * 60 + now.minute:
         body = (f"No -- {name} is closed right now ({stamp}). It opens at "
-                f"{_fmt_clock(state['opens'])} today.")
+                f"{_fmt_clock(state['opens'])} today"
+                f"{', ' + note if note else ''}.")
     else:
         body = (f"No -- {name} closed at {_fmt_clock(state['closes'])} today "
                 f"({stamp}).")
     return (
         body + " [1]",
         [{"n": 1, "url": source_url or _HOURS_PAGE_URL["oxford"],
+          "snippet": "Miami University Libraries — Hours (live from LibCal)"}],
+    )
+
+
+# --- "what time do you close TODAY" ----------------------------------------
+#
+# Same arithmetic as open-now, same reason for being deterministic. With the
+# whole week plus a marked TODAY row in evidence, the model still answered
+# "what time does king library close today" with the full weekday breakdown
+# and then: "I haven't covered today's specific closing time because the
+# hours listing does not identify which date is today" (observed live
+# 2026-08-04). Picking today's row out of a dated table is not a judgement
+# call, so it stopped being one.
+_CLOSE_TODAY_RE = re.compile(
+    r"\b(what\s+time|when|how\s+late)\b[^.?!]{0,40}"
+    r"\b(close|closes|closing|shut|open\s+until|open\s+till|open\s+til)\b"
+    # "how late are you open today" is the same question without the word
+    # "close". Anchored on "how late" so "when do you OPEN today" -- the
+    # opposite question -- still does not match.
+    r"|\bhow\s+late\b[^.?!]{0,40}\bopen\b"
+    r"|\bclosing\s+time\b",
+    re.IGNORECASE,
+)
+# "today" has to be the day in question. A named other day, or no day at all,
+# belongs to the paths that already handle those.
+_TODAY_WORD_RE = re.compile(r"\b(today|tonight|this\s+evening)\b", re.IGNORECASE)
+_OTHER_DAY_RE = re.compile(
+    r"\b(tomorrow|yesterday|monday|tuesday|wednesday|thursday|friday|"
+    r"saturday|sunday|weekend|christmas|thanksgiving|break|semester|"
+    r"next\s+week)\b",
+    re.IGNORECASE,
+)
+
+
+def _close_today_answer(
+    message: str, deps: "OrchestratorDeps", scope: "Scope",
+) -> "Optional[tuple[str, list[dict]]]":
+    """"King Library is open today (Tuesday) from 7:30am to 9pm." -- or None."""
+    m = message or ""
+    if not _CLOSE_TODAY_RE.search(m) or not _TODAY_WORD_RE.search(m):
+        return None
+    if _OTHER_DAY_RE.search(m):
+        return None
+    library = _open_now_library(m, scope)
+    data = _get_hours_data(deps, library)
+    if data is None:
+        return None
+
+    import datetime as _datetime
+
+    import pytz as _pytz
+    now = _datetime.datetime.now(_pytz.timezone("America/New_York"))
+    state = _open_state(str(data.get("hours") or ""), now)
+    if state is None:
+        log.info("close-today: declining, could not read today's row for %s",
+                 library)
+        return None
+
+    name = _LIBRARY_DISPLAY.get(library, library.title())
+    day = now.strftime("%A")
+    # Lead with the CLOSING time: that is the question. Answering with the
+    # whole open window makes the patron do the extraction themselves.
+    if state["closed_all_day"]:
+        line = f"{name} is closed today ({day})."
+    elif state["always"]:
+        line = f"{name} is open around the clock today ({day})."
+    else:
+        line = (f"{name} closes at {_fmt_clock(state['closes'])} today "
+                f"({day}); it opened at {_fmt_clock(state['opens'])}.")
+        if state.get("note"):
+            line += f" Access is {state['note']}."
+    # Display names like "the King Library MakerSpace" must not leave a
+    # sentence starting in lower case.
+    line = line[0].upper() + line[1:] if line else line
+    return (
+        line + " [1]",
+        [{"n": 1, "url": str(data.get("source_url") or "")
+          or _HOURS_PAGE_URL["oxford"],
           "snippet": "Miami University Libraries — Hours (live from LibCal)"}],
     )
 

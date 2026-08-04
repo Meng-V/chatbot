@@ -149,30 +149,49 @@ async def get_askus_hours_for_date(date: str = None) -> Dict[str, Any]:
         dates_data = location_data.get("dates", {})
         day_data = dates_data.get(date, {})
         
-        status = day_data.get("status", "closed")
+        # describe_libcal_day knows all four shapes LibCal publishes a day in.
+        # `status` alone does not: a day with status "text" carries its hours
+        # as a free-text note and has no hours[] at all, and treating that as
+        # closed is how the Makerspace got reported shut while it was open
+        # (2026-08-04).
+        from src.tools.libcal_comprehensive_tools import describe_libcal_day
+
+        state, display = describe_libcal_day(day_data)
         hours_list = day_data.get("hours", [])
-        
+
         # Check if currently within business hours
         is_open, open_time, close_time = _is_within_hours(hours_list)
-        
-        # If status is not "open", service is closed for the day
-        if status != "open":
+
+        if state == "24hours":
+            is_open = True
+        elif state != "open":
+            # "closed", "text" or "unknown" -- no interval to be inside of.
             is_open = False
-        
+
+        if is_open:
+            message = "Chat service is currently available!"
+        elif state == "open" and open_time:
+            message = f"Chat service opens at {open_time}"
+        elif state == "closed":
+            message = "Chat service is closed today"
+        else:
+            # Say what LibCal says rather than asserting a closure we
+            # cannot support.
+            message = f"Today's chat hours: {display}"
+
         return {
             "date": date,
             "day_of_week": datetime.strptime(date, "%Y-%m-%d").strftime("%A"),
             "is_open": is_open,
-            "status": status,
+            "status": day_data.get("status", "closed"),
             "hours": hours_list,
+            "hours_display": display,
             "current_period": {
                 "open": open_time,
                 "close": close_time
             } if open_time else None,
             "location_name": location_data.get("name", "Ask Us Chat Service"),
-            "message": "Chat service is currently available!" if is_open else 
-                      f"Chat service opens at {open_time}" if open_time and status == "open" else
-                      "Chat service is closed today"
+            "message": message
         }
         
     except httpx.HTTPError as e:
