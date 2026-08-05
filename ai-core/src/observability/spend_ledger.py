@@ -34,6 +34,15 @@ log = get_logger("spend_ledger")
 
 EVAL_CALL_SITE = "eval"
 
+# Turns served to the operator's own test harness rather than to a student.
+# main._looks_like_dev_client tags them at connect time (a browser always
+# sends an Origin on the handshake; a test client does not). They are real
+# spend and are counted -- against DEVELOPMENT, not against the students'
+# purse. Charging my own testing to students made a $1.17 afternoon breach a
+# $0.81 student daily line and would have paged the operator about their own
+# work.
+DEV_CALL_SITES = ("v2_turn_dev",)
+
 
 @dataclass
 class Spend:
@@ -170,6 +179,7 @@ async def _aread_spend(today: _dt.date) -> Spend:
         rows = await db.query_raw(
             """
             SELECT "llmModelName" AS model,
+                   COALESCE("callSite", '') AS site,
                    ("createdAt"::date = $2::date) AS is_today,
                    SUM("promptTokens")      AS inp,
                    SUM("cachedInputTokens") AS cached,
@@ -177,7 +187,7 @@ async def _aread_spend(today: _dt.date) -> Spend:
                    COUNT(*)                 AS calls
             FROM "ModelTokenUsage"
             WHERE "createdAt" >= $1::date
-            GROUP BY 1, 2
+            GROUP BY 1, 2, 3
             """,
             start.isoformat(), today.isoformat(),
         )
@@ -185,6 +195,13 @@ async def _aread_spend(today: _dt.date) -> Spend:
             model = str(r["model"] or "")
             usd = compute_cost_usd(model, int(r["inp"] or 0),
                                    int(r["cached"] or 0), int(r["outp"] or 0))
+            # The operator's own test traffic is development spend, not the
+            # students'. Same money, correct purse.
+            if str(r["site"] or "") in DEV_CALL_SITES:
+                out.eval_mtd += usd
+                if not is_priced(model):
+                    out.eval_unpriced_calls += int(r["calls"] or 0)
+                continue
             out.serving_mtd += usd
             if r["is_today"]:
                 out.serving_today += usd

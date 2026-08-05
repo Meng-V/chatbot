@@ -1,0 +1,77 @@
+{"intent": "hours", "utterance": "open rn?", "source": "misrouted_live_2026_08_05"}
+{"intent": "hours", "utterance": "r u open rn", "source": "misrouted_live_2026_08_05"}
+{"intent": "hours", "utterance": "u open rn?", "source": "misrouted_live_2026_08_05"}
+{"intent": "hours", "utterance": "are you open atm", "source": "misrouted_live_2026_08_05"}
+{"intent": "hours", "utterance": "is the library open rn", "source": "misrouted_live_2026_08_05"}
+{"intent": "hours", "utterance": "is it open rn", "source": "misrouted_live_2026_08_05"}
+{"intent": "hours", "utterance": "library open rn", "source": "misrouted_live_2026_08_05"}
+{"intent": "hours", "utterance": "What are the hours?", "source": "misrouted_live_2026_08_05"}
+{"intent": "hours", "utterance": "hours?", "source": "misrouted_live_2026_08_05"}
+{"intent": "hours", "utterance": "what time do u close", "source": "misrouted_live_2026_08_05"}
+{"intent": "hours", "utterance": "how late r u open today", "source": "misrouted_live_2026_08_05"}
+{"intent": "hours", "utterance": "still open?", "source": "misrouted_live_2026_08_05"}
+{"intent": "hours", "utterance": "you open saturday?", "source": "misrouted_live_2026_08_05"}
+{"intent": "hours", "utterance": "open tmrw?", "source": "misrouted_live_2026_08_05"}
+{"intent": "hours", "utterance": "when do u open", "source": "misrouted_live_2026_08_05"}
+{"intent": "tech_checkout", "utterance": "do you lend chargers", "source": "misrouted_live_2026_08_05"}
+{"intent": "tech_checkout", "utterance": "do you lend out chargers", "source": "misrouted_live_2026_08_05"}
+{"intent": "tech_checkout", "utterance": "do you have chargers", "source": "misrouted_live_2026_08_05"}
+{"intent": "tech_checkout", "utterance": "can I borrow a phone charger", "source": "misrouted_live_2026_08_05"}
+{"intent": "tech_checkout", "utterance": "got a laptop charger i can borrow", "source": "misrouted_live_2026_08_05"}
+{"intent": "tech_checkout", "utterance": "do u have chargers for macbooks", "source": "misrouted_live_2026_08_05"}
+{"intent": "tech_checkout", "utterance": "any cables i can check out", "source": "misrouted_live_2026_08_05"}
+{"intent": "subject_librarian", "utterance": "my subject librarian", "source": "misrouted_live_2026_08_05"}
+{"intent": "subject_librarian", "utterance": "Subject librarian for me?", "source": "misrouted_live_2026_08_05"}
+{"intent": "subject_librarian", "utterance": "I need to find my librarian", "source": "misrouted_live_2026_08_05"}
+{"intent": "subject_librarian", "utterance": "who is my subject libarian", "source": "misrouted_live_2026_08_05"}
+{"intent": "subject_librarian", "utterance": "hoo is my subjekt libarian", "source": "misrouted_live_2026_08_05"}
+{"intent": "subject_librarian", "utterance": "whos my librarian", "source": "misrouted_live_2026_08_05"}
+{"intent": "subject_librarian", "utterance": "i need a librarian for my major", "source": "misrouted_live_2026_08_05"}
+{"intent": "databases", "utterance": "cs databases", "source": "misrouted_live_2026_08_05"}
+{"intent": "databases", "utterance": "econ databases", "source": "misrouted_live_2026_08_05"}
+{"intent": "databases", "utterance": "nursing databases", "source": "misrouted_live_2026_08_05"}
+{"intent": "room_booking", "utterance": "king 240 availability", "source": "misrouted_live_2026_08_05"}
+{"intent": "room_booking", "utterance": "king 105 available tmrw 3pm?", "source": "misrouted_live_2026_08_05"}
+{"intent": "room_booking", "utterance": "any study rooms for 4 at king tmrw afternoon", "source": "misrouted_live_2026_08_05"}
+{"intent": "room_booking", "utterance": "how far ahead can i book", "source": "misrouted_live_2026_08_05"}
+{"intent": "room_booking", "utterance": "book something for right now", "source": "misrouted_live_2026_08_05"}
+{"intent": "room_booking", "utterance": "is king 103 free tomorrow afternoon", "source": "misrouted_live_2026_08_05"}
+{"intent": "space_info", "utterance": "What are the quiet study areas?", "source": "misrouted_live_2026_08_05"}
+{"intent": "space_info", "utterance": "where is the silent study area", "source": "misrouted_live_2026_08_05"}
+{"intent": "space_info", "utterance": "which floor is quiet", "source": "misrouted_live_2026_08_05"}
+{"intent": "space_info", "utterance": "is there a quiet floor", "source": "misrouted_live_2026_08_05"}
+{"intent": "space_info", "utterance": "where is the graduate reading room", "source": "misrouted_live_2026_08_05"}
+{"intent": "space_info", "utterance": "faculty reading room location", "source": "misrouted_live_2026_08_05"}
+{"intent": "space_info", "utterance": "do you have a lactation room", "source": "misrouted_live_2026_08_05"}
+{"intent": "space_info", "utterance": "is there a nursing room", "source": "misrouted_live_2026_08_05"}
+{"intent": "space_info", "utterance": "do you have board games", "source": "misrouted_live_2026_08_05"}
+{"intent": "location_directions", "utterance": "where are the bathrooms", "source": "misrouted_live_2026_08_05"}
+{"intent": "location_directions", "utterance": "where are the bathrooms at King Library", "source": "misrouted_live_2026_08_05"}
+{"intent": "location_directions", "utterance": "where's the restroom", "source": "misrouted_live_2026_08_05"}
+{"intent": "location_directions", "utterance": "wheres the makerspace", "source": "misrouted_live_2026_08_05"}
+{"intent": "location_directions", "utterance": "is there a floor plan", "source": "misrouted_live_2026_08_05"}
+{"intent": "location_directions", "utterance": "where do i find the microfilm", "source": "misrouted_live_2026_08_05"}
+{"intent": "location_directions", "utterance": "where are the charging stations", "source": "misrouted_live_2026_08_05"}
+{"intent": "location_directions", "utterance": "how do i get to wertz", "source": "misrouted_live_2026_08_05"}
+{"intent": "service_howto", "utterance": "is there a lost and found", "source": "misrouted_live_2026_08_05"}
+{"intent": "service_howto", "utterance": "do you have a public fax", "source": "misrouted_live_2026_08_05"}
+{"intent": "service_howto", "utterance": "can i bring food in", "source": "misrouted_live_2026_08_05"}
+{"intent": "service_howto", "utterance": "can community members use the library", "source": "misrouted_live_2026_08_05"}
+{"intent": "service_howto", "utterance": "can i donate books", "source": "misrouted_live_2026_08_05"}
+{"intent": "service_howto", "utterance": "is there somewhere to take a phone call", "source": "misrouted_live_2026_08_05"}
+{"intent": "service_howto", "utterance": "how do i scan something", "source": "misrouted_live_2026_08_05"}
+{"intent": "printing_wifi", "utterance": "can i print in color", "source": "misrouted_live_2026_08_05"}
+{"intent": "printing_wifi", "utterance": "scan to email", "source": "misrouted_live_2026_08_05"}
+{"intent": "printing_wifi", "utterance": "how do i connect to wifi", "source": "misrouted_live_2026_08_05"}
+{"intent": "printing_wifi", "utterance": "wifi password", "source": "misrouted_live_2026_08_05"}
+{"intent": "loan_policy", "utterance": "How much are late fees?", "source": "misrouted_live_2026_08_05"}
+{"intent": "loan_policy", "utterance": "How do I pay a fine?", "source": "misrouted_live_2026_08_05"}
+{"intent": "loan_policy", "utterance": "how long can i keep a book", "source": "misrouted_live_2026_08_05"}
+{"intent": "loan_policy", "utterance": "whats the fine for an overdue book", "source": "misrouted_live_2026_08_05"}
+{"intent": "loan_policy", "utterance": "after hours access", "source": "misrouted_live_2026_08_05"}
+{"intent": "staff_lookup", "utterance": "who do i complain to", "source": "misrouted_live_2026_08_05"}
+{"intent": "staff_lookup", "utterance": "who is the dean of the libraries", "source": "misrouted_live_2026_08_05"}
+{"intent": "staff_lookup", "utterance": "is there anyone i can actually talk to", "source": "misrouted_live_2026_08_05"}
+{"intent": "find_resource", "utterance": "u have braiding sweetgrass?", "source": "misrouted_live_2026_08_05"}
+{"intent": "find_resource", "utterance": "do u have my textbook", "source": "misrouted_live_2026_08_05"}
+{"intent": "find_resource", "utterance": "i just need to know if you have my textbook", "source": "misrouted_live_2026_08_05"}

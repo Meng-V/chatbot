@@ -104,9 +104,26 @@ _PRINT_SCAN_WIFI_RE = re.compile(
 # The printing/wifi answer must not hijack questions that only LOOK related:
 # 3D printing has its own page and its own short-circuit, and "print" appears
 # in reprints/fines questions.
+# This matcher is the broadest in the short-circuit table, and the 2026-08-04
+# eval showed it overfiring: it replaced four GOOD specific answers with the
+# same generic MUprint pointer --
+#   "does Wertz have printing"      -> lost the Wertz-specific answer
+#   "can I print in color"          -> never confirmed colour
+#   "scanning at all three campuses"-> lost the per-campus verification
+#   a policy-link case              -> lost the corrected link
+# It gained two and lost four. So it now declines anything it cannot actually
+# answer: a named campus or library, a comparison, or a specific capability.
 _NOT_PRINTING_RE = re.compile(
     r"\b(3d|three-?d|makerspace|maker\s*space|reprint|reprints|"
-    r"fine|fines|charge|charges|cost|price|how\s+much)\b",
+    r"fine|fines|charge|charges|cost|price|how\s+much"
+    # a specific capability the generic pointer does not state
+    r"|colour|color|black\s*(and|&)\s*white|b\s*&\s*w|double\s*sided|duplex"
+    r"|11x17|poster|large\s*format"
+    # a named library / campus, or a comparison -- the generic answer cannot
+    # confirm anything building-specific
+    r"|wertz|art\s*(and|&)\s*architecture|rentschler|hamilton|gardner|"
+    r"middletown|king|regional|all\s+(three\s+)?campuses?|each\s+campus|"
+    r"every\s+campus|both\s+campuses|which\s+(library|campus)|compare)\b",
     re.IGNORECASE,
 )
 

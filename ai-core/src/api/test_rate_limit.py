@@ -223,3 +223,22 @@ def test_unreadable_budget_state_does_not_raise_the_ceiling(tmp_path, monkeypatc
     rate, turns = RL._budget_limits()
     assert rate == B.RATE_MAX_NORMAL
     assert turns == B.MAX_TURNS_NORMAL
+
+
+# --- who is a development client -----------------------------------------
+
+
+def test_a_browser_is_a_student_and_a_test_harness_is_not():
+    """A browser ALWAYS sends an Origin on a websocket handshake; curl,
+    python-socketio and every test client do not."""
+    from src.main import _looks_like_dev_client
+    # real students
+    for env in ({"HTTP_ORIGIN": "https://www.lib.miamioh.edu"},
+                {"HTTP_ORIGIN": "https://new.lib.miamioh.edu"},
+                {"HTTP_REFERER": "https://www.lib.miamioh.edu/use/"}):
+        assert _looks_like_dev_client(env) is False, env
+    # the operator's harness
+    for env in ({}, {"HTTP_ORIGIN": ""},
+                {"HTTP_ORIGIN": "http://localhost:8081"},
+                {"HTTP_ORIGIN": "http://127.0.0.1:5173"}):
+        assert _looks_like_dev_client(env) is True, env

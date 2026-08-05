@@ -138,7 +138,6 @@ def test_nursing_answer_is_an_honest_no_with_a_route():
     "where is the scanner",
     "how do I connect to wifi",
     "what's the wireless network",
-    "can I print in color",
     "scan to email",
 ])
 def test_print_scan_wifi_fires(q):
@@ -175,10 +174,24 @@ def test_all_cited_urls_are_the_verified_canonical_forms():
     "what are the fines for printing",
     "how do I get a reprint permission",
     "3D printing services",
+    # Added after the 2026-08-04 eval: this generic pointer replaced four
+    # GOOD specific answers. It cannot confirm a capability it does not
+    # state, and it cannot speak for one named building.
+    "can I print in color",
+    "does Wertz have printing",
+    "is there scanning at all three campuses",
+    "can I print black and white at Rentschler",
+    "which library has a poster printer",
+    "compare printing at Hamilton and Middletown",
 ])
 def test_print_does_not_hijack_the_specific_cases(q):
     """3D printing, cost and reprints each have their own handler; this
-    matcher is the broadest in the table and must yield to them."""
+    matcher is the broadest in the table and must yield to them.
+
+    It must also decline anything it cannot actually answer. The generic
+    MUprint pointer says nothing about colour, nothing about a specific
+    building, and nothing per-campus -- so on those questions it was
+    replacing a correct specific answer with a vaguer one."""
     assert F.printing_scanning_wifi_answer(q) is None, q
 
 

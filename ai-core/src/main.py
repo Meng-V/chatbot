@@ -598,8 +598,38 @@ def _get_v2_deps():
         raise
 
 
+# Is this socket a real student's browser, or the operator's test harness?
+#
+# WHY IT MATTERS: the two spend purses are "students" and "development", and
+# every turn served through this socket was being charged to STUDENTS -- so a
+# day of my own testing ($1.17 on 2026-08-04) blew through a $0.81 student
+# daily line and would have paged the operator about their own work. The eval
+# already charges itself correctly; live testing did not.
+#
+# A browser ALWAYS sends an Origin on a websocket handshake. python-socketio,
+# curl and every test harness do not. So: no browser origin, or an origin
+# pointing at localhost, means development.
+#
+# Not a security control -- a student cannot use this to get free answers, only
+# to have their spend counted in the wrong bucket, and the rate limits still
+# bound them either way. It exists so the budget means what it says.
+_DEV_ORIGIN_HINTS = ("localhost", "127.0.0.1", "0.0.0.0", "[::1]")
+client_is_dev: dict = {}
+
+
+def _looks_like_dev_client(environ: dict) -> bool:
+    origin = (environ.get("HTTP_ORIGIN") or environ.get("HTTP_REFERER") or "").strip()
+    if not origin:
+        return True                       # no browser sent this
+    low = origin.lower()
+    return any(h in low for h in _DEV_ORIGIN_HINTS)
+
+
 async def _v2_connect(sid, environ):
-    logging.info(f"🔌 [v2] Client connected: {sid}")
+    dev = _looks_like_dev_client(environ or {})
+    client_is_dev[sid] = dev
+    logging.info(f"🔌 [v2] Client connected: {sid}"
+                 f"{' (development / no browser origin)' if dev else ''}")
     conversation_id = await create_conversation()
     client_conversations[sid] = conversation_id
     await sio_v2.emit(
@@ -612,6 +642,7 @@ async def _v2_connect(sid, environ):
 async def _v2_disconnect(sid):
     logging.info(f"🔌 [v2] Client disconnected: {sid}")
     client_conversations.pop(sid, None)
+    client_is_dev.pop(sid, None)
     # Without this the trip counter grows for the lifetime of the process --
     # one entry per socket that ever connected. Small, but it is a leak, and
     # this box has 4 GB.
@@ -787,7 +818,10 @@ async def _v2_message(sid, data):
                     completion_tokens=int(_tok.get("output", 0)),
                     total_tokens=_total,
                     cached_input_tokens=int(_tok.get("cached_input", 0)),
-                    call_site="v2_turn",
+                    # v2_turn_dev is charged to the DEVELOPMENT purse, not the
+                    # students'. See _looks_like_dev_client.
+                    call_site=("v2_turn_dev" if client_is_dev.get(sid)
+                               else "v2_turn"),
                 )
         except Exception as te:  # noqa: BLE001
             logging.warning(f"⚠️ [v2] token-usage telemetry failed (turn was served): {te}")

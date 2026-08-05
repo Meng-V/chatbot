@@ -67,3 +67,20 @@ def test_eval_call_site_is_distinct_from_serving_call_sites():
     serving_sites = {"agent_loop", "synthesizer", "clarifier", "judge",
                      "embedding", "v2_turn"}
     assert SL.EVAL_CALL_SITE not in serving_sites
+
+
+def test_dev_call_sites_are_charged_to_development_not_students():
+    """The operator's own test harness is development spend.
+
+    Charging it to the students' purse made a $1.17 afternoon of testing
+    breach a $0.81 student daily line -- the guard would have paged the
+    operator about their own work, and the ceiling would have throttled
+    students because of traffic no student generated.
+    """
+    assert "v2_turn_dev" in SL.DEV_CALL_SITES
+    assert "v2_turn" not in SL.DEV_CALL_SITES, (
+        "real student traffic must stay on the students' purse"
+    )
+    assert SL.EVAL_CALL_SITE not in SL.DEV_CALL_SITES, (
+        "the eval has its own call site and its own accounting path"
+    )
