@@ -162,7 +162,8 @@ LADDER: tuple[Rung, ...] = (
     Rung(L_ALERT, 1.0, 0.70,
          "Email only. Nothing changes for students."),
     Rung(L_CHEAP, 1.5, 0.85,
-         "Reasoning model forced to the cheap one (~21x cheaper per call). "
+         "Reasoning model forced to the cheap one (10x cheaper per token: "
+         "terra 2.00/12.00 vs luna 0.20/1.20 per 1M, priced 2026-07-30). "
          "Every feature still works; hard questions get answered less well."),
     Rung(L_TIGHTEN, 2.5, 0.95,
          "Per-client rate limit and per-conversation turn cap tightened. "
