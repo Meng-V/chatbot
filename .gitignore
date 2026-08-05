@@ -235,3 +235,5 @@ data/budget_state.json
 data/budget_events.jsonl
 data/SERVICE_PAUSED
 data/watchdog_state.json
+
+ai-core/data/raw/*.csv
