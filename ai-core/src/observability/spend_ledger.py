@@ -201,20 +201,32 @@ async def _aread_spend(today: _dt.date) -> Spend:
                                    int(r["cached"] or 0), int(r["outp"] or 0))
             # The operator's own test traffic is development spend, not the
             # students'. Same money, correct purse.
+            # "Unpriced" has to mean "had tokens we could not price", not
+            # "had no price". The deterministic short-circuits record a
+            # placeholder in the model column -- "(none -- capability
+            # registry)" and friends -- with zero tokens, because no model
+            # ran. Counting those made the guard print
+            #   "93 calls used an UNPRICED model ... the ceiling cannot be
+            #    enforced for those"
+            # every 15 minutes, which is alarming and wrong: they cost $0
+            # correctly and there is nothing to enforce. A failed API call
+            # with 0 tokens is free for the same reason.
+            had_tokens = (int(r["inp"] or 0) + int(r["outp"] or 0)) > 0
             if str(r["site"] or "") in DEV_CALL_SITES:
                 out.eval_mtd += usd
-                if not is_priced(model):
+                if had_tokens and not is_priced(model):
                     out.eval_unpriced_calls += int(r["calls"] or 0)
                 continue
             out.serving_mtd += usd
             if r["is_today"]:
                 out.serving_today += usd
-            if not is_priced(model):
+            if had_tokens and not is_priced(model):
                 out.serving_unpriced_calls += int(r["calls"] or 0)
 
         ev = await db.query_raw(
             """
-            SELECT model, SUM(usd) AS usd, SUM("callCount") AS calls
+            SELECT model, SUM(usd) AS usd, SUM("callCount") AS calls,
+                   SUM("inputTokens") AS inp, SUM("outputTokens") AS outp
             FROM "DailyCost"
             WHERE "callSite" = $1 AND date >= $2::date
             GROUP BY 1
@@ -223,7 +235,10 @@ async def _aread_spend(today: _dt.date) -> Spend:
         )
         for r in ev:
             out.eval_mtd += float(r["usd"] or 0.0)
-            if not is_priced(str(r["model"] or "")):
+            # Same rule as above: zero tokens is legitimately free, not
+            # unpriced. The eval's own short-circuit turns land here.
+            if ((int(r["inp"] or 0) + int(r["outp"] or 0)) > 0
+                    and not is_priced(str(r["model"] or ""))):
                 out.eval_unpriced_calls += int(r["calls"] or 0)
     finally:
         await db.disconnect()

@@ -1297,7 +1297,14 @@ def _record_spend(report: "EvalReport") -> None:
     total = sum(compute_cost_usd(v["model"], v["input_tokens"],
                                  v["cached_input_tokens"], v["output_tokens"])
                 for v in per.values())
-    unpriced = [v["model"] for v in per.values() if not is_priced(v["model"])]
+    # Only flag something as unpriced if it actually had tokens to price. The
+    # deterministic short-circuits report a placeholder model name with zero
+    # tokens because no model ran; they cost $0 correctly, and warning about
+    # them buried the real signal (a genuinely unpriced model is how o4-mini
+    # ran unnoticed for five months).
+    unpriced = [v["model"] for v in per.values()
+                if not is_priced(v["model"])
+                and (v["input_tokens"] + v["output_tokens"]) > 0]
     print(f"  charged to the eval budget: ${total:.2f} across "
           f"{len(per)} model(s)")
     if unattributed:
