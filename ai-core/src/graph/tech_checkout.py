@@ -66,6 +66,52 @@ def parse_equipment(text: str) -> Dict[str, List[str]]:
     return cats
 
 
+_LOAN_MARKER = "Loan Periods and Late Fees"
+
+
+def parse_loan_periods(text: str) -> List[str]:
+    """The "Loan Periods and Late Fees" bullets, verbatim.
+
+    These sit BEFORE "Available Equipment" and are deliberately excluded from
+    `parse_equipment` -- they are prose, not inventory. But they answer the
+    obvious follow-up. Gold `tech_borrow_laptop` wants "Chromebooks, 30 days",
+    and the first version of this module dropped the 30 days and turned a
+    passing case into a partial: the page says it, the answer did not.
+
+    Returned verbatim so the sentence is quotable against the cited page.
+    """
+    if not text:
+        return []
+    start = text.find(_LOAN_MARKER)
+    if start < 0:
+        return []
+    end = text.find(_AVAILABLE_MARKER, start)
+    body = text[start + len(_LOAN_MARKER):end if end > 0 else len(text)]
+    out = []
+    for raw in body.splitlines():
+        s = raw.strip()
+        if s.startswith("-"):
+            s = s.lstrip("-").strip()
+            if s:
+                out.append(s)
+    return out
+
+
+def _loan_note(item: str, parent: Optional[str], text: str) -> str:
+    """A loan-period sentence for this item, or "".
+
+    Matched on the words the page itself uses, so an item with no stated
+    period simply gets nothing rather than inheriting someone else's.
+    """
+    words = {w.lower().strip(".,()") for w in (item + " " + (parent or "")).split()
+             if len(w) > 3}
+    for line in parse_loan_periods(text):
+        low = line.lower()
+        if any(w.rstrip("s") in low for w in words):
+            return _clean(line)
+    return ""
+
+
 def _flat(cats: Dict[str, List[str]]) -> List[str]:
     out: List[str] = []
     for cat, items in cats.items():
@@ -91,7 +137,13 @@ _SYNONYMS: Tuple[Tuple[str, str], ...] = (
     (r"headphone|headphones|earphone|earbuds|headset", "headphone"),
     (r"audio\s*recorder|voice\s*recorder|digital\s*recorder", "recorder"),
     (r"speaker|speakers", "speaker"),
-    (r"adapter|adaptor|adapters|adaptors|dongle|hdmi|vga|usb-?c", "adaptor"),
+    # Generic only. `hdmi`, `vga` and `usb-c` were here and produced a WRONG
+    # answer on gold tech2_hdmi_cable: the page lists "Adaptors" with no
+    # connector types, and answering "Yes -- includes Adaptors" to "can I
+    # borrow an HDMI cable?" asserts something the page does not support.
+    # A specific item must not be satisfied by a generic list entry; those
+    # questions belong to the agent, which can hedge and say "call to ask".
+    (r"adapter|adaptor|adapters|adaptors|dongle", "adaptor"),
     (r"mouse|mice", "mouse"),
     (r"ethernet|network\s*cable|lan\s*cable", "network cable"),
     (r"card\s*reader|sd\s*card\s*reader", "card reader"),
@@ -151,6 +203,32 @@ def looks_like_equipment_question(message: str) -> bool:
     return bool(_BORROW_RE.search(m)) and not _NOT_INVENTORY_RE.search(m)
 
 
+# Connector and interface names. The page lists "Adaptors", "Network cables"
+# and "Cables and peripherals" -- categories, with no interface types named
+# anywhere. So when a student asks for one of these BY NAME, the page cannot
+# support a yes, and a generic entry must not stand in for it.
+#
+# This is the rule, not a synonym patch. Removing `hdmi` from the adaptor
+# synonym was not enough: "HDMI cable" then matched the generic `cable`
+# synonym and answered "Yes -- Network cables", which is the same wrong answer
+# by another route (gold tech2_hdmi_cable, partial -> WRONG on 2026-08-05).
+#
+# Checked against the page text, so if the page ever does start naming
+# interfaces, these questions become answerable with no code change.
+_INTERFACE_RE = re.compile(
+    r"\b(hdmi|vga|display\s*port|dvi|thunderbolt|lightning|usb-?c|"
+    r"cat-?[56]e?|aux\s*cord|3\.5\s*mm|firewire|micro-?usb)\b",
+    re.IGNORECASE,
+)
+
+
+def _asks_for_something_the_page_never_names(message: str, page: str) -> bool:
+    m = _INTERFACE_RE.search(message or "")
+    if not m:
+        return False
+    return m.group(0).lower().replace(" ", "") not in (page or "").lower().replace(" ", "")
+
+
 def _match_item(message: str, cats: Dict[str, List[str]]) -> Optional[Tuple[str, str]]:
     """Return (what the student asked about, the page's own wording) or None.
 
@@ -195,6 +273,8 @@ def tech_checkout_answer(
     m = message or ""
     if not _BORROW_RE.search(m) or _NOT_INVENTORY_RE.search(m):
         return None
+    if _asks_for_something_the_page_never_names(m, chunk_text):
+        return None
     cats = parse_equipment(chunk_text)
     if not cats:
         return None
@@ -233,8 +313,12 @@ def tech_checkout_answer(
     if siblings:
         also = " The same section also lists " + ", ".join(siblings[:4]) + "."
 
+    loan = _loan_note(entry, parent, chunk_text)
+    loan_line = f" {loan} [1]." if loan else ""
+
     return (
-        f"Yes — the libraries' equipment checkout list includes {what} [1].{also}\n\n"
+        f"Yes — the libraries' equipment checkout list includes {what} [1].{also}"
+        f"{loan_line}\n\n"
         f"Bring your university ID to a library checkout desk. Availability "
         f"changes as items go out or break, so it is worth calling "
         f"{KING_PHONE} first to confirm the item is on the shelf [1].",

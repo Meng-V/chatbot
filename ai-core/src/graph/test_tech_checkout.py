@@ -128,7 +128,6 @@ def test_graphing_calculator_no_longer_refuses():
     "can I check out a projector",
     "do you have microphones i can borrow",
     "do you lend headphones",
-    "do you have hdmi adapters",
     "do you have dvd players",
     "can i check out an audio recorder",
     "do you lend network cables",
@@ -163,6 +162,13 @@ def test_fires_on_real_phrasings(q):
     "do you lend gopros",
     "can i borrow an umbrella",
     "do you have a 3d printer",
+    # Named interfaces the page never mentions. A generic "Adaptors" or
+    # "Network cables" entry must not stand in for them -- that is how
+    # tech2_hdmi_cable became a WRONG answer on 2026-08-05.
+    "do you have hdmi adapters",
+    "can i borrow an hdmi cable",
+    "do you have a usb-c dongle",
+    "got an aux cord i can borrow",
 ])
 def test_does_not_overfire(q):
     assert T.tech_checkout_answer(q, PAGE) is None, q
@@ -265,3 +271,49 @@ def test_prefilter_agrees_with_the_real_decision_on_negatives():
               "who is my subject librarian", "what is the tech checkout policy"):
         assert not T.looks_like_equipment_question(q)
         assert T.tech_checkout_answer(q, PAGE) is None
+
+
+# --- the two defects the 2026-08-05 service run exposed ------------------
+
+
+def test_a_specific_connector_is_not_satisfied_by_a_generic_adaptor():
+    """gold tech2_hdhi_cable went partial -> WRONG.
+
+    The page lists "Adaptors" with no connector types. Answering "Yes --
+    includes Adaptors" to "can I borrow an HDMI cable?" asserts something the
+    page does not support. A specific item must not be satisfied by a generic
+    list entry; that question belongs to the agent, which can hedge.
+    """
+    assert T.tech_checkout_answer("Can I borrow an HDMI cable from the library?", PAGE) is None
+    assert T.tech_checkout_answer("do you have a vga adapter", PAGE) is None
+    assert T.tech_checkout_answer("got a usb-c dongle", PAGE) is None
+
+
+def test_a_generic_adaptor_question_still_works():
+    """The page does say "Adaptors", so the generic ask is grounded."""
+    a = _ans("do you lend adaptors")
+    assert a is not None and "Adaptors" in a
+
+
+def test_loan_period_is_carried_when_the_page_states_one():
+    """gold tech_borrow_laptop wants "Chromebooks, 30 days". The page says it,
+    in the prose above the equipment list, and the first version of this
+    module dropped it -- turning a passing case into a partial."""
+    a = _ans("Can I borrow a laptop?")
+    assert a is not None
+    assert "30 days" in a
+
+
+def test_loan_periods_parse_but_are_not_treated_as_equipment():
+    periods = T.parse_loan_periods(PAGE)
+    assert any("30 days" in p for p in periods)
+    assert any("24 hour" in p for p in periods)
+    assert "Chromebook laptops may be checked out for 30 days." not in T.parse_equipment(PAGE)
+
+
+def test_no_loan_period_is_invented_for_an_item_that_has_none():
+    """Calculators have no stated period. The answer must not borrow the
+    laptop's 30 days."""
+    a = _ans("do you have calculators")
+    assert a is not None
+    assert "30 days" not in a and "24 hour" not in a
