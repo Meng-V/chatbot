@@ -216,3 +216,21 @@ def test_every_answer_is_nonempty_and_every_citation_is_numbered():
         import re
         markers = {int(x) for x in re.findall(r"\[(\d+)\]", answer)}
         assert markers <= {c["n"] for c in cites}, (q, markers)
+
+
+@pytest.mark.parametrize("q", [
+    "Do all the libraries have scanners?",
+    "does every library have a printer",
+    "Where is the printing policy?",
+    "what is the printing policy",
+])
+def test_print_yields_on_per_library_and_policy_questions(q):
+    """Two more the generic pointer cannot serve, both caught by the
+    2026-08-05 verification run:
+
+      * "Do all the libraries have scanners?" needs a per-campus answer.
+      * "Where is the printing policy?" wants ONE approved page, and the
+        gold checks that only that page is cited -- a four-link answer
+        fails by construction.
+    """
+    assert F.printing_scanning_wifi_answer(q) is None, q

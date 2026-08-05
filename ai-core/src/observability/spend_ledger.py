@@ -41,7 +41,11 @@ EVAL_CALL_SITE = "eval"
 # purse. Charging my own testing to students made a $1.17 afternoon breach a
 # $0.81 student daily line and would have paged the operator about their own
 # work.
-DEV_CALL_SITES = ("v2_turn_dev",)
+DEV_CALL_SITES = ("v2_turn_dev", "legacy_dev")
+"""legacy_dev covers the pre-v2 rows (2025-12 .. 2026-05), relabelled
+2026-08-05. Kept as its own label rather than folded into v2_turn_dev so the
+architecture change stays visible in the record -- those turns were not served
+by the v2 orchestrator at all."""
 
 
 @dataclass

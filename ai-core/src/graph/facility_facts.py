@@ -123,7 +123,14 @@ _NOT_PRINTING_RE = re.compile(
     # confirm anything building-specific
     r"|wertz|art\s*(and|&)\s*architecture|rentschler|hamilton|gardner|"
     r"middletown|king|regional|all\s+(three\s+)?campuses?|each\s+campus|"
-    r"every\s+campus|both\s+campuses|which\s+(library|campus)|compare)\b",
+    r"every\s+campus|both\s+campuses|which\s+(library|campus)|compare"
+    # "Do ALL THE LIBRARIES have scanners?" needs a per-campus answer, and the
+    # generic pointer cannot give one (gold xc2_scanning_all_campuses).
+    r"|all\s+(the\s+)?librar(y|ies)|every\s+librar(y|ies)|each\s+librar(y|ies)"
+    # "Where is the printing POLICY?" is asking for one specific page, and the
+    # gold checks that only the approved page is cited -- a four-link answer
+    # fails it by construction (gold cit_blacklisted_url_dropped).
+    r"|policy|policies)\b",
     re.IGNORECASE,
 )
 

@@ -2531,7 +2531,8 @@ def test_open_state_keeps_the_appointment_qualifier():
 
 
 def test_free_text_sentence_says_open_and_says_by_appointment():
-    line = _today_hours_sentence(_MAKERSPACE_WEEK, "the Makerspace")
+    line = _today_hours_sentence(_MAKERSPACE_WEEK, "the Makerspace",
+                                 _et(12, 0))
     assert line == ("the Makerspace is open today (Tuesday) from 9am to 4pm, "
                     "by appointment.")
     assert "closed" not in line.lower()
@@ -2603,7 +2604,7 @@ def test_hours_not_posted_is_a_decline_not_a_closure():
     status -- and it must not be read as either."""
     row = "• **Tuesday (2026-08-04)**: Hours not posted\n"
     assert _open_state(row, _et(12, 0)) is None
-    assert _today_hours_sentence(row, "King Library") is None
+    assert _today_hours_sentence(row, "King Library", _et(12, 0)) is None
 
 
 def test_open_now_matches_how_patrons_ask():

@@ -5340,17 +5340,24 @@ def _get_hours_data(deps: "OrchestratorDeps", library: str) -> "Optional[dict]":
         return None
 
 
-def _today_hours_sentence(hours_text: str, name: str) -> "Optional[str]":
+def _today_hours_sentence(hours_text: str, name: str,
+                          now=None) -> "Optional[str]":
     """"X is open today, Tuesday, from 7:30am to 9:00pm." -- or None.
 
     Shared by the deterministic hours short-circuits so they narrow to today
     the way the synthesizer is required to. None when today's row cannot be
     read, so callers can fall back rather than invent.
     """
-    import datetime as _datetime
+    # `now` is injectable so a test can pin the date. It was not, and the
+    # test for this function hardcoded 2026-08-04 rows while the function read
+    # the real clock -- so it passed on the day it was written and failed at
+    # the next midnight. A test that only passes on one date is worse than no
+    # test: it goes red for a reason that has nothing to do with the code.
+    if now is None:
+        import datetime as _datetime
 
-    import pytz as _pytz
-    now = _datetime.datetime.now(_pytz.timezone("America/New_York"))
+        import pytz as _pytz
+        now = _datetime.datetime.now(_pytz.timezone("America/New_York"))
     state = _open_state(hours_text, now)
     if state is None:
         return None
