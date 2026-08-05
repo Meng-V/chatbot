@@ -41,12 +41,64 @@ SITEMAPS: Final[dict[str, str]] = {
 # these when SITEMAPS[campus] returns 404 / unparseable. Keep small and
 # librarian-curated rather than crawling recursively (better signal/noise).
 SEED_URLS: Final[dict[str, list[str]]] = {
+    # Hamilton's sitemap.xml is a hard 404, so this fallback list IS the
+    # Hamilton corpus -- it is not a safety net, it is the whole source.
+    # Until 2026-08-05 it held four URLs (one of which, /library/research/,
+    # is itself dead), which is why Hamilton had 4 indexed chunks against
+    # Oxford's 132 and why every Hamilton-specific gold case failed or
+    # answered from Oxford pages.
+    #
+    # The list below was harvested from the site's own navigation on
+    # 2026-08-05 and every entry HEAD-checked: all 200, all >400 chars of
+    # extracted text. Curated, not dumped -- the crawl also surfaces a
+    # 33k-char haiku contest page, a 42k-char memorial-collection page and
+    # a newsletter archive, which would add ~80k characters of prose no
+    # student asks about and dilute retrieval for the pages they do.
+    #
+    # NOT included on purpose:
+    #   /about/hours/           165 chars -- a LibCal widget, no hours in the
+    #                           HTML. Hamilton hours come from the LibCal API.
+    #   .../get-help/research-questions/   55 chars, an empty stub.
+    #   /library-links/         a bare link list, no statements of fact.
     "hamilton": [
         "https://www.ham.miamioh.edu/library/",
         "https://www.ham.miamioh.edu/library/about/",
+        "https://www.ham.miamioh.edu/library/about/faq/",
+        "https://www.ham.miamioh.edu/library/about/mission-and-policies/",
+        "https://www.ham.miamioh.edu/library/about/rentschler-library-staff/",
+        "https://www.ham.miamioh.edu/library/my-library-account/",
         "https://www.ham.miamioh.edu/library/services/",
-        "https://www.ham.miamioh.edu/library/research/",
-        # Add more as the librarian liaisons identify priority pages.
+        "https://www.ham.miamioh.edu/library/services/audiovisual-resources/",
+        "https://www.ham.miamioh.edu/library/services/checking-out-materials/",
+        "https://www.ham.miamioh.edu/library/services/checking-out-materials/curbside-pickup/",
+        "https://www.ham.miamioh.edu/library/services/checking-out-materials/department-delivery/",
+        "https://www.ham.miamioh.edu/library/services/checking-out-materials/home-delivery/",
+        "https://www.ham.miamioh.edu/library/services/computers-printing-and-copying/",
+        "https://www.ham.miamioh.edu/library/services/course-reserves-and-textbooks/",
+        "https://www.ham.miamioh.edu/library/services/equipment-you-can-borrow/",
+        "https://www.ham.miamioh.edu/library/services/for-faculty/",
+        "https://www.ham.miamioh.edu/library/services/for-faculty/library-instruction-request-form/",
+        "https://www.ham.miamioh.edu/library/services/for-faculty/reserves-information-for-faculty/",
+        "https://www.ham.miamioh.edu/library/services/for-faculty/suggest-a-purchase/",
+        "https://www.ham.miamioh.edu/library/services/for-visitors/",
+        "https://www.ham.miamioh.edu/library/services/get-help/",
+        "https://www.ham.miamioh.edu/library/services/get-help/questions-about-your-account/",
+        "https://www.ham.miamioh.edu/library/services/get-help/schedule-a-research-appointment/",
+        "https://www.ham.miamioh.edu/library/services/interlibrary-loan/",
+        "https://www.ham.miamioh.edu/library/services/resources-for/international-students/",
+        "https://www.ham.miamioh.edu/library/services/resources-for/student-veterans/",
+        "https://www.ham.miamioh.edu/library/services/resources-for/students-with-disabilities/",
+        "https://www.ham.miamioh.edu/library/study-rooms/",
+        "https://www.ham.miamioh.edu/library/start-researching/citing-your-sources/",
+        "https://www.ham.miamioh.edu/library/start-researching/research-by-subject-2/",
+        "https://www.ham.miamioh.edu/library/start-researching/research-databases/",
+        "https://www.ham.miamioh.edu/library/start-researching/research-tips/",
+        "https://www.ham.miamioh.edu/library/start-researching/research-tips/evaluating-websites/",
+        "https://www.ham.miamioh.edu/library/start-researching/research-tips/finding-articles/",
+        "https://www.ham.miamioh.edu/library/start-researching/research-tips/finding-books/",
+        "https://www.ham.miamioh.edu/library/start-researching/research-tips/finding-primary-sources/",
+        "https://www.ham.miamioh.edu/library/start-researching/research-tips/finding-scholarly-articles/",
+        "https://www.ham.miamioh.edu/library/start-researching/research-tips/writing-a-college-research-paper/",
     ],
     "middletown": [
         # Real Middletown library URLs use `.htm` extensions (the
