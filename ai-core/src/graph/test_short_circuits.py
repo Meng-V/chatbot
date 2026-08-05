@@ -2962,3 +2962,171 @@ def test_guard_failure_does_not_block_a_real_cancellation(monkeypatch,
 
     monkeypatch.setattr(O, "_cancel_failures", boom)
     assert O._cancel_blocked("a@miamioh.edu") is False
+
+
+# --- #32 student shorthand ------------------------------------------------
+
+
+def test_open_now_matches_student_shorthand():
+    """Seven of ten real phrasings missed this gate on 2026-08-04 and fell back
+    to the hedge the short-circuit exists to prevent."""
+    from src.graph.new_orchestrator import _OPEN_NOW_RE as R
+    for q in ("is the library open rn", "is the library open right now",
+              "r u open rn", "open rn?", "is king open now", "are you open atm",
+              "is it open rn", "library open rn", "are you open", "still open?"):
+        assert R.search(q), q
+    for q in ("when do you open today", "what are your hours",
+              "is king open saturday", "how do I renew a book"):
+        assert not R.search(q), q
+
+
+# --- #29 collapse the week -----------------------------------------------
+
+_MS_WEEK = (
+    "**Makerspace Hours (Week of 2026-08-03):**\n\n"
+    "• **Monday (2026-08-03)**: 9am-4pm by appointment\n"
+    "• **Tuesday (2026-08-04)**: 9am-4pm by appointment\n"
+    "• **Wednesday (2026-08-05)**: 9am-4pm by appointment\n"
+    "• **Thursday (2026-08-06)**: 9am-4pm by appointment\n"
+    "• **Friday (2026-08-07)**: 9am-4pm by appointment\n"
+    "• **Saturday (2026-08-08)**: Closed\n"
+    "• **Sunday (2026-08-09)**: Closed\n"
+)
+
+
+def test_collapse_week_names_the_days():
+    """A bare "9am-4pm" reads as every day; the truth is Monday to Friday."""
+    from src.graph.new_orchestrator import _collapse_week
+    out = _collapse_week(_MS_WEEK)
+    assert "Monday-Friday" in out
+    assert "9am-4pm by appointment" in out
+    assert "closed Saturday and Sunday" in out
+    # And it is NOT a seven-line dump (prompt rule 12).
+    assert out.count(";") <= 2
+
+
+def test_collapse_week_handles_a_varying_week():
+    from src.graph.new_orchestrator import _collapse_week
+    wk = ("• **Monday (2026-08-03)**: 7:30am to 9:00pm\n"
+          "• **Tuesday (2026-08-04)**: 7:30am to 9:00pm\n"
+          "• **Friday (2026-08-07)**: 7:30am to 5:00pm\n"
+          "• **Saturday (2026-08-08)**: Closed\n")
+    out = _collapse_week(wk)
+    assert "Monday and Tuesday" in out
+    assert "Friday, 7:30am to 5:00pm" in out
+    assert "closed Saturday" in out
+
+
+def test_collapse_week_ignores_unposted_days():
+    from src.graph.new_orchestrator import _collapse_week
+    wk = ("• **Monday (2026-08-03)**: Hours not posted\n"
+          "• **Tuesday (2026-08-04)**: 9am to 5pm\n")
+    out = _collapse_week(wk)
+    assert "not posted" not in out.lower()
+    assert "Tuesday" in out
+
+
+def test_collapse_week_on_junk_returns_none():
+    from src.graph.new_orchestrator import _collapse_week
+    assert _collapse_week("") is None
+    assert _collapse_week("hours vary by term") is None
+
+
+# --- #31 a named day ------------------------------------------------------
+
+
+def test_named_day_resolves_and_answers():
+    from src.graph.new_orchestrator import _named_day_hours_sentence
+    # Saturday 2026-08-08 is Closed in the fixture.
+    got = _named_day_hours_sentence(_MS_WEEK, "the MakerSpace",
+                                    "is the makerspace open saturday",
+                                    _et(12, 0))
+    assert got == "the MakerSpace is closed on Saturday (2026-08-08)."
+
+
+def test_named_day_carries_the_appointment_rider():
+    from src.graph.new_orchestrator import _named_day_hours_sentence
+    got = _named_day_hours_sentence(_MS_WEEK, "the MakerSpace",
+                                    "is the makerspace open wednesday",
+                                    _et(12, 0))
+    assert "Wednesday (2026-08-05)" in got
+    assert "9am to 4pm" in got
+    assert "by appointment" in got
+
+
+def test_tomorrow_is_a_named_day():
+    from src.graph.new_orchestrator import _named_day_hours_sentence
+    got = _named_day_hours_sentence(_MS_WEEK, "the MakerSpace",
+                                    "is the makerspace open tomorrow",
+                                    _et(12, 0, day=4))
+    assert "Wednesday (2026-08-05)" in got
+
+
+def test_named_day_declines_the_cases_with_their_own_path():
+    """"next Saturday", holidays and term-length questions must keep theirs."""
+    from src.graph.new_orchestrator import _named_day_hours_sentence
+    for q in ("is the library open next saturday",
+              "are you open christmas day",
+              "what are the summer hours on friday",
+              "are you open during finals week on monday"):
+        assert _named_day_hours_sentence(_MS_WEEK, "X", q, _et(12, 0)) is None, q
+
+
+def test_weekend_is_not_treated_as_one_day():
+    from src.graph.new_orchestrator import _named_day_hours_sentence
+    assert _named_day_hours_sentence(_MS_WEEK, "X", "open on the weekend?",
+                                     _et(12, 0)) is None
+
+
+def test_named_day_declines_a_day_not_in_the_table():
+    from src.graph.new_orchestrator import _named_day_hours_sentence
+    short = "• **Monday (2026-08-03)**: 9am to 5pm\n"
+    assert _named_day_hours_sentence(short, "X", "open saturday?",
+                                     _et(12, 0)) is None
+
+
+def test_hours_shorthand_is_rescued_from_out_of_scope_but_dining_is_not():
+    """The deterministic hours short-circuits live at 3.55-3.59, but step 2.5
+    refuses an out_of_scope intent long before that -- so "open rn?" was told
+    that asking whether the library is open is outside scope. The rescue must
+    NOT extend to things that are not ours: "What time does the dining hall
+    close?" is a gold out_of_scope case."""
+    from src.graph.new_orchestrator import (
+        _CLOSE_TODAY_RE, _NON_LIBRARY_THING_RE, _OPEN_NOW_RE,
+    )
+
+    import re as _re
+
+    def rescued(q):
+        # mirrors the orchestrator: a TRAILING "atm" is "at the moment", not
+        # the cash machine, so it is stripped before the non-library test.
+        scoped = _re.sub(r"\batm\b\s*[?!.]*\s*$", "", q, flags=_re.IGNORECASE)
+        return bool((_OPEN_NOW_RE.search(q) or _CLOSE_TODAY_RE.search(q))
+                    and not _NON_LIBRARY_THING_RE.search(scoped))
+
+    for q in ("open rn?", "r u open rn", "is the library open rn",
+              "what time does king close today", "are you open atm"):
+        assert rescued(q), q
+    for q in ("What time does the dining hall close?",
+              "when does the rec center close today",
+              "is the bookstore open right now",
+              "what time does parking close today",
+              # the cash machine keeps its refusal: its "atm" is not trailing
+              "is there an atm open right now"):
+        assert not rescued(q), q
+
+
+def test_no_out_of_scope_gold_case_gets_rescued():
+    """A rescue that swallows a correct refusal trades it for a wrong answer."""
+    from src.eval.golden_set import load_golden_set
+    from src.graph.new_orchestrator import (
+        _CLOSE_TODAY_RE, _NON_LIBRARY_THING_RE, _OPEN_NOW_RE,
+    )
+    oos = [c for c in load_golden_set()
+           if getattr(c, "category", "") == "out_of_scope"]
+    assert oos, "expected out_of_scope gold cases"
+    for c in oos:
+        hit = ((_OPEN_NOW_RE.search(c.question)
+                or _CLOSE_TODAY_RE.search(c.question))
+               and not _NON_LIBRARY_THING_RE.search(c.question))
+        assert not hit, f"{c.id}: {c.question}"

@@ -18,6 +18,7 @@ can call it; concrete extractor invocation is a TODO.
 from __future__ import annotations
 
 import logging
+import os
 import re
 from dataclasses import dataclass
 from typing import Optional
@@ -79,6 +80,119 @@ SHELL_MIN_HTML_CHARS = 4000
 
 def _norm_url(u: str) -> str:
     return (u or "").rstrip("/").lower()
+
+
+# A LINK-LIST page's value is its DESTINATIONS, not its prose.
+#
+# https://www.lib.miamioh.edu/use/technology/printing/ is the case that taught
+# us: 231 characters of body text reading "Printing Instructions WiFi
+# Connections", which are the anchor TEXTS of two links -- to university IT's
+# MUprint guide and Wi-Fi service page -- plus an embedded how-to video. We
+# extracted the words and threw away the hrefs, so the index held a menu and
+# the bot answered "King Library offers printing/scanning services" while the
+# actual instructions sat one click away. Three eval cases failed on it and I
+# spent a day calling the page "an empty stub the library never wrote".
+#
+# The page was fine. Our reading of it was not.
+LINKLIST_MAX_BODY_CHARS = int(os.getenv("ETL_LINKLIST_MAX_BODY", "600"))
+LINKLIST_MIN_LINKS = 2
+LINKLIST_MAX_LINKS = 12
+
+_A_RE = re.compile(
+    r"""<a\s[^>]*?href\s*=\s*["']([^"'>#]+)["'][^>]*>(.*?)</a>""",
+    re.I | re.S)
+_TAGS_RE = re.compile(r"<[^>]+>")
+
+# Chrome that appears on every page and would drown the real destinations.
+_LINKLIST_SKIP = re.compile(
+    r"(facebook|twitter|instagram|youtube\.com/channel|flaticon|givetomiamioh"
+    r"|/search|/login|/logout|javascript:|mailto:|\.css|\.js|\.png|\.jpg"
+    r"|\.svg|\.ico|#|^/$)", re.I)
+
+
+# The MAIN CONTENT region. Without this the harvester returns the site-wide
+# navigation menu: on the printing page it collected twelve global nav entries
+# ("My Library Account", "Research Guides", ...) and hit the cap before ever
+# reaching the two links the page exists for. Chrome outnumbers content on
+# every library page, so scoping is not optional.
+# Opening tag of the MAIN CONTENT region. Without scoping, the harvester
+# returns the site-wide navigation: on the printing page it collected twelve
+# global nav entries ("My Library Account", "Research Guides", ...) and hit the
+# cap before reaching the two links the page exists for. Chrome outnumbers
+# content on every library page, so scoping is not optional.
+#
+# SLICED, not matched as a balanced element -- regex cannot balance nested
+# <div>s, and a non-greedy .*?</div> stops at the first INNER close, which
+# yielded an empty region and silently disabled this whole feature.
+_MAIN_OPEN_RE = re.compile(
+    r"""<(?:main|div)\s[^>]*?(?:id|class)\s*=\s*["'][^"']*?"""
+    r"""(?:main-content|main_content|maincontent)[^"']*?["'][^>]*>""", re.I)
+_MAIN_END_RE = re.compile(r"<footer\b|</body\b", re.I)
+
+
+def _main_region(html: str) -> str:
+    """The page's main content, or "" when it cannot be located."""
+    html = html or ""
+    m = _MAIN_OPEN_RE.search(html)
+    if not m:
+        m2 = re.search(r"<main\b[^>]*>", html, re.I)
+        if not m2:
+            return ""
+        start = m2.end()
+    else:
+        start = m.end()
+    tail = html[start:]
+    stop = _MAIN_END_RE.search(tail)
+    region = tail[:stop.start()] if stop else tail
+    return region if len(region) > 40 else ""
+
+
+def harvest_link_list(html: str, base_url: str) -> str:
+    """"Label -> URL" lines for a page whose content IS its links, else "".
+
+    Deliberately conservative: only fires when the extracted body is thin,
+    only reads the MAIN CONTENT region (never the site navigation), and only
+    keeps a handful of destinations. On a content page this returns nothing and
+    changes no behaviour.
+    """
+    from urllib.parse import urljoin, urlparse
+
+    region = _main_region(html)
+    if not region:
+        # No identifiable main region: refuse rather than harvest chrome. A
+        # menu in the index is what caused the original bug.
+        return ""
+    try:
+        base_host = urlparse(base_url).netloc.lower()
+    except Exception:  # noqa: BLE001
+        base_host = ""
+    seen, out = set(), []
+    for m in _A_RE.finditer(region):
+        href, label = m.group(1).strip(), _TAGS_RE.sub(" ", m.group(2))
+        label = " ".join(label.split())
+        if not label or len(label) < 3 or _LINKLIST_SKIP.search(href):
+            continue
+        full = urljoin(base_url, href)
+        if _norm_url(full) == _norm_url(base_url):
+            continue          # the page linking to itself
+        key = _norm_url(full)
+        if key in seen:
+            continue
+        # Same-site pages, or an off-site destination we were deliberately
+        # sent to (IT knowledge base, a how-to video). Both are answers.
+        host = urlparse(full).netloc.lower()
+        offsite_ok = any(k in host for k in
+                         ("teamdynamix", "youtube.com", "libcal", "libguides",
+                          "libanswers", "exlibrisgroup"))
+        if host and host != base_host and not offsite_ok:
+            continue
+        seen.add(key)
+        out.append(f"{label}: {full}")
+        if len(out) >= LINKLIST_MAX_LINKS:
+            break
+    if len(out) < LINKLIST_MIN_LINKS:
+        return ""
+    return "Links on this page:\n" + "\n".join(f"- {line}" for line in out)
 
 
 def find_redirect_target(html: str, base_url: str) -> Optional[str]:
@@ -269,6 +383,16 @@ def extract(html: str, url: str, last_modified: Optional[str] = None) -> Extract
         # no chrome to mistake for content, so the old behaviour is right here.
         title_fb, body_text = _strip_html_fallback(html)
         title = title or title_fb
+
+    # Thin body? The page may be a LINK LIST whose destinations are the answer.
+    # Append them rather than replace: the label text still helps retrieval
+    # find the page, and now the chunk actually carries somewhere to go.
+    if len(body_text or "") <= LINKLIST_MAX_BODY_CHARS:
+        links = harvest_link_list(html, url)
+        if links:
+            body_text = (body_text + "\n\n" + links).strip()
+            logger.info("link-list page: harvested destinations",
+                        extra={"url": url, "body_chars": len(body_text)})
 
     if not body_text:
         return ExtractedDoc(

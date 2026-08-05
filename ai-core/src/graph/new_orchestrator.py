@@ -330,6 +330,44 @@ def _run_turn(
         bind_request_context(intent="find_resource",
                              margin=classification.margin)
 
+    # --- 2.026. Hours shorthand rescued from out_of_scope ---
+    # Same failure as 2.025, different vocabulary. The deterministic hours
+    # short-circuits live at steps 3.55-3.59, but step 2.5 refuses an
+    # `out_of_scope` intent long before that -- so on 2026-08-04 "open rn?" and
+    # "r u open rn" were told that asking whether the library is open is
+    # outside what a library chatbot covers. The regexes matched perfectly; the
+    # turn never reached them.
+    #
+    # Only out_of_scope is overridden, and only when one of those tight
+    # patterns matches. Each short-circuit still declines on data it cannot
+    # read, so the worst case is the turn continuing exactly as it would have.
+    # Deliberately only the two TIGHT patterns. _WEEK_HOURS_RE matches any
+    # "open"/"hours"/"times" and would rescue genuinely out-of-scope questions
+    # into the hours path, where they would be answered instead of refused --
+    # trading a correct refusal for a wrong answer.
+    # ...and NOT when the message names something that is not ours.
+    # "What time does the dining hall close?" matches _CLOSE_TODAY_RE and is a
+    # gold out_of_scope case: rescuing it into the hours path would answer with
+    # King's hours, trading a correct refusal for a confidently wrong answer.
+    # _NON_LIBRARY_THING_RE already lists dining, parking, the rec center and
+    # the rest, so reuse it rather than grow a second list that can drift.
+    # "atm" is in BOTH lists: shorthand for "at the moment", and the cash
+    # machine _NON_LIBRARY_THING_RE rightly refuses. They are distinguishable
+    # by position -- the time sense trails the sentence ("are you open atm"),
+    # the machine does not ("is there an atm open right now"). Strip only a
+    # trailing one before the non-library test; a real ATM question keeps its
+    # own "atm" and stays refused.
+    _msg_for_scope = re.sub(r"\batm\b\s*[?!.]*\s*$", "",
+                            request.user_message or "", flags=re.IGNORECASE)
+    if (classification.intent == "out_of_scope"
+            and not _NON_LIBRARY_THING_RE.search(_msg_for_scope)
+            and (_OPEN_NOW_RE.search(request.user_message or "")
+                 or _CLOSE_TODAY_RE.search(request.user_message or ""))):
+        classification = _dc_replace(
+            classification, intent="hours", needs_clarification=False,
+        )
+        bind_request_context(intent="hours", margin=classification.margin)
+
     # --- 2.027. "Book King 103 tomorrow 6pm" override ---
     # Naming the ROOM instead of saying the word "room" broke booking entirely.
     # Live simulation 2026-07-30:
@@ -920,7 +958,13 @@ def _run_turn(
     # check, so "summer hours" and a named future day still take their own
     # paths. Yes/no from arithmetic on today's row; returns None on anything it
     # cannot parse, which falls through to the behaviour that was there before.
-    if classification.intent == "hours":
+    # NOT gated on classification.intent. The kNN classifier does not label
+    # student shorthand as `hours` -- "open rn?" and "r u open rn" came back
+    # OUT OF SCOPE on 2026-08-04 even though _OPEN_NOW_RE matched them, because
+    # the gate ran first. The regex is the precise part; the classifier is the
+    # lossy one. Each of these functions matches its own pattern before it
+    # touches a tool, so running them unconditionally costs nothing.
+    if True:
         _now = _open_right_now_answer(request.user_message, deps, scope)
         if _now is not None:
             _ans, _cites = _now
@@ -942,7 +986,7 @@ def _run_turn(
     # After open-now (a "still open?" question is that one, not this one) and
     # before the Special Collections branch. Declines on anything it cannot
     # read, which falls through to the behaviour that was there before.
-    if classification.intent == "hours":
+    if True:  # see the note on the open-now gate above
         _close = _close_today_answer(request.user_message, deps, scope)
         if _close is not None:
             _ans, _cites = _close
@@ -957,6 +1001,44 @@ def _run_turn(
                 tokens={"input": 0, "cached_input": 0, "output": 0},
                 fired_corrections=[],
                 agent_stopped_reason="close_today_short_circuit",
+                latency_ms=latency_ms, cited_chunk_ids=[],
+            )
+
+    # --- 3.58. A NAMED day ("open on Saturday?") ---
+    if True:  # see the note on the open-now gate above
+        _nd = _named_day_answer(request.user_message, deps, scope)
+        if _nd is not None:
+            _ans, _cites = _nd
+            latency_ms = int((time.monotonic() - turn_start) * 1000)
+            record_request(endpoint="/chat", status="named_day_hours",
+                           latency_s=latency_ms / 1000)
+            return TurnResponse(
+                answer=_ans, is_refusal=False, refusal_trigger=None,
+                citations=_cites, confidence="high",
+                intent=classification.intent, scope=scope.as_filter(),
+                model_used=model_basic,
+                tokens={"input": 0, "cached_input": 0, "output": 0},
+                fired_corrections=[],
+                agent_stopped_reason="named_day_hours_short_circuit",
+                latency_ms=latency_ms, cited_chunk_ids=[],
+            )
+
+    # --- 3.59. Whole-week hours for a SUB-SPACE, collapsed ---
+    if True:  # see the note on the open-now gate above
+        _wk = _week_hours_answer(request.user_message, deps, scope)
+        if _wk is not None:
+            _ans, _cites = _wk
+            latency_ms = int((time.monotonic() - turn_start) * 1000)
+            record_request(endpoint="/chat", status="week_hours",
+                           latency_s=latency_ms / 1000)
+            return TurnResponse(
+                answer=_ans, is_refusal=False, refusal_trigger=None,
+                citations=_cites, confidence="high",
+                intent=classification.intent, scope=scope.as_filter(),
+                model_used=model_basic,
+                tokens={"input": 0, "cached_input": 0, "output": 0},
+                fired_corrections=[],
+                agent_stopped_reason="week_hours_short_circuit",
                 latency_ms=latency_ms, cited_chunk_ids=[],
             )
 
@@ -1189,6 +1271,11 @@ def _run_turn(
         and scope.campus in ("oxford", None)
     ):
         evidence = _ensure_makerspace_hours_evidence(evidence, deps)
+
+    # Equipment questions: fetch the tech-checkout list by URL rather than
+    # hoping a 1,460-character page ranks for one word inside it.
+    if _EQUIPMENT_ASK_RE.search(request.user_message or ""):
+        evidence = _ensure_tech_checkout_evidence(evidence, deps)
 
     # Bare "What are the hours?" -- no library named anywhere in the
     # message. The scope resolver returns campus without a library, the
@@ -4969,10 +5056,25 @@ _LIBRARY_DISPLAY = {
     "best": "B.E.S.T. Library",
 }
 
+# Students type shorthand. Measured 2026-08-04 against ten real phrasings,
+# SEVEN of which missed this gate and fell back to the hedge the whole
+# short-circuit exists to prevent ("Whether it is open right now depends on the
+# current day and time"). Two causes, both fixed here:
+#   1. "rn" and "atm" were not time-words at all.
+#   2. The anchored branch demanded that open/closed END the sentence, so any
+#      trailing token -- "is the library open rn" -- killed the match.
+_NOW_WORDS = (r"right\s+now|rn|r\s*n|now|atm|at\s+the\s+moment|currently|"
+              r"at\s+this\s+hour|this\s+minute|right\s+this\s+second")
+
 _OPEN_NOW_RE = re.compile(
-    r"\b(open|closed)\b[^.?!]{0,24}\b(right\s+now|now|at\s+the\s+moment|"
-    r"currently|at\s+this\s+hour)\b"
-    r"|\b(is|are)\b[^.?!]{0,28}\b(open|closed)\b\s*[?]?\s*$"
+    # "open right now", "closed atm", "open rn?"
+    r"\b(open|closed)\b[^.?!]{0,24}\b(?:" + _NOW_WORDS + r")\b"
+    # "is the library open", "r u open" -- open/closed at the end, but now
+    # tolerating a short tail so "open rn" and "open today?" both land.
+    r"|\b(is|are|r)\b[^.?!]{0,28}\b(open|closed)\b(?:\s+(?:" + _NOW_WORDS
+    + r"))?\s*[?!.]?\s*$"
+    # A bare "open rn?" with no verb at all -- how the terse ones actually type.
+    r"|^\s*(open|closed)\b\s*(?:" + _NOW_WORDS + r")\b\s*[?!.]?\s*$"
     r"|\bstill\s+open\b|\balready\s+closed\b|\bopen\s+yet\b",
     re.IGNORECASE,
 )
@@ -5064,6 +5166,134 @@ def _open_state(hours_text: str, now) -> "Optional[dict]":
         minute >= opens or minute < closes)
     return {"open": is_open, "opens": opens, "closes": closes,
             "closed_all_day": False, "always": False, "note": note}
+
+
+_WEEKDAY_ORDER = ("Monday", "Tuesday", "Wednesday", "Thursday", "Friday",
+                  "Saturday", "Sunday")
+
+_NAMED_DAY_RE = re.compile(
+    r"\b(monday|tuesday|wednesday|thursday|friday|saturday|sunday|"
+    r"tomorrow|weekend)\b", re.IGNORECASE)
+
+# "next Saturday", holidays and term-length questions each have their own path
+# and must keep it -- this one only answers "which hours apply on <day>".
+_NOT_SIMPLE_DAY_RE = re.compile(
+    r"\b(next|last|this\s+coming|christmas|thanksgiving|holiday|break|"
+    r"semester|finals|summer|spring|fall|winter|reading\s+day)\b",
+    re.IGNORECASE)
+
+
+def _week_rows(hours_text: str) -> "list[tuple[str, str, str]]":
+    """[(weekday, ISO date, hours-as-written)] in calendar order."""
+    out = []
+    for m in _HOURS_ROW_RE.finditer(hours_text or ""):
+        out.append((m.group("day"), m.group("date"), m.group("hours").strip()))
+    return out
+
+
+def _collapse_week(hours_text: str) -> "Optional[str]":
+    """"Monday-Friday, 9am-4pm by appointment; closed Saturday and Sunday".
+
+    A seven-bullet table is what prompt rule 12 forbids and what the operator
+    called out on Special Collections; a bare "9am-4pm" is what the
+    synthesizer collapsed to instead, and it silently dropped WHICH DAYS --
+    the MakerSpace answer read as though it were open every day when it is
+    Monday to Friday only (gold fs_makerspace_hours). Runs of identical days
+    become one clause, so the answer is short AND complete.
+    """
+    rows = _week_rows(hours_text)
+    if not rows:
+        return None
+    # Group consecutive days that share the same hours string.
+    groups: list[list] = []
+    for day, _date, hrs in rows:
+        key = hrs.strip().lower()
+        if groups and groups[-1][0] == key:
+            groups[-1][1].append(day)
+        else:
+            groups.append([key, [day], hrs.strip()])
+    if not groups:
+        return None
+
+    def _span(days: "list[str]") -> str:
+        if len(days) == 1:
+            return days[0]
+        if len(days) == 2:
+            return f"{days[0]} and {days[1]}"
+        return f"{days[0]}-{days[-1]}"
+
+    open_parts, closed_days = [], []
+    for key, days, shown in groups:
+        if _HOURS_NOT_POSTED_MARKER in key:
+            continue
+        if "closed" in key:
+            closed_days.extend(days)
+            continue
+        open_parts.append(f"{_span(days)}, {shown}")
+    if not open_parts and not closed_days:
+        return None
+    text = "; ".join(open_parts) if open_parts else ""
+    if closed_days:
+        tail = f"closed {_span(closed_days)}"
+        text = f"{text}; {tail}" if text else tail.capitalize()
+    return text
+
+
+def _resolve_named_day(message: str, now) -> "Optional[tuple[str, object]]":
+    """(weekday name, date) for a simple named day in the message, or None."""
+    import datetime as _d
+    m = message or ""
+    if _NOT_SIMPLE_DAY_RE.search(m):
+        return None
+    hit = _NAMED_DAY_RE.search(m)
+    if not hit:
+        return None
+    word = hit.group(1).lower()
+    today = now.date()
+    if word == "tomorrow":
+        d = today + _d.timedelta(days=1)
+        return d.strftime("%A"), d
+    if word == "weekend":
+        return None            # two days; the table answer is the honest one
+    target = _WEEKDAY_ORDER.index(word.capitalize())
+    delta = (target - today.weekday()) % 7
+    d = today + _d.timedelta(days=delta)
+    return d.strftime("%A"), d
+
+
+def _named_day_hours_sentence(hours_text: str, name: str, message: str,
+                              now) -> "Optional[str]":
+    """"King Library is open Saturday (2026-08-08) from 7:30am to 9pm." or None.
+
+    Same arithmetic as today's row, for a day the patron named. Previously left
+    to the model, which got it right about ten times in eleven -- the eleventh
+    was a flat refusal on "is the library open on saturday".
+    """
+    resolved = _resolve_named_day(message, now)
+    if resolved is None:
+        return None
+    day_name, day_date = resolved
+    for day, iso, hrs in _week_rows(hours_text):
+        if iso != day_date.isoformat():
+            continue
+        low = hrs.lower()
+        if _HOURS_NOT_POSTED_MARKER in low:
+            return None
+        if "closed" in low:
+            return f"{name} is closed on {day_name} ({iso})."
+        if "24 hour" in low or "24/7" in low:
+            return f"{name} is open around the clock on {day_name} ({iso})."
+        note = _row_note(hrs)
+        parts = re.split(r"\s+to\s+|\s*[-\u2013\u2014]\s*", hrs)
+        if len(parts) < 2:
+            return None
+        opens, closes = _parse_clock(parts[0]), _parse_clock(parts[1])
+        if opens is None or closes is None:
+            return None
+        rider = f", {note}" if note else ""
+        return (f"{name} is open on {day_name} ({iso}) from "
+                f"{_fmt_clock(opens)} to {_fmt_clock(closes)}{rider}.")
+    return None
 
 
 def _fmt_clock(minutes: int) -> str:
@@ -5300,6 +5530,83 @@ def _close_today_answer(
     )
 
 
+_WEEK_HOURS_RE = re.compile(
+    r"\b(hours|open|opening|schedule|times)\b", re.IGNORECASE)
+
+
+def _named_day_answer(
+    message: str, deps: "OrchestratorDeps", scope: "Scope",
+) -> "Optional[tuple[str, list[dict]]]":
+    """"Is King open on Saturday?" -- picked out of the dated table, not guessed."""
+    m = message or ""
+    if not _NAMED_DAY_RE.search(m) or _NOT_SIMPLE_DAY_RE.search(m):
+        return None
+    if not _WEEK_HOURS_RE.search(m) and not _OPEN_NOW_RE.search(m):
+        return None
+    library = _open_now_library(m, scope)
+    data = _get_hours_data(deps, library)
+    if data is None:
+        return None
+
+    import datetime as _datetime
+
+    import pytz as _pytz
+    now = _datetime.datetime.now(_pytz.timezone("America/New_York"))
+    name = _LIBRARY_DISPLAY.get(library, library.title())
+    line = _named_day_hours_sentence(
+        str(data.get("hours") or ""), name, m, now)
+    if line is None:
+        return None
+    return (
+        line + " [1]",
+        [{"n": 1, "url": str(data.get("source_url") or "")
+          or _HOURS_PAGE_URL["oxford"],
+          "snippet": "Miami University Libraries — Hours (live from LibCal)"}],
+    )
+
+
+def _week_hours_answer(
+    message: str, deps: "OrchestratorDeps", scope: "Scope",
+) -> "Optional[tuple[str, list[dict]]]":
+    """"What are the MakerSpace hours?" -> the whole week, collapsed.
+
+    Neither extreme is right. Seven bullet points is what prompt rule 12
+    forbids; "open 9am-4pm by appointment" is what the synthesizer collapsed to
+    instead, and it dropped WHICH DAYS -- reading as if the space were open
+    every day when it is Monday to Friday (gold fs_makerspace_hours).
+    """
+    m = message or ""
+    if not _WEEK_HOURS_RE.search(m):
+        return None
+    # Today / right-now / a named day each have their own, more specific path.
+    if (_OPEN_NOW_RE.search(m) or _TODAY_WORD_RE.search(m)
+            or _NAMED_DAY_RE.search(m) or _NOT_SIMPLE_DAY_RE.search(m)):
+        return None
+    # Only for the SUB-SPACES, whose own hours differ from their building's and
+    # which the synthesizer kept flattening. Building hours already read well.
+    library = _open_now_library(m, scope)
+    if library not in ("makerspace", "special"):
+        return None
+    data = _get_hours_data(deps, library)
+    if data is None:
+        return None
+    summary = _collapse_week(str(data.get("hours") or ""))
+    if not summary:
+        return None
+    name = _LIBRARY_DISPLAY.get(library, library.title())
+    body = f"{name} is open {summary}. [1]"
+    cites = [{"n": 1, "url": str(data.get("source_url") or "")
+              or _HOURS_PAGE_URL["oxford"],
+              "snippet": "Miami University Libraries — Hours (live from LibCal)"}]
+    if library == "special":
+        body += ("\n\nNote: research access is by appointment -- please "
+                 "request one through the Special Collections site [2].")
+        cites.append({"n": 2, "url": _SPEC_APPOINTMENTS_URL,
+                      "snippet": "Walter Havighurst Special Collections & "
+                                 "University Archives"})
+    return body, cites
+
+
 def _special_collections_hours_answer(
     deps: "OrchestratorDeps",
 ) -> "Optional[tuple[str, list[dict]]]":
@@ -5374,6 +5681,90 @@ def _ensure_default_library_hours_evidence(
             return evidence
         return _tool_fact_evidence(result, {"library": lib}) + evidence
     except Exception:  # noqa: BLE001 -- prefetch must never break the turn
+        return evidence
+
+
+# Equipment questions kept refusing even though the answer is indexed.
+#
+# The tech-checkout page is ONE 1,460-character chunk covering the whole
+# equipment list, and "Chargers (Mac, PC, assorted phones)" appears once, deep
+# inside it. Both retrieval legs get diluted across the page: measured
+# 2026-08-04, "do you lend chargers" refused on 2 of 2 tries, "do you have
+# chargers" 2 of 2, "can I borrow a phone charger" 1 of 2 -- the same question
+# answered or refused depending on the roll.
+#
+# The real fix is finer chunking, which needs a re-index. This does the cheap,
+# deterministic half: fetch that chunk BY URL rather than hoping it ranks, so
+# the synthesizer always has it. Combined with synthesizer rule 12a ("answer
+# the item, not the category") the answer then names the charger instead of
+# summarising the equipment headings.
+_TECH_CHECKOUT_URL = "https://www.lib.miamioh.edu/use/technology/tech-checkout/"
+
+_EQUIPMENT_ASK_RE = re.compile(
+    r"\b(charger|chargers|cable|cables|adapter|adaptor|adapters|adaptors|"
+    r"laptop|laptops|chromebook|ipad|tablet|tablets|camera|cameras|camcorder|"
+    r"tripod|microphone|mic|headphone|headphones|projector|dvd\s*player|"
+    r"calculator|calculators|recorder|recorders|card\s*reader|disc\s*drive|"
+    r"mouse|mouses|equipment|borrow.{0,20}\b(gear|tech|technology)|"
+    r"tech(nology)?\s*(checkout|check\s*out|loan))\b",
+    re.IGNORECASE,
+)
+
+
+def _ensure_tech_checkout_evidence(
+    evidence: list["EvidenceChunk"], deps: "OrchestratorDeps"
+) -> list["EvidenceChunk"]:
+    """Prepend the tech-checkout chunk if retrieval did not surface it.
+
+    Failure-tolerant: on any error return the evidence untouched, so a Weaviate
+    hiccup degrades to the behaviour that was there before rather than breaking
+    the turn.
+    """
+    if any(_TECH_CHECKOUT_URL.rstrip("/") in (getattr(c, "source_url", "") or "")
+           for c in evidence):
+        return evidence
+    try:
+        from src.synthesis.corrections import EvidenceChunk as _EC
+        from src.utils.weaviate_client import get_weaviate_client
+        from weaviate.classes.query import Filter
+        import os as _os
+
+        client = get_weaviate_client()
+        if client is None:
+            return evidence
+        try:
+            col = client.collections.get(
+                _os.getenv("WEAVIATE_CHUNK_COLLECTION", "Chunk_current"))
+            res = col.query.fetch_objects(
+                filters=Filter.by_property("source_url").equal(
+                    _TECH_CHECKOUT_URL),
+                limit=3,
+                return_properties=["chunk_id", "source_url", "text", "campus",
+                                   "library", "topic"],
+            )
+            extra = []
+            for o in res.objects:
+                pr = o.properties or {}
+                if not (pr.get("text") or "").strip():
+                    continue
+                extra.append(_EC(
+                    chunk_id=str(pr.get("chunk_id") or "tech-checkout"),
+                    source_url=str(pr.get("source_url") or _TECH_CHECKOUT_URL),
+                    text=str(pr.get("text") or ""),
+                    campus=pr.get("campus"), library=pr.get("library"),
+                    topic=pr.get("topic"), score=1.0,
+                ))
+            if extra:
+                log.info("prefetched tech-checkout evidence (%d chunk(s))",
+                         len(extra))
+            return extra + evidence
+        finally:
+            try:
+                client.close()
+            except Exception:  # noqa: BLE001
+                pass
+    except Exception:  # noqa: BLE001 -- prefetch must never break the turn
+        log.warning("tech-checkout prefetch failed", exc_info=True)
         return evidence
 
 

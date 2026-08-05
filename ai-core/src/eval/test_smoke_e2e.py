@@ -169,33 +169,18 @@ def test_run_smoke_records_nonzero_microseconds() -> None:
         )
 
 
-def test_full_agent_path_takes_longer_than_short_circuit() -> None:
-    """Differential check that the smoke is exercising both paths.
-    Short-circuit (clarify, point_to_url, refuse) skips the agent;
-    agent_then_answer / agent_then_refusal does NOT. Therefore agent
-    paths MUST take longer than short-circuit paths on average.
-    If they take the same time, one path is broken (likely both are
-    short-circuiting).
-    """
-    results = run_smoke()
-    short_circuit = [r for r in results if r.actual_path in (
-        "clarify", "point_to_url", "refuse",
-    )]
-    full_agent = [r for r in results if r.actual_path in (
-        "agent_then_answer", "agent_then_refusal",
-    )]
-    assert short_circuit, "no short-circuit fixtures ran"
-    assert full_agent, "no full-agent fixtures ran"
-    avg_short = sum(r.duration_us for r in short_circuit) / len(short_circuit)
-    avg_full = sum(r.duration_us for r in full_agent) / len(full_agent)
-    # Full-agent path runs 2 LLM calls + tool dispatch + synth +
-    # post-processor; short-circuit returns templated text. Expect
-    # at least 1.5x ratio. If they're tied, agent didn't run.
-    assert avg_full > avg_short * 1.3, (
-        f"full-agent path ({avg_full:.1f}us avg) not measurably "
-        f"slower than short-circuit ({avg_short:.1f}us avg) -- "
-        f"is the agent actually running?"
-    )
+# REMOVED 2026-08-04: test_full_agent_path_takes_longer_than_short_circuit.
+#
+# It compared wall-clock -- short-circuits returned templated text, agent paths
+# made two LLM calls, so agent had to be slower. That premise died when the
+# deterministic hours short-circuits started making a LIVE LibCal call: a
+# short-circuit is now often the SLOWER path (measured 102ms against 1.5ms for
+# a stubbed agent), and the test failed while both paths worked correctly.
+#
+# Timing was only ever a proxy for "did the agent run", and the two tests below
+# already assert that directly and precisely -- one that agent paths DO spend
+# tokens, one that short-circuits spend NONE. A third copy of the same check
+# added nothing, so the proxy is simply gone rather than re-thresholded.
 
 
 def test_full_agent_fixtures_consume_LLM_tokens() -> None:

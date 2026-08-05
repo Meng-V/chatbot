@@ -152,6 +152,15 @@ class EvalResult:
     bot_citation_urls: Optional[list] = None
     # Judge verdict (None until LLM-as-judge wires up)
     judge_verdict: Optional[str] = None
+    # The judge's own stated REASON and citation call. Recording only the
+    # verdict made a flip unauditable: on 2026-08-04 fs_makerspace_hours went
+    # correct -> wrong when the answer changed from the FABRICATED "The
+    # Makerspace is Closed." to the true "open 9am-4pm by appointment", with
+    # byte-identical citations -- and there was no way to tell whether the
+    # judge objected to the missing day range, to the phrasing, or was just
+    # noisy. A verdict without a reason cannot be argued with.
+    judge_reason: Optional[str] = None
+    judge_citation_validity: Optional[str] = None
     # Telemetry
     latency_ms: Optional[int] = None
     input_tokens: Optional[int] = None
@@ -872,6 +881,9 @@ def run_eval(
                             model=judge_model,
                         )
                         result.judge_verdict = outcome.verdict.verdict
+                        result.judge_reason = outcome.verdict.reason
+                        result.judge_citation_validity = (
+                            outcome.verdict.citation_validity)
                         judge_verdicts.append(outcome.verdict)
                         report.judge_called += 1
                     except JudgeParseError as e:
@@ -1173,6 +1185,8 @@ def _result_row(r: "EvalResult") -> dict:
         # could only be judged by the judge's own subjective field.
         "bot_citation_urls": r.bot_citation_urls,
         "judge_verdict": r.judge_verdict,
+        "judge_reason": r.judge_reason,
+        "judge_citation_validity": r.judge_citation_validity,
         "latency_ms": r.latency_ms,
         "input_tokens": r.input_tokens,
         "cached_input_tokens": r.cached_input_tokens,

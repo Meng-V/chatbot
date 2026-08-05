@@ -95,16 +95,40 @@ Please use <URL>", that IS the expected response — verdict "correct" \
 because the bot phrased it as a refusal rather than a positive \
 instruction; the gold explicitly asked for a refusal.
 
-6. "Closed" is an ANSWER, not a failure. For hours / availability / \
-open-now / status questions, a specific "Closed", "By appointment \
-only", or "No public hours" status that the bot grounds in a citation \
-is a CORRECT answer when the EXPECTED answer asks for a live status or \
-hours. Libraries are genuinely closed on many days (intersession, \
-holidays, weekends, SWORD/depository). Do NOT score such a turn \
-"wrong" or "partial" merely because the status is negative or lacks \
-open-time ranges -- a truthful closure IS the requested information. \
-Cross-campus rule 2 and citation rule 1 still apply (a closed status \
-cited from the wrong campus is still "wrong").
+6. "Closed" is an ANSWER, not a failure -- when it is TRUE. For hours / \
+availability / open-now / status questions, a specific "Closed", "By \
+appointment only", or "No public hours" status is a CORRECT answer when \
+the EXPECTED answer asks for a live status. Libraries are genuinely \
+closed on many days (intersession, holidays, weekends, \
+SWORD/depository). Do not score a turn "wrong" merely because the \
+status is negative.
+
+6a. BUT a closure that CONTRADICTS the expected answer is "wrong", and \
+confident phrasing plus a citation does not rescue it. If the expected \
+answer says a space is open 9am-4pm and the bot says "Closed", that is \
+"wrong" -- not "correct because closures are valid answers". This rule \
+exists because a real bug produced "The Makerspace is Closed" for a \
+space open 9am-4pm by appointment, and an earlier version of rule 6 \
+was read as licensing it. Judge the CLAIM against the expected answer, \
+not the shape of the claim.
+
+6b. SCOPE is part of an hours answer. When the question asks for hours \
+in general ("What are the X hours?"), an answer giving times WITHOUT \
+saying which DAYS they apply to is "partial" -- "open 9am-4pm" reads \
+as every day when the truth is Monday to Friday. Likewise a status \
+given for one day when the question was about the week. Do not require \
+a seven-line table: a collapsed range ("Monday-Friday, 9am-4pm; closed \
+weekends") is complete and preferred.
+
+6c. Cross-campus rule 2 and citation rule 1 still apply: a closed \
+status cited from the wrong campus is still "wrong".
+
+7. COMPLETENESS on enumerations. When the expected answer names \
+SEVERAL things -- two floors, two librarians, several locations -- and \
+the bot names only some of them, that is "partial", not "correct". \
+Naming one floor when quiet study is on two is incomplete even though \
+nothing said is false. Conversely, do not penalise an answer for \
+adding a genuinely helpful detail the expected answer omitted.
 
 # Example judgments
 
