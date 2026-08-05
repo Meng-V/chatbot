@@ -41,14 +41,27 @@ from src.router.intent_knn import INTENTS  # noqa: E402
 def test_databases_is_point_to_url() -> None:
     """Per librarian decision: never look up DB by name; always route
     to A-Z. Users misspell DB names too often to risk a wrong-DB
-    answer."""
+    answer.
+
+    WHY that decision is right, kept here rather than in the answer text:
+    database names overlap and drift ("Web of Science" vs "Web of Knowledge",
+    "PsycINFO" vs "Psychology and Behavioral Sciences Collection"), and the
+    A-Z page disambiguates them with current names and subject tags.
+
+    This used to be asserted against `short_message` -- the test literally
+    required the maintainer rationale to appear in the text shown to the
+    student, "so it's readable to future maintainers". That is how a patron
+    ended up reading a paragraph beginning "Why send you there instead of
+    looking up a specific database name?". Rationale belongs in the source;
+    the answer belongs to the student.
+    """
     cap = get_intent_capability("databases")
     assert cap.tier == CapabilityTier.POINT_TO_URL
     assert "libguides.lib.miamioh.edu/az/databases" in cap.canonical_url
     assert "Databases A-Z" in cap.short_message
-    # Defends the design decision in the body so it's readable to
-    # future maintainers.
-    assert "Web of Science" in cap.short_message  # the disambiguation example
+    assert "Web of Science" not in cap.short_message, (
+        "the disambiguation example is maintainer context, not patron copy"
+    )
 
 
 def test_find_resource_is_point_to_url_to_primo() -> None:
@@ -353,3 +366,45 @@ def test_named_platform_access_has_exemplars_pointing_at_databases() -> None:
     assert sum(1 for u in utterances
                if any(k in u for k in ("do we have", "is ", "can i get",
                                        "subscribe", "available"))) >= 6
+
+
+def test_point_to_url_answers_do_not_explain_our_own_routing():
+    """No answer should tell a student WHY we sent them somewhere.
+
+    A live transcript on 2026-08-05 (rated 5, so the student was not even
+    bothered) carried this after the actual answer:
+
+        "Why send you there instead of looking up a specific database name?
+         Database names overlap and shift ("Web of Science" vs "Web of
+         Knowledge" ...); the A-Z page disambiguates them with current names
+         + subject tags."
+
+    That is our routing rationale. The student asked where the business
+    databases are. The employment template had the same shape ("Why route
+    here? ..."). Operator: too wordy -- cut it.
+    """
+    import re
+    from src.router.intent_capabilities import _POINT_TO_URL
+    meta = re.compile(
+        r"why (send|point|direct|route)\b|why route here|"
+        r"instead of looking up|rather than looking up|"
+        r"the reason (i|we) ", re.IGNORECASE)
+    for name, cap in _POINT_TO_URL.items():
+        m = meta.search(cap.short_message)
+        assert m is None, f"{name} explains its own routing: {m.group(0)!r}"
+
+
+def test_point_to_url_answers_stay_short():
+    """These exist to hand over a link, not to write an essay. The databases
+    one was 85 words before it was cut."""
+    from src.router.intent_capabilities import _POINT_TO_URL
+    for name, cap in _POINT_TO_URL.items():
+        words = len(cap.short_message.split())
+        assert words <= 70, f"{name} is {words} words"
+
+
+def test_point_to_url_answers_still_carry_their_link():
+    """Trimming must not take the URL with it."""
+    from src.router.intent_capabilities import _POINT_TO_URL
+    for name, cap in _POINT_TO_URL.items():
+        assert cap.canonical_url in cap.short_message, name

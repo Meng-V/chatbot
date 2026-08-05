@@ -91,18 +91,15 @@ _POINT_TO_URL: dict[str, IntentCapability] = {
         intent="databases",
         tier=CapabilityTier.POINT_TO_URL,
         canonical_url="https://libguides.lib.miamioh.edu/az/databases",
+        # 2026-08-05, operator: too wordy. Dropped the paragraph that began
+        # "Why send you there instead of looking up a specific database name?"
+        # and then explained that database names overlap and shift. That is
+        # OUR routing rationale, not something the student asked or needs --
+        # they asked where the databases are. 85 words -> 32.
         short_message=(
-            "To find articles or browse research databases, use the "
-            "library's Databases A-Z list. It's the authoritative "
-            "index of every database the library subscribes to -- "
-            "organized alphabetically and by subject -- and links "
-            "directly into each database with proper authentication.\n\n"
-            "Why send you there instead of looking up a specific "
-            "database name? Database names overlap and shift "
-            "(\"Web of Science\" vs \"Web of Knowledge\", \"PsycINFO\" "
-            "vs \"Psychology and Behavioral Sciences Collection\"); "
-            "the A-Z page disambiguates them with current names + "
-            "subject tags.\n\n"
+            "Use the library's Databases A-Z list -- every database Miami "
+            "subscribes to, listed alphabetically and by subject, with "
+            "sign-in handled for you.\n\n"
             "Databases A-Z: https://libguides.lib.miamioh.edu/az/databases"
         ),
     ),
@@ -132,10 +129,12 @@ _POINT_TO_URL: dict[str, IntentCapability] = {
             "positions, and faculty librarian positions all link out "
             "from there to the official Miami Workday job-posting "
             "system.\n\n"
-            "Employment: https://www.lib.miamioh.edu/about/organization/employment/\n\n"
-            "Why route here? Job-posting content changes constantly "
-            "and lives on Workday, not in our indexed pages. The "
-            "official page is always current."
+            "Employment: https://www.lib.miamioh.edu/about/organization/employment/"
+            # Dropped 2026-08-05 for the same reason as the databases
+            # template: "Why route here? Job-posting content changes
+            # constantly and lives on Workday, not in our indexed pages."
+            # The student is told where the jobs are in the first sentence;
+            # the rest was us justifying the link to ourselves.
         ),
     ),
 }
