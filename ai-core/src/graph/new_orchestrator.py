@@ -44,6 +44,7 @@ from dataclasses import dataclass, field, replace as _dc_replace
 from typing import Any, Callable, Optional
 
 from src.graph import facility_facts as _ff
+from src.graph import tech_checkout as _tc
 from src.agent.agent import AgentLLM, AgentOutcome, AgentRequest, run_agent
 from src.agent.tool_registry import ToolRegistry
 from src.observability.logging import bind_request_context, get_logger
@@ -1039,6 +1040,30 @@ def _run_turn(
                 tokens={"input": 0, "cached_input": 0, "output": 0},
                 fired_corrections=[],
                 agent_stopped_reason="week_hours_short_circuit",
+                latency_ms=latency_ms, cited_chunk_ids=[],
+            )
+
+    # --- 3.60. Equipment checkout ("do you lend chargers?") ---
+    # After the hours short-circuits, before Special Collections. Answers only
+    # from the equipment list on the tech-checkout page, and yields on loan
+    # periods, fees, counts and anything the list does not name -- the printing
+    # pointer's 2026-08-04 overfire (four good answers replaced by one generic
+    # one) is the failure mode this has to avoid.
+    if True:
+        _eq = _tech_checkout_short_circuit(request.user_message)
+        if _eq is not None:
+            _ans, _cites = _eq
+            latency_ms = int((time.monotonic() - turn_start) * 1000)
+            record_request(endpoint="/chat", status="tech_checkout",
+                           latency_s=latency_ms / 1000)
+            return TurnResponse(
+                answer=_ans, is_refusal=False, refusal_trigger=None,
+                citations=_cites, confidence="high",
+                intent=classification.intent, scope=scope.as_filter(),
+                model_used=model_basic,
+                tokens={"input": 0, "cached_input": 0, "output": 0},
+                fired_corrections=[],
+                agent_stopped_reason="tech_checkout_short_circuit",
                 latency_ms=latency_ms, cited_chunk_ids=[],
             )
 
@@ -5718,6 +5743,71 @@ _EQUIPMENT_ASK_RE = re.compile(
 )
 
 
+def _fetch_tech_checkout_chunks() -> list[dict]:
+    """The tech-checkout page's chunk(s), as raw property dicts, or [].
+
+    Factored out so the evidence prefetch below and the step-3.60
+    short-circuit share one query instead of each writing their own. Raises
+    nothing -- every caller treats [] as "carry on without it".
+    """
+    try:
+        from src.utils.weaviate_client import get_weaviate_client
+        from weaviate.classes.query import Filter
+        import os as _os
+
+        client = get_weaviate_client()
+        if client is None:
+            return []
+        # Do NOT close: get_weaviate_client() hands back a process-wide
+        # SINGLETON. The version of this code that lived inside
+        # _ensure_tech_checkout_evidence closed it in a finally block, which
+        # shut the shared client for every later caller in the turn. It
+        # self-healed -- the accessor's fast path calls is_ready(), catches,
+        # and rebuilds -- so it showed up only as
+        #   "The `WeaviateClient` is closed. Run `client.connect()`..."
+        # plus a full reconnect on the next retrieval. Lifecycle belongs to
+        # close_weaviate_client() at shutdown, not to a read.
+        col = client.collections.get(
+            _os.getenv("WEAVIATE_CHUNK_COLLECTION", "Chunk_current"))
+        res = col.query.fetch_objects(
+            filters=Filter.by_property("source_url").equal(
+                _TECH_CHECKOUT_URL),
+            limit=3,
+            return_properties=["chunk_id", "source_url", "text", "campus",
+                               "library", "topic"],
+        )
+        return [dict(o.properties or {}) for o in res.objects]
+    except Exception:  # noqa: BLE001 -- a lookup must never break the turn
+        log.warning("tech-checkout fetch failed", exc_info=True)
+        return []
+
+
+def _tech_checkout_short_circuit(message: str) -> "Optional[tuple[str, list[dict]]]":
+    """Answer an equipment question straight off the tech-checkout page.
+
+    The page is a single 1,460-character chunk whose payload is a two-level
+    bullet list. `_ensure_tech_checkout_evidence` already puts it in front of
+    the synthesizer -- and the synthesizer still refused about half the time,
+    because "yes, we lend graphing calculators" is not a sentence anywhere on
+    the page. It is two nested list items: `Calculators` / `  - Graphing`.
+    Measured on the 2026-08-05 gold run, `tech_charger` and
+    `tech2_calculator_borrow` both refused with the answer sitting unread in
+    their own evidence.
+
+    The equipment list is parsed out of the chunk at answer time rather than
+    held here, so this cannot name equipment the page does not list, and it
+    follows the page when the page changes. Anything unexpected -> None, which
+    is exactly the behaviour that is there today.
+    """
+    if not _tc.looks_like_equipment_question(message):
+        return None          # ~95% of turns leave without touching Weaviate
+    for props in _fetch_tech_checkout_chunks():
+        answer = _tc.tech_checkout_answer(message, str(props.get("text") or ""))
+        if answer is not None:
+            return answer
+    return None
+
+
 def _ensure_tech_checkout_evidence(
     evidence: list["EvidenceChunk"], deps: "OrchestratorDeps"
 ) -> list["EvidenceChunk"]:
@@ -5732,44 +5822,22 @@ def _ensure_tech_checkout_evidence(
         return evidence
     try:
         from src.synthesis.corrections import EvidenceChunk as _EC
-        from src.utils.weaviate_client import get_weaviate_client
-        from weaviate.classes.query import Filter
-        import os as _os
 
-        client = get_weaviate_client()
-        if client is None:
-            return evidence
-        try:
-            col = client.collections.get(
-                _os.getenv("WEAVIATE_CHUNK_COLLECTION", "Chunk_current"))
-            res = col.query.fetch_objects(
-                filters=Filter.by_property("source_url").equal(
-                    _TECH_CHECKOUT_URL),
-                limit=3,
-                return_properties=["chunk_id", "source_url", "text", "campus",
-                                   "library", "topic"],
-            )
-            extra = []
-            for o in res.objects:
-                pr = o.properties or {}
-                if not (pr.get("text") or "").strip():
-                    continue
-                extra.append(_EC(
-                    chunk_id=str(pr.get("chunk_id") or "tech-checkout"),
-                    source_url=str(pr.get("source_url") or _TECH_CHECKOUT_URL),
-                    text=str(pr.get("text") or ""),
-                    campus=pr.get("campus"), library=pr.get("library"),
-                    topic=pr.get("topic"), score=1.0,
-                ))
-            if extra:
-                log.info("prefetched tech-checkout evidence (%d chunk(s))",
-                         len(extra))
-            return extra + evidence
-        finally:
-            try:
-                client.close()
-            except Exception:  # noqa: BLE001
-                pass
+        extra = []
+        for pr in _fetch_tech_checkout_chunks():
+            if not (pr.get("text") or "").strip():
+                continue
+            extra.append(_EC(
+                chunk_id=str(pr.get("chunk_id") or "tech-checkout"),
+                source_url=str(pr.get("source_url") or _TECH_CHECKOUT_URL),
+                text=str(pr.get("text") or ""),
+                campus=pr.get("campus"), library=pr.get("library"),
+                topic=pr.get("topic"), score=1.0,
+            ))
+        if extra:
+            log.info("prefetched tech-checkout evidence (%d chunk(s))",
+                     len(extra))
+        return extra + evidence
     except Exception:  # noqa: BLE001 -- prefetch must never break the turn
         log.warning("tech-checkout prefetch failed", exc_info=True)
         return evidence
