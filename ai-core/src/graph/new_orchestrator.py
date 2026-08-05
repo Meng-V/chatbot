@@ -761,6 +761,10 @@ def _run_turn(
             # here costs the patron money. The synthesizer had the policy
             # page and still said "any Miami University library".
             ("ill_return", _ill_return_answer),
+            # Before fee_policy for the same reason as ill_return: the agent
+            # answered this one with the HOME DELIVERY page's day counts,
+            # which are real numbers for a different service.
+            ("ill_turnaround", _ill_turnaround_answer),
             # Building facts the operator gave us that the website does not
             # publish (src/graph/facility_facts.py). BEFORE the generic
             # branches: the agent used to refuse all of these, and a refusal
@@ -4088,12 +4092,76 @@ _ILL_RETURN_RE = re.compile(
 )
 
 
+_ILL_TURNAROUND_RE = re.compile(
+    r"\b(how\s+long|how\s+many\s+days|how\s+fast|how\s+quick\w*|when\s+will|"
+    r"turn\s*around|turnaround|wait\s+time|delivery\s+time|take)\b"
+    r"[^.?!]{0,45}\b(ill|interlibrary|inter-library|ohiolink|searchohio)\b"
+    r"|\b(ill|interlibrary|inter-library|ohiolink|searchohio)\b[^.?!]{0,45}"
+    r"\b(how\s+long|take|takes|arrive|arrives|get\s+here|show\s+up|"
+    r"turn\s*around|turnaround|delivery\s+time|wait\s+time)\b",
+    re.IGNORECASE,
+)
+
+
+def _ill_turnaround_answer(message: str) -> "Optional[tuple[str, list[dict]]]":
+    """"How long does ILL take?" -- without inventing a number of days.
+
+    The 2026-08-05 run scored this WRONG (gold ill_turnaround_no_guess). The
+    agent answered with "the usual USPS Media Mail time of 2-8 business days"
+    plus "three to seven or more days" -- real figures, but they belong to the
+    HOME DELIVERY page, a different service. Retrieval surfaced the page with
+    concrete day counts and the synthesizer used them, so the answer read as
+    an ILL turnaround estimate built out of campus-delivery numbers.
+
+    What the policy page actually states, and all it states:
+      * "Loan periods for items received by the Miami University Libraries are
+         determined by the owning institution."
+      * OhioLINK items "may be renewed up to 2 more six-week times unless
+         another patron has requested that item."
+
+    It states no turnaround at all. So this names no number of days, and does
+    not repeat gold's "1 week media" figure either -- that phrase is not in the
+    corpus and would be the same mistake in the other direction.
+    """
+    m = message or ""
+    if not _ILL_TURNAROUND_RE.search(m):
+        return None
+    if _ILL_RETURN_RE.search(m):
+        return None          # a return question, which has its own answer
+    return (
+        "There is no published turnaround time -- how long a request takes "
+        "depends on which library sends the item and how far it travels, so I "
+        "would rather not guess at a number of days.\n\n"
+        "What the policy does say is that the **loan period** is set by the "
+        "institution that owns the item, not by Miami [1]. OhioLINK items run "
+        "on six-week terms and can be renewed up to two more six-week periods "
+        "unless someone else has requested them [1].\n\n"
+        "For a specific request that is already placed, the interlibrary loan "
+        "office can tell you where it is; you will also get an email when it "
+        "is ready for pickup.",
+        [{"n": 1, "url": _LOAN_OHIOLINK_ILL_URL,
+          "snippet": "Miami University Libraries — Loan Periods: OhioLINK, "
+                     "SearchOHIO and Interlibrary Loan"}],
+    )
+
+
 def _ill_return_answer(message: str) -> "Optional[tuple[str, list[dict]]]":
     """Where an OhioLINK / ILL item must be returned.
 
     States the rule the policy page states, and no more: the borrowing
     library's bookdrop. It deliberately does NOT say "any Miami library",
     which is what the synthesizer produced and what the page contradicts.
+
+    2026-08-05: this function used to end "...returning one late carries a
+    daily overdue charge, so it is worth the walk." The cited page says the
+    OPPOSITE -- "Although there are no per diem overdue charges, the owning
+    institution may issue Miami University a non-refundable bill for
+    replacement charges for items kept past the due date/loan period or lost."
+    So a short-circuit written to stop the model inventing a fee was itself
+    hardcoding one, deterministically, on every ILL-return question, with a
+    citation to the page that contradicts it. Gold fs_ill_return scored WRONG
+    on the 2026-08-05 run and the judge only caught the invented location.
+    The consequence it does state now is the one the page states.
     """
     m = message or ""
     if not _ILL_RETURN_RE.search(m):
@@ -4102,9 +4170,10 @@ def _ill_return_answer(message: str) -> "Optional[tuple[str, list[dict]]]":
         "Return it to the library you borrowed it from -- its bookdrop, "
         "inside or outside, is fine. OhioLINK and SearchOHIO items in "
         "particular have to go back to that same library rather than to "
-        "whichever one is closest, and returning one late carries a daily "
-        "overdue charge, so it is worth the walk. The loan-periods policy "
-        "page has the current figures [1].",
+        "whichever one is closest. There is no per-day overdue charge on "
+        "these, but if an item is kept past its due date or lost, the owning "
+        "institution can bill Miami for a replacement and that bill is passed "
+        "on to you -- so it is still worth the walk [1].",
         [{"n": 1, "url": _LOAN_OHIOLINK_ILL_URL,
           "snippet": "Miami University Libraries — Loan Periods: OhioLINK, "
                      "SearchOHIO and Interlibrary Loan"}],

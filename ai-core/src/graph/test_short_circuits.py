@@ -27,6 +27,7 @@ from src.graph.new_orchestrator import (
     _OPEN_NOW_RE,
     _open_state,
     _ill_return_answer,
+    _ill_turnaround_answer,
     _subject_liaison_short_circuit,
     _CANCEL_HELP_MARKER,
     _dismissal_answer,
@@ -2403,9 +2404,24 @@ def test_liaison_answer_omits_the_phone_cleanly_when_there_is_none():
 #   "OhioLINK items should be returned to the bookdrop inside or outside the
 #    library from which they were borrowed."
 #
-# and the same page lists $0.50/day overdue plus $50 past 30 days. A patron
-# who follows the wrong answer gets charged for it, which is why this is
-# deterministic rather than synthesised -- the same call as the fines figure.
+# A patron who follows the wrong answer carries the item to the wrong
+# building, which is why this is deterministic rather than synthesised.
+#
+# CORRECTION, 2026-08-05. This comment used to assert that "the same page
+# lists $0.50/day overdue plus $50 past 30 days". That figure appears NOWHERE
+# in the corpus -- grep the whole index for "0.50", "/day" or "$50" and it
+# returns nothing. It was invented, written into this comment as the
+# justification, and then hardcoded into the answer as "returning one late
+# carries a daily overdue charge". The page it cites says the opposite:
+#
+#   "Although there are no per diem overdue charges, the owning institution
+#    may issue Miami University a non-refundable bill for replacement charges
+#    for items kept past the due date/loan period or lost."
+#
+# So a short-circuit written to stop the model inventing things was itself
+# inventing a fee, deterministically, on every ILL-return question, with a
+# citation to the page that contradicts it. Being deterministic does not make
+# an answer grounded -- it only makes a wrong one repeatable.
 
 
 def test_ill_return_names_the_borrowing_library_not_any_library():
@@ -2415,6 +2431,31 @@ def test_ill_return_names_the_borrowing_library_not_any_library():
     assert "any miami" not in low, "the wrong answer this exists to prevent"
     assert "bookdrop" in low or "book drop" in low
     assert cites[0]["url"].endswith("loan-periods-ohiolink-ill")
+
+
+def test_ill_return_does_not_claim_a_daily_overdue_charge():
+    """The cited page says there are NO per diem overdue charges on these."""
+    low = _ill_return_answer("Where do I return an ILL book?")[0].lower()
+    for banned in ("daily overdue", "overdue charge per",
+                   "per day", "a day", "each day", "0.50", "$50"):
+        assert banned not in low, f"claims a fee the page denies: {banned!r}"
+    assert "no per-day overdue charge" in low or "no per diem" in low
+
+
+def test_ill_return_states_the_consequence_the_page_actually_states():
+    """Not "no consequence" either -- the page says the owning institution can
+    bill for a replacement and that bill is passed to the patron."""
+    low = _ill_return_answer("where do i return my ILL book")[0].lower()
+    assert "replacement" in low
+    assert "past its due date" in low or "past the due date" in low
+
+
+def test_ill_return_quotes_no_dollar_figure_at_all():
+    """The operator rule, already documented on _fee_policy_answer: quote an
+    amount only where the page states one. The ILL page states none."""
+    import re
+    out = _ill_return_answer("Where do I return an interlibrary loan book?")[0]
+    assert not re.search(r"\$\s?\d", out), "no dollar figure is in the source"
 
 
 def test_ill_return_covers_the_phrasings_patrons_use():
@@ -3131,3 +3172,55 @@ def test_no_out_of_scope_gold_case_gets_rescued():
                 or _CLOSE_TODAY_RE.search(c.question))
                and not _NON_LIBRARY_THING_RE.search(c.question))
         assert not hit, f"{c.id}: {c.question}"
+
+
+# --- ILL turnaround: no number of days -----------------------------------
+#
+# gold ill_turnaround_no_guess scored WRONG on 2026-08-05. The agent answered
+# "the usual USPS Media Mail time of 2-8 business days" plus "three to seven
+# or more days" -- real figures lifted from the HOME DELIVERY page, a
+# different service. The ILL policy page states no turnaround at all.
+
+
+def test_ill_turnaround_names_no_number_of_days():
+    import re
+    out, _ = _ill_turnaround_answer("How long does ILL take?")
+    assert not re.search(r"\b\d+\s*(-|to|–)\s*\d+\s*(business\s+)?days?\b", out, re.I)
+    assert "media mail" not in out.lower(), "that figure belongs to home delivery"
+    for banned in ("2-8", "2–8", "three to seven"):
+        assert banned not in out
+
+
+def test_ill_turnaround_says_the_owning_institution_sets_the_loan_period():
+    out, cites = _ill_turnaround_answer("how long does an interlibrary loan take")
+    low = out.lower()
+    assert "owns the item" in low or "owning institution" in low
+    assert "six-week" in low
+    assert cites[0]["url"].endswith("loan-periods-ohiolink-ill")
+
+
+def test_ill_turnaround_does_not_repeat_golds_unsourced_media_figure():
+    """gold's note mentions "1 week media". That phrase is not in the corpus,
+    so stating it would be the same error in the other direction."""
+    low = _ill_turnaround_answer("How long does ILL take?")[0].lower()
+    assert "one week" not in low and "1 week" not in low
+
+
+def test_ill_turnaround_covers_the_phrasings_patrons_use():
+    for q in ("How long does ILL take?",
+              "how long does an interlibrary loan take",
+              "how many days for an ohiolink book",
+              "when will my interlibrary loan arrive",
+              "whats the wait time for ILL",
+              "how fast is searchohio"):
+        assert _ill_turnaround_answer(q) is not None, q
+
+
+def test_ill_turnaround_yields_to_the_return_question():
+    """"Where do I return an ILL book" must keep its own answer."""
+    for q in ("Where do I return an interlibrary loan book?",
+              "where do i return my ILL book",
+              "How do I request an interlibrary loan?",
+              "how long can i keep a Miami library book",
+              "how long does printing take"):
+        assert _ill_turnaround_answer(q) is None, q
