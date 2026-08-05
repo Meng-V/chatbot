@@ -237,3 +237,18 @@ data/SERVICE_PAUSED
 data/watchdog_state.json
 
 ai-core/data/raw/*.csv
+
+# Raw LibChat transcript exports -- PATRON PII, NEVER IN GIT.
+#
+# The rule above only covered `ai-core/data/raw/`, but the exports actually
+# landed in `data/raw/` at the repo root, so it never matched and
+# tran_raw_2023/2024/2025.csv sat in a PUBLIC GitHub repo from 2026-07-16 to
+# 2026-08-05. Every row carries a patron name and IP; 230 carry an email.
+# These patterns are unanchored on purpose -- they match at any depth, so a
+# future export cannot slip in by landing one directory over.
+**/data/raw/*.csv
+**/tran_raw*.csv
+**/tran_raw*.tsv
+**/tran_raw*.xlsx
+# Live transcripts now live OUTSIDE the working tree, at
+# /opt/chatbot-private-data/libchat-transcripts/ (chmod 700).
