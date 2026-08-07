@@ -168,6 +168,29 @@ def _cosine(a: list[float], b: list[float]) -> float:
     return dot / (math.sqrt(na) * math.sqrt(nb))
 
 
+# `math.sumprod` is a C-level dot product (3.12+). The pure-python fallback
+# keeps this importable on an older interpreter; it is the same arithmetic,
+# just slower.
+try:
+    _dot = math.sumprod                      # type: ignore[attr-defined]
+except AttributeError:                       # pragma: no cover -- 3.11 and older
+    def _dot(a, b):                          # type: ignore[misc]
+        return sum(x * y for x, y in zip(a, b))
+
+
+def _unit(v: "list[float]") -> "Optional[list[float]]":
+    """`v` scaled to length 1, or None if it has no length.
+
+    cosine(q, e) == dot(q/|q|, e/|e|), so normalising both sides ONCE turns
+    the per-comparison cost from three multiply-accumulates plus two square
+    roots into a single dot product. Same number, ~10x less work.
+    """
+    n = math.sqrt(_dot(v, v))
+    if n == 0.0:
+        return None
+    return [x / n for x in v]
+
+
 # --- Classifier -----------------------------------------------------------
 
 
@@ -185,6 +208,42 @@ class IntentKNN:
     exemplars: list[Exemplar]
     embedder: Embedder
     top_k: int = 5
+
+    def __post_init__(self) -> None:
+        """Pre-normalise every exemplar once, at construction.
+
+        MEASURED 2026-08-06 on the production box: a turn cost 2.4s of CPU
+        and `_cosine` was 88% of it -- 5,600 exemplars x 3072 dims, scored in
+        a pure-python loop, on every single question. That one loop was the
+        whole capacity ceiling: 20 simultaneous students waited 46s, and 40
+        started timing out, because the GIL serialises it onto one core.
+
+        The docstring below still says "~350 exemplars ... a one-millisecond
+        inner loop". That was true when it was written. The set grew 16x and
+        the assumption stopped holding, quietly.
+
+        `exemplars` must not be mutated after construction -- nothing does,
+        and this cache would go stale if anything started.
+
+        Normalised IN PLACE rather than into a second list. Keeping both
+        copies cost ~600MB with 5,600 x 3072 exemplars and pushed the service
+        to 1775MB against systemd's MemoryHigh=1800M -- 25MB of headroom,
+        which is no headroom. Cosine is scale-invariant, so a normalised
+        `ex.vector` still yields the same cosine for anything else that reads
+        it; `_cosine` is unaffected. As of this change nothing else in src/
+        reads `.vector` at all.
+
+        Exemplar is frozen, so this mutates the list contents (allowed)
+        rather than rebinding the attribute (not allowed).
+        """
+        self._unit_vectors: list[Optional[list[float]]] = []
+        for ex in self.exemplars:
+            u = _unit(ex.vector)
+            if u is None:
+                self._unit_vectors.append(None)
+                continue
+            ex.vector[:] = u                 # in place: no second copy
+            self._unit_vectors.append(ex.vector)
 
     def classify(self, user_message: str) -> Classification:
         """Classify a single user message.
@@ -205,10 +264,24 @@ class IntentKNN:
             )
 
         query_vec = self.embedder(user_message)
-        scored = [
-            (ex.intent, _cosine(query_vec, ex.vector), ex.text)
-            for ex in self.exemplars
-        ]
+        # Normalise the query ONCE, then every comparison is a bare dot
+        # product. The old code recomputed |query| inside the loop -- 5,600
+        # times per turn -- and |exemplar| on every turn for every exemplar.
+        q_unit = _unit(query_vec)
+        if q_unit is None:
+            scored = [(ex.intent, 0.0, ex.text) for ex in self.exemplars]
+        else:
+            qd = len(q_unit)
+            scored = []
+            for ex, ev in zip(self.exemplars, self._unit_vectors):
+                if ev is None:
+                    scored.append((ex.intent, 0.0, ex.text))
+                    continue
+                if len(ev) != qd:
+                    raise ValueError(
+                        f"vector dim mismatch: {qd} vs {len(ev)}"
+                    )
+                scored.append((ex.intent, _dot(q_unit, ev), ex.text))
         # Sort by score descending; tiebreak by exemplar index for
         # determinism (otherwise tied-score reorderings flap).
         scored.sort(key=lambda t: (-t[1],))
