@@ -238,10 +238,25 @@ async def lifespan(app: FastAPI):
 
 
 def _health_alert_body(results: list) -> str:
-    """Plain-text dependency status block for an alert email."""
+    """Plain-text dependency status block for an alert email.
+
+    Carries `detail` and `latency_ms`. Without them the email said only
+    "openai: unhealthy", and on 2026-08-07 that cost the operator a morning:
+    eight DOWN alerts, OpenAI's status page clean, and no way to tell from
+    the mail whether it was a timeout, a 401, or a 429. The probe already
+    records the reason -- it was simply being dropped on the floor here.
+    """
     lines = ["Smart Chatbot dependency health (app.lib.miamioh.edu):", ""]
     for r in results:
-        lines.append(f"  [{'OK  ' if r.passed else 'DOWN'}] {r.name}: {r.status}")
+        tag = "OK  " if r.passed else "DOWN"
+        line = f"  [{tag}] {r.name}: {r.status}"
+        ms = getattr(r, "latency_ms", None)
+        if ms is not None:
+            line += f" ({ms}ms)"
+        detail = getattr(r, "detail", None)
+        if detail:
+            line += f" -- {detail}"
+        lines.append(line)
     lines.append("")
     lines.append("Live status: curl http://localhost:8081/health/ready")
     return "\n".join(lines)

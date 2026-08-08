@@ -177,29 +177,55 @@ def make_openai_probe(ping_fn: Callable[[], Awaitable[Any]]) -> Probe:
     """
 
     async def probe() -> ProbeResult:
+        """Two attempts, because one dropped connection is not an outage.
+
+        MEASURED 2026-08-07, after the operator was emailed "openai DOWN"
+        eight times in a day while OpenAI's status page was clean and all
+        332 real API calls that day succeeded:
+
+          successful probes   p50 ~390ms  (against the budget below)
+          failed probes       always the full timeout, never in between
+
+        The distribution is bimodal, not a slowdown -- roughly one new
+        connection in ten stalls during DNS/TCP/TLS setup and never
+        recovers, while the very next attempt to the SAME IP returns in
+        90ms. The probe opens a fresh httpx client every call, so it wears
+        that setup cost on every single check.
+
+        The real client does not have this problem: OpenAI(timeout=30.0,
+        max_retries=2) with a pooled connection absorbs the same jitter,
+        which is why students saw nothing while the operator's inbox filled
+        up. One retry brings the probe's failure odds from ~1-in-10 to
+        ~1-in-100, which is what the alert threshold assumes.
+        """
+        attempts = 2
+        last_detail = ""
         start = time.monotonic()
-        try:
-            # 5s budget -- OpenAI cold-start can be ~2-3s.
-            await asyncio.wait_for(ping_fn(), timeout=5.0)
-            return ProbeResult(
-                name="openai",
-                status="healthy",
-                latency_ms=int((time.monotonic() - start) * 1000),
-            )
-        except asyncio.TimeoutError:
-            return ProbeResult(
-                name="openai",
-                status="unhealthy",
-                latency_ms=int((time.monotonic() - start) * 1000),
-                detail="timeout (>5s)",
-            )
-        except Exception as e:
-            return ProbeResult(
-                name="openai",
-                status="unhealthy",
-                latency_ms=int((time.monotonic() - start) * 1000),
-                detail=type(e).__name__ + ": " + str(e)[:120],
-            )
+        for attempt in range(1, attempts + 1):
+            try:
+                # 10s, not 5s. p50 is ~390ms, so this is still ~25x headroom;
+                # 5s was tight enough that an occasional slow TLS handshake
+                # alone could trip it.
+                await asyncio.wait_for(ping_fn(), timeout=10.0)
+                return ProbeResult(
+                    name="openai",
+                    status="healthy",
+                    latency_ms=int((time.monotonic() - start) * 1000),
+                    detail=None if attempt == 1 else f"ok on attempt {attempt}",
+                )
+            except asyncio.TimeoutError:
+                last_detail = f"timeout (>10s) on attempt {attempt}/{attempts}"
+            except Exception as e:  # noqa: BLE001
+                last_detail = (f"{type(e).__name__}: {str(e)[:120]} "
+                               f"(attempt {attempt}/{attempts})")
+            if attempt < attempts:
+                await asyncio.sleep(1.0)
+        return ProbeResult(
+            name="openai",
+            status="unhealthy",
+            latency_ms=int((time.monotonic() - start) * 1000),
+            detail=last_detail,
+        )
 
     return probe
 
