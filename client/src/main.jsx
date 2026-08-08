@@ -19,7 +19,7 @@ ReactDOM.createRoot(document.getElementById('root')).render(
       <MessageContextProvider>
         <SocketContextProvider>
           <App />
-          <Toaster position="bottom-left" richColors />
+          <Toaster position="bottom-left" richColors closeButton />
         </SocketContextProvider>
       </MessageContextProvider>
     </TooltipProvider>

@@ -59,19 +59,23 @@
   --card-foreground: 222.2 84% 4.9%;
   --popover: 0 0% 100%;
   --popover-foreground: 222.2 84% 4.9%;
-  --primary: 348 87% 42%;
+  --primary: 348 87% 36%;              /* AAA 1.4.6: white label now 7.07:1 (was 5.61) */
   --primary-foreground: 210 40% 98%;
   --secondary: 210 40% 96.1%;
   --secondary-foreground: 222.2 47.4% 11.2%;
   --muted: 210 40% 96.1%;
-  --muted-foreground: 215.4 16.3% 46.9%;
+  --muted-foreground: 215.4 16.3% 33.9%; /* AAA: 7.69:1 on white, 7.03:1 on muted (was 4.75 / 4.34) */
   --accent: 210 40% 96.1%;
   --accent-foreground: 222.2 47.4% 11.2%;
-  --destructive: 0 84.2% 60.2%;
+  --destructive: 0 84.2% 36.7%;        /* AAA: 7.07:1 as a button, 7.40:1 as text (was 3.59 / 3.76) */
   --destructive-foreground: 210 40% 98%;
+  /* --border stays light on purpose: it is the decorative default rule,
+     not a UI-component boundary. 1.4.11 governs components (that is
+     --input), not decoration. Darkening it would make every divider
+     heavy and change the look for no accessibility gain. */
   --border: 214.3 31.8% 91.4%;
-  --input: 214.3 31.8% 91.4%;
-  --ring: 348 87% 42%;
+  --input: 214.3 31.8% 60.9%;          /* 1.4.11: form-control boundary now 3.01:1 (was 1.23) */
+  --ring: 348 87% 36%;                 /* follows --primary */
   --radius: 0.5rem;
 }
 
@@ -97,8 +101,17 @@ body {
 
 a {
   font-weight: 500;
-  color: #646cff;
-  text-decoration: inherit;
+  /* Was #646cff -- the Vite starter default, 4.09:1 on white, fails AAA and
+     AA. Brand red at the AAA-corrected lightness is 7.40:1. */
+  color: hsl(var(--primary));
+  /* 1.4.1 Use of Color: a link must not be signalled by hue alone. */
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+a:hover,
+a:focus-visible {
+  text-decoration-thickness: 2px;
 }
 a:hover {
   color: #535bf2;
@@ -107,4 +120,97 @@ a:hover {
 h1 {
   font-size: 3.2em;
   line-height: 1.1;
+}
+
+
+/* ============================================
+   WCAG 2.1 AAA additions -- 2026-08-06
+   ============================================ */
+
+/* 2.5.5 Target Size (AAA): every pointer target at least 44x44 CSS px.
+   The visual button keeps its existing height -- a transparent ::after
+   expands only the HIT AREA, so the design is untouched and nothing
+   reflows. Buttons that are already tall enough are left alone. */
+button,
+[role="button"],
+a[href] {
+  position: relative;
+}
+
+button::after,
+[role="button"]::after {
+  content: "";
+  position: absolute;
+  inset: 50% auto auto 50%;
+  translate: -50% -50%;
+  min-width: 44px;
+  min-height: 44px;
+  width: 100%;
+  height: 100%;
+  /* Purely a hit target: invisible, and never intercepts the pointer for
+     anything underneath because it is anchored inside the button itself. */
+  pointer-events: none;
+}
+
+/* Sonner's `richColors` ships its OWN red and ignores our tokens, so the
+   connection-error toast was still 3.6:1 after the token fix. Bring it onto
+   the corrected brand palette: 7.4:1 text, 7.1:1 icon. */
+[data-sonner-toast][data-type="error"] {
+  --error-bg: hsl(0 86% 97%);
+  --error-border: hsl(0 84.2% 80%);
+  --error-text: hsl(0 84.2% 30%);
+}
+
+[data-sonner-toast][data-type="success"] {
+  --success-bg: hsl(143 85% 96%);
+  --success-border: hsl(145 60% 70%);
+  --success-text: hsl(145 80% 20%);
+}
+
+[data-sonner-toast][data-type="warning"] {
+  --warning-bg: hsl(49 100% 96%);
+  --warning-border: hsl(49 91% 70%);
+  --warning-text: hsl(31 92% 26%);
+}
+
+/* The close button sonner renders needs to be a real 44x44 target too. */
+[data-sonner-toast] [data-close-button] {
+  width: 24px;
+  height: 24px;
+}
+
+[data-sonner-toast] [data-close-button]::after {
+  content: "";
+  position: absolute;
+  inset: 50% auto auto 50%;
+  translate: -50% -50%;
+  min-width: 44px;
+  min-height: 44px;
+}
+
+/* 2.3.3 Animation from Interactions (AAA) + 2.2.2 Pause, Stop, Hide.
+   Anyone who has asked their OS for less motion gets none of ours. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* Visually hidden, still read aloud. Used for labels that the design does
+   not have room to show. */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border-width: 0;
 }

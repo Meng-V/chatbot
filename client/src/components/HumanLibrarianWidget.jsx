@@ -81,8 +81,9 @@ const UserInfoForm = ({ onFormSubmit, chatHistory }) => {
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
       <div>
-        <Label className="required">Name</Label>
+        <Label htmlFor="hl-name" className="required">Name</Label>
         <Input
+          id="hl-name"
           placeholder="Enter your name..."
           value={name}
           onChange={(e) => setName(e.target.value)}
@@ -91,8 +92,9 @@ const UserInfoForm = ({ onFormSubmit, chatHistory }) => {
         />
       </div>
       <div>
-        <Label className="required">Email</Label>
+        <Label htmlFor="hl-email" className="required">Email</Label>
         <Input
+          id="hl-email"
           type="email"
           placeholder="Enter your email..."
           value={email}

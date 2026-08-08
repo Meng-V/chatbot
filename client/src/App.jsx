@@ -64,10 +64,19 @@ const App = () => {
       socketContextValues.attemptedConnection
     ) {
       toast.error('Connection Error', {
+        // A stable id makes sonner REPLACE the toast instead of stacking a
+        // new one. This effect re-runs whenever any dependency changes while
+        // the socket is down, which is how three identical "Connection Error"
+        // cards ended up on screen at once.
+        id: 'connection-error',
         description: askUsStatus.isOpen
           ? 'The Smart Chatbot is currently not available. Please talk to a human librarian during business hours or create a ticket for help.'
           : 'The Smart Chatbot is currently not available. Please create a ticket and we\'ll get back to you.',
-        duration: 9000,
+        // Persistent, not timed. The condition it reports does not go away
+        // after nine seconds, and WCAG 2.2.1 (Timing Adjustable, Level A)
+        // wants content that disappears on a timer to be dismissible or
+        // extendable. The close button on <Toaster> is how it is dismissed.
+        duration: Infinity,
       });
     }
   }, [

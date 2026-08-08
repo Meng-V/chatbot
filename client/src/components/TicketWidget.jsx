@@ -147,8 +147,9 @@ const TicketWidget = () => {
   return (
     <form onSubmit={handleTicketSubmit} className="space-y-4">
       <div>
-        <Label>Name</Label>
+        <Label htmlFor="ticket-name">Name</Label>
         <Input
+          id="ticket-name"
           placeholder="Enter your name..."
           value={name}
           onChange={(e) => setName(e.target.value)}
@@ -220,8 +221,9 @@ const TicketWidget = () => {
         />
       </div>
       <div>
-        <Label>Email</Label>
+        <Label htmlFor="ticket-email">Email</Label>
         <Input
+          id="ticket-email"
           placeholder="Enter your email..."
           value={email}
           onChange={(e) => setEmail(e.target.value)}

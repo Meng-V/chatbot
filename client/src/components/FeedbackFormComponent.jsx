@@ -67,7 +67,11 @@ const FeedbackFormComponent = () => {
             <div className="space-y-4">
               <div>
                 <Label>Rate this conversation</Label>
-                <div className="flex gap-0.5 mt-2">
+                {/* A radio whose only content is an icon has no accessible
+                    name -- a screen reader announces "radio button" and
+                    nothing else. Each one is named below, and the group is
+                    named here. */}
+                <div className="flex gap-0.5 mt-2" role="radiogroup" aria-label="Rate this answer, 1 to 5 stars">
                   {[...Array(5)].map((_, index) => {
                     const ratingValue = index + 1;
                     return (
@@ -80,11 +84,14 @@ const FeedbackFormComponent = () => {
                         <input
                           type="radio"
                           name="rating"
+                          aria-label={`${ratingValue} star${ratingValue === 1 ? '' : 's'}`}
+                          checked={rating === ratingValue}
                           onChange={() => handleRating(ratingValue)}
                           value={ratingValue}
                           className="sr-only"
                         />
                         <Star
+                          aria-hidden="true"
                           className={`h-5 w-5 transition-colors duration-200 ${
                             ratingValue <= (hover || rating)
                               ? 'fill-yellow-400 text-yellow-400'
@@ -97,8 +104,9 @@ const FeedbackFormComponent = () => {
                 </div>
               </div>
               <div>
-                <Label>Details</Label>
+                <Label htmlFor="feedback-details">Details</Label>
                 <Textarea
+          id="feedback-details"
                   placeholder="Enter details about your rating..."
                   value={details || ''}
                   onChange={(e) => setDetails(e.target.value)}

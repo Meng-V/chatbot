@@ -128,8 +128,13 @@ const ChatBotComponent = ({ askUsStatus = { isOpen: false, hoursToday: null } })
             <span className="font-bold text-blue-700">
               Talk to a Human Librarian
             </span>
-            <Button size="xs" variant="ghost" onClick={() => setWidgetVisible(false)}>
-              ✕
+            <Button
+              size="xs"
+              variant="ghost"
+              aria-label="Close the human librarian panel"
+              onClick={() => setWidgetVisible(false)}
+            >
+              <span aria-hidden="true">✕</span>
             </Button>
           </div>
           <HumanLibrarianWidget />
@@ -143,15 +148,33 @@ const ChatBotComponent = ({ askUsStatus = { isOpen: false, hoursToday: null } })
             <span className="font-bold text-orange-700">
               Submit a Ticket
             </span>
-            <Button size="xs" variant="ghost" onClick={() => setShowTicketForm(false)}>
-              ✕
+            <Button
+              size="xs"
+              variant="ghost"
+              aria-label="Close the ticket form"
+              onClick={() => setShowTicketForm(false)}
+            >
+              <span aria-hidden="true">✕</span>
             </Button>
           </div>
           <OfflineTicketWidget />
         </div>
       )}
 
-      <div ref={chatRef} className="chat">
+      {/* role="log" + aria-live: without this a screen-reader user sends a
+          question and never hears the answer -- nothing announces it.
+          "polite" so it waits for a pause instead of cutting the user off;
+          aria-atomic=false so only the NEW message is read, not the whole
+          transcript again on every reply. */}
+      <div
+        ref={chatRef}
+        className="chat"
+        role="log"
+        aria-live="polite"
+        aria-atomic="false"
+        aria-relevant="additions text"
+        aria-label="Conversation with the Smart Chatbot"
+      >
         <div className="flex flex-col items-start gap-4">
           {messageContextValues.message.map((message, index) => {
             const adjustedMessage =
@@ -280,7 +303,14 @@ const ChatBotComponent = ({ askUsStatus = { isOpen: false, hoursToday: null } })
 
       <form onSubmit={handleFormSubmit}>
         <div className="flex gap-3">
+          {/* A placeholder is not a label: it vanishes on the first keystroke
+              and is not reliably exposed as the accessible name. Real label,
+              visually hidden so the design is unchanged. */}
+          <label htmlFor="chat-message-input" className="sr-only">
+            Type your message to the Smart Chatbot
+          </label>
           <Input
+            id="chat-message-input"
             value={messageContextValues.inputMessage}
             onChange={(e) => messageContextValues.setInputMessage(e.target.value)}
             placeholder="Type your message..."
