@@ -328,6 +328,12 @@ LIBRARY_HOST_PREFIXES: Final[tuple[str, ...]] = (
     # Found 2026-08-03 while auditing which patron topics the corpus covers:
     # special collections had zero chunks, and this was why.
     "spec.",
+    # The staff-written FAQ (libanswers.lib.miamioh.edu). Ingested from
+    # its API rather than crawled -- see etl/libanswers.py -- but the
+    # host still has to pass this filter, because the URLs go into the
+    # citation allowlist and the answer validator rejects any URL that
+    # is not in it. Added 2026-08-08.
+    "libanswers.",
 )
 
 LIBRARY_PATH_SUBSTRINGS: Final[tuple[str, ...]] = (

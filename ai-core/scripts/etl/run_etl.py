@@ -63,6 +63,7 @@ from scripts.etl import (  # noqa: E402  (sys.path mutation above)
     discover,
     extract,
     gate,
+    libanswers,
     upsert,
 )
 
@@ -109,6 +110,19 @@ class Pipeline:
     update_allowlist: AllowlistFn
     preview: Any = None
     discover_fn: Callable[[], list[discover.DiscoveredUrl]] = discover.discover
+    extra_docs_fn: Optional[
+        Callable[[], list[tuple[extract.ExtractedDoc, classify.DocMetadata]]]
+    ] = None
+    """Sources that arrive as finished, already-classified documents
+    instead of as URLs to crawl -- today just the LibAnswers FAQ API.
+
+    They skip fetch, extract AND classify because all three are
+    heuristics for arbitrary scraped HTML: extract rescues prose from
+    page chrome, classify infers topic from URL shape. A source that
+    hands over structured question/answer pairs with their own topic
+    labels has better answers to both than the heuristics would guess.
+    See etl/libanswers.py. Defaults to None so tests and dry runs never
+    touch the network for it."""
 
 
 def _default_fetch(url: str) -> FetchResult:
@@ -368,6 +382,32 @@ def run(
         meta = classify.classify(canon_url, doc.body_text)
         classified_docs.append((doc, meta))
 
+    # 4b. Sources that hand us finished documents. These skip fetch and
+    # extract but join the run at exactly the same point as a crawled
+    # page, so chunking, embedding, tombstoning and the citation
+    # allowlist all treat them identically -- in particular they must be
+    # in `seen_urls`, or the tombstone step would delete them as
+    # disappeared the moment they were written.
+    if pipeline.extra_docs_fn is not None:
+        try:
+            extra = pipeline.extra_docs_fn()
+        except Exception as exc:  # noqa: BLE001
+            # A FAQ API outage must not take the whole site crawl down
+            # with it; record it where the diff report shows failures.
+            logger.warning("extra document source failed: %s", exc)
+            report.fetch_failures.append(("libanswers-api", str(exc)))
+            extra = []
+        for doc, meta in extra:
+            if doc.url in seen_urls:
+                continue
+            seen_urls.add(doc.url)
+            seen_for_allowlist.append((doc.url, 200, "seed", "text/html"))
+            report.fetched_url_count += 1
+            report.extracted_doc_count += 1
+            classified_docs.append((doc, meta))
+        report.discovered_url_count += len(extra)
+        logger.info("extra documents: %d", len(extra))
+
     # 5-6. Chunk (dedupe happens at upsert step against existing index)
     all_chunks: list[chunker.Chunk] = []
     for doc, meta in classified_docs:
@@ -471,6 +511,7 @@ def _build_prod_pipeline() -> Pipeline:
         upsert_chunks=upsert.make_upsert_step(weaviate),
         tombstone=upsert.make_tombstone_step(weaviate),
         update_allowlist=upsert.make_allowlist_step(urlseen),
+        extra_docs_fn=libanswers.load,
     )
 
 
@@ -604,6 +645,10 @@ def main() -> int:
         tombstone=_default_tombstone,
         update_allowlist=_default_allowlist,
         preview=_default_preview,
+        # Read-only, same as the crawl: prepare has to see this source or
+        # the diff the operator approves would not describe the corpus
+        # that apply then writes.
+        extra_docs_fn=libanswers.load,
     )
 
     try:

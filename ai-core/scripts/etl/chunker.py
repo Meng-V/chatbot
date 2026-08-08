@@ -133,10 +133,13 @@ def chunk_document(
     position = 0
     prev_tail = ""  # overlap-prepend material from previous emitted chunk
 
+    min_tokens = (config.CHUNK_MIN_TOKENS if doc.min_chunk_tokens is None
+                  else doc.min_chunk_tokens)
+
     def emit(text_pieces: list[str]) -> None:
         nonlocal position, prev_tail
         body = (prev_tail + " " + " ".join(text_pieces)).strip()
-        if _approximate_tokens(body) < config.CHUNK_MIN_TOKENS:
+        if _approximate_tokens(body) < min_tokens:
             return
         ch = _content_hash(body)
         chunks.append(
@@ -155,9 +158,21 @@ def chunk_document(
             )
         )
         position += 1
-        # Trim prev_tail to overlap_tokens worth of trailing chars.
+        # Trim prev_tail to overlap_tokens worth of trailing chars, then
+        # advance to the next word boundary.
+        #
+        # A raw character slice cuts whatever it lands in the middle of.
+        # When that is a URL the next chunk opens with
+        # "//libanswers.lib.miamioh.edu/faq/163330)" -- a fragment that
+        # still looks like a link, so a model retrieving only that chunk
+        # can hand a student a broken one. Found 2026-08-08 while
+        # indexing the FAQs, whose answers carry their links inline.
         tail_chars = overlap_tokens * 4
-        prev_tail = body[-tail_chars:] if tail_chars > 0 else ""
+        tail = body[-tail_chars:] if tail_chars > 0 else ""
+        space = tail.find(" ")
+        # No space at all means one unbroken token longer than the whole
+        # overlap; keep it rather than lose the overlap entirely.
+        prev_tail = tail[space + 1:] if space != -1 else tail
 
     # Hard cap on any single emitted chunk: prevents the
     # oversize-sentence path below from producing chunks larger than

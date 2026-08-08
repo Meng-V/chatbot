@@ -403,3 +403,32 @@ def main() -> int:
 
 if __name__ == "__main__":
     sys.exit(main())
+
+
+def test_the_overlap_never_starts_mid_url():
+    """The overlap tail was a raw character slice, so it could open a
+    chunk with "//libanswers.lib.miamioh.edu/faq/163330)" -- a fragment
+    that still reads as a link. A model given only that chunk can cite
+    it, and the student gets a URL that goes nowhere. Found while
+    indexing the FAQs, whose answers carry their links inline."""
+    from scripts.etl import classify, extract
+    from scripts.etl.chunker import chunk_document
+
+    sentences = []
+    for i in range(60):
+        sentences.append(
+            f"Option {i} is described at https://www.lib.miamioh.edu/"
+            f"a-fairly-long-path-segment/{i} in detail.")
+    doc = extract.ExtractedDoc(
+        url="https://x.example/1", title="t", body_text=" ".join(sentences),
+        breadcrumbs=[], word_count=600, schema_org_json=None,
+        last_modified=None, rejection_reason=None,
+    )
+    meta = classify.DocMetadata(topic="about", campus="oxford", library=None,
+                                audience=[], featured_service=None)
+    chunks = chunk_document(doc, meta)
+    assert len(chunks) > 1, "need at least one overlap boundary to test"
+    for c in chunks:
+        first = c.text.split(" ", 1)[0]
+        assert not first.startswith("//"), c.text[:80]
+        assert "://" not in first or first.startswith("https://"), c.text[:80]

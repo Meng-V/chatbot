@@ -48,6 +48,21 @@ class ExtractedDoc:
     NOT <meta refresh> / JS / canonical-only shims, so without this a
     librarian-handed-out short URL silently never reaches the index."""
 
+    min_chunk_tokens: Optional[int] = None
+    """Override for CHUNK_MIN_TOKENS on this document only.
+
+    The global floor drops anything under 50 tokens as boilerplate
+    residue -- the right call for text cut out of a scraped page, where
+    a fragment that small is nav or a footer. It is the wrong call for a
+    document that was authored as a unit: a LibAnswers FAQ reading "How
+    much does it cost to print? $0.10/page black and white, $0.25
+    colour" is 33 tokens and is the complete, correct answer. Ten of the
+    116 FAQs were being dropped this way, including printing costs,
+    library hours and the copyright contact.
+
+    None means use the global floor. Set it only for sources whose
+    documents are known to be whole."""
+
 
 # Miami vanity URLs redirect via <meta http-equiv=refresh> and/or a
 # lone <link rel=canonical> (no <body>). Content may have a space
