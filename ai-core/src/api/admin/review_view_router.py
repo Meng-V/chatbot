@@ -217,6 +217,33 @@ def build_review_view_router(deps: dict) -> Any:
                       f"<a href='{back}'>&larr; back</a>"),
                 status_code=404,
             )
+        kq = f"?key={_e(key)}" if key else "?"
+
+        def _sources(m: dict) -> str:
+            """The passages the bot answered from, each with a one-click
+            handoff to the tool that fixes it.
+
+            Added 2026-08-08. `suppress` and `replace` corrections are
+            keyed by chunk id, and no operator surface displayed a chunk
+            id anywhere -- so two of the four correction types could not
+            be filed from the console at all without going to the
+            database for the id.
+            """
+            ids = m.get("cited_chunk_ids") or []
+            if not ids:
+                return ""
+            sep = "&" if key else ""
+            items = "".join(
+                f"<li><code>{_e(cid)}</code> "
+                f"<a class='btn ghost' href='/admin/corrections/view{kq}{sep}"
+                f"action=suppress&target={_e(cid)}'>hide it</a> "
+                f"<a class='btn ghost' href='/admin/corrections/view{kq}{sep}"
+                f"action=replace&target={_e(cid)}'>reword it</a></li>"
+                for cid in ids
+            )
+            return ("<div><small class='dim'>Passages this answer came "
+                    f"from</small><ul class='sources'>{items}</ul></div>")
+
         msgs = "".join(
             f"<div><span class='role'>{_e(m['role'])}</span> "
             f"<small>{_e(m['time'])}</small>"
@@ -225,7 +252,7 @@ def build_review_view_router(deps: dict) -> Any:
                else "")
             + (" <span class='tag down'>thumbs-down</span>"
                if m['is_positive_rated'] is False else "")
-            + f"<pre>{_e(m['content'])}</pre></div>"
+            + f"<pre>{_e(m['content'])}</pre>{_sources(m)}</div>"
             for m in d["messages"]
         )
         toks = "".join(

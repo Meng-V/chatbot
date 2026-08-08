@@ -8,10 +8,10 @@ one dashboard with links." Two audiences, two gates:
                           admin surface with the token already carried in
                           the query string, plus the shareable librarian
                           form link and the public probes.
-  GET /librarian/      -- staff hub (LIBRARIAN_TICKET_CODE). Today that's
-                          the correction-ticket form plus the public
-                          library help links; new staff surfaces get added
-                          here so staff only ever bookmark one URL.
+  GET /librarian/      -- staff hub (LIBRARIAN_TICKET_CODE). The report
+                          form plus a plain account of what happens after
+                          they send it; new staff surfaces get added here
+                          so staff only ever bookmark one URL.
 
 Same zero-dependency server-rendered HTML approach as the other admin
 views; the only interpolated secrets are the ones the visitor already
@@ -31,6 +31,17 @@ except Exception:  # noqa: BLE001
 from src.api.admin import admin_ui as ui
 
 
+def _card(title: str, desc: str, actions: str) -> str:
+    return (f"<div class='card'><div class='q'>{ui.e(title)}</div>"
+            f"<div><small class='dim'>{ui.e(desc)}</small></div>"
+            f"<div class='acts'>{actions}</div></div>")
+
+
+def _section(heading: str, blurb: str, cards: str) -> str:
+    return (f"<h2>{ui.e(heading)}</h2>"
+            f"<p class='sub'>{ui.e(blurb)}</p>{cards}")
+
+
 def render_admin_hub(admin_key: str, librarian_code: str,
                      counts: "Optional[dict]" = None) -> str:
     """The operator dashboard.
@@ -39,7 +50,17 @@ def render_admin_hub(admin_key: str, librarian_code: str,
     only way to answer "is there anything waiting for me?" was to open
     every page. Now the counts lead, colored by whether they need
     action, and the links live under them.
+
+    Regrouped 2026-08-08, on the operator's report that the categories
+    did not read clearly. Two things were wrong. The cards sat in one
+    bucket called "Tools" that mixed working a queue, changing what the
+    bot says, and watching it run -- three different jobs. And the stop
+    button (/admin/service) had no link anywhere in the UI, so taking
+    the bot out of service meant knowing the URL by heart. Sections are
+    now named for the job, and service state leads the page.
     """
+    from src.api.admin.killswitch_router import is_paused, pause_reason
+
     c = counts or {}
     k = f"?key={ui.e(admin_key)}"
     tickets = int(c.get("tickets") or 0)
@@ -47,6 +68,19 @@ def render_admin_hub(admin_key: str, librarian_code: str,
     praised = int(c.get("praised") or 0)
     corrections = int(c.get("corrections") or 0)
     total_todo = tickets + flagged
+
+    down = is_paused()
+    banner = ""
+    if down:
+        banner = (
+            "<div class='banner down'>"
+            "<b>The bot is OUT OF SERVICE.</b>"
+            "<div><small>Every question is being answered with a "
+            "maintenance notice pointing patrons at Ask Us.</small></div>"
+            f"<div class='acts'>{ui.action(f'/admin/service{k}', 'Put it back in service', primary=True)}</div>"
+            f"<div style='margin-top:.5rem'><code>{ui.e(pause_reason())}</code></div>"
+            "</div>"
+        )
 
     stats = (
         ui.stat_card(f"/admin/tickets/view{k}", tickets,
@@ -64,35 +98,47 @@ def render_admin_hub(admin_key: str, librarian_code: str,
         f"{total_todo} item{'s' if total_todo != 1 else ''} waiting on you."
     )
 
-    tools = "".join(
-        f"<div class='card'><div class='q'>{ui.e(title)}</div>"
-        f"<div><small class='dim'>{ui.e(desc)}</small></div>"
-        f"<div class='acts'>{ui.action(href, 'Open', primary=primary)}</div>"
-        f"</div>"
-        for href, title, desc, primary in [
-            (f"/admin/tickets/view{k}", "Correction tickets",
-             "Staff reports of wrong answers. Work them open → in "
-             "progress → done; each links to the corrections tool.",
-             tickets > 0),
-            (f"/admin/review{k}", "Flagged conversations",
-             "Thumbs-down, refusals and low-confidence turns, with the "
-             "patron's star rating and comment inline.", flagged > 0),
-            (f"/admin/corrections/view{k}", "Manual corrections",
-             "Suppress, replace, pin or blacklist a source. Takes effect "
-             "on the next message — no deploy.", False),
-            (f"/admin/cost{k}", "Cost dashboard",
-             "Daily LLM spend by model and call site (nightly rollup).",
-             False),
-        ]
+    # 1. The path a wrong answer travels: someone reports it -> you read
+    #    the turn -> you change what the bot says. Same order on screen.
+    wrong = _section(
+        "When an answer is wrong",
+        "Report comes in, you read the turn, you change what the bot says.",
+        _card("Correction tickets",
+              "Staff reports of wrong answers. Work them open → in "
+              "progress → done; each links to the corrections tool.",
+              ui.action(f"/admin/tickets/view{k}", "Open",
+                        primary=tickets > 0))
+        + _card("Flagged conversations",
+                "Thumbs-down, refusals and low-confidence turns, with the "
+                "patron's star rating and comment inline.",
+                ui.action(f"/admin/review{k}", "Open", primary=flagged > 0))
+        + _card("Manual corrections",
+                "Suppress, replace, pin or blacklist a source. Takes "
+                "effect on the next message — no deploy.",
+                ui.action(f"/admin/corrections/view{k}", "Open")),
     )
 
-    health = (
-        "<div class='card'><div class='q'>Health checks</div>"
-        "<div class='acts'>"
-        + ui.action("/health/ready", "Dependency probes")
-        + ui.action("/smoketest", "End-to-end smoke test")
-        + "</div><div><small class='dim'>Probes are public (no key) so an "
-          "external monitor can poll them.</small></div></div>"
+    # 2. Everything about whether it is up and what it costs.
+    running = _section(
+        "Keep it running",
+        "Is it up, what is it spending, and how to stop it.",
+        _card("Service control",
+              "The stop button. The bot keeps answering — with a "
+              "maintenance notice — so the widget never shows a broken "
+              "page. Survives a restart; recovery is one click."
+              if not down else
+              "The bot is out of service right now. Put it back here.",
+              ui.action(f"/admin/service{k}",
+                        "Put the bot back in service" if down
+                        else "Take the bot out of service", primary=down))
+        + _card("Cost dashboard",
+                "Daily LLM spend by model and call site (nightly rollup).",
+                ui.action(f"/admin/cost{k}", "Open"))
+        + _card("Health checks",
+                "Probes are public (no key) so an external monitor can "
+                "poll them.",
+                ui.action("/health/ready", "Dependency probes")
+                + ui.action("/smoketest", "End-to-end smoke test")),
     )
 
     staff_link = (
@@ -113,9 +159,9 @@ def render_admin_hub(admin_key: str, librarian_code: str,
     )
 
     body = (
-        f"<h1>Dashboard</h1><p class='lede'>{ui.e(headline)}</p>"
+        f"{banner}<h1>Dashboard</h1><p class='lede'>{ui.e(headline)}</p>"
         f"<div class='stats'>{stats}</div>"
-        f"<h2>Tools</h2>{tools}{health}{staff}"
+        f"{wrong}{running}{staff}"
         f"<p><small class='dim'>Bookmark this page — every link carries "
         f"your key.</small></p>"
     )
@@ -124,27 +170,51 @@ def render_admin_hub(admin_key: str, librarian_code: str,
 
 
 def render_librarian_hub(code: str) -> str:
-    """Staff hub. Deliberately has NO operator nav or counts."""
+    """Staff hub. Deliberately has NO operator nav or counts.
+
+    Changed 2026-08-08. The "Ask Us" card came out: it linked staff to
+    the public Ask Us page, which is where staff already work -- it told
+    them nothing they did not know and made the page look like a menu
+    when it only ever had one thing to do on it.
+
+    What went in instead answers the question staff actually keep
+    asking, which is not "where do I report it" but "what does reporting
+    it cost me". So the page now states plainly that the report is the
+    whole job and nothing comes back to them.
+    """
     k = f"?key={ui.e(code)}"
-    cards = "".join(
-        f"<div class='card'><div class='q'>{ui.e(title)}</div>"
-        f"<div><small class='dim'>{ui.e(desc)}</small></div>"
-        f"<div class='acts'>{ui.action(href, label, primary=primary)}</div>"
-        f"</div>"
-        for href, title, desc, label, primary in [
-            (f"/librarian/ticket{k}", "Report a wrong chatbot answer",
-             "Goes straight to the maintainer — stored and emailed.",
-             "Open the form", True),
-            ("https://www.lib.miamioh.edu/research/research-support/ask/",
-             "Ask Us", "For questions the bot should hand off to a person.",
-             "Ask Us", False),
-        ]
+    report = (
+        "<div class='card'><div class='q'>Report a wrong chatbot answer"
+        "</div><div><small class='dim'>Paste what the bot said and what "
+        "it should have said. Nothing else is required.</small></div>"
+        f"<div class='acts'>"
+        f"{ui.action(f'/librarian/ticket{k}', 'Open the form', primary=True)}"
+        "</div></div>"
+    )
+    # Written flat and without an SLA on purpose: staff worry that a bad
+    # bot answer becomes their follow-up work, and a promise we cannot
+    # keep would confirm it. These four lines are all true today.
+    after = (
+        "<h2>What happens after you send it</h2>"
+        "<p class='sub'>Reporting it is the whole job. Nothing comes back "
+        "to you.</p>"
+        "<div class='card'><ol style='margin:.2rem 0;padding-left:1.2rem'>"
+        "<li>The report is stored and emailed to the maintainer as you "
+        "send it.</li>"
+        "<li>The maintainer fixes the source page, or overrides the "
+        "answer directly.</li>"
+        "<li>An override takes effect on the very next message &mdash; "
+        "no deploy, no waiting for a release.</li>"
+        "<li>You are not assigned anything and you do not need to follow "
+        "up. If the fix needs something only you know, the maintainer "
+        "emails you.</li>"
+        "</ol></div>"
     )
     body = (
         "<h1>Smart Chatbot &mdash; staff hub</h1>"
         "<p class='lede'>Found the chatbot giving a wrong or outdated "
         "answer? Tell us here and the maintainer will fix it.</p>"
-        f"{cards}"
+        f"{report}{after}"
         "<p><small class='dim'>Bookmark this page &mdash; the links carry "
         "the access code.</small></p>"
     )

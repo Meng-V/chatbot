@@ -280,6 +280,48 @@ def test_html_escapes_user_content() -> None:
     assert "&lt;script&gt;" in r.text
 
 
+def test_conversation_page_shows_the_passages_and_links_to_the_fix() -> None:
+    """`suppress` and `replace` corrections are keyed by chunk id, and
+    until 2026-08-08 no operator surface displayed a chunk id -- so two
+    of the four correction types were unfileable from the console."""
+    from fastapi import FastAPI
+    from starlette.testclient import TestClient
+
+    db = _StubDB(
+        msgs=[_msg(id="a1", type="assistant", content="the answer",
+                   conversationId="c1", citedChunkIds=["chunk-77"])],
+        conv=SimpleNamespace(createdAt="c", updatedAt="u", toolUsed=[]),
+    )
+    g = make_token_guard("k")
+    app = FastAPI()
+    app.include_router(build_review_view_router(
+        {"db": db, "guard": g, "require_librarian": g}))
+    r = TestClient(app).get("/admin/review/c1?key=k")
+
+    assert r.status_code == 200
+    assert "chunk-77" in r.text, "the id has to be visible to be usable"
+    assert "action=suppress&target=chunk-77" in r.text
+    assert "action=replace&target=chunk-77" in r.text
+    assert "key=k" in r.text, "the handoff must carry the operator's key"
+
+
+def test_conversation_page_omits_the_passage_block_when_there_are_none() -> None:
+    from fastapi import FastAPI
+    from starlette.testclient import TestClient
+
+    db = _StubDB(
+        msgs=[_msg(id="a1", type="assistant", content="hi",
+                   conversationId="c1", citedChunkIds=[])],
+        conv=SimpleNamespace(createdAt="c", updatedAt="u", toolUsed=[]),
+    )
+    g = make_token_guard("k")
+    app = FastAPI()
+    app.include_router(build_review_view_router(
+        {"db": db, "guard": g, "require_librarian": g}))
+    r = TestClient(app).get("/admin/review/c1?key=k")
+    assert "Passages this answer came from" not in r.text
+
+
 def main() -> int:
     tests = [
         test_list_flagged_filter_presets_build_right_where,

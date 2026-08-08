@@ -241,96 +241,235 @@ def build_corrections_router(deps: dict) -> Any:
         return {"deactivated": _row(row)}
 
     @router.get("/view", response_class=HTMLResponse)
-    async def corrections_view(_user=Depends(require_librarian)):
+    async def corrections_view(key: str = "", _user=Depends(require_librarian)):
         """Librarian-facing form + table. Open as
         /admin/corrections/view with the x-admin-token header, or
         ?key=... in the URL (same guard convention as
-        /admin/review). The page calls the JSON endpoints via fetch."""
-        return HTMLResponse(_VIEW_HTML)
+        /admin/review). The page calls the JSON endpoints via fetch.
+
+        `key` is accepted so the page can render inside the shared admin
+        shell with a working nav; the guard has already checked it."""
+        from src.api.admin import admin_ui as ui
+
+        return HTMLResponse(ui.page(
+            "Corrections", _VIEW_BODY,
+            current="/admin/corrections/view", key=key))
 
     return router
 
 
-_VIEW_HTML = """<!doctype html>
-<html><head><meta charset="utf-8"><title>Manual Corrections</title>
-<style>
- body{font-family:system-ui,sans-serif;margin:2rem;max-width:1100px}
- h1{font-size:1.3rem} .hint{color:#555;font-size:.9rem;margin-bottom:1rem}
- form{display:grid;grid-template-columns:repeat(2,minmax(220px,1fr));gap:.6rem;
-      border:1px solid #ccc;border-radius:8px;padding:1rem;margin-bottom:1.5rem}
- label{font-size:.8rem;color:#333;display:block}
- input,select,textarea{width:100%;padding:.4rem;font-size:.9rem;box-sizing:border-box}
- textarea{grid-column:1/-1;min-height:60px}
- button{padding:.5rem 1rem;cursor:pointer}
- table{border-collapse:collapse;width:100%;font-size:.85rem}
- th,td{border:1px solid #ddd;padding:.4rem;text-align:left;vertical-align:top}
- th{background:#f5f5f5} .ok{color:#0a0} .err{color:#c00;font-weight:600}
- .deact{color:#c00;cursor:pointer;background:none;border:1px solid #c00;border-radius:4px}
-</style></head><body>
-<h1>Manual Corrections</h1>
-<p class="hint">Fix a wrong bot answer without a deploy. Takes effect on the
-next question anyone asks. <b>suppress</b>=hide a bad chunk ·
-<b>replace</b>=swap a chunk's text · <b>pin</b>=force a page to rank #1 for
-matching questions · <b>blacklist_url</b>=never cite this URL again.
-All corrections auto-expire in 180 days unless extended.</p>
-<form id="f">
-  <div><label>action</label><select name="action">
-    <option>blacklist_url</option><option>suppress</option>
-    <option>replace</option><option>pin</option></select></div>
-  <div><label>scope</label><select name="scope">
-    <option>url</option><option>chunk</option>
-    <option>intent</option><option>global</option></select></div>
-  <div><label>target (the URL / chunk_id / intent)</label>
-    <input name="target" required placeholder="https://... or chunk id"></div>
-  <div><label>your email (audit trail, required)</label>
-    <input name="created_by" required placeholder="you@miamioh.edu"></div>
-  <div><label>query_pattern (pin only)</label>
-    <input name="query_pattern" placeholder="regex, e.g. printing|print"></div>
-  <div><label>replacement text (replace only)</label>
-    <input name="replacement"></div>
-  <textarea name="reason" required
-    placeholder="reason (required) -- what is wrong and why"></textarea>
-  <button type="submit">File correction</button>
-  <span id="msg"></span>
+# The form, rebuilt 2026-08-08 after the operator reported it was too
+# complicated to attempt ("特别复杂"). Three things were wrong with it.
+#
+# 1. It asked for `scope` next to `action`, a 4x4 grid of which only a
+#    handful of cells are legal -- validate_correction rejects
+#    blacklist_url+chunk and suppress+url, and apply_corrections never
+#    READS scope except for pin (it matches on action+target alone).
+#    scope=intent and scope=global are read nowhere at all, so choosing
+#    them files a correction that silently never fires. So the field is
+#    gone: the task determines the scope, and pin -- the one action where
+#    scope is a real choice -- asks the question in words instead.
+# 2. Both conditional fields were always visible and labelled with the
+#    condition ("query_pattern (pin only)"), which reads as "most of this
+#    form does not apply to you" no matter which task you picked.
+# 3. The action names were the internal vocabulary. A librarian has no
+#    reason to know that hiding a bad paragraph is called "suppress".
+#
+# It also silently dropped the `target` prefill that the ticket page has
+# been sending since the ticket redesign (?target=<source_url>) -- the JS
+# only ever read `key`. That handoff works now.
+_VIEW_BODY = """
+<h1>Corrections</h1>
+<p class="lede">Change what the bot says without a deploy. Every
+correction takes effect on the next question anyone asks, and expires by
+itself after 180 days unless you extend it.</p>
+
+<form id="f" class="card">
+  <label for="task">What do you need to do?</label>
+  <select id="task" name="task">
+    <option value="blacklist_url">Stop the bot using a page — it is wrong, dead, or not ours to cite</option>
+    <option value="pin">Send certain questions to a page first — the bot keeps missing it</option>
+    <option value="replace">Fix the wording of one passage — the page is right but the bot quotes it badly</option>
+    <option value="suppress">Hide one passage — it is wrong or out of date</option>
+  </select>
+
+  <div data-for="pin">
+    <label for="pinby">What are you pinning?</label>
+    <select id="pinby" name="pinby">
+      <option value="url">A page, by its address</option>
+      <option value="chunk">One passage, by its id</option>
+    </select>
+  </div>
+
+  <div data-for="blacklist_url pin-url">
+    <label for="t_url">Page address</label>
+    <input id="t_url" name="t_url" type="text"
+           placeholder="https://www.lib.miamioh.edu/...">
+  </div>
+
+  <div data-for="suppress replace pin-chunk">
+    <label for="t_chunk">Passage id</label>
+    <input id="t_chunk" name="t_chunk" type="text" placeholder="chunk id">
+    <small class="dim">Shown under each cited source on the Flagged
+    page.</small>
+  </div>
+
+  <div data-for="pin">
+    <label for="query_pattern">Which questions should this fire on?</label>
+    <input id="query_pattern" name="query_pattern"
+           placeholder="printing|print|printer">
+    <small class="dim">Words to look for in the student's question. Use
+    <code>|</code> between alternatives. Case does not matter.</small>
+  </div>
+
+  <div data-for="replace">
+    <label for="replacement">What the passage should say instead</label>
+    <textarea id="replacement" name="replacement"></textarea>
+  </div>
+
+  <label for="created_by">Your email</label>
+  <input id="created_by" name="created_by" type="email" required
+         placeholder="you@miamioh.edu">
+
+  <label for="reason">Why — what is wrong with the current answer?</label>
+  <textarea id="reason" name="reason" required></textarea>
+
+  <div class="acts">
+    <button type="submit">File correction</button>
+    <span id="msg"></span>
+  </div>
 </form>
-<table id="t"><thead><tr><th>action</th><th>scope</th><th>target</th>
-<th>reason</th><th>by</th><th>expires</th><th>fired</th><th></th></tr></thead>
-<tbody></tbody></table>
+
+<h2>Corrections in force</h2>
+<table id="t"><thead><tr><th>what it does</th><th>applies to</th>
+<th>why</th><th>filed by</th><th>expires</th><th>times used</th>
+<th></th></tr></thead><tbody></tbody></table>
+
 <script>
-const token = new URLSearchParams(location.search).get("key") || "";
+const qs = new URLSearchParams(location.search);
+const token = qs.get("key") || "";
 const H = {"Content-Type":"application/json","x-admin-token":token};
-async function load(){
-  const r = await fetch("/admin/corrections",{headers:H});
+
+// Plain-language labels for the table, so the list reads the same way
+// the form does rather than in the storage vocabulary.
+const DOES = {
+  blacklist_url: "never cite this page",
+  suppress: "hide this passage",
+  replace: "reword this passage",
+  pin: "show first for matching questions",
+};
+const esc = (s) => String(s == null ? "" : s).replace(/[&<>"]/g,
+  (ch) => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[ch]));
+
+const task = document.getElementById("task");
+const pinby = document.getElementById("pinby");
+
+// Show only the fields the chosen task actually uses. `pin` needs either
+// the URL box or the chunk box depending on what is being pinned, hence
+// the pin-url / pin-chunk tokens.
+function sync() {
+  const t = task.value;
+  const on = new Set([t, t === "pin" ? "pin-" + pinby.value : ""]);
+  document.querySelectorAll("[data-for]").forEach((el) => {
+    const show = el.dataset.for.split(" ").some((tok) => on.has(tok));
+    el.hidden = !show;
+    el.querySelectorAll("input,textarea,select").forEach((f) => {
+      f.disabled = !show;              // keeps hidden fields out of FormData
+    });
+  });
+}
+task.onchange = sync;
+pinby.onchange = sync;
+
+// Two pages hand off to this form: the ticket page arrives with the
+// offending page address, the Flagged page with a passage id. Pick the
+// box from the task so the value lands where it belongs.
+const preAction = qs.get("action");
+if (preAction && DOES[preAction]) task.value = preAction;
+const preTarget = qs.get("target");
+if (preTarget) {
+  const box = scopeFor(task.value) === "url" ? "t_url" : "t_chunk";
+  document.getElementById(box).value = preTarget;
+}
+sync();
+
+async function load() {
+  const r = await fetch("/admin/corrections", {headers: H});
   const d = await r.json();
-  const tb = document.querySelector("#t tbody"); tb.innerHTML = "";
-  for (const c of (d.corrections||[])) {
+  const tb = document.querySelector("#t tbody");
+  tb.innerHTML = "";
+  for (const c of (d.corrections || [])) {
+    const applies = c.action === "pin" && c.query_pattern
+      ? esc(c.target) + "<br><small>questions matching <code>"
+        + esc(c.query_pattern) + "</code></small>"
+      : esc(c.target);
     const tr = document.createElement("tr");
-    tr.innerHTML = `<td>${c.action}</td><td>${c.scope}</td>
-      <td style="max-width:260px;word-break:break-all">${c.target}</td>
-      <td>${c.reason}</td><td>${c.created_by}</td>
-      <td>${(c.expires_at||"").slice(0,10)}</td><td>${c.fire_count}</td>
-      <td><button class="deact" data-id="${c.id}">deactivate</button></td>`;
+    tr.innerHTML = `<td>${esc(DOES[c.action] || c.action)}</td>
+      <td style="max-width:280px;word-break:break-all">${applies}</td>
+      <td>${esc(c.reason)}</td><td>${esc(c.created_by)}</td>
+      <td>${esc((c.expires_at || "").slice(0, 10))}</td>
+      <td>${esc(c.fire_count)}</td>
+      <td><a class="btn ghost" href="#" data-id="${esc(c.id)}">remove</a></td>`;
     tb.appendChild(tr);
   }
-  tb.querySelectorAll(".deact").forEach(b=>b.onclick=async()=>{
-    if(!confirm("Deactivate this correction?"))return;
-    await fetch("/admin/corrections/"+b.dataset.id,{method:"DELETE",headers:H});
+  tb.querySelectorAll("[data-id]").forEach((b) => b.onclick = async (ev) => {
+    ev.preventDefault();
+    if (!confirm("Stop applying this correction?")) return;
+    await fetch("/admin/corrections/" + b.dataset.id,
+                {method: "DELETE", headers: H});
     load();
   });
 }
-document.getElementById("f").onsubmit = async (e)=>{
+
+// scope is derived, never asked. blacklist_url is url-scoped by rule;
+// suppress and replace match on chunk id; pin is whichever the operator
+// said they were pinning.
+function scopeFor(t) {
+  if (t === "blacklist_url") return "url";
+  if (t === "pin") return pinby.value;
+  return "chunk";
+}
+
+document.getElementById("f").onsubmit = async (e) => {
   e.preventDefault();
-  const fd = Object.fromEntries(new FormData(e.target).entries());
-  const r = await fetch("/admin/corrections",{method:"POST",headers:H,
-    body:JSON.stringify(fd)});
   const m = document.getElementById("msg");
-  if(r.ok){ m.textContent="✓ filed -- live on the next question";
-    m.className="ok"; e.target.reset(); load(); }
-  else { const d = await r.json().catch(()=>({detail:r.status}));
-    m.textContent="✗ "+(d.detail||"error"); m.className="err"; }
+  const t = task.value;
+  const scope = scopeFor(t);
+  const target = (scope === "url"
+    ? document.getElementById("t_url").value
+    : document.getElementById("t_chunk").value).trim();
+  if (!target) {
+    m.textContent = scope === "url"
+      ? "Enter the page address." : "Enter the passage id.";
+    m.className = "err";
+    return;
+  }
+  const body = {
+    action: t,
+    scope: scope,
+    target: target,
+    reason: document.getElementById("reason").value,
+    created_by: document.getElementById("created_by").value,
+  };
+  if (t === "pin") body.query_pattern = document.getElementById("query_pattern").value;
+  if (t === "replace") body.replacement = document.getElementById("replacement").value;
+
+  const r = await fetch("/admin/corrections",
+                        {method: "POST", headers: H, body: JSON.stringify(body)});
+  if (r.ok) {
+    m.textContent = "Filed — live on the next question.";
+    m.className = "ok";
+    e.target.reset();
+    sync();
+    load();
+  } else {
+    const d = await r.json().catch(() => ({detail: r.status}));
+    m.textContent = String(d.detail || "error");
+    m.className = "err";
+  }
 };
 load();
-</script></body></html>"""
+</script>"""
 
 
 class _Placeholder:

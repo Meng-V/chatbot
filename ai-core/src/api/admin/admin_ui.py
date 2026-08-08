@@ -61,6 +61,16 @@ main{max-width:1080px;margin:0 auto;padding:1.25rem 1rem 3rem}
 h1{font-size:1.4rem;margin:.2rem 0 1rem}
 h2{font-size:1.05rem;margin:1.8rem 0 .6rem;color:#374151}
 p.lede{color:var(--muted);margin:.2rem 0 1.2rem}
+/* Says what a GROUP of tools is for, so the grouping is legible without
+   opening every card in it. */
+p.sub{color:var(--muted);font-size:.88rem;margin:-.35rem 0 .75rem}
+
+/* "Is the bot up?" is the only question during an incident, so it gets
+   answered above everything else rather than in a card halfway down. */
+.banner{border-radius:8px;padding:1rem 1.15rem;margin:0 0 1.3rem}
+.banner.down{background:var(--warn-bg);border:2px solid var(--warn)}
+.banner.down b{color:var(--warn);display:block;font-size:1.05rem;
+  margin-bottom:.2rem}
 
 /* stat cards -- the "what needs me now" row */
 .stats{display:grid;gap:.75rem;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));
@@ -119,6 +129,15 @@ small.dim{color:var(--muted)}
 .note{background:#fff8e1;border:1px solid #e6d9a8;padding:.7rem 1rem;
   border-radius:6px}
 form.inline{display:inline}
+/* A form that reveals only the fields the chosen task uses hides its
+   wrappers with [hidden]; make that beat any display rule above. */
+[hidden]{display:none!important}
+.ok{color:var(--done);font-weight:600}
+.err{color:var(--warn);font-weight:600}
+/* the passages an answer was built from, on the conversation page */
+ul.sources{list-style:none;margin:.3rem 0 0;padding:0}
+ul.sources li{display:flex;gap:.4rem;align-items:center;flex-wrap:wrap;
+  padding:.25rem 0}
 label{display:block;margin:.8rem 0 .25rem;font-weight:600}
 input[type=text],input[type=email],textarea,select{width:100%;padding:.5rem;
   border:1px solid #bbb;border-radius:6px;font:inherit;background:#fff}
@@ -129,12 +148,17 @@ button{padding:.5rem 1.1rem;font:inherit;font-weight:600;cursor:pointer;
 
 # Every operator surface, in the order an operator works them: things
 # that need action first, reference material last.
+#
+# /admin/service is last but is NOT reference -- it is the stop button.
+# It shipped with no way to reach it from the UI, so the only way to take
+# the bot out of service was to already know the URL. Added 2026-08-08.
 NAV = (
     ("/admin/", "Dashboard", None),
     ("/admin/tickets/view", "Tickets", "tickets"),
     ("/admin/review", "Flagged", "flagged"),
     ("/admin/corrections/view", "Corrections", None),
     ("/admin/cost", "Cost", None),
+    ("/admin/service", "Service", None),
 )
 
 

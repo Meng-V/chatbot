@@ -140,4 +140,43 @@ def test_view_html_served() -> None:
     c, _ = _client()
     r = c.get("/admin/corrections/view", headers=H)
     assert r.status_code == 200
-    assert "Manual Corrections" in r.text and "File correction" in r.text
+    assert "Corrections" in r.text and "File correction" in r.text
+
+
+def test_the_form_asks_for_a_task_not_an_action_and_a_scope() -> None:
+    """The operator never attempted this form because it opened with two
+    jargon dropdowns forming a 4x4 grid, most of whose cells the
+    validator rejects. One plain-language question replaces both."""
+    c, _ = _client()
+    body = c.get("/admin/corrections/view", headers=H).text
+
+    assert 'name="scope"' not in body, "scope is derived from the task now"
+    # the internal words survive as form values (they are the API's
+    # vocabulary) but must not be what the librarian is asked to read
+    for jargon in ("<option>suppress", "<option>blacklist_url",
+                   "query_pattern (pin only)", "replacement text (replace only)"):
+        assert jargon not in body, jargon
+    assert "What do you need to do?" in body
+    # scope=intent / scope=global are read nowhere in apply_corrections,
+    # so offering them could only ever produce a correction that silently
+    # never fires
+    assert ">intent<" not in body and ">global<" not in body
+
+
+def test_the_form_hides_fields_that_do_not_apply() -> None:
+    c, _ = _client()
+    body = c.get("/admin/corrections/view", headers=H).text
+    assert 'data-for="pin"' in body
+    assert 'data-for="replace"' in body
+
+
+def test_the_ticket_handoff_prefills_the_target() -> None:
+    """The ticket page has linked here with ?target=<source_url> since the
+    ticket redesign, but the page only ever read `key`, so the prefill
+    silently did nothing and the operator retyped the URL."""
+    c, _ = _client()
+    body = c.get("/admin/corrections/view", headers=H).text
+    assert 'qs.get("target")' in body
+    assert 'qs.get("action")' in body
+    # url-shaped targets and chunk-shaped targets go in different boxes
+    assert 'scopeFor(task.value) === "url" ? "t_url" : "t_chunk"' in body
